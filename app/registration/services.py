@@ -3,6 +3,7 @@ from fastapi import HTTPException, status
 
 from app.core.dependencies import UserServiceDep
 from app.registration.repository import RegistrationRepository
+from app.users.schemas import UserCreate
 
 
 class RegistrationService:
@@ -25,5 +26,5 @@ class RegistrationService:
         if not data:
             raise HTTPException(status_code=404, detail="Registration not found")
 
-        await self.user_service.create_user(data)
+        self.user_service.create_user(UserCreate(**data))
         await self.repo.delete_application(registration_id)

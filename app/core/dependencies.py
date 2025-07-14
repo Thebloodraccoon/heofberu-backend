@@ -14,11 +14,18 @@ from app.settings import settings
 from app.users.schemas import UserResponse
 from app.users.services import UserService
 
-from app.settings.local import get_redis
+from typing import AsyncGenerator
 from redis.asyncio import Redis
+from app.settings.local import get_redis
+
+
+async def redis_dependency() -> AsyncGenerator[Redis, None]:
+    async with get_redis() as redis:
+        yield redis
+
 
 DatabaseDep = Annotated[Session, Depends(settings.get_db)]
-RedisDep = Annotated[Redis, Depends(get_redis)]
+RedisDep = Annotated[Redis, Depends(redis_dependency)]
 
 def get_registration_repository(redis: RedisDep) -> RegistrationRepository:
     return RegistrationRepository(redis)
@@ -81,3 +88,4 @@ def require_founder(
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]
 AdminUserDep = Annotated[UserResponse, Depends(require_keeper_or_founder)]
 FounderUserDep = Annotated[UserResponse, Depends(require_founder)]
+
