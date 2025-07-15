@@ -1,5 +1,6 @@
 import uuid
-from fastapi import HTTPException, status
+
+from fastapi import HTTPException
 
 from app.core.dependencies import UserServiceDep
 from app.registration.repository import RegistrationRepository

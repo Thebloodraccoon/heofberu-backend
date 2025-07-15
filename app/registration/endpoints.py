@@ -1,17 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from uuid import UUID
 
-from app.registration.schemas import (
-    RegistrationRequest,
-    RegistrationResponse,
-    RegistrationsResponse
-)
-from app.registration.services import RegistrationService
-from app.core.dependencies import (
-    get_registration_repository,
-    get_user_service,
-    require_keeper_or_founder
-)
+from app.core.dependencies import get_registration_repository, get_user_service, require_keeper_or_founder
 from app.registration.repository import RegistrationRepository
+from app.registration.schemas import RegistrationRequest, RegistrationResponse, RegistrationsResponse
+from app.registration.services import RegistrationService
 from app.users.services import UserService
 
 router = APIRouter()
@@ -46,10 +39,15 @@ async def list_applications(
     repo: RegistrationRepository = Depends(get_registration_repository),
 ):
     items = await repo.list_applications(skip, limit)
-    return RegistrationsResponse(total=len(items), items=items)
+    return RegistrationsResponse(
+        total=len(items),
+        items=[RegistrationResponse(**item) for item in items]
+    )
 
 
-@router.get("/{registration_id}", response_model=RegistrationResponse, dependencies=[Depends(require_keeper_or_founder)])
+@router.get(
+    "/{registration_id}", response_model=RegistrationResponse, dependencies=[Depends(require_keeper_or_founder)]
+)
 async def get_application(
     registration_id: str,
     repo: RegistrationRepository = Depends(get_registration_repository),
@@ -57,4 +55,4 @@ async def get_application(
     app = await repo.get_application(registration_id)
     if not app:
         raise HTTPException(status_code=404, detail="Not found")
-    return RegistrationResponse(**app, registration_id=registration_id)
+    return RegistrationResponse(**app, registration_id=UUID(registration_id))

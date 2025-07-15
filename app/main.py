@@ -20,11 +20,9 @@ from app.middleware import (
 from app.middleware.error_handler import setup_error_handlers
 from app.ping.endpoints import router as ping_router
 from app.races.endpoints import router as race_router
+from app.registration.endpoints import router as registration_router
 from app.settings import settings
 from app.users.endpoints import router as user_router
-
-from app.registration.endpoints import router as registration_router
-
 
 logger = logging.getLogger(__name__)
 
