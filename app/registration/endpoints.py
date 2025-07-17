@@ -22,6 +22,14 @@ async def approve_application(
     await service.approve_application(registration_id)
     return {"detail": "Approved"}
 
+@router.delete("/{registration_id}", response_model=dict)
+async def reject_registration(
+    registration_id: str,
+    registration_service: RegistrationServiceDep,
+):
+    await registration_service.reject_application(registration_id)
+    return {"detail": "Registration rejected successfully."}
+
 
 @router.get("/", response_model=RegistrationsResponse, dependencies=[Depends(require_keeper_or_founder)])
 async def list_applications(

@@ -36,6 +36,12 @@ class RegistrationService:
         self.user_service.create_user(UserCreate(**data))
         await self.repo.delete_application(registration_id)
 
+    async def reject_application(self, registration_id: str) -> None:
+        data = await self.repo.get_application(registration_id)
+        if not data:
+            raise RegistrationNotFoundException()
+        await self.repo.delete_application(registration_id)
+
     async def list_applications(self, skip: int, limit: int) -> list[dict]:
         return await self.repo.list_applications(skip, limit)
 
