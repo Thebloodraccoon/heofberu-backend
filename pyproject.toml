@@ -41,6 +41,7 @@ typing-extensions = "4.14.0"
 greenlet = "3.2.3"
 ruff = "^0.12.2"
 nox = "^2025.5.1"
+aiosmtplib = "^4.0.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "8.4.0"

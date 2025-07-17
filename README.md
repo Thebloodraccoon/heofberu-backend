@@ -86,11 +86,6 @@ poetry shell
 docker-compose up -d
 ```
 
-**With pip:**
-```bash
-pip install -r requirements.txt
-```
-
 Start project
 ```bash
 docker-compose up -d 

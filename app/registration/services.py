@@ -9,7 +9,7 @@ from app.registration.repository import RegistrationRepository
 from app.registration.schemas import RegistrationResponse
 from app.users.schemas import UserCreate
 from app.users.services import UserService
-
+from app.mail.sender import send_email_async
 
 class RegistrationService:
     def __init__(self, repo: RegistrationRepository, user_service: UserService):
@@ -35,12 +35,23 @@ class RegistrationService:
 
         self.user_service.create_user(UserCreate(**data))
         await self.repo.delete_application(registration_id)
+        await send_email_async(
+            subject="Вашу заявку схвалено",
+            email_to=data['email'],
+            body="<p>Вітаємо! Вашу заявку схвалено.</p>"
+        )
 
     async def reject_application(self, registration_id: str) -> None:
         data = await self.repo.get_application(registration_id)
         if not data:
             raise RegistrationNotFoundException()
+
         await self.repo.delete_application(registration_id)
+        await send_email_async(
+            subject="Вашу заявку було відхилено",
+            email_to=data['email'],
+            body="<p>Нажаль, вашу заявку було відхилено.</p>"
+        )
 
     async def list_applications(self, skip: int, limit: int) -> list[dict]:
         return await self.repo.list_applications(skip, limit)
