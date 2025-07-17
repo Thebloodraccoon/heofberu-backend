@@ -1,13 +1,13 @@
 import uuid
 from uuid import UUID
 
-from app.registration.repository import RegistrationRepository
-from app.users.schemas import UserCreate
-from app.registration.schemas import RegistrationResponse
 from app.exceptions.registration_exceptions import (
     RegistrationAlreadyExistsException,
     RegistrationNotFoundException,
 )
+from app.registration.repository import RegistrationRepository
+from app.registration.schemas import RegistrationResponse
+from app.users.schemas import UserCreate
 from app.users.services import UserService
 
 

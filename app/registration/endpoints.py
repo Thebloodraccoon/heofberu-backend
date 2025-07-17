@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
-from app.core.dependencies import require_keeper_or_founder, RegistrationServiceDep
+
+from app.core.dependencies import RegistrationServiceDep, require_keeper_or_founder
 from app.registration.schemas import RegistrationRequest, RegistrationResponse, RegistrationsResponse
 
 router = APIRouter()
@@ -22,7 +23,8 @@ async def approve_application(
     await service.approve_application(registration_id)
     return {"detail": "Approved"}
 
-@router.delete("/{registration_id}", response_model=dict)
+
+@router.delete("/{registration_id}", response_model=dict, dependencies=[Depends(require_keeper_or_founder)])
 async def reject_registration(
     registration_id: str,
     registration_service: RegistrationServiceDep,
@@ -38,10 +40,7 @@ async def list_applications(
     limit: int = 50,
 ):
     items = await service.list_applications(skip, limit)
-    return RegistrationsResponse(
-        total=len(items),
-        items=[RegistrationResponse(**item) for item in items]
-    )
+    return RegistrationsResponse(total=len(items), items=[RegistrationResponse(**item) for item in items])
 
 
 @router.get(

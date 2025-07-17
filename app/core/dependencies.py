@@ -27,6 +27,7 @@ async def redis_dependency() -> AsyncGenerator[Redis, None]:
 DatabaseDep = Annotated[Session, Depends(settings.get_db)]
 RedisDep = Annotated[Redis, Depends(redis_dependency)]
 
+
 def get_registration_repository(redis: RedisDep) -> RegistrationRepository:
     return RegistrationRepository(redis)
 
@@ -96,5 +97,6 @@ def get_registration_service(
     user_service: UserServiceDep,
 ) -> RegistrationService:
     return RegistrationService(repo, user_service)
+
 
 RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
