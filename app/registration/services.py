@@ -5,11 +5,12 @@ from app.exceptions.registration_exceptions import (
     RegistrationAlreadyExistsException,
     RegistrationNotFoundException,
 )
+from app.mail.sender import send_email_async
 from app.registration.repository import RegistrationRepository
 from app.registration.schemas import RegistrationResponse
 from app.users.schemas import UserCreate
 from app.users.services import UserService
-from app.mail.sender import send_email_async
+
 
 class RegistrationService:
     def __init__(self, repo: RegistrationRepository, user_service: UserService):
@@ -17,15 +18,17 @@ class RegistrationService:
         self.user_service = user_service
 
     async def submit_application(self, data: dict) -> RegistrationResponse:
-        if await self.repo.redis.exists(f"registration:email:{data['email']}"):
+        if await self.repo.redis.exists(f"registration:email:{data['email']}") > 0:
             raise RegistrationAlreadyExistsException("email")
-        if await self.repo.redis.exists(f"registration:username:{data['username']}"):
+        if await self.repo.redis.exists(f"registration:username:{data['username']}") > 0:
             raise RegistrationAlreadyExistsException("username")
 
         reg_id = str(uuid.uuid4())
         await self.repo.save_application(reg_id, data)
 
         saved = await self.repo.get_application(reg_id)
+        if not saved:
+            raise RegistrationNotFoundException()
         return RegistrationResponse(**saved, registration_id=UUID(reg_id))
 
     async def approve_application(self, registration_id: str) -> None:
@@ -33,12 +36,19 @@ class RegistrationService:
         if not data:
             raise RegistrationNotFoundException()
 
-        self.user_service.create_user(UserCreate(**data))
+        await self.user_service.create_user(UserCreate(**data))
         await self.repo.delete_application(registration_id)
         await send_email_async(
             subject="Вашу заявку схвалено",
-            email_to=data['email'],
-            body="<p>Вітаємо! Вашу заявку схвалено.</p>"
+            email_to=data["email"],
+            body="""
+                <html>
+                    <body>
+                        <h1>Вітаємо!</h1>
+                        <p>Вашу заявку <b>схвалено</b>.</p>
+                    </body>
+                </html>
+            """,
         )
 
     async def reject_application(self, registration_id: str) -> None:
@@ -49,8 +59,15 @@ class RegistrationService:
         await self.repo.delete_application(registration_id)
         await send_email_async(
             subject="Вашу заявку було відхилено",
-            email_to=data['email'],
-            body="<p>Нажаль, вашу заявку було відхилено.</p>"
+            email_to=data["email"],
+            body="""
+                <html>
+                    <body>
+                        <h1>Вітаємо!</h1>
+                        <p>Вашу заявку <b>відхилено</b>.</p>
+                    </body>
+                </html>
+            """,
         )
 
     async def list_applications(self, skip: int, limit: int) -> list[dict]:

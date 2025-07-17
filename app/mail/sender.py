@@ -1,5 +1,6 @@
-import aiosmtplib
 from email.message import EmailMessage
+
+import aiosmtplib
 
 from app.mail.settings import mail_settings
 
@@ -9,7 +10,8 @@ async def send_email_async(email_to: str, subject: str, body: str):
     message["From"] = mail_settings.MAIL_FROM
     message["To"] = email_to
     message["Subject"] = subject
-    message.set_content(body)
+
+    message.set_content(body, subtype="html")
 
     await aiosmtplib.send(
         message,

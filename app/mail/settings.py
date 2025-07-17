@@ -13,4 +13,4 @@ class MailSettings(BaseSettings):
         extra = "ignore"
 
 
-mail_settings = MailSettings()
+mail_settings = MailSettings() # type: ignore[arg-type]
