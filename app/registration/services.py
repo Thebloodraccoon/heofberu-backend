@@ -1,31 +1,47 @@
 import uuid
+from uuid import UUID
 
-from fastapi import HTTPException
-
-from app.core.dependencies import UserServiceDep
 from app.registration.repository import RegistrationRepository
 from app.users.schemas import UserCreate
+from app.registration.schemas import RegistrationResponse
+from app.exceptions.registration_exceptions import (
+    RegistrationAlreadyExistsException,
+    RegistrationNotFoundException,
+)
+from app.users.services import UserService
 
 
 class RegistrationService:
-    def __init__(self, repo: RegistrationRepository, user_service: UserServiceDep):
+    def __init__(self, repo: RegistrationRepository, user_service: UserService):
         self.repo = repo
         self.user_service = user_service
 
-    async def submit_application(self, data: dict):
+    async def submit_application(self, data: dict) -> RegistrationResponse:
         if await self.repo.redis.exists(f"registration:email:{data['email']}"):
-            raise HTTPException(status_code=409, detail="Email already used in pending registration")
+            raise RegistrationAlreadyExistsException("email")
         if await self.repo.redis.exists(f"registration:username:{data['username']}"):
-            raise HTTPException(status_code=409, detail="Username already used in pending registration")
+            raise RegistrationAlreadyExistsException("username")
 
         reg_id = str(uuid.uuid4())
         await self.repo.save_application(reg_id, data)
-        return reg_id
 
-    async def approve_application(self, registration_id: str):
+        saved = await self.repo.get_application(reg_id)
+        return RegistrationResponse(**saved, registration_id=UUID(reg_id))
+
+    async def approve_application(self, registration_id: str) -> None:
         data = await self.repo.get_application(registration_id)
         if not data:
-            raise HTTPException(status_code=404, detail="Registration not found")
+            raise RegistrationNotFoundException()
 
         self.user_service.create_user(UserCreate(**data))
         await self.repo.delete_application(registration_id)
+
+    async def list_applications(self, skip: int, limit: int) -> list[dict]:
+        return await self.repo.list_applications(skip, limit)
+
+    async def get_application_by_id(self, registration_id: str) -> RegistrationResponse:
+        app = await self.repo.get_application(registration_id)
+        if not app:
+            raise RegistrationNotFoundException()
+
+        return RegistrationResponse(**app, registration_id=UUID(registration_id))

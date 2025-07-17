@@ -12,6 +12,7 @@ from app.auth.utils.token_utils import verify_token
 from app.exceptions.auth_exceptions import AdminAccessException, SuperAdminAccessException
 from app.races.services import RaceService
 from app.registration.repository import RegistrationRepository
+from app.registration.services import RegistrationService
 from app.settings import settings
 from app.settings.local import get_redis
 from app.users.schemas import UserResponse
@@ -25,7 +26,6 @@ async def redis_dependency() -> AsyncGenerator[Redis, None]:
 
 DatabaseDep = Annotated[Session, Depends(settings.get_db)]
 RedisDep = Annotated[Redis, Depends(redis_dependency)]
-
 
 def get_registration_repository(redis: RedisDep) -> RegistrationRepository:
     return RegistrationRepository(redis)
@@ -89,3 +89,12 @@ def require_founder(
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]
 AdminUserDep = Annotated[UserResponse, Depends(require_keeper_or_founder)]
 FounderUserDep = Annotated[UserResponse, Depends(require_founder)]
+
+
+def get_registration_service(
+    repo: RegistrationRepoDep,
+    user_service: UserServiceDep,
+) -> RegistrationService:
+    return RegistrationService(repo, user_service)
+
+RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
