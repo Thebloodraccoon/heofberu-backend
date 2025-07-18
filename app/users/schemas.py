@@ -9,7 +9,7 @@ from app.exceptions.user_exceptions import InvalidEmailException, InvalidPasswor
 
 class UserBase(BaseModel):
     username: str
-    role: Literal["found_father", "keeper", "player"] = None  # type: ignore
+    role: Literal["found_father", "keeper", "player"]  # type: ignore
     email: str
     phone: str | None = None
     bio: str | None = None

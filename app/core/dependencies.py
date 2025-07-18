@@ -1,19 +1,35 @@
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
+from redis.asyncio import Redis
 from sqlalchemy.orm import Session
 
 from app.auth.services import AuthService
 from app.auth.utils.token_utils import verify_token
 from app.exceptions.auth_exceptions import AdminAccessException, SuperAdminAccessException
 from app.races.services import RaceService
+from app.registration.repository import RegistrationRepository
+from app.registration.services import RegistrationService
 from app.settings import settings
+from app.settings.local import get_redis
 from app.users.schemas import UserResponse
 from app.users.services import UserService
 
+
+async def redis_dependency() -> AsyncGenerator[Redis, None]:
+    async with get_redis() as redis:
+        yield redis
+
+
 DatabaseDep = Annotated[Session, Depends(settings.get_db)]
+RedisDep = Annotated[Redis, Depends(redis_dependency)]
+
+
+def get_registration_repository(redis: RedisDep) -> RegistrationRepository:
+    return RegistrationRepository(redis)
 
 
 def get_user_service(db: DatabaseDep) -> UserService:
@@ -34,6 +50,17 @@ def get_auth_service(db: DatabaseDep) -> AuthService:
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 RaceServiceDep = Annotated[RaceService, Depends(get_race_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def get_registration_service(
+    user_service: UserServiceDep,
+    redis: RedisDep,
+) -> RegistrationService:
+    return RegistrationService(RegistrationRepository(redis), user_service)
+
+
+RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
+
 
 security = HTTPBearer(
     scheme_name="JWT Bearer",

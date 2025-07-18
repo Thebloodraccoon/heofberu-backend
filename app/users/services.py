@@ -18,13 +18,13 @@ class UserService:
     def __init__(self, db: Session):
         self.repository = UserRepository(db)
 
-    def _check_email_exists(self, email: str, user_id: int | None = None) -> None:  # type: ignore
+    def check_email_exists(self, email: str, user_id: int | None = None) -> None:  # type: ignore
         """Check if email already exists, excluding specific user ID."""
         existing_user = self.repository.get_by_email(email)
         if existing_user and (user_id is None or existing_user.id != user_id):
             raise UserEmailAlreadyExistsException(email)
 
-    def _check_username_exists(self, username: str, user_id: int | None = None) -> None:  # type: ignore
+    def check_username_exists(self, username: str, user_id: int | None = None) -> None:  # type: ignore
         """Check if username already exists, excluding specific user ID."""
         existing_user = self.repository.get_by_username(username)
         if existing_user and (user_id is None or existing_user.id != user_id):
@@ -52,8 +52,8 @@ class UserService:
 
     def create_user(self, data: UserCreate) -> UserResponse:
         """Create a new user with validation and password hashing."""
-        self._check_email_exists(data.email)
-        self._check_username_exists(data.username)
+        self.check_email_exists(data.email)
+        self.check_username_exists(data.username)
 
         user_data = data.model_dump()
         del user_data["password"]
@@ -71,10 +71,10 @@ class UserService:
         update_data = data.model_dump(exclude_unset=True)
 
         if "email" in update_data:
-            self._check_email_exists(update_data["email"], user_id=user_id)
+            self.check_email_exists(update_data["email"], user_id=user_id)
 
         if "username" in update_data:
-            self._check_username_exists(update_data["username"], user_id=user_id)
+            self.check_username_exists(update_data["username"], user_id=user_id)
 
         update_data["updated_at"] = datetime.now()
 

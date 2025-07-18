@@ -43,8 +43,3 @@ async def logout(
 async def refresh_tokens(http_request: Request, auth_service: AuthServiceDep):
     refresh_token = http_request.cookies.get("refresh_token", "")
     return await auth_service.refresh_tokens(refresh_token)
-
-
-@router.post("/register")
-def register():
-    return {"REGISTER": "TODO"}
