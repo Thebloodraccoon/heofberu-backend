@@ -1,11 +1,11 @@
 import uuid
 from uuid import UUID
 
+from app.emails.sender import send_email_async
 from app.exceptions.registration_exceptions import (
     RegistrationAlreadyExistsException,
     RegistrationNotFoundException,
 )
-from app.mail.sender import send_email_async
 from app.registration.repository import RegistrationRepository
 from app.registration.schemas import RegistrationResponse
 from app.users.schemas import UserCreate
@@ -36,7 +36,7 @@ class RegistrationService:
         if not data:
             raise RegistrationNotFoundException()
 
-        await self.user_service.create_user(UserCreate(**data))
+        self.user_service.create_user(UserCreate(**data))
         await self.repo.delete_application(registration_id)
         await send_email_async(
             subject="Вашу заявку схвалено",

@@ -2,7 +2,7 @@ from email.message import EmailMessage
 
 import aiosmtplib
 
-from app.mail.settings import mail_settings
+from app.settings.mail import mail_settings
 
 
 async def send_email_async(email_to: str, subject: str, body: str):
