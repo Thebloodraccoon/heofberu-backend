@@ -47,3 +47,14 @@ async def get_redis():
         yield redis_client
     finally:
         await redis_client.aclose()
+
+
+# MAIL CONF
+MAIL_SERVER = "localhost"
+MAIL_PORT = 25
+MAIL_USERNAME = "test@example.com"  # nosec B105
+MAIL_PASSWORD = "test_password"  # nosec B105
+MAIL_FROM = "test@example.com"  # nosec B105
+MAIL_USE_TLS = False
+MAIL_START_TLS = False
+MAIL_SUPPRESS_SEND = True

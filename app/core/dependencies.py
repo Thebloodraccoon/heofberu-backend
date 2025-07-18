@@ -47,11 +47,20 @@ def get_auth_service(db: DatabaseDep) -> AuthService:
     return AuthService(db)
 
 
-RegistrationRepoDep = Annotated[RegistrationRepository, Depends(get_registration_repository)]
-
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 RaceServiceDep = Annotated[RaceService, Depends(get_race_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def get_registration_service(
+    user_service: UserServiceDep,
+    redis: RedisDep,
+) -> RegistrationService:
+    return RegistrationService(RegistrationRepository(redis), user_service)
+
+
+RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
+
 
 security = HTTPBearer(
     scheme_name="JWT Bearer",
@@ -90,13 +99,3 @@ def require_founder(
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]
 AdminUserDep = Annotated[UserResponse, Depends(require_keeper_or_founder)]
 FounderUserDep = Annotated[UserResponse, Depends(require_founder)]
-
-
-def get_registration_service(
-    repo: RegistrationRepoDep,
-    user_service: UserServiceDep,
-) -> RegistrationService:
-    return RegistrationService(repo, user_service)
-
-
-RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]

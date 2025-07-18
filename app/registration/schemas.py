@@ -14,3 +14,11 @@ class RegistrationResponse(RegistrationRequest):
 class RegistrationsResponse(BaseModel):
     total: int
     items: list[RegistrationResponse]
+
+
+class ApproveResponse(BaseModel):
+    detail: str
+
+
+class RejectResponse(BaseModel):
+    detail: str

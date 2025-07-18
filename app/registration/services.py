@@ -7,7 +7,13 @@ from app.exceptions.registration_exceptions import (
     RegistrationNotFoundException,
 )
 from app.registration.repository import RegistrationRepository
-from app.registration.schemas import RegistrationResponse
+from app.registration.schemas import (
+    ApproveResponse,
+    RegistrationRequest,
+    RegistrationResponse,
+    RegistrationsResponse,
+    RejectResponse,
+)
 from app.users.schemas import UserCreate
 from app.users.services import UserService
 
@@ -17,21 +23,30 @@ class RegistrationService:
         self.repo = repo
         self.user_service = user_service
 
-    async def submit_application(self, data: dict) -> RegistrationResponse:
-        if await self.repo.redis.exists(f"registration:email:{data['email']}") > 0:
+    async def submit_application(self, data: RegistrationRequest) -> RegistrationResponse:
+        self.user_service.check_username_exists(data.username)
+        self.user_service.check_email_exists(data.email)
+
+        if await self.repo.redis.exists(f"registration:email:{data.email}") > 0:
             raise RegistrationAlreadyExistsException("email")
-        if await self.repo.redis.exists(f"registration:username:{data['username']}") > 0:
+        if await self.repo.redis.exists(f"registration:username:{data.username}") > 0:
             raise RegistrationAlreadyExistsException("username")
 
         reg_id = str(uuid.uuid4())
-        await self.repo.save_application(reg_id, data)
+        data_dict = data.model_dump()
+        await self.repo.save_application(reg_id, data_dict)
 
         saved = await self.repo.get_application(reg_id)
         if not saved:
             raise RegistrationNotFoundException()
-        return RegistrationResponse(**saved, registration_id=UUID(reg_id))
 
-    async def approve_application(self, registration_id: str) -> None:
+        saved_clean = saved.copy()
+        if "password" in saved_clean:
+            del saved_clean["password"]
+
+        return RegistrationResponse(**saved_clean, registration_id=UUID(reg_id))
+
+    async def approve_application(self, registration_id: str) -> ApproveResponse:
         data = await self.repo.get_application(registration_id)
         if not data:
             raise RegistrationNotFoundException()
@@ -51,7 +66,9 @@ class RegistrationService:
             """,
         )
 
-    async def reject_application(self, registration_id: str) -> None:
+        return ApproveResponse(detail="Approved")
+
+    async def reject_application(self, registration_id: str) -> RejectResponse:
         data = await self.repo.get_application(registration_id)
         if not data:
             raise RegistrationNotFoundException()
@@ -70,8 +87,11 @@ class RegistrationService:
             """,
         )
 
-    async def list_applications(self, skip: int, limit: int) -> list[dict]:
-        return await self.repo.list_applications(skip, limit)
+        return RejectResponse(detail="Registration rejected successfully.")
+
+    async def list_applications(self, skip: int, limit: int) -> RegistrationsResponse:
+        items = await self.repo.list_applications(skip, limit)
+        return RegistrationsResponse(total=len(items), items=[RegistrationResponse(**item) for item in items])
 
     async def get_application_by_id(self, registration_id: str) -> RegistrationResponse:
         app = await self.repo.get_application(registration_id)

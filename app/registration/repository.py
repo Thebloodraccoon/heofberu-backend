@@ -18,12 +18,12 @@ class RegistrationRepository:
 
     async def get_application(self, registration_id: str) -> dict[str, Any] | None:
         key = f"registration:{registration_id}"
-        value = await cast(Awaitable[bytes | None], self.redis.get(key))
+        value = await cast(Awaitable[str | None], self.redis.get(key))
         return json.loads(value) if value else None
 
     async def list_applications(self, skip: int, limit: int) -> list[dict[str, Any]]:
-        ids_raw = await cast(Awaitable[set[bytes]], self.redis.smembers("registrations:pending"))
-        ids = [x.decode("utf-8") for x in ids_raw][skip : skip + limit]
+        ids_raw = await cast(Awaitable[set[str]], self.redis.smembers("registrations:pending"))
+        ids = list(ids_raw)[skip : skip + limit]
 
         result: list[dict[str, Any]] = []
         for reg_id in ids:
