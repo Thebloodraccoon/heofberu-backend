@@ -1,4 +1,3 @@
-
 import pytest
 
 from app.exceptions.user_exceptions import (

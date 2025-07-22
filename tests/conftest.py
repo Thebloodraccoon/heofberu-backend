@@ -58,11 +58,13 @@ def client(db_session, redis_test):
     with TestClient(app, base_url="http://testserver/api") as c:
         yield c
 
+
 @pytest_asyncio.fixture
 async def async_client() -> AsyncClient:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver/api") as client:
         yield client
+
 
 @pytest_asyncio.fixture(scope="function")
 async def redis_test():
