@@ -1,13 +1,13 @@
-import pytest
-from datetime import datetime, timedelta
 
-from app.users.services import UserService
-from app.users.schemas import UserCreate, UserUpdate
+import pytest
+
 from app.exceptions.user_exceptions import (
     UserEmailAlreadyExistsException,
     UserNameAlreadyExistsException,
     UserNotFoundException,
 )
+from app.users.schemas import UserCreate, UserUpdate
+from app.users.services import UserService
 
 
 def test_create_user_success(db_session):

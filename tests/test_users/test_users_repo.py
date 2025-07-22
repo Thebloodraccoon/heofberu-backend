@@ -1,6 +1,6 @@
-import pytest
-from app.users.repository import UserRepository
 from datetime import datetime
+
+from app.users.repository import UserRepository
 
 
 def test_get_by_email(db_session, test_user):
