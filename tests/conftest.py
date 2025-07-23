@@ -3,6 +3,7 @@ import re
 from fastapi import status
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 import pyotp
 import pytest
 import pytest_asyncio
@@ -56,6 +57,13 @@ def db_session():
 def client(db_session, redis_test):
     with TestClient(app, base_url="http://testserver/api") as c:
         yield c
+
+
+@pytest_asyncio.fixture
+async def async_client() -> AsyncClient:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver/api") as client:
+        yield client
 
 
 @pytest_asyncio.fixture(scope="function")
