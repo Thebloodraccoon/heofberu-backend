@@ -109,6 +109,51 @@ def create_user(db_session):
 
 
 @pytest.fixture
+def player_user(create_user):
+    return create_user(
+        username="player_user",
+        email="player@example.com",
+        password="player_password",
+        role="player",
+    )
+
+
+@pytest.fixture
+def keeper_user(create_user):
+    return create_user(
+        username="keeper_user",
+        email="keeper@example.com",
+        password="keeper_password",
+        role="keeper",
+    )
+
+
+@pytest.fixture
+def found_father_user(create_user):
+    return create_user(
+        username="found_father_user",
+        email="found@example.com",
+        password="found_password",
+        role="found_father",
+    )
+
+
+@pytest.fixture
+def player_token(get_auth_token, player_user):
+    return get_auth_token(player_user, "player_password")
+
+
+@pytest.fixture
+def keeper_token(get_auth_token, keeper_user):
+    return get_auth_token(keeper_user, "keeper_password")
+
+
+@pytest.fixture
+def found_father_token(get_auth_token, found_father_user):
+    return get_auth_token(found_father_user, "found_password")
+
+
+@pytest.fixture
 def test_user(create_user):
     return create_user()
 
