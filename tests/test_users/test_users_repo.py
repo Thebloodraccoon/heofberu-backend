@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 from app.users.repository import UserRepository
 
 
@@ -17,16 +19,34 @@ def test_get_by_username(db_session, test_user):
     assert user.username == test_user.username
 
 
-def test_update_otp_secret(db_session, test_user):
+@pytest.mark.parametrize(
+    "method,secret",
+    [
+        ("update_otp_secret", "new_otp_secret"),
+        ("setup_2fa", "setup_secret"),
+    ],
+)
+def test_update_or_setup_otp_secret(db_session, test_user, method, secret):
     repo = UserRepository(db_session)
-    updated_user = repo.update_otp_secret(test_user, "new_otp_secret")
-    assert updated_user.otp_secret == "new_otp_secret"
+    func = getattr(repo, method)
+    updated_user = func(test_user, secret)
+    assert updated_user.otp_secret == secret
 
 
-def test_enable_2fa(db_session, test_user):
+@pytest.mark.parametrize(
+    "method,check_last_login",
+    [
+        ("enable_2fa", False),
+        ("complete_2fa_setup", True),
+    ],
+)
+def test_2fa_methods(db_session, test_user, method, check_last_login):
     repo = UserRepository(db_session)
-    updated_user = repo.enable_2fa(test_user)
+    func = getattr(repo, method)
+    updated_user = func(test_user)
     assert updated_user.is_2fa_enabled is True
+    if check_last_login:
+        assert isinstance(updated_user.last_login, datetime)
 
 
 def test_update_last_login(db_session, test_user):
@@ -37,16 +57,3 @@ def test_update_last_login(db_session, test_user):
     assert isinstance(updated_user.last_login, datetime)
     if old_login:
         assert updated_user.last_login > old_login
-
-
-def test_setup_2fa(db_session, test_user):
-    repo = UserRepository(db_session)
-    updated_user = repo.setup_2fa(test_user, "setup_secret")
-    assert updated_user.otp_secret == "setup_secret"
-
-
-def test_complete_2fa_setup(db_session, test_user):
-    repo = UserRepository(db_session)
-    updated_user = repo.complete_2fa_setup(test_user)
-    assert updated_user.is_2fa_enabled is True
-    assert isinstance(updated_user.last_login, datetime)

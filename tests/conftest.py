@@ -108,49 +108,23 @@ def create_user(db_session):
     return _create_user
 
 
-@pytest.fixture
-def player_user(create_user):
-    return create_user(
-        username="player_user",
-        email="player@example.com",
-        password="player_password",
-        role="player",
-    )
+@pytest.fixture(
+    params=[
+        ("player_user", "player@example.com", "player_password", "player"),
+        ("keeper_user", "keeper@example.com", "keeper_password", "keeper"),
+        ("found_father_user", "found@example.com", "found_password", "found_father"),
+    ]
+)
+def user(request, create_user):
+    username, email, password, role = request.param
+    user = create_user(username=username, email=email, password=password, role=role)
+    user._test_password = password
+    return user
 
 
 @pytest.fixture
-def keeper_user(create_user):
-    return create_user(
-        username="keeper_user",
-        email="keeper@example.com",
-        password="keeper_password",
-        role="keeper",
-    )
-
-
-@pytest.fixture
-def found_father_user(create_user):
-    return create_user(
-        username="found_father_user",
-        email="found@example.com",
-        password="found_password",
-        role="found_father",
-    )
-
-
-@pytest.fixture
-def player_token(get_auth_token, player_user):
-    return get_auth_token(player_user, "player_password")
-
-
-@pytest.fixture
-def keeper_token(get_auth_token, keeper_user):
-    return get_auth_token(keeper_user, "keeper_password")
-
-
-@pytest.fixture
-def found_father_token(get_auth_token, found_father_user):
-    return get_auth_token(found_father_user, "found_password")
+def user_token(get_auth_token, user):
+    return get_auth_token(user, user._test_password)
 
 
 @pytest.fixture

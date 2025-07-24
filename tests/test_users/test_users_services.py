@@ -9,17 +9,19 @@ from app.users.schemas import UserCreate, UserUpdate
 from app.users.services import UserService
 
 
-def test_create_user_success(db_session):
+@pytest.mark.parametrize("role", ["player", "keeper", "found_father"])
+def test_create_user_success(db_session, role):
     service = UserService(db_session)
     data = UserCreate(
-        username="new_user",
-        email="new_user@example.com",
+        username=f"new_user_{role}",
+        email=f"new_{role}@example.com",
         password="securepassword",
-        role="player",
+        role=role,
     )
     user = service.create_user(data)
-    assert user.username == "new_user"
-    assert user.email == "new_user@example.com"
+    assert user.username == f"new_user_{role}"
+    assert user.email == f"new_{role}@example.com"
+    assert user.role == role
 
 
 def test_create_user_duplicate_email(db_session, test_user):
@@ -77,11 +79,22 @@ def test_get_all_users(db_session, test_user):
     assert any(u.email == test_user.email for u in users)
 
 
-def test_update_user_success(db_session, test_user):
+@pytest.mark.parametrize(
+    "update_data,expected",
+    [
+        (UserUpdate(username="updated_username"), {"username": "updated_username"}),
+        (UserUpdate(email="updated@example.com"), {"email": "updated@example.com"}),
+        (
+            UserUpdate(username="updated_both", email="both@example.com"),
+            {"username": "updated_both", "email": "both@example.com"},
+        ),
+    ],
+)
+def test_update_user_success(db_session, test_user, update_data, expected):
     service = UserService(db_session)
-    data = UserUpdate(username="updated_username")
-    updated = service.update_user(test_user.id, data)
-    assert updated.username == "updated_username"
+    updated = service.update_user(test_user.id, update_data)
+    for field, value in expected.items():
+        assert getattr(updated, field) == value
 
 
 def test_update_user_not_found(db_session):
