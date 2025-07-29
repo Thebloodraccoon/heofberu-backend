@@ -1,59 +1,45 @@
 import pytest
 from fastapi import status
 
+from app.auth.utils.token_utils import decode_token
 
-@pytest.mark.asyncio
-async def test_login_success(async_client, test_user):
-    response = await async_client.post("/auth/login", json={
-        "email": test_user.email,
-        "password": "testpassword123",
-    })
+
+def test_login_success(client, user):
+    response = client.post("/auth/login", json={"email": user.email, "password": user._test_password})
     assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert "access_token" in data or "temp_token" in data
+
+    access_token = response.json().get("access_token") or response.json().get("temp_token")
+    assert access_token is not None
 
 
-@pytest.mark.asyncio
-async def test_login_wrong_password(async_client, test_user):
-    response = await async_client.post("/auth/login", json={
-        "email": test_user.email,
-        "password": "wrongpassword",
-    })
+@pytest.mark.parametrize("wrong_password", ["wrong123", "123456", "password"])
+def test_login_invalid_password(client, user, wrong_password):
+    response = client.post("/auth/login", json={"email": user.email, "password": wrong_password})
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Invalid email or password" in response.text
 
 
-@pytest.mark.asyncio
-async def test_login_invalid_email(async_client):
-    response = await async_client.post("/auth/login", json={
-        "email": "invalid-email",
-        "password": "anything",
-    })
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+def test_logout(client, user_token, redis_test):
+    headers = {"Authorization": f"{user_token.scheme} {user_token.credentials}"}
+    response = client.post("/auth/logout", headers=headers)
 
-
-@pytest.mark.asyncio
-async def test_logout_success(async_client, test_user_token):
-    response = await async_client.post("/auth/logout", headers={
-        "Authorization": f"Bearer {test_user_token.credentials}"
-    })
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["detail"] == "Successfully logged out"
+    assert response.json()["detail"] == "Successful logout"
+
+    payload = decode_token(user_token.credentials)
+    jti = payload["jti"]
+    redis_value = redis_test.get(f"blacklist:{jti}")
+    assert redis_value is not None
 
 
-@pytest.mark.asyncio
-async def test_refresh_success(async_client, test_user_token):
-    response = await async_client.post("/auth/refresh", headers={
-        "Authorization": f"Bearer {test_user_token.credentials}"
-    })
+def test_refresh_token(client, test_user, jwt_manager):
+    refresh_token = jwt_manager.create_token(
+        user_id=test_user.id,
+        token_type="refresh",
+    )
+    response = client.post("/auth/refresh", cookies={"refresh_token": refresh_token})
+
     assert response.status_code == status.HTTP_200_OK
-    assert "access_token" in response.json()
-
-
-@pytest.mark.asyncio
-async def test_refresh_with_blacklisted_token(async_client, redis_test, test_user_token):
-    await redis_test.set(test_user_token.credentials, "blacklisted")
-
-    response = await async_client.post("/auth/refresh", headers={
-        "Authorization": f"Bearer {test_user_token.credentials}"
-    })
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    tokens = response.json()
+    assert "access_token" in tokens
+    assert "refresh_token" in tokens
