@@ -1,9 +1,12 @@
+from datetime import datetime, timedelta, timezone
 import re
+import uuid
 
 from fastapi import status
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from jose import jwt
 import pyotp
 import pytest
 import pytest_asyncio
@@ -123,8 +126,8 @@ def user(request, create_user):
 
 
 @pytest.fixture
-def user_token(get_auth_token, user):
-    return get_auth_token(user, user._test_password)
+def user_token(user, generate_jwt_token):
+    return generate_jwt_token(user.email, token_type="access")
 
 
 @pytest.fixture
@@ -239,3 +242,52 @@ def create_race(db_session):
 def test_race(create_race):
     """Default test race"""
     return create_race()
+
+
+@pytest.fixture
+def generate_jwt_token():
+    def _generate_jwt_token(email: str, token_type: str, expires_in_minutes: int = 30):
+        payload = {
+            "sub": email,
+            "jti": str(uuid.uuid4()),
+            "token_type": token_type,
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_in_minutes),
+        }
+        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+    return _generate_jwt_token
+
+
+@pytest.fixture
+def refresh_token(user, generate_jwt_token):
+    return generate_jwt_token(user.email, token_type="refresh", expires_in_minutes=60 * 24 * 30)
+
+
+@pytest.fixture
+def registration_data():
+    return {
+        "username": "testuser",
+        "email": "testuser@example.com",
+        "password": "TestPassword123",
+        "role": "player",
+        "phone": "+1234567890",  # not necessarily
+        "bio": "Some short bio",  # not necessarily
+    }
+
+
+@pytest_asyncio.fixture
+async def reg_id(async_client: AsyncClient, registration_data):
+    response = await async_client.post("/registrations/", json=registration_data)
+    assert response.status_code == 200
+    return response.json()["registration_id" : str(uuid.uuid4())]
+
+
+@pytest.fixture
+def user_with_2fa(create_user, db_session):
+    user = create_user(email="twofa@example.com", password="twopass", role="player")
+    user.otp_secret = pyotp.random_base32()
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    user._test_password = "twopass"
+    return user

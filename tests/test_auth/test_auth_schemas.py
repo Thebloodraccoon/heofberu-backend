@@ -1,11 +1,11 @@
 from app.auth.schemas import (
     LoginRequest,
     LoginResponse,
-    TwoFASetupResponse,
-    TwoFARequiredResponse,
-    TwoFAVerifyRequest,
     LogoutResponse,
     RefreshResponse,
+    TwoFARequiredResponse,
+    TwoFASetupResponse,
+    TwoFAVerifyRequest,
 )
 
 
