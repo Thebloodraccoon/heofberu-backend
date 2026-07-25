@@ -28,28 +28,9 @@ class MiddlewareConfig:
         """Get configuration for RateLimitMiddleware."""
         config = {
             "local": {"calls": 1000, "period": 60},
-            "test": {"calls": 500, "period": 60},
-            "prod": {"calls": 100, "period": 60},
+            "prod": {"calls": 50, "period": 60},
         }
         return config.get(settings.STAGE, config["prod"])
-
-    @staticmethod
-    def get_token_refresh_config() -> dict[str, Any]:
-        """Get configuration for AutoTokenRefreshMiddleware."""
-        return {
-            "refresh_threshold_minutes": 5,
-            "skip_paths": [
-                "/api/auth/login",
-                "/api/auth/2fa/verify",
-                "/api/auth/logout",
-                "/api/auth/refresh",
-                "/api/ping",
-                "/api/health",
-                "/docs",
-                "/openapi.json",
-                "/redoc",
-            ],
-        }
 
     @staticmethod
     def get_cors_config() -> dict[str, Any]:
@@ -82,16 +63,6 @@ class MiddlewareConfig:
         return {
             "allowed_hosts": allowed_hosts,
         }
-
-    @staticmethod
-    def get_httpsredirect_config() -> dict[str, Any]:
-        """Get configuration for HTTPSRedirectMiddleware."""
-        return {}
-
-    @staticmethod
-    def get_security_paths() -> list[str]:
-        """Get list of paths that should skip certain security checks."""
-        return ["/ping", "/health", "/docs", "/openapi.json", "/redoc"]
 
     @staticmethod
     def should_enable_middleware(middleware_name: str) -> bool:

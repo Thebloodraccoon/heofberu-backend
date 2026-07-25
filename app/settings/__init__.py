@@ -7,7 +7,6 @@ load_dotenv()
 
 VALID_STAGES = {
     "local": "app.settings.local",
-    "test": "app.settings.test",
     "prod": "app.settings.prod",
 }
 

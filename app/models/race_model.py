@@ -1,42 +1,31 @@
-from datetime import datetime
+from sqlalchemy import Boolean, Column, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Index, Integer, String, Text
-
-from app.constants import RACE_SIZES, create_enum_constraint
 from app.settings import settings
 
 
 class Race(settings.Base):  # type: ignore
+    """Reference table of playable races, shared across all characters."""
+
     __tablename__ = "races"
 
     id = Column(Integer, primary_key=True)
 
-    # Required basic information
     name = Column(String(100), nullable=False, unique=True, index=True)
+    size = Column(String(20), nullable=False, default="Средний")
+    speed = Column(Integer, nullable=False, default=30)
 
-    # Optional descriptive information
-    description = Column(Text)
-    size = Column(String(20), default="Средний", index=True)
+    # Structured data, mirrors the original SQLite JSON-in-TEXT fields
+    ability_bonuses = Column(JSONB, nullable=False, default=dict)  # e.g. {"STR": 2, "CON": 1}
+    granted_skills = Column(JSONB, nullable=False, default=list)  # e.g. ["PERCEPTION", "STEALTH"]
 
-    # Gameplay mechanics
-    is_playable = Column(Boolean, default=True, index=True)
+    traits = Column(Text, nullable=False, default="")
+    description = Column(Text, nullable=False, default="")
 
-    # Metadata and versioning
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    is_homebrew = Column(Boolean, nullable=False, default=False)
 
-    __table_args__ = (
-        CheckConstraint(
-            create_enum_constraint("size", RACE_SIZES, nullable=False),
-            name="check_race_size",
-        ),
-        Index(
-            "idx_race_name_trgm",
-            "name",
-            postgresql_using="gin",
-            postgresql_ops={"name": "gin_trgm_ops"},
-        ),
-    )
+    characters = relationship("Character", back_populates="race")
 
     def __repr__(self):
-        return f"<Race(id={self.id}, name='{self.name}', size='{self.size}')>"
+        return f"<Race(id={self.id}, name='{self.name}')>"

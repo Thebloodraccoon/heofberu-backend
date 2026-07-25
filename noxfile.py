@@ -20,8 +20,8 @@ def install_session(session):
 def ruff_session(session):
     """Lint and format code with autofix."""
     setup_test_env(session)
-    session.run("poetry", "run", "ruff", "check", "--fix", "app/", "tests/", external=True)
-    session.run("poetry", "run", "ruff", "format", "app/", "tests/", "migrations/versions", external=True)
+    session.run("poetry", "run", "ruff", "check", "--fix", "app/", external=True)
+    session.run("poetry", "run", "ruff", "format", "app/", "migrations/versions", external=True)
 
 
 @nox.session(name="security")
@@ -49,7 +49,7 @@ def test_session(session):
         "--cov-report=term-missing",
         "--cov-fail-under=0",
         "--cov-config=pyproject.toml",
-        *session.posargs if session.posargs else ["tests/"],
+        *session.posargs if session.posargs else [],
         external=True
     )
 
@@ -62,8 +62,8 @@ def all_session(session):
     session.run("poetry", "install", external=True)
 
     # Run all checks
-    session.run("poetry", "run", "ruff", "check", "app/", "tests/", external=True)
-    session.run("poetry", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
+    session.run("poetry", "run", "ruff", "check", "app/", external=True)
+    session.run("poetry", "run", "ruff", "format", "--check", "app/", "migrations/versions", external=True)
     session.run("poetry", "run", "mypy", "app/", external=True)
     session.run("poetry", "run", "bandit", "-r", "app/", external=True)
     session.run(
@@ -73,7 +73,7 @@ def all_session(session):
         "--cov-report=term-missing",
         "--cov-fail-under=0",
         "--cov-config=pyproject.toml",
-        *session.posargs if session.posargs else ["tests/"],
+        *session.posargs if session.posargs else [],
         external=True
     )
 
@@ -82,14 +82,14 @@ def all_session(session):
 def ruff_check_session(session):
     """Ruff check without autofix for pre-commit."""
     setup_test_env(session)
-    session.run("poetry", "run", "ruff", "check", "app/", "tests/", external=True)
+    session.run("poetry", "run", "ruff", "check", "app/", external=True)
 
 
 @nox.session(name="ruff-format-check")
 def ruff_format_check_session(session):
     """Ruff format check without autofix for pre-commit."""
     setup_test_env(session)
-    session.run("poetry", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
+    session.run("poetry", "run", "ruff", "format", "--check", "app/", "migrations/versions", external=True)
 
 
 @nox.session(name="quick")
@@ -97,6 +97,6 @@ def quick_session(session):
     """Quick checks without tests."""
     setup_test_env(session)
     session.run("poetry", "install", "--only=dev", external=True)
-    session.run("poetry", "run", "ruff", "check", "--fix", "app/", "tests/", external=True)
-    session.run("poetry", "run", "ruff", "format", "app/", "tests/", "migrations/versions", external=True)
+    session.run("poetry", "run", "ruff", "check", "--fix", "app/", external=True)
+    session.run("poetry", "run", "ruff", "format", "app/", "migrations/versions", external=True)
     session.run("poetry", "run", "mypy", "app/", external=True)

@@ -5,16 +5,29 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
-from app.settings.base import *
+from app.settings.base import Base  # noqa: F401
+from app.settings.config import AppSettings
 
-# Main PG DB
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "slavbor_db")
+_settings = AppSettings()
 
-DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+APP_NAME = _settings.APP_NAME
+APP_VERSION = _settings.APP_VERSION
+STAGE = _settings.STAGE
+HOST = _settings.HOST
+ALLOWED_HOSTS = ["*"]
+
+JWT_SECRET_KEY = _settings.JWT_SECRET_KEY
+JWT_ALGORITHM = _settings.JWT_ALGORITHM
+
+ADMIN_LOGIN = _settings.ADMIN_LOGIN
+ADMIN_PASSWORD = _settings.ADMIN_PASSWORD
+
+POSTGRES_USER = _settings.POSTGRES_USER
+POSTGRES_PASSWORD = _settings.POSTGRES_PASSWORD
+POSTGRES_HOST = _settings.POSTGRES_HOST
+POSTGRES_PORT = _settings.POSTGRES_PORT
+POSTGRES_DB = _settings.POSTGRES_DB
+DATABASE_URL = _settings.DATABASE_URL
 
 engine = create_engine(
     DATABASE_URL,
@@ -40,9 +53,9 @@ def get_db():
 
 
 # Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = int(os.getenv("REDIS_DB", 0))
+REDIS_HOST = _settings.REDIS_HOST
+REDIS_PORT = _settings.REDIS_PORT
+REDIS_DB = _settings.REDIS_DB
 
 
 @asynccontextmanager
@@ -57,13 +70,3 @@ async def get_redis():
         yield redis_client
     finally:
         await redis_client.aclose()
-
-# MAIL CONF
-MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
-MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
-MAIL_USERNAME = os.getenv("MAIL_USERNAME", "slavbor@gmail.com")
-MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "password")
-MAIL_FROM = os.getenv("MAIL_FROM", "slavborsup@gmail.com")
-MAIL_START_TLS = True
-MAIL_USE_TLS = False
-MAIL_SUPPRESS_SEND = False

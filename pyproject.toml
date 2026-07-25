@@ -1,14 +1,14 @@
 [tool.poetry]
 name = "slavbor-core-backend"
 version = "0.1.0"
-description = "Slavbor World Backend API is a web application with a RESTful API backend"
-authors = ["The Coon vsafirko@gmail.com", "Danylo", "Maksym"]
+description = "Heofberu Backend API is a web application with a RESTful API backend"
+authors = ["The Coon vsafirko@gmail.com"]
 readme = "README.md"
 packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-fastapi = "0.115.12"
+fastapi = {extras = ["standard"], version = "0.115.12"}
 uvicorn = {extras = ["standard"], version = "0.34.3"}
 starlette = "0.46.2"
 sqlalchemy = "2.0.41"
@@ -60,6 +60,9 @@ tox = "4.26.0"
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.fastapi]
+entrypoint = "app.main:app"
 
 [tool.nox]
 reuse_existing_virtualenvs = true

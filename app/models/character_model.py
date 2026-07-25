@@ -1,71 +1,97 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
-from app.constants import CHARACTER_STATUSES, CHARACTER_TYPES, SOCIAL_RANKS, create_enum_constraint
 from app.settings import settings
 
 
 class Character(settings.Base):  # type: ignore
+    """D&D 5e character sheet. Owned by a single user."""
+
     __tablename__ = "characters"
+
     id = Column(Integer, primary_key=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    # Required basic information
+    # Basic info
     name = Column(String(200), nullable=False, index=True)
-    type = Column(String(20), nullable=False, default="npc", index=True)
-    status = Column(String(20), nullable=False, default="alive", index=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    image_path = Column(String(500))
+    level = Column(Integer, nullable=False, default=1)
 
-    player_user_id = Column(Integer, ForeignKey("users.id"), index=True)
-    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-
-    # Optional name information
-    full_name = Column(String(400), index=True)
-
+    character_class = Column(String(100), nullable=False, default="")
+    subclass = Column(String(100), nullable=False, default="")
     race_id = Column(Integer, ForeignKey("races.id", ondelete="SET NULL"), index=True)
 
-    # Biography information
-    biography = Column(Text)
-    birth_year = Column(Integer, index=True)
-    death_year = Column(Integer, index=True)
+    # Combat stats
+    current_hp = Column(Integer, nullable=False, default=0)
+    max_hp = Column(Integer, nullable=False, default=0)
+    temp_hp = Column(Integer, nullable=False, default=0)
+    hit_dice = Column(String(20), nullable=False, default="")
+    speed = Column(Integer, nullable=False, default=30)
+    armor_class = Column(Integer, nullable=False, default=10)
+    shield = Column(Integer, nullable=False, default=0)
+    initiative_bonus = Column(Integer, nullable=False, default=0)
+    passive_perception_bonus = Column(Integer, nullable=False, default=0)
+    has_jack_of_all_trades = Column(Integer, nullable=False, default=0)
 
-    # Social status information
-    social_rank = Column(String(50), index=True)
+    # Ability scores
+    strength = Column(Integer, nullable=False, default=10)
+    dexterity = Column(Integer, nullable=False, default=10)
+    constitution = Column(Integer, nullable=False, default=10)
+    intelligence = Column(Integer, nullable=False, default=10)
+    wisdom = Column(Integer, nullable=False, default=10)
+    charisma = Column(Integer, nullable=False, default=10)
 
-    # Notes and comments
-    dm_notes = Column(Text)
-    player_notes = Column(Text)
+    # Proficiencies / skills — stored as JSONB (was JSON-in-TEXT in sqlite source)
+    skill_proficiencies = Column(JSONB, nullable=False, default=dict)
+    saving_throw_proficiencies = Column(String(100), nullable=False, default="")
+    proficiencies = Column(Text, nullable=False, default="")
+
+    # Free text sections
+    traits = Column(Text, nullable=False, default="")
+    feats = Column(Text, nullable=False, default="")
+    inventory = Column(Text, nullable=False, default="")
+    backstory = Column(Text, nullable=False, default="")
+    notes = Column(Text, nullable=False, default="")
+
+    # Currency
+    money_gold = Column(Integer, nullable=False, default=0)
+    money_silver = Column(Integer, nullable=False, default=0)
+    money_copper = Column(Integer, nullable=False, default=0)
+
+    # Spellcasting settings
+    spell_ability = Column(String(10))
+    spell_dc_misc_bonus = Column(Integer, nullable=False, default=0)
+    spell_attack_misc_bonus = Column(Integer, nullable=False, default=0)
+    spell_slots = Column(JSONB, nullable=False, default=dict)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    owner = relationship("User", back_populates="characters")
+    race = relationship("Race", back_populates="characters")
+    attacks = relationship("Attack", back_populates="character", cascade="all, delete-orphan", passive_deletes=True)
+    spells = relationship("Spell", secondary="character_spells", back_populates="characters")
 
     __table_args__ = (
-        CheckConstraint(
-            create_enum_constraint("type", CHARACTER_TYPES, nullable=False),
-            name="check_character_type",
-        ),
-        CheckConstraint(
-            create_enum_constraint("status", CHARACTER_STATUSES, nullable=False),
-            name="check_character_status",
-        ),
-        CheckConstraint(
-            create_enum_constraint("social_rank", SOCIAL_RANKS),
-            name="check_social_rank",
-        ),
-        CheckConstraint("birth_year IS NULL OR birth_year > 0", name="check_birth_year"),
-        CheckConstraint("death_year IS NULL OR death_year > 0", name="check_death_year"),
-        CheckConstraint(
-            "death_year IS NULL OR birth_year IS NULL OR death_year >= birth_year",
-            name="check_death_after_birth",
-        ),
-        Index("idx_character_type_status", "type", "status"),
-        Index("idx_character_player_user", "player_user_id", "type"),
-        Index("idx_character_created_by", "created_by_user_id", "created_at"),
-        Index(
-            "idx_character_name_trgm",
-            "name",
-            postgresql_using="gin",
-            postgresql_ops={"name": "gin_trgm_ops"},
-        ),
+        CheckConstraint("level >= 1 AND level <= 20", name="check_character_level_range"),
+        CheckConstraint("current_hp >= 0", name="check_current_hp_nonnegative"),
+        CheckConstraint("max_hp >= 0", name="check_max_hp_nonnegative"),
     )
 
     def __repr__(self):
-        return f"<Character(id={self.id}, name='{self.name}', type='{self.type}')>"
+        return f"<Character(id={self.id}, name='{self.name}', owner_id={self.owner_id})>"

@@ -1,45 +1,43 @@
 FROM python:3.10.13-slim AS builder
 
-LABEL description="Slavbor World Backend API -- BUILDER"
+LABEL description="Heofberu Backend API -- BUILDER"
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    build-essential \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /install
 
-RUN pip install --upgrade pip poetry poetry-plugin-export
+RUN pip install --no-cache-dir poetry poetry-plugin-export
 
 COPY pyproject.toml poetry.lock* ./
 
-RUN poetry config virtualenvs.create false
+RUN poetry export --without-hashes --format=requirements.txt --output=requirements.txt
 
-RUN poetry install --no-root
+RUN pip install --no-cache-dir --prefix=/install/deps -r requirements.txt
 
 FROM python:3.10.13-slim
 
-LABEL description="Slavbor World Backend API"
+LABEL description="Heofberu Backend API"
 
-RUN apt-get update && apt-get install -y \
-    postgresql-client \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH=/usr/local/bin:$PATH
 
 WORKDIR /app
 
 RUN useradd --create-home --shell /bin/bash --uid 1000 app \
-    && chown -R app:app /app \
-    && pip install --upgrade pip poetry poetry-plugin-export
+    && chown -R app:app /app
 
-COPY --from=builder /usr/local/lib/python3.10/site-packages/ /usr/local/lib/python3.10/site-packages/
-COPY --from=builder /usr/local/bin/ /usr/local/bin/
-
-COPY pyproject.toml poetry.lock* ./
+# Only the installed dependencies are copied — no Poetry, no compilers, no build tools.
+COPY --from=builder /install/deps /usr/local
 
 COPY --chown=app:app . .
 USER app

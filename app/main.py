@@ -7,33 +7,36 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 
-from app.auth.endpoints import router as auth_router
+from app.features.auth.endpoints import router as auth_router
+from app.features.characters.endpoints import router as character_router
+from app.features.ping.endpoints import router as ping_router
+from app.features.races.endpoints import router as race_router
+from app.features.spells.endpoints import router as spell_router
+from app.features.users.endpoints import router as user_router
 from app.middleware import (
-    AutoTokenRefreshMiddleware,
     LoggingMiddleware,
     MiddlewareConfig,
     RateLimitMiddleware,
     RequestIDMiddleware,
-    SecurityHeadersMiddleware,
     TimingMiddleware,
 )
 from app.middleware.error_handler import setup_error_handlers
-from app.ping.endpoints import router as ping_router
-from app.races.endpoints import router as race_router
-from app.registration.endpoints import router as registration_router
 from app.settings import settings
-from app.users.endpoints import router as user_router
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
-    logger.info("Starting up Slavbor World Backend API...")
-    settings.Base.metadata.create_all(bind=settings.engine)
+    """Application lifespan manager.
+
+    Schema management is handled exclusively by Alembic migrations, run as a
+    separate deploy step (`alembic upgrade head`) before the app starts.
+    The app never creates or alters tables itself.
+    """
+    logger.info("Starting up Heofberu Backend API...")
     yield
-    logger.info("Shutting down Slavbor World Backend API...")
+    logger.info("Shutting down Heofberu Backend API...")
 
 
 def setup_middleware(app: FastAPI) -> None:
@@ -48,13 +51,6 @@ def setup_middleware(app: FastAPI) -> None:
     if MiddlewareConfig.should_enable_middleware("gzip"):
         gzip_config = MiddlewareConfig.get_gzip_config()
         app.add_middleware(GZipMiddleware, **gzip_config)
-
-    if MiddlewareConfig.should_enable_middleware("token_refresh"):
-        token_refresh_config = MiddlewareConfig.get_token_refresh_config()
-        app.add_middleware(AutoTokenRefreshMiddleware, **token_refresh_config)
-
-    if MiddlewareConfig.should_enable_middleware("security"):
-        app.add_middleware(SecurityHeadersMiddleware)
 
     if MiddlewareConfig.should_enable_middleware("rate_limit"):
         rate_limit_config = MiddlewareConfig.get_rate_limit_config()
@@ -78,15 +74,16 @@ def setup_routers(app: FastAPI) -> None:
 
     app.include_router(ping_router, prefix=f"{api_prefix}/ping", tags=["Health Check"])
     app.include_router(auth_router, prefix=f"{api_prefix}/auth", tags=["Auth"])
-    app.include_router(race_router, prefix=f"{api_prefix}/races", tags=["Races"])
     app.include_router(user_router, prefix=f"{api_prefix}/users", tags=["Users"])
-    app.include_router(registration_router, prefix=f"{api_prefix}/registrations", tags=["Registrations"])
+    app.include_router(race_router, prefix=f"{api_prefix}/races", tags=["Races"])
+    app.include_router(spell_router, prefix=f"{api_prefix}/spells", tags=["Spells"])
+    app.include_router(character_router, prefix=f"{api_prefix}/characters", tags=["Characters"])
 
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Slavbor World Backend API - A D&D world management system",
+    description="Heofberu Backend API - A D&D world management system",
     lifespan=lifespan,
     docs_url="/docs" if settings.STAGE != "prod" else None,
     redoc_url="/redoc" if settings.STAGE != "prod" else None,

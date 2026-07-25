@@ -1,35 +1,21 @@
-from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
-from redis.asyncio import Redis
 from sqlalchemy.orm import Session
 
-from app.auth.services import AuthService
-from app.auth.utils.token_utils import verify_token
-from app.exceptions.auth_exceptions import AdminAccessException, SuperAdminAccessException
-from app.races.services import RaceService
-from app.registration.repository import RegistrationRepository
-from app.registration.services import RegistrationService
+from app.exceptions.auth_exceptions import GmAccessException
+from app.features.auth.services import AuthService
+from app.features.auth.token_utils import verify_token
+from app.features.characters.services import CharacterService
+from app.features.races.services import RaceService
+from app.features.spells.services import SpellService
+from app.features.users.schemas import UserResponse
+from app.features.users.services import UserService
 from app.settings import settings
-from app.settings.local import get_redis
-from app.users.schemas import UserResponse
-from app.users.services import UserService
-
-
-async def redis_dependency() -> AsyncGenerator[Redis, None]:
-    async with get_redis() as redis:
-        yield redis
-
 
 DatabaseDep = Annotated[Session, Depends(settings.get_db)]
-RedisDep = Annotated[Redis, Depends(redis_dependency)]
-
-
-def get_registration_repository(redis: RedisDep) -> RegistrationRepository:
-    return RegistrationRepository(redis)
 
 
 def get_user_service(db: DatabaseDep) -> UserService:
@@ -37,30 +23,13 @@ def get_user_service(db: DatabaseDep) -> UserService:
     return UserService(db)
 
 
-def get_race_service(db: DatabaseDep) -> RaceService:
-    """Get Race service instance."""
-    return RaceService(db)
-
-
 def get_auth_service(db: DatabaseDep) -> AuthService:
-    """Get Race service instance."""
+    """Get Auth service instance."""
     return AuthService(db)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
-RaceServiceDep = Annotated[RaceService, Depends(get_race_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
-
-
-def get_registration_service(
-    user_service: UserServiceDep,
-    redis: RedisDep,
-) -> RegistrationService:
-    return RegistrationService(RegistrationRepository(redis), user_service)
-
-
-RegistrationServiceDep = Annotated[RegistrationService, Depends(get_registration_service)]
-
 
 security = HTTPBearer(
     scheme_name="JWT Bearer",
@@ -70,32 +39,42 @@ security = HTTPBearer(
 TokenDep = Annotated[HTTPAuthorizationCredentials | None, Depends(security)]
 
 
-async def get_current_user(
+def get_current_user(
     user_service: UserServiceDep,
     token: TokenDep,
 ) -> UserResponse:
-    email = await verify_token(token, "access")
+    email = verify_token(token, "access")
     return user_service.get_user_by_email(email)
 
 
-def require_keeper_or_founder(
+def require_gm(
     current_user: UserResponse = Depends(get_current_user),
 ) -> UserResponse:
-    if current_user.role not in ["keeper", "found_father"]:
-        raise AdminAccessException()
+    """Require the current user to have the GM (game master) role."""
+    if current_user.role != "gm":
+        raise GmAccessException()
 
     return current_user
 
 
-def require_founder(
-    current_user: UserResponse = Depends(get_current_user),
-) -> UserResponse:
-    if current_user.role != "found_father":
-        raise SuperAdminAccessException()
+def get_race_service(db: DatabaseDep) -> RaceService:
+    """Get Race service instance."""
+    return RaceService(db)
 
-    return current_user
 
+def get_spell_service(db: DatabaseDep) -> SpellService:
+    """Get Spell service instance."""
+    return SpellService(db)
+
+
+def get_character_service(db: DatabaseDep) -> CharacterService:
+    """Get Character service instance."""
+    return CharacterService(db)
+
+
+RaceServiceDep = Annotated[RaceService, Depends(get_race_service)]
+SpellServiceDep = Annotated[SpellService, Depends(get_spell_service)]
+CharacterServiceDep = Annotated[CharacterService, Depends(get_character_service)]
 
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]
-AdminUserDep = Annotated[UserResponse, Depends(require_keeper_or_founder)]
-FounderUserDep = Annotated[UserResponse, Depends(require_founder)]
+GmUserDep = Annotated[UserResponse, Depends(require_gm)]
