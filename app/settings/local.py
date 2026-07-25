@@ -22,12 +22,8 @@ JWT_ALGORITHM = _settings.JWT_ALGORITHM
 ADMIN_LOGIN = _settings.ADMIN_LOGIN
 ADMIN_PASSWORD = _settings.ADMIN_PASSWORD
 
-POSTGRES_USER = _settings.POSTGRES_USER
-POSTGRES_PASSWORD = _settings.POSTGRES_PASSWORD
-POSTGRES_HOST = _settings.POSTGRES_HOST
-POSTGRES_PORT = _settings.POSTGRES_PORT
-POSTGRES_DB = _settings.POSTGRES_DB
 DATABASE_URL = _settings.DATABASE_URL
+REDIS_URL = _settings.REDIS_URL
 
 engine = create_engine(
     DATABASE_URL,
@@ -52,18 +48,10 @@ def get_db():
         db.close()
 
 
-# Redis
-REDIS_HOST = _settings.REDIS_HOST
-REDIS_PORT = _settings.REDIS_PORT
-REDIS_DB = _settings.REDIS_DB
-
-
 @asynccontextmanager
 async def get_redis():
-    redis_client = Redis(
-        host=REDIS_HOST,
-        port=REDIS_PORT,
-        db=REDIS_DB,
+    redis_client = Redis.from_url(
+        REDIS_URL,
         decode_responses=True,
     )
     try:
