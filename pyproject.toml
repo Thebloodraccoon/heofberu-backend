@@ -3,7 +3,6 @@ name = "slavbor-core-backend"
 version = "0.1.0"
 description = "Heofberu Backend API is a web application with a RESTful API backend"
 authors = ["The Coon vsafirko@gmail.com"]
-readme = "README.md"
 packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
