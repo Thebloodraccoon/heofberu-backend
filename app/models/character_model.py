@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -9,9 +10,9 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
+from app.models.enums import AbilityScoreType
 from app.settings import settings
 
 
@@ -28,7 +29,7 @@ class Character(settings.Base):  # type: ignore
     image_path = Column(String(500))
     level = Column(Integer, nullable=False, default=1)
 
-    character_class = Column(String(100), nullable=False, default="")
+    class_id = Column(Integer, ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False, index=True)
     subclass = Column(String(100), nullable=False, default="")
     race_id = Column(Integer, ForeignKey("races.id", ondelete="SET NULL"), index=True)
 
@@ -42,7 +43,7 @@ class Character(settings.Base):  # type: ignore
     shield = Column(Integer, nullable=False, default=0)
     initiative_bonus = Column(Integer, nullable=False, default=0)
     passive_perception_bonus = Column(Integer, nullable=False, default=0)
-    has_jack_of_all_trades = Column(Integer, nullable=False, default=0)
+    has_jack_of_all_trades = Column(Boolean, nullable=False, default=False)
 
     # Ability scores
     strength = Column(Integer, nullable=False, default=10)
@@ -52,9 +53,9 @@ class Character(settings.Base):  # type: ignore
     wisdom = Column(Integer, nullable=False, default=10)
     charisma = Column(Integer, nullable=False, default=10)
 
-    # Proficiencies / skills — stored as JSONB (was JSON-in-TEXT in sqlite source)
-    skill_proficiencies = Column(JSONB, nullable=False, default=dict)
-    saving_throw_proficiencies = Column(String(100), nullable=False, default="")
+    # Free-text catch-all for proficiencies not otherwise modeled (tools,
+    # languages, armor/weapon proficiencies) — skills and saving throws are
+    # modeled as relationships below.
     proficiencies = Column(Text, nullable=False, default="")
 
     # Free text sections
@@ -70,10 +71,9 @@ class Character(settings.Base):  # type: ignore
     money_copper = Column(Integer, nullable=False, default=0)
 
     # Spellcasting settings
-    spell_ability = Column(String(10))
+    spell_ability = Column(AbilityScoreType, nullable=True)
     spell_dc_misc_bonus = Column(Integer, nullable=False, default=0)
     spell_attack_misc_bonus = Column(Integer, nullable=False, default=0)
-    spell_slots = Column(JSONB, nullable=False, default=dict)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
@@ -83,14 +83,38 @@ class Character(settings.Base):  # type: ignore
     )
 
     owner = relationship("User", back_populates="characters")
+    character_class = relationship("Class", back_populates="characters")
     race = relationship("Race", back_populates="characters")
+
     attacks = relationship("Attack", back_populates="character", cascade="all, delete-orphan", passive_deletes=True)
-    spells = relationship("Spell", secondary="character_spells", back_populates="characters")
+
+    skill_proficiencies = relationship(
+        "CharacterSkillProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    saving_throw_proficiencies = relationship(
+        "CharacterSavingThrowProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    spell_slots = relationship(
+        "CharacterSpellSlot",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    character_spells = relationship(
+        "CharacterSpell",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    spells = relationship("Spell", secondary="character_spells", viewonly=True)
 
     __table_args__ = (
         CheckConstraint("level >= 1 AND level <= 20", name="check_character_level_range"),
         CheckConstraint("current_hp >= 0", name="check_current_hp_nonnegative"),
         CheckConstraint("max_hp >= 0", name="check_max_hp_nonnegative"),
+        CheckConstraint("temp_hp >= 0", name="check_temp_hp_nonnegative"),
     )
 
     def __repr__(self):

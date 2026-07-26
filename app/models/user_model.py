@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Integer, String
+from sqlalchemy import Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 
-from app.constants import USER_ROLES, create_enum_constraint
+from app.constants import UserRole
+from app.models.enums import UserRoleType
 from app.settings import settings
 
 
@@ -15,7 +16,7 @@ class User(settings.Base):  # type: ignore
     email = Column(String, unique=True, index=True, nullable=False)
 
     hashed_password = Column(String, nullable=False)
-    role = Column(String, nullable=False, default="player")
+    role = Column(UserRoleType, nullable=False, default=UserRole.PLAYER, server_default="PLAYER")
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
@@ -30,13 +31,6 @@ class User(settings.Base):  # type: ignore
         back_populates="owner",
         cascade="all, delete-orphan",
         passive_deletes=True,
-    )
-
-    __table_args__ = (
-        CheckConstraint(
-            create_enum_constraint("role", USER_ROLES, nullable=False),
-            name="check_user_role",
-        ),
     )
 
     def __repr__(self):

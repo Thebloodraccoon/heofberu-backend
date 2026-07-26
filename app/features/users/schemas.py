@@ -1,17 +1,15 @@
 from datetime import datetime
 import re
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from app.constants import UserRole
 from app.exceptions.user_exceptions import InvalidEmailException, InvalidPasswordException
-
-UserRole = Literal["gm", "player"]
 
 
 class UserBase(BaseModel):
     username: str
-    role: UserRole = "player"
+    role: UserRole = UserRole.PLAYER
     email: str
 
     @field_validator("email")

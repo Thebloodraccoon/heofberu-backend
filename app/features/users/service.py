@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.exceptions.user_exceptions import (
+    DefaultUserProtectedException,
+    SelfDeletionException,
     UserEmailAlreadyExistsException,
     UserNameAlreadyExistsException,
     UserNotFoundException,
@@ -10,6 +12,7 @@ from app.exceptions.user_exceptions import (
 from app.core.security import get_password_hash
 from app.features.users.repository import UserRepository
 from app.features.users.schemas import UserCreate, UserResponse, UserUpdate
+from app.settings import settings
 
 
 class UserService:
@@ -29,6 +32,12 @@ class UserService:
         existing_user = self.repository.get_by_username(username)
         if existing_user and (user_id is None or existing_user.id != user_id):
             raise UserNameAlreadyExistsException(name=username)
+
+    @staticmethod
+    def _ensure_not_default_user(user) -> None:
+        """Prevent updating or deleting the seeded default admin user."""
+        if user.email == settings.ADMIN_LOGIN:
+            raise DefaultUserProtectedException()
 
     def get_user_by_id(self, user_id: int) -> UserResponse:
         """Get user by ID with existence check."""
@@ -68,6 +77,8 @@ class UserService:
         if not user:
             raise UserNotFoundException(user_id=user_id)
 
+        self._ensure_not_default_user(user)
+
         update_data = data.model_dump(exclude_unset=True)
 
         if "email" in update_data:
@@ -81,9 +92,15 @@ class UserService:
         updated_user = self.repository.update(user, update_data)
         return UserResponse.model_validate(updated_user)
 
-    def delete_user(self, user_id: int) -> bool:
-        """Delete user with existence check."""
+    def delete_user(self, user_id: int, current_user_id: int) -> bool:
+        """Delete user with existence check. Cannot delete self or the default admin user."""
         user = self.repository.get_by_id(user_id)
         if not user:
             raise UserNotFoundException(user_id=user_id)
+
+        if user_id == current_user_id:
+            raise SelfDeletionException()
+
+        self._ensure_not_default_user(user)
+
         return self.repository.delete(user)

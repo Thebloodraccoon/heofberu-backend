@@ -1,6 +1,7 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
+from app.models.enums import AbilityScoreType, AttackTypeType, DamageTypeType
 from app.settings import settings
 
 
@@ -13,14 +14,14 @@ class Attack(settings.Base):  # type: ignore
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
 
     name = Column(String(200), nullable=False)
-    attack_type = Column(String(30), nullable=False)  # MELEE_ATTACK / RANGED_ATTACK
-    ability = Column(String(10), nullable=False)  # STR / DEX / ...
+    attack_type = Column(AttackTypeType, nullable=False)
+    ability = Column(AbilityScoreType, nullable=False)
     is_proficient = Column(Boolean, nullable=False, default=True)
 
     bonus_attack = Column(Integer, nullable=False, default=0)
     bonus_damage = Column(Integer, nullable=False, default=0)
     damage_dice = Column(String(30), nullable=False, default="")
-    damage_type = Column(String(30), nullable=False, default="")
+    damage_type = Column(DamageTypeType, nullable=True)
     range = Column(String(50), nullable=False, default="")
     notes = Column(Text, nullable=False, default="")
 

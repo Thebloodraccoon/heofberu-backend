@@ -36,7 +36,7 @@ def update_user(user_id: int, user_data: UserUpdate, user_service: UserServiceDe
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, user_service: UserServiceDep, _: GmUserDep):
-    """Delete user by ID."""
-    user_service.delete_user(user_id)
+def delete_user(user_id: int, user_service: UserServiceDep, current_user: GmUserDep):
+    """Delete user by ID. Cannot delete yourself or the default admin user."""
+    user_service.delete_user(user_id, current_user_id=current_user.id)
     return None

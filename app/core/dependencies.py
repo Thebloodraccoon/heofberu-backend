@@ -5,14 +5,17 @@ from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
+from app.constants import UserRole
 from app.exceptions.auth_exceptions import GmAccessException
-from app.features.auth.services import AuthService
+from app.features.auth.service import AuthService
 from app.features.auth.token_utils import verify_token
-from app.features.characters.services import CharacterService
-from app.features.races.services import RaceService
-from app.features.spells.services import SpellService
+from app.features.characters.service import CharacterService
+from app.features.classes.service import ClassService
+from app.features.races.service import RaceService
+from app.features.skills.service import SkillService
+from app.features.spells.service import SpellService
 from app.features.users.schemas import UserResponse
-from app.features.users.services import UserService
+from app.features.users.service import UserService
 from app.settings import settings
 
 DatabaseDep = Annotated[Session, Depends(settings.get_db)]
@@ -51,7 +54,7 @@ def require_gm(
     current_user: UserResponse = Depends(get_current_user),
 ) -> UserResponse:
     """Require the current user to have the GM (game master) role."""
-    if current_user.role != "gm":
+    if current_user.role != UserRole.GM:
         raise GmAccessException()
 
     return current_user
@@ -72,9 +75,21 @@ def get_character_service(db: DatabaseDep) -> CharacterService:
     return CharacterService(db)
 
 
+def get_skill_service(db: DatabaseDep) -> SkillService:
+    """Get Skill service instance."""
+    return SkillService(db)
+
+
+def get_class_service(db: DatabaseDep) -> ClassService:
+    """Get Class service instance."""
+    return ClassService(db)
+
+
 RaceServiceDep = Annotated[RaceService, Depends(get_race_service)]
 SpellServiceDep = Annotated[SpellService, Depends(get_spell_service)]
 CharacterServiceDep = Annotated[CharacterService, Depends(get_character_service)]
+SkillServiceDep = Annotated[SkillService, Depends(get_skill_service)]
+ClassServiceDep = Annotated[ClassService, Depends(get_class_service)]
 
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]
 GmUserDep = Annotated[UserResponse, Depends(require_gm)]

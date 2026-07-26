@@ -53,6 +53,29 @@ class SpellSchool(str, Enum):
     TRANSMUTATION = "TRANSMUTATION"
 
 
+class SpellRangeType(str, Enum):
+    SELF = "SELF"
+    TOUCH = "TOUCH"
+    RANGED = "RANGED"
+    SIGHT = "SIGHT"
+    UNLIMITED = "UNLIMITED"
+
+
+class DamageType(str, Enum):
+    SLASHING = "SLASHING"
+    PIERCING = "PIERCING"
+    BLUDGEONING = "BLUDGEONING"
+    ACID = "ACID"
+    COLD = "COLD"
+    FIRE = "FIRE"
+    FORCE = "FORCE"
+    LIGHTNING = "LIGHTNING"
+    NECROTIC = "NECROTIC"
+    POISON = "POISON"
+    PSYCHIC = "PSYCHIC"
+    RADIANT = "RADIANT"
+    THUNDER = "THUNDER"
+
 # Kept as plain lists for backward compatibility with existing CheckConstraints
 # and any code still importing the raw string lists.
 USER_ROLES = [role.value for role in UserRole]
@@ -61,6 +84,8 @@ ABILITY_SCORES = [score.value for score in AbilityScore]
 ATTACK_TYPES = [attack_type.value for attack_type in AttackType]
 SPELL_LEVELS = [level.value for level in SpellLevel]
 SPELL_SCHOOLS = [school.value for school in SpellSchool]
+SPELL_RANGE_TYPES = [range_type.value for range_type in SpellRangeType]
+DAMAGE_TYPES = [damage_type.value for damage_type in DamageType]
 
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"
