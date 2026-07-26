@@ -23,9 +23,7 @@ class ClassRepository(BaseRepository[Class]):
         Called internally from create/update — there is no dedicated PUT
         endpoint for this relationship.
         """
-        self.db.query(ClassPrimaryAbility).filter(
-            ClassPrimaryAbility.class_id == character_class.id
-        ).delete()
+        self.db.query(ClassPrimaryAbility).filter(ClassPrimaryAbility.class_id == character_class.id).delete()
 
         for ability in abilities:
             self.db.add(ClassPrimaryAbility(class_id=character_class.id, ability=ability))
@@ -36,9 +34,7 @@ class ClassRepository(BaseRepository[Class]):
 
     def set_saving_throws(self, character_class: Class, abilities: list[str]) -> Class:
         """Replace all saving throw proficiencies for a class with the given list."""
-        self.db.query(ClassSavingThrow).filter(
-            ClassSavingThrow.class_id == character_class.id
-        ).delete()
+        self.db.query(ClassSavingThrow).filter(ClassSavingThrow.class_id == character_class.id).delete()
 
         for ability in abilities:
             self.db.add(ClassSavingThrow(class_id=character_class.id, ability=ability))

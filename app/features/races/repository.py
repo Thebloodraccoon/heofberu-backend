@@ -22,9 +22,7 @@ class RaceRepository(BaseRepository[Race]):
         self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == race.id).delete()
 
         for item in bonuses:
-            self.db.add(
-                RaceAbilityBonus(race_id=race.id, ability=item["ability"], bonus=item["bonus"])
-            )
+            self.db.add(RaceAbilityBonus(race_id=race.id, ability=item["ability"], bonus=item["bonus"]))
 
         self.db.commit()
         self.db.refresh(race)
@@ -41,4 +39,3 @@ class RaceRepository(BaseRepository[Race]):
         self.db.commit()
         self.db.refresh(race)
         return race
-    

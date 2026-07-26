@@ -34,9 +34,7 @@ class ClassService:
         primary_abilities = class_data.primary_abilities
 
         character_class = self.repository.create(fields)
-        character_class = self.repository.set_primary_abilities(
-            character_class, primary_abilities
-        )
+        character_class = self.repository.set_primary_abilities(character_class, primary_abilities)
         return ClassResponse.model_validate(character_class)
 
     def update_class(self, class_id: int, update_data: ClassUpdate) -> ClassResponse:
@@ -51,9 +49,7 @@ class ClassService:
             character_class = self.repository.update(character_class, fields)
 
         if update_data.primary_abilities is not None:
-            character_class = self.repository.set_primary_abilities(
-                character_class, update_data.primary_abilities
-            )
+            character_class = self.repository.set_primary_abilities(character_class, update_data.primary_abilities)
 
         return ClassResponse.model_validate(character_class)
 

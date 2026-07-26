@@ -58,9 +58,7 @@ def update_character(
 
 
 @router.delete("/{character_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_character(
-    character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep
-):
+def delete_character(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
     """GM can delete any character. Players can only delete their own."""
     character_service.delete_character(character_id, current_user)
     return None
@@ -103,9 +101,7 @@ def set_character_saving_throws(
 
 
 @router.get("/{character_id}/spell-slots", response_model=list[SpellSlotResponse])
-def get_character_spell_slots(
-    character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep
-):
+def get_character_spell_slots(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
     """Get all spell slot entries (by level) for a character."""
     return character_service.get_spell_slots(character_id, current_user)
 
@@ -142,9 +138,7 @@ def rest_character(
 
 
 @router.get("/{character_id}/spells", response_model=list[CharacterSpellResponse])
-def get_character_spells(
-    character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep
-):
+def get_character_spells(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
     """List all spells known by the character, with prepared status."""
     return character_service.get_known_spells(character_id, current_user)
 
@@ -185,9 +179,7 @@ def update_character_spell_prepared(
 
 
 @router.get("/{character_id}/attacks", response_model=list[AttackResponse])
-def get_character_attacks(
-    character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep
-):
+def get_character_attacks(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
     """List all attacks belonging to a character."""
     return character_service.get_attacks(character_id, current_user)
 

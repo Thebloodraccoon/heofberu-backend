@@ -76,6 +76,7 @@ class DamageType(str, Enum):
     RADIANT = "RADIANT"
     THUNDER = "THUNDER"
 
+
 # Kept as plain lists for backward compatibility with existing CheckConstraints
 # and any code still importing the raw string lists.
 USER_ROLES = [role.value for role in UserRole]

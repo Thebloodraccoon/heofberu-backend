@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.security import get_password_hash
 from app.exceptions.user_exceptions import (
     DefaultUserProtectedException,
     SelfDeletionException,
@@ -9,7 +10,6 @@ from app.exceptions.user_exceptions import (
     UserNameAlreadyExistsException,
     UserNotFoundException,
 )
-from app.core.security import get_password_hash
 from app.features.users.repository import UserRepository
 from app.features.users.schemas import UserCreate, UserResponse, UserUpdate
 from app.settings import settings

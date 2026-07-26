@@ -31,9 +31,7 @@ def create_class(class_data: ClassCreate, class_service: ClassServiceDep, _: GmU
 
 
 @router.patch("/{class_id}", response_model=ClassResponse)
-def update_class(
-    class_id: int, update_data: ClassUpdate, class_service: ClassServiceDep, _: GmUserDep
-):
+def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassServiceDep, _: GmUserDep):
     """Update an existing class. GM only."""
     return class_service.update_class(class_id, update_data)
 

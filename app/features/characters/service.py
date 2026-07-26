@@ -78,9 +78,7 @@ class CharacterService:
         self._check_access(character, current_user)
         return CharacterResponse.model_validate(character)
 
-    def create_character(
-        self, character_data: CharacterCreate, current_user: UserResponse
-    ) -> CharacterResponse:
+    def create_character(self, character_data: CharacterCreate, current_user: UserResponse) -> CharacterResponse:
         """Both GM and players can create characters, always owned by themselves."""
         character = self.repository.create(character_data.model_dump(), owner_id=current_user.id)
         return CharacterResponse.model_validate(character)
@@ -100,9 +98,7 @@ class CharacterService:
         self._check_access(character, current_user)
         return self.repository.delete(character)
 
-    def update_hp(
-        self, character_id: int, data: HpUpdate, current_user: UserResponse
-    ) -> CharacterResponse:
+    def update_hp(self, character_id: int, data: HpUpdate, current_user: UserResponse) -> CharacterResponse:
         """Update HP either via a relative delta, or by setting absolute values.
 
         current_hp is clamped to [0, max_hp]. temp_hp is clamped to >= 0.
@@ -146,8 +142,7 @@ class CharacterService:
                 raise InvalidSkillIdsException(missing_ids)
 
         proficiencies = [
-            {"skill_id": item.skill_id, "is_expertise": item.is_expertise}
-            for item in data.skill_proficiencies
+            {"skill_id": item.skill_id, "is_expertise": item.is_expertise} for item in data.skill_proficiencies
         ]
         updated_character = self.repository.set_skill_proficiencies(character, proficiencies)
         return CharacterResponse.model_validate(updated_character)
@@ -158,14 +153,10 @@ class CharacterService:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 
-        updated_character = self.repository.set_saving_throw_proficiencies(
-            character, data.saving_throws
-        )
+        updated_character = self.repository.set_saving_throw_proficiencies(character, data.saving_throws)
         return CharacterResponse.model_validate(updated_character)
 
-    def get_spell_slots(
-        self, character_id: int, current_user: UserResponse
-    ) -> list[SpellSlotResponse]:
+    def get_spell_slots(self, character_id: int, current_user: UserResponse) -> list[SpellSlotResponse]:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 
@@ -196,9 +187,7 @@ class CharacterService:
         slot = self.repository.upsert_spell_slot(character_id, data.level, new_total, new_used)
         return SpellSlotResponse.model_validate(slot)
 
-    def rest(
-        self, character_id: int, data: RestRequest, current_user: UserResponse
-    ) -> CharacterResponse:
+    def rest(self, character_id: int, data: RestRequest, current_user: UserResponse) -> CharacterResponse:
         """Apply a short or long rest.
 
         Long rest: restore current_hp to max_hp, clear temp_hp, and reset all
@@ -222,9 +211,7 @@ class CharacterService:
 
         return CharacterResponse.model_validate(character)
 
-    def get_known_spells(
-        self, character_id: int, current_user: UserResponse
-    ) -> list[CharacterSpellResponse]:
+    def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 
@@ -243,16 +230,12 @@ class CharacterService:
 
         existing = self.repository.get_known_spell(character_id, data.spell_id)
         if existing:
-            raise CharacterSpellAlreadyKnownException(
-                character_id=character_id, spell_id=data.spell_id
-            )
+            raise CharacterSpellAlreadyKnownException(character_id=character_id, spell_id=data.spell_id)
 
         character_spell = self.repository.add_known_spell(character_id, data.spell_id)
         return CharacterSpellResponse.model_validate(character_spell)
 
-    def remove_known_spell(
-        self, character_id: int, spell_id: int, current_user: UserResponse
-    ) -> bool:
+    def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> bool:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 
@@ -273,18 +256,14 @@ class CharacterService:
         updated = self.repository.set_spell_prepared(character_spell, data.is_prepared)
         return CharacterSpellResponse.model_validate(updated)
 
-    def get_attacks(
-        self, character_id: int, current_user: UserResponse
-    ) -> list[AttackResponse]:
+    def get_attacks(self, character_id: int, current_user: UserResponse) -> list[AttackResponse]:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 
         attacks = self.attack_repository.get_all_by_character(character_id)
         return [AttackResponse.model_validate(attack) for attack in attacks]
 
-    def create_attack(
-        self, character_id: int, data: AttackCreate, current_user: UserResponse
-    ) -> AttackResponse:
+    def create_attack(self, character_id: int, data: AttackCreate, current_user: UserResponse) -> AttackResponse:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 
@@ -302,18 +281,14 @@ class CharacterService:
         updated_attack = self.attack_repository.update(attack, fields)
         return AttackResponse.model_validate(updated_attack)
 
-    def delete_attack(
-        self, character_id: int, attack_id: int, current_user: UserResponse
-    ) -> bool:
+    def delete_attack(self, character_id: int, attack_id: int, current_user: UserResponse) -> bool:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 
         attack = self._get_attack_or_404(character_id, attack_id)
         return self.attack_repository.delete(attack)
 
-    def roll_check(
-        self, character_id: int, data: RollCheckRequest, current_user: UserResponse
-    ) -> RollCheckResponse:
+    def roll_check(self, character_id: int, data: RollCheckRequest, current_user: UserResponse) -> RollCheckResponse:
         """Roll a skill check or a raw ability check/saving throw.
 
         Provide exactly one of `skill_id` or `ability`. `check_type` selects
@@ -325,9 +300,7 @@ class CharacterService:
         self._check_access(character, current_user)
 
         if data.check_type not in ("check", "save"):
-            raise InvalidRollRequestException(
-                f"Invalid check_type: '{data.check_type}'. Expected 'check' or 'save'."
-            )
+            raise InvalidRollRequestException(f"Invalid check_type: '{data.check_type}'. Expected 'check' or 'save'.")
         if data.skill_id is not None and data.ability is not None:
             raise InvalidRollRequestException("Provide only one of 'skill_id' or 'ability'.")
         if data.skill_id is None and data.ability is None:
@@ -345,9 +318,7 @@ class CharacterService:
         else:
             ability = data.ability
             if data.check_type == "save":
-                proficiency = self.repository.get_saving_throw_proficiency(
-                    character_id, ability
-                )
+                proficiency = self.repository.get_saving_throw_proficiency(character_id, ability)
                 is_proficient = proficiency is not None
             else:
                 is_proficient = False
@@ -373,9 +344,7 @@ class CharacterService:
             skill_id=data.skill_id,
         )
 
-    def roll_attack(
-        self, character_id: int, data: RollAttackRequest, current_user: UserResponse
-    ) -> RollAttackResponse:
+    def roll_attack(self, character_id: int, data: RollAttackRequest, current_user: UserResponse) -> RollAttackResponse:
         character = self._get_character_or_404(character_id)
         self._check_access(character, current_user)
 

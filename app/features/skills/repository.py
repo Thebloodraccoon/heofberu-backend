@@ -26,16 +26,11 @@ class SkillRepository(BaseRepository[Skill]):
         """Check whether the skill is currently referenced by any race
         (race_skills) or class (class_available_skills), either of which would
         block deletion at the DB level via ON DELETE RESTRICT."""
-        used_by_race = (
-            self.db.query(race_skills).filter(race_skills.c.skill_id == skill_id).first()
-            is not None
-        )
+        used_by_race = self.db.query(race_skills).filter(race_skills.c.skill_id == skill_id).first() is not None
         if used_by_race:
             return True
 
         return (
-            self.db.query(class_available_skills)
-            .filter(class_available_skills.c.skill_id == skill_id)
-            .first()
+            self.db.query(class_available_skills).filter(class_available_skills.c.skill_id == skill_id).first()
             is not None
         )

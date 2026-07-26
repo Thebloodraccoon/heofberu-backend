@@ -23,12 +23,7 @@ class CharacterRepository(BaseRepository[Character]):
 
     def get_all_by_owner(self, owner_id: int) -> list[Character]:
         """Get characters owned by a specific user. Player use case."""
-        return (
-            self.db.query(Character)
-            .filter(Character.owner_id == owner_id)
-            .order_by(Character.name)
-            .all()
-        )
+        return self.db.query(Character).filter(Character.owner_id == owner_id).order_by(Character.name).all()
 
     def create(self, character_data: dict, owner_id: int) -> Character:  # type: ignore[override]
         """Create a character for a given owner (overrides base create signature)."""
@@ -46,9 +41,7 @@ class CharacterRepository(BaseRepository[Character]):
         self.db.refresh(character)
         return character
 
-    def get_skill_proficiency(
-        self, character_id: int, skill_id: int
-    ) -> CharacterSkillProficiency | None:
+    def get_skill_proficiency(self, character_id: int, skill_id: int) -> CharacterSkillProficiency | None:
         return (
             self.db.query(CharacterSkillProficiency)
             .filter(
@@ -58,9 +51,7 @@ class CharacterRepository(BaseRepository[Character]):
             .first()
         )
 
-    def get_saving_throw_proficiency(
-        self, character_id: int, ability: str
-    ) -> CharacterSavingThrowProficiency | None:
+    def get_saving_throw_proficiency(self, character_id: int, ability: str) -> CharacterSavingThrowProficiency | None:
         return (
             self.db.query(CharacterSavingThrowProficiency)
             .filter(
@@ -70,16 +61,12 @@ class CharacterRepository(BaseRepository[Character]):
             .first()
         )
 
-    def set_skill_proficiencies(
-        self, character: Character, proficiencies: list[dict]
-    ) -> Character:
+    def set_skill_proficiencies(self, character: Character, proficiencies: list[dict]) -> Character:
         """Replace all skill proficiencies for a character with the given list.
 
         Each item is expected to have 'skill_id' and 'is_expertise'.
         """
-        self.db.query(CharacterSkillProficiency).filter(
-            CharacterSkillProficiency.character_id == character.id
-        ).delete()
+        self.db.query(CharacterSkillProficiency).filter(CharacterSkillProficiency.character_id == character.id).delete()
 
         for item in proficiencies:
             self.db.add(
@@ -94,18 +81,14 @@ class CharacterRepository(BaseRepository[Character]):
         self.db.refresh(character)
         return character
 
-    def set_saving_throw_proficiencies(
-        self, character: Character, abilities: list[str]
-    ) -> Character:
+    def set_saving_throw_proficiencies(self, character: Character, abilities: list[str]) -> Character:
         """Replace all saving throw proficiencies for a character with the given list."""
         self.db.query(CharacterSavingThrowProficiency).filter(
             CharacterSavingThrowProficiency.character_id == character.id
         ).delete()
 
         for ability in abilities:
-            self.db.add(
-                CharacterSavingThrowProficiency(character_id=character.id, ability=ability)
-            )
+            self.db.add(CharacterSavingThrowProficiency(character_id=character.id, ability=ability))
 
         self.db.commit()
         self.db.refresh(character)
@@ -150,25 +133,17 @@ class CharacterRepository(BaseRepository[Character]):
         return slot
 
     def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
-        return (
-            self.db.query(CharacterSpellSlot)
-            .filter(CharacterSpellSlot.character_id == character_id)
-            .all()
-        )
+        return self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).all()
 
     def reset_all_spell_slots(self, character_id: int) -> None:
         """Set used=0 for every spell slot entry of the character (long rest)."""
-        self.db.query(CharacterSpellSlot).filter(
-            CharacterSpellSlot.character_id == character_id
-        ).update({CharacterSpellSlot.used: 0})
+        self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).update(
+            {CharacterSpellSlot.used: 0}
+        )
         self.db.commit()
 
     def get_known_spells(self, character_id: int) -> list[CharacterSpell]:
-        return (
-            self.db.query(CharacterSpell)
-            .filter(CharacterSpell.character_id == character_id)
-            .all()
-        )
+        return self.db.query(CharacterSpell).filter(CharacterSpell.character_id == character_id).all()
 
     def get_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell | None:
         return (
@@ -181,9 +156,7 @@ class CharacterRepository(BaseRepository[Character]):
         )
 
     def add_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell:
-        character_spell = CharacterSpell(
-            character_id=character_id, spell_id=spell_id, is_prepared=False
-        )
+        character_spell = CharacterSpell(character_id=character_id, spell_id=spell_id, is_prepared=False)
         self.db.add(character_spell)
         self.db.commit()
         self.db.refresh(character_spell)
@@ -194,9 +167,7 @@ class CharacterRepository(BaseRepository[Character]):
         self.db.commit()
         return True
 
-    def set_spell_prepared(
-        self, character_spell: CharacterSpell, is_prepared: bool
-    ) -> CharacterSpell:
+    def set_spell_prepared(self, character_spell: CharacterSpell, is_prepared: bool) -> CharacterSpell:
         character_spell.is_prepared = is_prepared
         self.db.commit()
         self.db.refresh(character_spell)

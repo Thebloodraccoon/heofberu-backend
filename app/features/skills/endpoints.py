@@ -25,9 +25,7 @@ def create_skill(skill_data: SkillCreate, skill_service: SkillServiceDep, _: GmU
 
 
 @router.patch("/{skill_id}", response_model=SkillResponse)
-def update_skill(
-    skill_id: int, update_data: SkillUpdate, skill_service: SkillServiceDep, _: GmUserDep
-):
+def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillServiceDep, _: GmUserDep):
     """Update an existing skill. GM only."""
     return skill_service.update_skill(skill_id, update_data)
 

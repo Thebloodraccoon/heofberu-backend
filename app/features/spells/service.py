@@ -1,4 +1,3 @@
-
 from sqlalchemy.orm import Session
 
 from app.exceptions.spell_exceptions import SpellNameAlreadyExistsException, SpellNotFoundException

@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, Text
-from sqlalchemy.orm import relationship
 
 from app.models.enums import AbilityScoreType
 from app.settings import settings
