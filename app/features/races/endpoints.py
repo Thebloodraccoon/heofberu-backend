@@ -9,7 +9,7 @@ from app.features.races.schemas import (
     SkillsUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/races", tags=["Races"])
 
 
 @router.get("/", response_model=list[RaceResponse])

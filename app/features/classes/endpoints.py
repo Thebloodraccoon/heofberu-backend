@@ -9,7 +9,7 @@ from app.features.classes.schemas import (
     SavingThrowsUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/classes", tags=["Classes"])
 
 
 @router.get("/", response_model=list[ClassResponse])

@@ -7,12 +7,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 
-from app.features.auth.endpoints import router as auth_router
-from app.features.characters.endpoints import router as character_router
-from app.features.ping.endpoints import router as ping_router
-from app.features.races.endpoints import router as race_router
-from app.features.spells.endpoints import router as spell_router
-from app.features.users.endpoints import router as user_router
 from app.middleware import (
     LoggingMiddleware,
     MiddlewareConfig,
@@ -21,6 +15,7 @@ from app.middleware import (
     TimingMiddleware,
 )
 from app.middleware.error_handler import setup_error_handlers
+from app.router import api_router
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -68,18 +63,6 @@ def setup_middleware(app: FastAPI) -> None:
         app.add_middleware(TimingMiddleware, **timing_config)
 
 
-def setup_routers(app: FastAPI) -> None:
-    """Setup API routes with proper versioning."""
-    api_prefix = "/api"
-
-    app.include_router(ping_router, prefix=f"{api_prefix}/ping", tags=["Health Check"])
-    app.include_router(auth_router, prefix=f"{api_prefix}/auth", tags=["Auth"])
-    app.include_router(user_router, prefix=f"{api_prefix}/users", tags=["Users"])
-    app.include_router(race_router, prefix=f"{api_prefix}/races", tags=["Races"])
-    app.include_router(spell_router, prefix=f"{api_prefix}/spells", tags=["Spells"])
-    app.include_router(character_router, prefix=f"{api_prefix}/characters", tags=["Characters"])
-
-
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -93,8 +76,7 @@ app = FastAPI(
 
 setup_middleware(app)
 setup_error_handlers(app)
-setup_routers(app)
-
+app.include_router(api_router)
 
 if __name__ == "__main__":
     uvicorn.run(

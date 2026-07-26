@@ -23,7 +23,7 @@ from app.features.characters.schemas import (
     SpellSlotUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/characters", tags=["Characters"])
 
 
 @router.get("/", response_model=list[CharacterResponse])

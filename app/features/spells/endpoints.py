@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from app.core.dependencies import CurrentUserDep, GmUserDep, SpellServiceDep
 from app.features.spells.schemas import SpellCreate, SpellResponse, SpellUpdate
 
-router = APIRouter()
+router = APIRouter(prefix="/spells", tags=["Spells"])
 
 
 @router.get("/", response_model=list[SpellResponse])

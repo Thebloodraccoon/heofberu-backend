@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query, status
 from app.core.dependencies import GmUserDep, UserServiceDep
 from app.features.users.schemas import UserCreate, UserResponse, UserUpdate
 
-router = APIRouter()
+router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("/", response_model=list[UserResponse])

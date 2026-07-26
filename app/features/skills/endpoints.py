@@ -3,7 +3,7 @@ from fastapi import APIRouter, status
 from app.core.dependencies import CurrentUserDep, GmUserDep, SkillServiceDep
 from app.features.skills.schemas import SkillCreate, SkillResponse, SkillUpdate
 
-router = APIRouter()
+router = APIRouter(prefix="/skills", tags=["Skills"])
 
 
 @router.get("/", response_model=list[SkillResponse])

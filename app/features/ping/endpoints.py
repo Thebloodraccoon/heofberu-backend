@@ -2,7 +2,7 @@ import time
 
 from fastapi import APIRouter
 
-router = APIRouter()
+router = APIRouter(prefix="/ping", tags=["Health Check"])
 
 
 @router.get("/")
