@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.features.auth.endpoints import router as auth_router
-from app.features.characters.endpoints import router as character_router
+from app.features.characters.router import router as character_router
 from app.features.classes.endpoints import router as class_router
 from app.features.ping.endpoints import router as ping_router
 from app.features.races.endpoints import router as race_router

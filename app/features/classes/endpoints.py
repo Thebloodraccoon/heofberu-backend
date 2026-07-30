@@ -1,13 +1,8 @@
 from fastapi import APIRouter, status
 
 from app.core.dependencies import ClassServiceDep, CurrentUserDep, GmUserDep
-from app.features.classes.schemas import (
-    AvailableSkillsUpdate,
-    ClassCreate,
-    ClassResponse,
-    ClassUpdate,
-    SavingThrowsUpdate,
-)
+
+from .schemas import AvailableSkillsUpdate, ClassCreate, ClassResponse, ClassUpdate, SavingThrowsUpdate
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
 

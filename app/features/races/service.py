@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
-from app.exceptions.race_exceptions import (
+from app.core.service import BaseService
+from app.features.races.exceptions import (
     InvalidSkillIdsException,
     RaceNameAlreadyExistsException,
     RaceNotFoundException,
@@ -13,55 +14,74 @@ from app.features.races.schemas import (
     RaceUpdate,
     SkillsUpdate,
 )
+from app.models.race_model import Race
 
 
-class RaceService:
+class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse]):
+    """
+    Race-specific CRUD service built on :class:`BaseService`.
+
+    Adds behaviors the generic base class doesn't provide:
+      - a plain, unpaginated ``get_all`` (races are listed in full, sorted
+        by name, via ``RaceRepository.get_all``);
+      - a uniqueness check on ``name`` before create/update;
+      - management of ability bonuses and granted skills, which live in
+        their own association tables and have no generic base-class
+        equivalent.
+    """
+
     def __init__(self, db: Session):
-        self.repository = RaceRepository(db)
+        super().__init__(
+            repository=RaceRepository(db),
+            response_schema=RaceResponse,
+            not_found_exception_factory=lambda race_id: RaceNotFoundException(race_id=race_id),
+        )
+        self.repository: RaceRepository
 
     def get_all_races(self) -> list[RaceResponse]:
+        """Return every race, ordered by name (no pagination)."""
+
         races = self.repository.get_all()
         return [RaceResponse.model_validate(race) for race in races]
 
     def get_race_by_id(self, race_id: int) -> RaceResponse:
-        race = self.repository.get_by_id(race_id)
-        if not race:
-            raise RaceNotFoundException(race_id=race_id)
+        """Return a single race by ID, or raise ``RaceNotFoundException``."""
 
-        return RaceResponse.model_validate(race)
+        return self.get_by_id(race_id)
 
     def create_race(self, race_data: RaceCreate) -> RaceResponse:
-        self._check_name_available(race_data.name)
+        """Create a race after checking its name isn't already taken."""
 
-        race = self.repository.create(race_data.model_dump())
-        return RaceResponse.model_validate(race)
+        self._check_name_available(race_data.name)
+        return self.create(race_data)
 
     def update_race(self, race_id: int, update_data: RaceUpdate) -> RaceResponse:
-        race = self._get_race_or_404(race_id)
+        """Update a race, re-checking name uniqueness if the name is changing."""
 
+        race = self._get_or_404(race_id)
         fields = update_data.model_dump(exclude_unset=True)
 
         if "name" in fields and fields["name"] != race.name:
             self._check_name_available(fields["name"])
 
-        updated_race = self.repository.update(race, fields)
-        return RaceResponse.model_validate(updated_race)
+        return self.update(race_id, update_data)
 
     def delete_race(self, race_id: int) -> bool:
-        race = self._get_race_or_404(race_id)
-        return self.repository.delete(race)
+        """Delete a race by ID, or raise ``RaceNotFoundException``."""
+
+        return self.delete(race_id)
 
     def set_ability_bonuses(self, race_id: int, data: AbilityBonusesUpdate) -> RaceResponse:
         """Fully replace a race's ability score bonuses."""
-        race = self._get_race_or_404(race_id)
+        race = self._get_or_404(race_id)
 
         bonuses = [{"ability": item.ability, "bonus": item.bonus} for item in data.ability_bonuses]
         updated_race = self.repository.set_ability_bonuses(race, bonuses)
-        return RaceResponse.model_validate(updated_race)
+        return self.response_schema.model_validate(updated_race)
 
     def set_skills(self, race_id: int, data: SkillsUpdate) -> RaceResponse:
         """Fully replace the skills granted by a race."""
-        race = self._get_race_or_404(race_id)
+        race = self._get_or_404(race_id)
 
         skills = self.repository.get_skills_by_ids(data.skill_ids)
         found_ids = {skill.id for skill in skills}
@@ -70,14 +90,10 @@ class RaceService:
             raise InvalidSkillIdsException(missing_ids)
 
         updated_race = self.repository.set_skills(race, skills)
-        return RaceResponse.model_validate(updated_race)
-
-    def _get_race_or_404(self, race_id: int):
-        race = self.repository.get_by_id(race_id)
-        if not race:
-            raise RaceNotFoundException(race_id=race_id)
-        return race
+        return self.response_schema.model_validate(updated_race)
 
     def _check_name_available(self, name: str) -> None:
+        """Raise ``RaceNameAlreadyExistsException`` if ``name`` is already in use."""
+
         if self.repository.get_by_name(name):
             raise RaceNameAlreadyExistsException(name)

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
-from app.exceptions.token_exceptions import InvalidTokenException
+from app.core.exceptions import InvalidTokenException
 from app.settings import settings
 
 

@@ -7,12 +7,12 @@ class UserRole(str, Enum):
 
 
 class RaceSize(str, Enum):
-    TINY = "Крошечный"
-    SMALL = "Маленький"
-    MEDIUM = "Средний"
-    LARGE = "Большой"
-    HUGE = "Огромный"
-    GARGANTUAN = "Гигантский"
+    TINY = "TINY"
+    SMALL = "SMALL"
+    MEDIUM = "MEDIUM"
+    LARGE = "LARGE"
+    HUGE = "HUGE"
+    GARGANTUAN = "GARGANTUAN"
 
 
 class AbilityScore(str, Enum):
@@ -77,6 +77,61 @@ class DamageType(str, Enum):
     THUNDER = "THUNDER"
 
 
+class ItemType(str, Enum):
+    WEAPON = "WEAPON"
+    ARMOR = "ARMOR"
+    SHIELD = "SHIELD"
+    POTION = "POTION"
+    SCROLL = "SCROLL"
+    WONDROUS_ITEM = "WONDROUS_ITEM"
+    RING = "RING"
+    ROD = "ROD"
+    STAFF = "STAFF"
+    WAND = "WAND"
+    ADVENTURING_GEAR = "ADVENTURING_GEAR"
+    TOOL = "TOOL"
+    AMMUNITION = "AMMUNITION"
+    TREASURE = "TREASURE"
+    OTHER = "OTHER"
+
+
+class ItemRarity(str, Enum):
+    COMMON = "COMMON"
+    UNCOMMON = "UNCOMMON"
+    RARE = "RARE"
+    VERY_RARE = "VERY_RARE"
+    LEGENDARY = "LEGENDARY"
+    ARTIFACT = "ARTIFACT"
+    NONE = "NONE"  # non-magical mundane items
+
+
+class FeatureSourceType(str, Enum):
+    CLASS = "CLASS"
+    SUBCLASS = "SUBCLASS"
+    RACE = "RACE"
+    BACKGROUND = "BACKGROUND"
+    FEAT = "FEAT"
+    OTHER = "OTHER"
+
+
+class ConditionType(str, Enum):
+    BLINDED = "BLINDED"
+    CHARMED = "CHARMED"
+    DEAFENED = "DEAFENED"
+    FRIGHTENED = "FRIGHTENED"
+    GRAPPLED = "GRAPPLED"
+    INCAPACITATED = "INCAPACITATED"
+    INVISIBLE = "INVISIBLE"
+    PARALYZED = "PARALYZED"
+    PETRIFIED = "PETRIFIED"
+    POISONED = "POISONED"
+    PRONE = "PRONE"
+    RESTRAINED = "RESTRAINED"
+    STUNNED = "STUNNED"
+    UNCONSCIOUS = "UNCONSCIOUS"
+    EXHAUSTION = "EXHAUSTION"
+
+
 # Kept as plain lists for backward compatibility with existing CheckConstraints
 # and any code still importing the raw string lists.
 USER_ROLES = [role.value for role in UserRole]
@@ -87,9 +142,14 @@ SPELL_LEVELS = [level.value for level in SpellLevel]
 SPELL_SCHOOLS = [school.value for school in SpellSchool]
 SPELL_RANGE_TYPES = [range_type.value for range_type in SpellRangeType]
 DAMAGE_TYPES = [damage_type.value for damage_type in DamageType]
+ITEM_TYPES = [item_type.value for item_type in ItemType]
+ITEM_RARITIES = [rarity.value for rarity in ItemRarity]
+FEATURE_SOURCE_TYPES = [source_type.value for source_type in FeatureSourceType]
+CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
 
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"
+ON_DELETE_RESTRICT = "RESTRICT"
 
 
 def create_enum_constraint(field_name: str, values: list, nullable: bool = True) -> str:

@@ -32,6 +32,7 @@ class Character(settings.Base):  # type: ignore
     class_id = Column(Integer, ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False, index=True)
     subclass = Column(String(100), nullable=False, default="")
     race_id = Column(Integer, ForeignKey("races.id", ondelete="SET NULL"), index=True)
+    background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="SET NULL"), index=True)
 
     # Combat stats
     current_hp = Column(Integer, nullable=False, default=0)
@@ -60,10 +61,14 @@ class Character(settings.Base):  # type: ignore
 
     # Free text sections
     traits = Column(Text, nullable=False, default="")
-    feats = Column(Text, nullable=False, default="")
-    inventory = Column(Text, nullable=False, default="")
     backstory = Column(Text, nullable=False, default="")
     notes = Column(Text, nullable=False, default="")
+
+    # Personality (typically drawn from Background suggestions, but freely editable)
+    personality_traits = Column(Text, nullable=False, default="")
+    ideals = Column(Text, nullable=False, default="")
+    bonds = Column(Text, nullable=False, default="")
+    flaws = Column(Text, nullable=False, default="")
 
     # Currency
     money_gold = Column(Integer, nullable=False, default=0)
@@ -85,6 +90,7 @@ class Character(settings.Base):  # type: ignore
     owner = relationship("User", back_populates="characters")
     character_class = relationship("Class", back_populates="characters")
     race = relationship("Race", back_populates="characters")
+    background = relationship("Background", back_populates="characters")
 
     attacks = relationship("Attack", back_populates="character", cascade="all, delete-orphan", passive_deletes=True)
 
@@ -109,6 +115,29 @@ class Character(settings.Base):  # type: ignore
         passive_deletes=True,
     )
     spells = relationship("Spell", secondary="character_spells", viewonly=True)
+
+    character_features = relationship(
+        "CharacterFeature",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    features = relationship("Feature", secondary="character_features", viewonly=True)
+
+    character_items = relationship(
+        "CharacterItem",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    items = relationship("Item", secondary="character_items", viewonly=True)
+
+    conditions = relationship(
+        "CharacterCondition",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         CheckConstraint("level >= 1 AND level <= 20", name="check_character_level_range"),

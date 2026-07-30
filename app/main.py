@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager.
+    """
+    Application lifespan manager.
 
     Schema management is handled exclusively by Alembic migrations, run as a
     separate deploy step (`alembic upgrade head`) before the app starts.

@@ -24,8 +24,10 @@ class SkillKeyAlreadyExistsException(HTTPException):
 
 
 class SkillInUseException(HTTPException):
-    """Raised when attempting to delete a skill that is still referenced by one
-    or more races or classes, and therefore cannot be removed."""
+    """
+    Raised when attempting to delete a skill that is still referenced by one
+    or more races or classes, and therefore cannot be removed.
+    """
 
     def __init__(self, skill_id: int):
         self.skill_id = skill_id

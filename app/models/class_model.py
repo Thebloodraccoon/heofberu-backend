@@ -7,8 +7,10 @@ from app.settings import settings
 
 
 class Class(settings.Base):  # type: ignore
-    """Reference table of playable classes (e.g. Fighter, Wizard), shared
-    across all characters. GM-managed, like Race and Spell."""
+    """
+    Reference table of playable classes (e.g. Fighter, Wizard), shared
+    across all characters. GM-managed, like Race and Spell.
+    """
 
     __tablename__ = "classes"
 

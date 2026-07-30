@@ -14,14 +14,6 @@ class UserNotFoundException(HTTPException):
         super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
 
-class InvalidEmailException(HTTPException):
-    def __init__(self, message: str = "Invalid email address"):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
-        )
-
-
 class InvalidPasswordException(HTTPException):
     def __init__(self, message: str = "Invalid password"):
         super().__init__(

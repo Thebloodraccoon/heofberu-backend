@@ -5,6 +5,11 @@ from app.models.attack_model import Attack
 
 
 class AttackRepository(BaseRepository[Attack]):
+    """
+    Repository for the ``Attack`` model. Used by the attacks sub-domain
+    (CRUD) and the rolls sub-domain (attack roll lookups).
+    """
+
     def __init__(self, db: Session):
         super().__init__(Attack, db)
 

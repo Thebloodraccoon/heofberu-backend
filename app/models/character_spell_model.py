@@ -5,8 +5,10 @@ from app.settings import settings
 
 
 class CharacterSpell(settings.Base):  # type: ignore
-    """Association between a character and a spell they know, with whether
-    it is currently prepared (relevant for prepared-caster classes)."""
+    """
+    Association between a character and a spell they know, with whether
+    it is currently prepared (relevant for prepared-caster classes).
+    """
 
     __tablename__ = "character_spells"
 

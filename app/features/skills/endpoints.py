@@ -32,7 +32,8 @@ def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillSe
 
 @router.delete("/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: GmUserDep):
-    """Delete a skill. GM only.
+    """
+    Delete a skill. GM only.
 
     Blocked if the skill is still granted by one or more races
     (raises SkillInUseException, mapped to a 409 by the global exception handler).

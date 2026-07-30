@@ -3,7 +3,11 @@ from sqlalchemy import Enum as SAEnum
 from app.constants import (
     AbilityScore,
     AttackType,
+    ConditionType,
     DamageType,
+    FeatureSourceType,
+    ItemRarity,
+    ItemType,
     RaceSize,
     SpellLevel,
     SpellRangeType,
@@ -24,3 +28,7 @@ SpellLevelType = SAEnum(SpellLevel, name="spell_level", create_type=False)
 SpellSchoolType = SAEnum(SpellSchool, name="spell_school", create_type=False)
 SpellRangeTypeType = SAEnum(SpellRangeType, name="spell_range_type", create_type=False)
 DamageTypeType = SAEnum(DamageType, name="damage_type", create_type=False)
+ItemTypeType = SAEnum(ItemType, name="item_type", create_type=False)
+ItemRarityType = SAEnum(ItemRarity, name="item_rarity", create_type=False)
+FeatureSourceTypeType = SAEnum(FeatureSourceType, name="feature_source_type", create_type=False)
+ConditionTypeType = SAEnum(ConditionType, name="condition_type", create_type=False)

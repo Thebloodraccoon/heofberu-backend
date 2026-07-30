@@ -1,9 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.core.repository import BaseRepository
-from app.models.class_association_models import ClassPrimaryAbility, ClassSavingThrow
-from app.models.class_model import Class
-from app.models.skill_model import Skill
+from app.models import Class, ClassPrimaryAbility, ClassSavingThrow, Skill
 
 
 class ClassRepository(BaseRepository[Class]):
@@ -18,7 +16,8 @@ class ClassRepository(BaseRepository[Class]):
         return self.db.query(Class).filter(Class.name == name).first()
 
     def set_primary_abilities(self, character_class: Class, abilities: list[str]) -> Class:
-        """Replace all primary abilities for a class with the given list.
+        """
+        Replace all primary abilities for a class with the given list.
 
         Called internally from create/update — there is no dedicated PUT
         endpoint for this relationship.
