@@ -10,10 +10,6 @@ class RaceRepository(BaseRepository[Race]):
     def __init__(self, db: Session):
         super().__init__(Race, db)
 
-    def get_all(self) -> list[Race]:
-        """Get all races, ordered by name (overrides base pagination-based get_all)."""
-        return self.db.query(Race).order_by(Race.name).all()
-
     def get_by_name(self, name: str) -> Race | None:
         return self.db.query(Race).filter(Race.name == name).first()
 

@@ -38,22 +38,27 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse]):
         )
         self.repository: RaceRepository
 
-    def get_all_races(self) -> list[RaceResponse]:
-        """Return every race, ordered by name (no pagination)."""
-
-        races = self.repository.get_all()
-        return [RaceResponse.model_validate(race) for race in races]
-
     def get_race_by_id(self, race_id: int) -> RaceResponse:
         """Return a single race by ID, or raise ``RaceNotFoundException``."""
 
         return self.get_by_id(race_id)
 
-    def create_race(self, race_data: RaceCreate) -> RaceResponse:
-        """Create a race after checking its name isn't already taken."""
+    def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
+        """
+        Create a race after checking its name isn't already taken.
+
+        ``created_by_id`` identifies the GM who created it (relevant mainly
+        for homebrew races) and is not part of ``RaceCreate`` itself, since
+        it comes from the authenticated user, not client input.
+        """
 
         self._check_name_available(race_data.name)
-        return self.create(race_data)
+
+        payload = race_data.model_dump()
+        payload["created_by_id"] = created_by_id
+
+        item = self.repository.create(payload)
+        return self.response_schema.model_validate(item)
 
     def update_race(self, race_id: int, update_data: RaceUpdate) -> RaceResponse:
         """Update a race, re-checking name uniqueness if the name is changing."""

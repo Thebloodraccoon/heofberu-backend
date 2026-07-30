@@ -9,7 +9,7 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
 @router.get("/", response_model=list[SkillResponse])
 def get_skills(skill_service: SkillServiceDep, _: CurrentUserDep):
     """List all skills. Any authenticated user (GM or player) can read."""
-    return skill_service.get_all_skills()
+    return skill_service.get_all()
 
 
 @router.get("/{skill_id}", response_model=SkillResponse)
@@ -35,8 +35,9 @@ def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: GmUserDep):
     """
     Delete a skill. GM only.
 
-    Blocked if the skill is still granted by one or more races
-    (raises SkillInUseException, mapped to a 409 by the global exception handler).
+    Blocked if the skill is still referenced by a race, class, background,
+    or a character's skill proficiencies (raises SkillInUseException,
+    mapped to a 409 by the global exception handler).
     """
     skill_service.delete_skill(skill_id)
     return None

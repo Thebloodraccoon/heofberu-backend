@@ -1,13 +1,15 @@
 from pydantic import BaseModel, ConfigDict
 
+from app.constants import AbilityScore, AttackType, DamageType, SpellLevel, SpellRangeType, SpellSchool
+
 
 class SpellBase(BaseModel):
     name: str
-    school: str
-    level: str  # e.g. CANTRIP, LEVEL_1..LEVEL_9
+    school: SpellSchool
+    level: SpellLevel
 
     cast_time: str
-    range_type: str
+    range_type: SpellRangeType
     range_value: int | None = None
 
     components: str  # e.g. "VERBAL,SOMATIC,MATERIAL"
@@ -17,9 +19,10 @@ class SpellBase(BaseModel):
     duration: str
     is_concentration: bool = False
 
-    attack_type: str = "NONE"
-    save_stat: str | None = None
-    damage_type: str | None = None
+    # None means the spell has no attack roll (e.g. a save-based or utility spell).
+    attack_type: AttackType | None = None
+    save_stat: AbilityScore | None = None
+    damage_type: DamageType | None = None
     damage_dice: str | None = None
 
     description: str
@@ -34,19 +37,19 @@ class SpellUpdate(BaseModel):
     """All fields optional — only provided fields are updated (PATCH semantics)."""
 
     name: str | None = None
-    school: str | None = None
-    level: str | None = None
+    school: SpellSchool | None = None
+    level: SpellLevel | None = None
     cast_time: str | None = None
-    range_type: str | None = None
+    range_type: SpellRangeType | None = None
     range_value: int | None = None
     components: str | None = None
     material: str | None = None
     is_ritual: bool | None = None
     duration: str | None = None
     is_concentration: bool | None = None
-    attack_type: str | None = None
-    save_stat: str | None = None
-    damage_type: str | None = None
+    attack_type: AttackType | None = None
+    save_stat: AbilityScore | None = None
+    damage_type: DamageType | None = None
     damage_dice: str | None = None
     description: str | None = None
     higher_levels: str | None = None
@@ -56,3 +59,5 @@ class SpellResponse(SpellBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    is_homebrew: bool
+    created_by_id: int | None = None

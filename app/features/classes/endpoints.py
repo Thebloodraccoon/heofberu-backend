@@ -20,9 +20,9 @@ def get_class(class_id: int, class_service: ClassServiceDep, _: CurrentUserDep):
 
 
 @router.post("/", response_model=ClassResponse, status_code=201)
-def create_class(class_data: ClassCreate, class_service: ClassServiceDep, _: GmUserDep):
+def create_class(class_data: ClassCreate, class_service: ClassServiceDep, current_user: GmUserDep):
     """Create a new class. GM only."""
-    return class_service.create_class(class_data)
+    return class_service.create_class(class_data, created_by_id=current_user.id)
 
 
 @router.patch("/{class_id}", response_model=ClassResponse)
@@ -33,7 +33,12 @@ def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassSe
 
 @router.delete("/{class_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_class(class_id: int, class_service: ClassServiceDep, _: GmUserDep):
-    """Delete a class. GM only."""
+    """
+    Delete a class. GM only.
+
+    Blocked if the class is still assigned to one or more characters
+    (raises ClassInUseException, mapped to a 409 by the global exception handler).
+    """
     class_service.delete_class(class_id)
     return None
 

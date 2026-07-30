@@ -13,9 +13,8 @@ router = APIRouter(prefix="/races", tags=["Races"])
 
 
 @router.get("/", response_model=list[RaceResponse])
-def get_races(race_service: RaceServiceDep, _: CurrentUserDep):
-    """List all races. Any authenticated user (GM or player) can read."""
-    return race_service.get_all_races()
+def get_races(race_service: RaceServiceDep, _: CurrentUserDep, skip: int = 0, limit: int = 100):
+    return race_service.get_all(skip=skip, limit=limit)
 
 
 @router.get("/{race_id}", response_model=RaceResponse)
@@ -25,9 +24,9 @@ def get_race(race_id: int, race_service: RaceServiceDep, _: CurrentUserDep):
 
 
 @router.post("/", response_model=RaceResponse, status_code=201)
-def create_race(race_data: RaceCreate, race_service: RaceServiceDep, _: GmUserDep):
+def create_race(race_data: RaceCreate, race_service: RaceServiceDep, current_user: GmUserDep):
     """Create a new race. GM only."""
-    return race_service.create_race(race_data)
+    return race_service.create_race(race_data, created_by_id=current_user.id)
 
 
 @router.patch("/{race_id}", response_model=RaceResponse)

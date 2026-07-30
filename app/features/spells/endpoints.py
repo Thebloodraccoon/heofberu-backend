@@ -28,3 +28,9 @@ def create_spell(spell_data: SpellCreate, spell_service: SpellServiceDep, _: GmU
 def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellServiceDep, _: GmUserDep):
     """Update an existing spell. GM only."""
     return spell_service.update_spell(spell_id, update_data)
+
+
+@router.delete("/{spell_id}", status_code=204)
+def delete_spell(spell_id: int, spell_service: SpellServiceDep, _: GmUserDep):
+    """Delete a spell. GM only."""
+    spell_service.delete(spell_id)

@@ -18,10 +18,11 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse]):
 
     Adds behaviors the generic base class doesn't provide:
       - a plain, unpaginated ``get_all`` (skills are listed in full, sorted
-        by name, via ``SkillRepository.get_all``);
+        by name, via ``SkillRepository.get_all_sorted``);
       - a uniqueness check on ``key`` before create/update;
       - a delete guard that blocks removing a skill still referenced by any
-        race or class, since the FK is ``ON DELETE RESTRICT``.
+        race, class, background, or character skill proficiency, since the
+        FK on all four is ``ON DELETE RESTRICT``.
     """
 
     def __init__(self, db: Session):
@@ -31,12 +32,6 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse]):
             not_found_exception_factory=lambda skill_id: SkillNotFoundException(skill_id=skill_id),
         )
         self.repository: SkillRepository
-
-    def get_all_skills(self) -> list[SkillResponse]:
-        """Return every skill, ordered by name (no pagination)."""
-
-        skills = self.repository.get_all()
-        return [SkillResponse.model_validate(skill) for skill in skills]
 
     def get_skill_by_id(self, skill_id: int) -> SkillResponse:
         """Return a single skill by ID, or raise ``SkillNotFoundException``."""
@@ -62,7 +57,8 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse]):
     def delete_skill(self, skill_id: int) -> bool:
         """
         Delete a skill by ID, raising ``SkillInUseException`` if it's still
-        referenced by any race or class.
+        referenced by any race, class, background, or character skill
+        proficiency.
 
         Raises the feature's not-found exception if ``skill_id`` doesn't
         exist. The in-use check happens before deletion, with an

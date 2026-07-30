@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.core.repository import BaseRepository
-from app.models import Class, ClassPrimaryAbility, ClassSavingThrow, Skill
+from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, Skill
 
 
 class ClassRepository(BaseRepository[Class]):
@@ -14,6 +14,14 @@ class ClassRepository(BaseRepository[Class]):
 
     def get_by_name(self, name: str) -> Class | None:
         return self.db.query(Class).filter(Class.name == name).first()
+
+    def is_in_use(self, class_id: int) -> bool:
+        """
+        Check whether the class is currently assigned to any character
+        (characters.class_id), which would block deletion at the DB level
+        via ON DELETE RESTRICT.
+        """
+        return self.db.query(Character).filter(Character.class_id == class_id).first() is not None
 
     def set_primary_abilities(self, character_class: Class, abilities: list[str]) -> Class:
         """
