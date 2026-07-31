@@ -25,18 +25,14 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse]):
         FK on all four is ``ON DELETE RESTRICT``.
     """
 
+    repository: SkillRepository
+
     def __init__(self, db: Session):
         super().__init__(
             repository=SkillRepository(db),
             response_schema=SkillResponse,
             not_found_exception_factory=lambda skill_id: SkillNotFoundException(skill_id=skill_id),
         )
-        self.repository: SkillRepository
-
-    def get_skill_by_id(self, skill_id: int) -> SkillResponse:
-        """Return a single skill by ID, or raise ``SkillNotFoundException``."""
-
-        return self.get_by_id(skill_id)
 
     def create_skill(self, skill_data: SkillCreate) -> SkillResponse:
         """Create a skill after checking its key isn't already taken."""
@@ -47,12 +43,11 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse]):
     def update_skill(self, skill_id: int, update_data: SkillUpdate) -> SkillResponse:
         """Update a skill, re-checking key uniqueness if the key is changing."""
 
-        skill = self._get_or_404(skill_id)
-        fields = update_data.model_dump(exclude_unset=True)
-        if "key" in fields and fields["key"] != skill.key:
-            self._check_key_available(fields["key"])
+        def check_key_available_if_changing(skill: Skill, fields: dict) -> None:
+            if "key" in fields and fields["key"] != skill.key:
+                self._check_key_available(fields["key"])
 
-        return self.update(skill_id, update_data)
+        return self.update(skill_id, update_data, before_update=check_key_available_if_changing)
 
     def delete_skill(self, skill_id: int) -> bool:
         """

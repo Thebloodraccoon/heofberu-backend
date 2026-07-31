@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, status
+from fastapi import APIRouter, Body
 
 from app.core.dependencies import ClassServiceDep, GmUserDep
 from app.features.classes.schemas import (
@@ -73,7 +73,7 @@ def get_class(class_id: int, class_service: ClassServiceDep):
 @router.post(
     "/",
     response_model=ClassResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=201,
     summary="Create a class",
     responses={
         409: {"description": "A class with this name already exists."},
@@ -169,7 +169,7 @@ def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassSe
 
 @router.delete(
     "/{class_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=204,
     summary="Delete a class",
     responses={
         404: {"description": "No class exists with the given ID."},

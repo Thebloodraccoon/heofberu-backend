@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session
 from app.core.base_service import BaseService
 from app.features.spells.exceptions import SpellNameAlreadyExistsException, SpellNotFoundException
 from app.features.spells.repository import SpellRepository
-from app.features.spells.schemas import SpellCreate, SpellResponse, SpellUpdate
+from app.features.spells.schemas import SpellBriefResponse, SpellCreate, SpellResponse, SpellUpdate
 from app.models.spell_model import Spell
 
 
-class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse]):
+class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellBriefResponse]):
     """
     Spell-specific CRUD service built on :class:`BaseService`.
 
@@ -17,24 +17,15 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse]):
       - a uniqueness check on ``name`` before create/update.
     """
 
+    repository: SpellRepository
+
     def __init__(self, db: Session):
         super().__init__(
             repository=SpellRepository(db),
             response_schema=SpellResponse,
             not_found_exception_factory=lambda spell_id: SpellNotFoundException(spell_id=spell_id),
+            brief_schema=SpellBriefResponse,
         )
-        self.repository: SpellRepository
-
-    def get_all_spells(self) -> list[SpellResponse]:
-        """Return every spell, ordered by name (no pagination)."""
-
-        spells = self.repository.get_all()
-        return [SpellResponse.model_validate(spell) for spell in spells]
-
-    def get_spell_by_id(self, spell_id: int) -> SpellResponse:
-        """Return a single spell by ID, or raise ``SpellNotFoundException``."""
-
-        return self.get_by_id(spell_id)
 
     def create_spell(self, spell_data: SpellCreate) -> SpellResponse:
         """Create a spell after checking its name isn't already taken."""
@@ -45,13 +36,11 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse]):
     def update_spell(self, spell_id: int, update_data: SpellUpdate) -> SpellResponse:
         """Update a spell, re-checking name uniqueness if the name is changing."""
 
-        spell = self._get_or_404(spell_id)
-        fields = update_data.model_dump(exclude_unset=True)
+        def check_name_available_if_changing(spell: Spell, fields: dict) -> None:
+            if "name" in fields and fields["name"] != spell.name:
+                self._check_name_available(fields["name"])
 
-        if "name" in fields and fields["name"] != spell.name:
-            self._check_name_available(fields["name"])
-
-        return self.update(spell_id, update_data)
+        return self.update(spell_id, update_data, before_update=check_name_available_if_changing)
 
     def _check_name_available(self, name: str) -> None:
         """Raise ``SpellNameAlreadyExistsException`` if ``name`` is already in use."""

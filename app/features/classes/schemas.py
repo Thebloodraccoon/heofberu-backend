@@ -1,11 +1,11 @@
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.constants import AbilityScore, HitDice
+from app.constants import AbilityScore, DiceType
 
 
 class ClassBase(BaseModel):
     name: str
-    hit_dice: HitDice
+    hit_dice: DiceType
     skill_choice_count: int = 2
     spellcasting_ability: AbilityScore | None
     description: str = ""
@@ -101,7 +101,7 @@ class ClassUpdate(BaseModel):
     """
 
     name: str | None = None
-    hit_dice: HitDice | None = None
+    hit_dice: DiceType | None = None
     skill_choice_count: int | None = None
     spellcasting_ability: AbilityScore | None = None
     description: str | None = None
@@ -193,5 +193,5 @@ class ClassBriefResponse(BaseModel):
 
     id: int
     name: str
-    hit_dice: HitDice
+    hit_dice: DiceType
     is_homebrew: bool = False

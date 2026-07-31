@@ -5,6 +5,7 @@ from app.models.enums import (
     AbilityScoreType,
     AttackTypeType,
     DamageTypeType,
+    DiceTypeColumn,
     SpellLevelType,
     SpellRangeTypeType,
     SpellSchoolType,
@@ -37,7 +38,8 @@ class Spell(settings.Base):  # type: ignore
     attack_type = Column(AttackTypeType, nullable=True)  # NULL if the spell has no attack roll
     save_stat = Column(AbilityScoreType, nullable=True)
     damage_type = Column(DamageTypeType, nullable=True)
-    damage_dice = Column(String(30), nullable=True)
+    damage_dice_count = Column(Integer, nullable=True)  # e.g. 2
+    damage_dice_type = Column(DiceTypeColumn, nullable=True)  # e.g. D6 -> "2d6" combined
 
     description = Column(Text, nullable=False)
     higher_levels = Column(Text)

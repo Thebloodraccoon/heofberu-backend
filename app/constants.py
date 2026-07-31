@@ -24,13 +24,7 @@ class AbilityScore(str, Enum):
     CHA = "CHA"
 
 
-class HitDice(str, Enum):
-    """
-    Standard polyhedral dice used for a class's hit dice (e.g. Fighter
-    uses D10, Wizard uses D6). Stored as a native Postgres ENUM, same
-     pattern as AbilityScore/RaceSize — see app/models/enums.py.
-    """
-
+class DiceType(str, Enum):
     D4 = "D4"
     D6 = "D6"
     D8 = "D8"

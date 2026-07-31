@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, status
+from fastapi import APIRouter, Body
 
 from app.core.dependencies import GmUserDep, RaceServiceDep
 from app.features.races.schemas import (
@@ -71,7 +71,7 @@ def get_race(race_id: int, race_service: RaceServiceDep):
 @router.post(
     "/",
     response_model=RaceResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=201,
     summary="Create a race",
     responses={
         409: {"description": "A race with this name already exists."},
@@ -135,7 +135,7 @@ def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceService
 
 @router.delete(
     "/{race_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=204,
     summary="Delete a race",
     responses={
         404: {"description": "No race exists with the given ID."},

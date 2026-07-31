@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 
-from app.constants import AbilityScore, AttackType, DamageType, SpellLevel, SpellRangeType, SpellSchool
+from app.constants import AbilityScore, AttackType, DamageType, DiceType, SpellLevel, SpellRangeType, SpellSchool
 
 
 class SpellBase(BaseModel):
@@ -23,7 +23,8 @@ class SpellBase(BaseModel):
     attack_type: AttackType | None = None
     save_stat: AbilityScore | None = None
     damage_type: DamageType | None = None
-    damage_dice: str | None = None
+    damage_dice_count: int | None = None  # e.g. 2
+    damage_dice_type: DiceType | None = None  # e.g. D6 -> "2d6" combined
 
     description: str
     higher_levels: str | None = None
@@ -50,7 +51,8 @@ class SpellUpdate(BaseModel):
     attack_type: AttackType | None = None
     save_stat: AbilityScore | None = None
     damage_type: DamageType | None = None
-    damage_dice: str | None = None
+    damage_dice_count: int | None = None
+    damage_dice_type: DiceType | None = None
     description: str | None = None
     higher_levels: str | None = None
 
@@ -61,3 +63,15 @@ class SpellResponse(SpellBase):
     id: int
     is_homebrew: bool
     created_by_id: int | None = None
+
+
+class SpellBriefResponse(BaseModel):
+    """Lightweight listing row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    school: SpellSchool
+    level: SpellLevel
+    is_homebrew: bool
