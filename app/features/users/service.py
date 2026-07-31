@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.base_service import BaseService
 from app.core.security import get_password_hash
-from app.core.service import BaseService
 from app.features.users.exceptions import (
     DefaultUserProtectedException,
     SelfDeletionException,

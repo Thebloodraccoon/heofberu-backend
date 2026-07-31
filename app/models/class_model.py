@@ -2,7 +2,7 @@ from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.class_association_models import class_available_skills
-from app.models.enums import AbilityScoreType
+from app.models.enums import AbilityScoreType, HitDiceType
 from app.settings import settings
 
 
@@ -17,7 +17,7 @@ class Class(settings.Base):  # type: ignore
     id = Column(Integer, primary_key=True)
 
     name = Column(String(100), nullable=False, unique=True, index=True)
-    hit_dice = Column(String(10), nullable=False)  # e.g. "1d10"
+    hit_dice = Column(HitDiceType, nullable=False)  # e.g. "1d10"
     skill_choice_count = Column(Integer, nullable=False, default=2)
     spellcasting_ability = Column(AbilityScoreType, nullable=True)  # NULL if non-caster
 

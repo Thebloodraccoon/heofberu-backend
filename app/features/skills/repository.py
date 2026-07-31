@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.core.repository import BaseRepository
+from app.core.base_repository import BaseRepository
 from app.models.background_association_models import background_skills
 from app.models.character_association_models import CharacterSkillProficiency
 from app.models.class_association_models import class_available_skills
@@ -32,8 +32,6 @@ class SkillRepository(BaseRepository[Skill]):
             self.db.query(race_skills).filter(race_skills.c.skill_id == skill_id).first(),
             self.db.query(class_available_skills).filter(class_available_skills.c.skill_id == skill_id).first(),
             self.db.query(background_skills).filter(background_skills.c.skill_id == skill_id).first(),
-            self.db.query(CharacterSkillProficiency)
-            .filter(CharacterSkillProficiency.skill_id == skill_id)
-            .first(),
+            self.db.query(CharacterSkillProficiency).filter(CharacterSkillProficiency.skill_id == skill_id).first(),
         )
         return any(check is not None for check in checks)

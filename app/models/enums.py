@@ -6,6 +6,7 @@ from app.constants import (
     ConditionType,
     DamageType,
     FeatureSourceType,
+    HitDice,
     ItemRarity,
     ItemType,
     RaceSize,
@@ -23,6 +24,7 @@ from app.constants import (
 UserRoleType = SAEnum(UserRole, name="user_role", create_type=False)
 RaceSizeType = SAEnum(RaceSize, name="race_size", create_type=False)
 AbilityScoreType = SAEnum(AbilityScore, name="ability_score", create_type=False)
+HitDiceType = SAEnum(HitDice, name="hit_dice", create_type=False)
 AttackTypeType = SAEnum(AttackType, name="attack_type", create_type=False)
 SpellLevelType = SAEnum(SpellLevel, name="spell_level", create_type=False)
 SpellSchoolType = SAEnum(SpellSchool, name="spell_school", create_type=False)

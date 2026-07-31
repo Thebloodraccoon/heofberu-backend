@@ -7,7 +7,8 @@ def ability_modifier(score: int) -> int:
 
 
 def proficiency_bonus(level: int) -> int:
-    """Standard D&D 5e proficiency bonus by character level (1-20).
+    """
+    Standard D&D 5e proficiency bonus by character level (1-20).
 
     +2 at levels 1-4, +3 at 5-8, +4 at 9-12, +5 at 13-16, +6 at 17-20.
     """
@@ -19,7 +20,8 @@ def roll_d20() -> int:
 
 
 def roll_dice(dice_expression: str) -> int:
-    """Roll a dice expression like '1d8', '2d6', or a flat modifier like '3'.
+    """
+    Roll a dice expression like '1d8', '2d6', or a flat modifier like '3'.
 
     Supports a single 'NdM' term optionally followed by '+K'/'-K', e.g.
     '2d6+3'. Falls back to 0 for an empty/unparseable expression rather than

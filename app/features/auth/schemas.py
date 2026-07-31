@@ -2,7 +2,7 @@ import re
 
 from pydantic import BaseModel, field_validator
 
-from ...core.exceptions import InvalidEmailException
+from app.core.exceptions import InvalidEmailException
 
 
 class LoginRequest(BaseModel):

@@ -60,7 +60,8 @@ class RaceCreate(RaceBase):
 
 
 class RaceUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics).
+    """
+    All fields optional — only provided fields are updated (PATCH semantics).
 
     Deliberately does NOT include ability_bonuses/granted_skills: those keep
     their own PUT endpoints with explicit full-replace semantics, since PATCH's
@@ -122,7 +123,8 @@ class RaceResponse(RaceBase):
 
 
 class RaceBriefResponse(BaseModel):
-    """Lightweight listing row: no ability bonuses / granted skills, no traits/description.
+    """
+    Lightweight listing row: no ability bonuses / granted skills, no traits/description.
 
     Backed by ``RaceRepository.get_all_brief``, which selects only these
     columns directly (no relationship loading), so this is cheap even for

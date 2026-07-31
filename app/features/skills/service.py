@@ -1,7 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.service import BaseService
+from app.core.base_service import BaseService
 from app.features.skills.exceptions import (
     SkillInUseException,
     SkillKeyAlreadyExistsException,

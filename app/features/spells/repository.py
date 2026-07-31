@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.core.repository import BaseRepository
+from app.core.base_repository import BaseRepository
 from app.models.spell_model import Spell
 
 

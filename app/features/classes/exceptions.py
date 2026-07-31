@@ -35,3 +35,36 @@ class ClassInUseException(HTTPException):
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Class with id {class_id} is still in use and cannot be deleted.",
         )
+
+
+class InvalidSkillIdsException(HTTPException):
+    """Raised when one or more provided skill IDs do not correspond to existing skills."""
+
+    def __init__(self, skill_ids: list[int]):
+        self.skill_ids = skill_ids
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid skill id(s): {skill_ids}",
+        )
+
+
+class SpellcastingAbilityNotPrimaryException(HTTPException):
+    """
+    Raised when updating ``primary_abilities`` would drop the class's
+    existing ``spellcasting_ability`` from that list, without the request
+    also explicitly setting a new ``spellcasting_ability``.
+    """
+
+    def __init__(self, spellcasting_ability, primary_abilities: list):
+        self.spellcasting_ability = spellcasting_ability
+        self.primary_abilities = primary_abilities
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Cannot update primary_abilities to {primary_abilities}: "
+                f"the class's current spellcasting_ability "
+                f"('{spellcasting_ability}') would no longer be a primary "
+                f"ability. Pass spellcasting_ability explicitly in the same "
+                f"request to change it."
+            ),
+        )

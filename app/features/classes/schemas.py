@@ -1,39 +1,107 @@
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.constants import AbilityScore
+from app.constants import AbilityScore, HitDice
 
 
 class ClassBase(BaseModel):
     name: str
-    hit_dice: str
+    hit_dice: HitDice
     skill_choice_count: int = 2
-    spellcasting_ability: AbilityScore | None = None
+    spellcasting_ability: AbilityScore | None
     description: str = ""
     is_homebrew: bool = False
 
 
+def _validate_unique_primary_abilities(primary_abilities: list[AbilityScore]) -> list[AbilityScore]:
+    if len(primary_abilities) != len(set(primary_abilities)):
+        raise ValueError("Duplicate primary abilities are not allowed.")
+    return primary_abilities
+
+
+def _validate_unique_saving_throws(saving_throws: list[AbilityScore]) -> list[AbilityScore]:
+    if len(saving_throws) != len(set(saving_throws)):
+        raise ValueError("Duplicate saving throws are not allowed.")
+    return saving_throws
+
+
+def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
+    if len(skill_ids) != len(set(skill_ids)):
+        raise ValueError("Duplicate skill IDs are not allowed.")
+    return skill_ids
+
+
 class ClassCreate(ClassBase):
+    """
+    Create payload for a class.
+
+    ``primary_abilities`` and ``saving_throws`` default to empty lists
+    (matching prior behavior); ``available_skills`` is optional — a class
+    can be created without granting any skill choices up front, or with
+    them supplied immediately, avoiding an extra PUT round-trip. When
+    provided, ``available_skills`` semantics are "full replace from
+    empty", same as the dedicated
+    ``PUT /classes/{class_id}/available-skills`` endpoint.
+
+    If ``spellcasting_ability`` is set (non-null), it must appear in
+    ``primary_abilities`` — a class's casting stat is expected to also be
+    one of its primary abilities. A non-caster class must pass
+    ``spellcasting_ability: null`` explicitly and does not need it in
+    ``primary_abilities``.
+    """
+
     primary_abilities: list[AbilityScore] = []
     saving_throws: list[AbilityScore] = []
+    available_skills: list[int] | None = None
 
     @field_validator("primary_abilities")
     def validate_unique_primary_abilities(cls, primary_abilities):
-        if len(primary_abilities) != len(set(primary_abilities)):
-            raise ValueError("Duplicate primary abilities are not allowed.")
-        return primary_abilities
+        return _validate_unique_primary_abilities(primary_abilities)
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws(cls, saving_throws):
-        if len(saving_throws) != len(set(saving_throws)):
-            raise ValueError("Duplicate saving throws are not allowed.")
-        return saving_throws
+        return _validate_unique_saving_throws(saving_throws)
+
+    @field_validator("available_skills")
+    def validate_unique_available_skills(cls, available_skills):
+        if available_skills is None:
+            return available_skills
+        return _validate_unique_skill_ids(available_skills)
+
+    @model_validator(mode="after")
+    def validate_spellcasting_ability_is_primary(self):
+        if self.spellcasting_ability is not None and self.spellcasting_ability not in self.primary_abilities:
+            raise ValueError(
+                f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
+            )
+        return self
 
 
 class ClassUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics)."""
+    """
+    All fields optional — only provided fields are updated (PATCH semantics).
+
+    Deliberately does NOT include ``available_skills``: that keeps its own
+    PUT endpoint with explicit full-replace semantics, since PATCH's "only
+    touch what's set" doesn't map cleanly onto "replace the whole list"
+    (same rationale as Race's ability_bonuses/granted_skills).
+
+    ``primary_abilities`` and ``saving_throws`` ARE included here (unlike
+    Race's ability_bonuses/granted_skills) because they're simple string
+    lists rather than rows with extra data, so a full-replace PATCH field
+    is unambiguous.
+
+    Note on ``spellcasting_ability`` + ``primary_abilities``: if
+    ``primary_abilities`` is included in the request but
+    ``spellcasting_ability`` is not, the service layer checks the class's
+    *current* ``spellcasting_ability`` (if any) still appears in the new
+    ``primary_abilities`` list — and rejects the update if it doesn't, to
+    avoid silently leaving a caster class with a casting ability that's no
+    longer one of its primary abilities. Pass ``spellcasting_ability``
+    explicitly in the same request to change it instead.
+    """
 
     name: str | None = None
-    hit_dice: str | None = None
+    hit_dice: HitDice | None = None
     skill_choice_count: int | None = None
     spellcasting_ability: AbilityScore | None = None
     description: str | None = None
@@ -45,17 +113,25 @@ class ClassUpdate(BaseModel):
     def validate_unique_primary_abilities(cls, primary_abilities):
         if primary_abilities is None:
             return primary_abilities
-        if len(primary_abilities) != len(set(primary_abilities)):
-            raise ValueError("Duplicate primary abilities are not allowed.")
-        return primary_abilities
+        return _validate_unique_primary_abilities(primary_abilities)
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws_update(cls, saving_throws):
         if saving_throws is None:
             return saving_throws
-        if len(saving_throws) != len(set(saving_throws)):
-            raise ValueError("Duplicate saving throws are not allowed.")
-        return saving_throws
+        return _validate_unique_saving_throws(saving_throws)
+
+    @model_validator(mode="after")
+    def validate_spellcasting_ability_is_primary_if_both_set(self):
+        if (
+            self.spellcasting_ability is not None
+            and self.primary_abilities is not None
+            and self.spellcasting_ability not in self.primary_abilities
+        ):
+            raise ValueError(
+                f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
+            )
+        return self
 
 
 class SavingThrowsUpdate(BaseModel):
@@ -65,9 +141,7 @@ class SavingThrowsUpdate(BaseModel):
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws(cls, saving_throws):
-        if len(saving_throws) != len(set(saving_throws)):
-            raise ValueError("Duplicate saving throws are not allowed.")
-        return saving_throws
+        return _validate_unique_saving_throws(saving_throws)
 
 
 class AvailableSkillsUpdate(BaseModel):
@@ -77,9 +151,7 @@ class AvailableSkillsUpdate(BaseModel):
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
-        if len(skill_ids) != len(set(skill_ids)):
-            raise ValueError("Duplicate skill IDs are not allowed.")
-        return skill_ids
+        return _validate_unique_skill_ids(skill_ids)
 
 
 class PrimaryAbilityResponse(BaseModel):
@@ -112,3 +184,14 @@ class ClassResponse(ClassBase):
     primary_abilities: list[PrimaryAbilityResponse] = []
     saving_throws: list[SavingThrowResponse] = []
     available_skills: list[SkillResponse] = []
+
+
+class ClassBriefResponse(BaseModel):
+    """Lightweight listing row"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    hit_dice: HitDice
+    is_homebrew: bool = False

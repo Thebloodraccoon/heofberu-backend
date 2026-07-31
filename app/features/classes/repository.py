@@ -1,16 +1,12 @@
 from sqlalchemy.orm import Session
 
-from app.core.repository import BaseRepository
+from app.core.base_repository import BaseRepository
 from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, Skill
 
 
 class ClassRepository(BaseRepository[Class]):
     def __init__(self, db: Session):
         super().__init__(Class, db)
-
-    def get_all(self) -> list[Class]:
-        """Get all classes, ordered by name (overrides base pagination-based get_all)."""
-        return self.db.query(Class).order_by(Class.name).all()
 
     def get_by_name(self, name: str) -> Class | None:
         return self.db.query(Class).filter(Class.name == name).first()
@@ -23,31 +19,45 @@ class ClassRepository(BaseRepository[Class]):
         """
         return self.db.query(Character).filter(Character.class_id == class_id).first() is not None
 
-    def set_primary_abilities(self, character_class: Class, abilities: list[str]) -> Class:
+    def set_primary_abilities(self, character_class: Class, abilities: list[str], *, commit: bool = True) -> Class:
         """
         Replace all primary abilities for a class with the given list.
 
-        Called internally from create/update — there is no dedicated PUT
-        endpoint for this relationship.
+        ``commit`` lets callers that need atomicity across multiple writes
+        (e.g. creating a class + its primary abilities + its saving throws
+        together) defer the commit and flush instead, without duplicating
+        this method.
         """
         self.db.query(ClassPrimaryAbility).filter(ClassPrimaryAbility.class_id == character_class.id).delete()
 
         for ability in abilities:
             self.db.add(ClassPrimaryAbility(class_id=character_class.id, ability=ability))
 
-        self.db.commit()
-        self.db.refresh(character_class)
+        if commit:
+            self.db.commit()
+            self.db.refresh(character_class)
+        else:
+            self.db.flush()
+
         return character_class
 
-    def set_saving_throws(self, character_class: Class, abilities: list[str]) -> Class:
-        """Replace all saving throw proficiencies for a class with the given list."""
+    def set_saving_throws(self, character_class: Class, abilities: list[str], *, commit: bool = True) -> Class:
+        """
+        Replace all saving throw proficiencies for a class with the given list.
+
+        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        """
         self.db.query(ClassSavingThrow).filter(ClassSavingThrow.class_id == character_class.id).delete()
 
         for ability in abilities:
             self.db.add(ClassSavingThrow(class_id=character_class.id, ability=ability))
 
-        self.db.commit()
-        self.db.refresh(character_class)
+        if commit:
+            self.db.commit()
+            self.db.refresh(character_class)
+        else:
+            self.db.flush()
+
         return character_class
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
@@ -55,9 +65,18 @@ class ClassRepository(BaseRepository[Class]):
             return []
         return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()
 
-    def set_available_skills(self, character_class: Class, skills: list[Skill]) -> Class:
-        """Replace all skills a class may choose proficiencies from."""
+    def set_available_skills(self, character_class: Class, skills: list[Skill], *, commit: bool = True) -> Class:
+        """
+        Replace all skills a class may choose proficiencies from.
+
+        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        """
         character_class.available_skills = skills
-        self.db.commit()
-        self.db.refresh(character_class)
+
+        if commit:
+            self.db.commit()
+            self.db.refresh(character_class)
+        else:
+            self.db.flush()
+
         return character_class

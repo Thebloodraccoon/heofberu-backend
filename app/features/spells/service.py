@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.core.service import BaseService
+from app.core.base_service import BaseService
 from app.features.spells.exceptions import SpellNameAlreadyExistsException, SpellNotFoundException
 from app.features.spells.repository import SpellRepository
 from app.features.spells.schemas import SpellCreate, SpellResponse, SpellUpdate

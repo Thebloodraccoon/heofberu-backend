@@ -55,7 +55,7 @@ def get_races_brief(race_service: RaceServiceDep, skip: int = 0, limit: int = 10
     response_model=RaceResponse,
     summary="Get a race by ID",
     responses={
-        404: {"description": "No race exists with the given ID."},
+        404: {"description": "Race with id not found."},
     },
 )
 def get_race(race_id: int, race_service: RaceServiceDep):
@@ -65,7 +65,7 @@ def get_race(race_id: int, race_service: RaceServiceDep):
 
     Open endpoint, no authentication required.
     """
-    return race_service.get_race_by_id(race_id)
+    return race_service.get_by_id(race_id)
 
 
 @router.post(
@@ -139,6 +139,7 @@ def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceService
     summary="Delete a race",
     responses={
         404: {"description": "No race exists with the given ID."},
+        409: {"description": "Race is still in use by one or more characters."},
     },
 )
 def delete_race(race_id: int, race_service: RaceServiceDep, _: GmUserDep):
@@ -146,9 +147,8 @@ def delete_race(race_id: int, race_service: RaceServiceDep, _: GmUserDep):
     Delete a race. **GM only.**
 
     Also removes its ability bonuses (cascade) and its links to granted
-    skills. Characters referencing this race are not affected directly by
-    this endpoint — deletion may be blocked by a foreign key constraint if
-    characters still reference it.
+    skills. Blocked if the race is still assigned to one or more
+    characters.
     """
     race_service.delete_race(race_id)
     return None

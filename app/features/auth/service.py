@@ -3,10 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import InvalidCredentialsException
 from app.core.security import verify_password
-
-from ..users.repository import UserRepository
-from .schemas import LoginRequest, LoginResponse, LogoutResponse, RefreshResponse
-from .token_utils import create_access_token, create_refresh_token, verify_refresh_token
+from app.features.auth.schemas import LoginRequest, LoginResponse, LogoutResponse, RefreshResponse
+from app.features.auth.token_utils import create_access_token, create_refresh_token, verify_refresh_token
+from app.features.users.repository import UserRepository
 
 
 def create_login_response(user, response: Response) -> LoginResponse:
