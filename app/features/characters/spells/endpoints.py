@@ -9,7 +9,7 @@ from app.features.characters.spells.schemas import (
     SpellSlotUpdate,
 )
 
-router = APIRouter(prefix="/characters", tags=["Characters"])
+router = APIRouter(tags=["Characters Spells"])
 
 
 @router.get("/{character_id}/spell-slots", response_model=list[SpellSlotResponse])

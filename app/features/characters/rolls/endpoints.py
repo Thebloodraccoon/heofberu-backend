@@ -8,7 +8,7 @@ from app.features.characters.rolls.schemas import (
     RollCheckResponse,
 )
 
-router = APIRouter(prefix="/characters", tags=["Characters"])
+router = APIRouter(tags=["Characters Rolls"])
 
 
 @router.post("/{character_id}/roll-check", response_model=RollCheckResponse)

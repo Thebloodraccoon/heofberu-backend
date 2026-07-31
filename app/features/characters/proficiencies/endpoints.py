@@ -7,7 +7,7 @@ from app.features.characters.proficiencies.schemas import (
 )
 from app.features.characters.schemas import CharacterResponse
 
-router = APIRouter(prefix="/characters", tags=["Characters"])
+router = APIRouter(tags=["Characters Proficiencies"])
 
 
 @router.put("/{character_id}/skills", response_model=CharacterResponse)

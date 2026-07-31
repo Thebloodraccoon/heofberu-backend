@@ -3,7 +3,7 @@ from fastapi import APIRouter, status
 from app.core.dependencies import CharacterAttackServiceDep, CurrentUserDep
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 
-router = APIRouter(prefix="/characters", tags=["Characters"])
+router = APIRouter(tags=["Characters Attacks"])
 
 
 @router.get("/{character_id}/attacks", response_model=list[AttackResponse])

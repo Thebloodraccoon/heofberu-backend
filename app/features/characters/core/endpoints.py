@@ -4,7 +4,7 @@ from app.core.dependencies import CharacterServiceDep, CurrentUserDep
 from app.features.characters.core.schemas import HpUpdate, RestRequest
 from app.features.characters.schemas import CharacterCreate, CharacterResponse, CharacterUpdate
 
-router = APIRouter(prefix="/characters", tags=["Characters"])
+router = APIRouter(tags=["Characters Core"])
 
 
 @router.get("/", response_model=list[CharacterResponse])

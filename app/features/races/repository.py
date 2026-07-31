@@ -13,15 +13,43 @@ class RaceRepository(BaseRepository[Race]):
     def get_by_name(self, name: str) -> Race | None:
         return self.db.query(Race).filter(Race.name == name).first()
 
-    def set_ability_bonuses(self, race: Race, bonuses: list[dict]) -> Race:
-        """Replace all ability bonuses for a race with the given list."""
+    def get_brief(self, *, skip: int = 0, limit: int = 100) -> list[Race]:
+        """
+        Paginated listing of races for brief display.
+
+        Unlike ``get_all_brief`` on the base class (which is intentionally
+        unpaginated and returns raw ``Row`` tuples), this keeps pagination
+        and returns full ``Race`` ORM objects — but callers should serialize
+        with ``RaceBriefResponse``, not ``RaceResponse``, so relationships
+        like ``ability_bonuses``/``granted_skills`` are never touched and
+        never trigger extra queries.
+        """
+        return (
+            self.db.query(Race)
+            .order_by(Race.name)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def set_ability_bonuses(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> Race:
+        """Replace all ability bonuses for a race with the given list.
+
+        ``commit`` lets callers that need atomicity across multiple writes
+        (e.g. creating a race + its bonuses + its skills together) defer
+        the commit and flush instead, without duplicating this method.
+        """
         self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == race.id).delete()
 
         for item in bonuses:
             self.db.add(RaceAbilityBonus(race_id=race.id, ability=item["ability"], bonus=item["bonus"]))
 
-        self.db.commit()
-        self.db.refresh(race)
+        if commit:
+            self.db.commit()
+            self.db.refresh(race)
+        else:
+            self.db.flush()
+
         return race
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
@@ -29,9 +57,17 @@ class RaceRepository(BaseRepository[Race]):
             return []
         return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()
 
-    def set_skills(self, race: Race, skills: list[Skill]) -> Race:
-        """Replace all granted skills for a race with the given list."""
+    def set_skills(self, race: Race, skills: list[Skill], *, commit: bool = True) -> Race:
+        """Replace all granted skills for a race with the given list.
+
+        See ``set_ability_bonuses`` for the meaning of ``commit=False``.
+        """
         race.granted_skills = skills
-        self.db.commit()
-        self.db.refresh(race)
+
+        if commit:
+            self.db.commit()
+            self.db.refresh(race)
+        else:
+            self.db.flush()
+
         return race

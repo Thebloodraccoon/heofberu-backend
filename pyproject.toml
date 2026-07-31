@@ -7,7 +7,7 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-fastapi = {extras = ["standard"], version = "0.115.12"}
+fastapi = {extras = ["standard"], version = "0.115.13"}
 uvicorn = {extras = ["standard"], version = "0.34.3"}
 starlette = "0.46.2"
 sqlalchemy = "2.0.41"

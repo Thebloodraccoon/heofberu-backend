@@ -6,7 +6,7 @@ from app.features.characters.proficiencies.endpoints import router as proficienc
 from app.features.characters.rolls.endpoints import router as rolls_router
 from app.features.characters.spells.endpoints import router as spells_router
 
-router = APIRouter()
+router = APIRouter(prefix="/characters")
 
 router.include_router(core_router)
 router.include_router(proficiencies_router)
