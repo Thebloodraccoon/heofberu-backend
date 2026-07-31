@@ -29,13 +29,14 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
       - lookup by email, used by the auth feature.
     """
 
+    repository: UserRepository
+
     def __init__(self, db: Session):
         super().__init__(
             repository=UserRepository(db),
             response_schema=UserResponse,
             not_found_exception_factory=lambda user_id: UserNotFoundException(user_id=user_id),
         )
-        self.repository: UserRepository
 
     def get_user_by_id(self, user_id: int) -> UserResponse:
         """Return a single user by ID, or raise ``UserNotFoundException``."""
