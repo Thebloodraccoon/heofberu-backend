@@ -27,7 +27,7 @@ class ClassSpellSlotProgression(settings.Base):  # type: ignore
         CheckConstraint("slots >= 0", name="check_progression_slots_nonnegative"),
     )
 
-    character_class = relationship("Class")
+    character_class = relationship("Class", viewonly=True)
 
     def __repr__(self):
         return (
