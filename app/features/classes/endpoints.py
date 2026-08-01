@@ -19,7 +19,7 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
     response_model=list[ClassResponse],
     summary="List classes (full detail)",
 )
-def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 100):
+def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 10):
     """
     Return a paginated list of classes, ordered by name, each with full
     detail — including primary abilities, saving throws, and available
@@ -38,7 +38,7 @@ def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 100)
     response_model=list[ClassBriefResponse],
     summary="List classes (minimal fields)",
 )
-def get_classes_brief(class_service: ClassServiceDep, skip: int = 0, limit: int = 100):
+def get_classes_brief(class_service: ClassServiceDep, skip: int = 0, limit: int = 10):
     """
     Return a paginated list of classes with only `id`, `name`, `hit_dice`,
     and `is_homebrew`.
