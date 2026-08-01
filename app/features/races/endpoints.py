@@ -18,7 +18,7 @@ router = APIRouter(prefix="/races", tags=["Races"])
     response_model=list[RaceResponse],
     summary="List races (full detail)",
 )
-def get_races(race_service: RaceServiceDep, skip: int = 0, limit: int = 100):
+def get_races(race_service: RaceServiceDep, skip: int = 0, limit: int = 10):
     """
     Return a paginated list of races, each with full detail — including
     ability bonuses and granted skills.
@@ -36,7 +36,7 @@ def get_races(race_service: RaceServiceDep, skip: int = 0, limit: int = 100):
     response_model=list[RaceBriefResponse],
     summary="List races (minimal fields)",
 )
-def get_races_brief(race_service: RaceServiceDep, skip: int = 0, limit: int = 100):
+def get_races_brief(race_service: RaceServiceDep, skip: int = 0, limit: int = 10):
     """
     Return a paginated list of races with only `id`, `name`, `size`, and
     `is_homebrew`.

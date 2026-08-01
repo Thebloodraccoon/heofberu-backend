@@ -11,15 +11,15 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
     response_model=list[SkillResponse],
     summary="List skills (full detail)",
 )
-def get_skills(skill_service: SkillServiceDep):
+def get_skills(skill_service: SkillServiceDep, skip: int = 0, limit: int = 10):
     """
-    Return every skill, with full detail, ordered by name.
+    Return a paginated list of skills, with full detail.
 
     Open endpoint, no authentication required.
 
     For a lighter payload, use `GET /skills/brief` instead.
     """
-    return skill_service.get_all()
+    return skill_service.get_all(skip=skip, limit=limit)
 
 
 @router.get(
@@ -27,7 +27,7 @@ def get_skills(skill_service: SkillServiceDep):
     response_model=list[SkillBriefResponse],
     summary="List skills (minimal fields)",
 )
-def get_skills_brief(skill_service: SkillServiceDep, skip: int = 0, limit: int = 100):
+def get_skills_brief(skill_service: SkillServiceDep, skip: int = 0, limit: int = 10):
     """
     Return a paginated list of skills with only `id`, `key`, `name`, and
     `ability`.

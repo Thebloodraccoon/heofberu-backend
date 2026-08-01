@@ -19,7 +19,7 @@ def get_features(
     race_id: int | None = None,
     background_id: int | None = None,
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 50,
 ):
     """
     Return a paginated list of features, with full detail, ordered by
@@ -58,7 +58,7 @@ def get_features_brief(
     race_id: int | None = None,
     background_id: int | None = None,
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 50,
 ):
     """
     Return a paginated list of features with only `id`, `name`,

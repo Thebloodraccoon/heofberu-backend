@@ -11,7 +11,7 @@ router = APIRouter(prefix="/items", tags=["Items"])
     response_model=list[ItemResponse],
     summary="List items (full detail)",
 )
-def get_items(item_service: ItemServiceDep, skip: int = 0, limit: int = 100):
+def get_items(item_service: ItemServiceDep, skip: int = 0, limit: int = 50):
     """
     Return a paginated list of items, with full detail.
 
@@ -27,7 +27,7 @@ def get_items(item_service: ItemServiceDep, skip: int = 0, limit: int = 100):
     response_model=list[ItemBriefResponse],
     summary="List items (minimal fields)",
 )
-def get_items_brief(item_service: ItemServiceDep, skip: int = 0, limit: int = 100):
+def get_items_brief(item_service: ItemServiceDep, skip: int = 0, limit: int = 50):
     """
     Return a paginated list of items with only `id`, `name`, `item_type`,
     `rarity`, `cost_gold`, and `is_homebrew`.

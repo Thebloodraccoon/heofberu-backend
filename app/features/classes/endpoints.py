@@ -19,18 +19,18 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
     response_model=list[ClassResponse],
     summary="List classes (full detail)",
 )
-def get_classes(class_service: ClassServiceDep):
+def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 100):
     """
-    Return every class, ordered by name, each with full detail — including
-    primary abilities, saving throws, and available skills.
+    Return a paginated list of classes, ordered by name, each with full
+    detail — including primary abilities, saving throws, and available
+    skills.
 
     Open endpoint, no authentication required.
 
-    Unlike most listing endpoints, this is NOT paginated — classes are
-    always returned in full. For a lighter payload (no
-    abilities/throws/skills), use `GET /classes/brief` instead.
+    For a lighter payload (no abilities/throws/skills), use
+    `GET /classes/brief` instead.
     """
-    return class_service.get_all()
+    return class_service.get_all(skip=skip, limit=limit)
 
 
 @router.get(
