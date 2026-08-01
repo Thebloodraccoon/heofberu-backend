@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.constants import AbilityScore, DiceType
+from app.constants import AbilityScore, DiceType, SpellLevel
 
 
 class ClassBase(BaseModel):
@@ -154,6 +154,46 @@ class AvailableSkillsUpdate(BaseModel):
         return _validate_unique_skill_ids(skill_ids)
 
 
+class SpellSlotEntry(BaseModel):
+    """One row of a spell slot progression: slots of a given spell level at a given class level."""
+
+    spell_level: SpellLevel
+    slots: int = 0
+
+
+class SpellSlotProgressionUpdate(BaseModel):
+    """
+    Full replacement of the spell slots a class grants at a single
+    ``class_level``, keyed by ``spell_level`` — e.g. a level-5 Wizard's
+    slots across LEVEL_1..LEVEL_3.
+
+    Full replace, not merge: any ``spell_level`` for this ``class_level``
+    not included in ``slots`` is removed (slots reset to 0). Duplicate
+    ``spell_level`` entries are rejected — send one entry per spell level.
+
+    No relationship is enforced to ``spellcasting_ability`` — progressions
+    may be set on any class, including non-casters, to support cases like
+    multiclass slot tables that don't map onto a single ability.
+    """
+
+    slots: list[SpellSlotEntry]
+
+    @field_validator("slots")
+    def validate_unique_spell_levels(cls, slots):
+        levels = [entry.spell_level for entry in slots]
+        if len(levels) != len(set(levels)):
+            raise ValueError("Duplicate spell_level entries are not allowed.")
+        return slots
+
+
+class SpellSlotProgressionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    class_level: int
+    spell_level: SpellLevel
+    slots: int
+
+
 class PrimaryAbilityResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -184,6 +224,7 @@ class ClassResponse(ClassBase):
     primary_abilities: list[PrimaryAbilityResponse] = []
     saving_throws: list[SavingThrowResponse] = []
     available_skills: list[SkillResponse] = []
+    spell_slot_progression: list[SpellSlotProgressionResponse] = []
 
 
 class ClassBriefResponse(BaseModel):

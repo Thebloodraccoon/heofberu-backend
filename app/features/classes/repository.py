@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.core.base_repository import BaseRepository
-from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, Skill
+from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, ClassSpellSlotProgression, Skill
 
 
 class ClassRepository(BaseRepository[Class]):
@@ -72,6 +72,45 @@ class ClassRepository(BaseRepository[Class]):
         See ``set_primary_abilities`` for the meaning of ``commit=False``.
         """
         character_class.available_skills = skills
+
+        if commit:
+            self.db.commit()
+            self.db.refresh(character_class)
+        else:
+            self.db.flush()
+
+        return character_class
+
+    def set_spell_slots(
+        self, character_class: Class, class_level: int, slots_by_spell_level: dict[str, int], *, commit: bool = True
+    ) -> Class:
+        """
+        Replace the spell slot progression row(s) for a single
+        ``class_level``, one row per ``spell_level`` key in
+        ``slots_by_spell_level``.
+
+        Full replace for that ``class_level`` only: existing rows for this
+        ``class_level`` are deleted first, then re-inserted from the given
+        mapping — any ``spell_level`` not present in
+        ``slots_by_spell_level`` simply has no row (equivalent to 0 slots).
+        Rows for other ``class_level`` values are untouched.
+
+        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        """
+        self.db.query(ClassSpellSlotProgression).filter(
+            ClassSpellSlotProgression.class_id == character_class.id,
+            ClassSpellSlotProgression.class_level == class_level,
+        ).delete()
+
+        for spell_level, slots in slots_by_spell_level.items():
+            self.db.add(
+                ClassSpellSlotProgression(
+                    class_id=character_class.id,
+                    class_level=class_level,
+                    spell_level=spell_level,
+                    slots=slots,
+                )
+            )
 
         if commit:
             self.db.commit()

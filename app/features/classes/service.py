@@ -6,6 +6,7 @@ from app.features.classes.exceptions import (
     ClassInUseException,
     ClassNameAlreadyExistsException,
     ClassNotFoundException,
+    InvalidClassLevelException,
     InvalidSkillIdsException,
     SpellcastingAbilityNotPrimaryException,
 )
@@ -17,6 +18,7 @@ from app.features.classes.schemas import (
     ClassResponse,
     ClassUpdate,
     SavingThrowsUpdate,
+    SpellSlotProgressionUpdate,
 )
 from app.models.class_model import Class
 
@@ -204,6 +206,27 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
             raise InvalidSkillIdsException(missing_ids)
 
         updated_class = self.repository.set_available_skills(character_class, skills)
+        return self.response_schema.model_validate(updated_class)
+
+    def set_spell_slots(self, class_id: int, class_level: int, data: SpellSlotProgressionUpdate) -> ClassResponse:
+        """
+        Replace the spell slots a class grants at a single ``class_level``.
+
+        No check against ``spellcasting_ability`` is performed — a
+        progression may be set for any class, caster or not, to support
+        cases like multiclass slot tables. ``class_level`` must be within
+        1-20 (matching the model's check constraint); anything outside
+        that range is rejected before touching the database rather than
+        relying on the DB to raise an ``IntegrityError``.
+        """
+        character_class = self._get_or_404(class_id)
+
+        if not (1 <= class_level <= 20):
+            raise InvalidClassLevelException(class_level)
+
+        slots_by_spell_level = {entry.spell_level: entry.slots for entry in data.slots}
+
+        updated_class = self.repository.set_spell_slots(character_class, class_level, slots_by_spell_level)
         return self.response_schema.model_validate(updated_class)
 
     def _check_name_available(self, name: str) -> None:

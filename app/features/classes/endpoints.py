@@ -8,6 +8,7 @@ from app.features.classes.schemas import (
     ClassResponse,
     ClassUpdate,
     SavingThrowsUpdate,
+    SpellSlotProgressionUpdate,
 )
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
@@ -257,3 +258,53 @@ def set_class_available_skills(
     is removed. Send an empty list to clear all available skills.
     """
     return class_service.set_available_skills(class_id, data)
+
+
+@router.put(
+    "/{class_id}/spell-slots/{class_level}",
+    response_model=ClassResponse,
+    summary="Replace a class's spell slots at a given class level",
+    responses={
+        400: {"description": "class_level is outside the valid 1-20 range."},
+        404: {"description": "No class exists with the given ID."},
+    },
+)
+def set_class_spell_slots(
+    class_id: int,
+    class_level: int,
+    class_service: ClassServiceDep,
+    _: GmUserDep,
+    data: SpellSlotProgressionUpdate = Body(
+        openapi_examples={
+            "level_5_wizard": {
+                "summary": "Level 5 Wizard — 3 first-level, 3 second-level, 2 third-level slots",
+                "value": {
+                    "slots": [
+                        {"spell_level": "LEVEL_1", "slots": 3},
+                        {"spell_level": "LEVEL_2", "slots": 3},
+                        {"spell_level": "LEVEL_3", "slots": 2},
+                    ]
+                },
+            },
+            "clear": {
+                "summary": "Clear all slots at this class level",
+                "value": {"slots": []},
+            },
+        },
+    ),
+):
+    """
+    Replace the spell slots a class grants at a single `class_level`.
+    **GM only.**
+
+    Full replace, not merge, scoped to this `class_level`: the
+    `spell_level`/`slots` pairs in the request body become the complete
+    set of slots granted at this level — any `spell_level` not included
+    is reset to 0. Other class levels are untouched; call this endpoint
+    once per level to build up the full progression table.
+
+    No check is made that the class has a `spellcasting_ability` —
+    progressions can be set on any class, including to support
+    multiclass-style slot tables.
+    """
+    return class_service.set_spell_slots(class_id, class_level, data)

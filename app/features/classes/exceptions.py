@@ -48,6 +48,17 @@ class InvalidSkillIdsException(HTTPException):
         )
 
 
+class InvalidClassLevelException(HTTPException):
+    """Raised when a spell slot progression is set for a class_level outside 1-20."""
+
+    def __init__(self, class_level: int):
+        self.class_level = class_level
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid class_level '{class_level}': must be between 1 and 20.",
+        )
+
+
 class SpellcastingAbilityNotPrimaryException(HTTPException):
     """
     Raised when updating ``primary_abilities`` would drop the class's
