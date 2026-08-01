@@ -3,7 +3,13 @@ from sqlalchemy import Enum as SAEnum
 from app.constants import (
     AbilityScore,
     AttackType,
+    ConditionType,
     DamageType,
+    DiceType,
+    FeatureSourceType,
+    HealingTarget,
+    ItemRarity,
+    ItemType,
     RaceSize,
     SpellLevel,
     SpellRangeType,
@@ -19,8 +25,14 @@ from app.constants import (
 UserRoleType = SAEnum(UserRole, name="user_role", create_type=False)
 RaceSizeType = SAEnum(RaceSize, name="race_size", create_type=False)
 AbilityScoreType = SAEnum(AbilityScore, name="ability_score", create_type=False)
+DiceTypeColumn = SAEnum(DiceType, name="hit_dice", create_type=False)
 AttackTypeType = SAEnum(AttackType, name="attack_type", create_type=False)
 SpellLevelType = SAEnum(SpellLevel, name="spell_level", create_type=False)
 SpellSchoolType = SAEnum(SpellSchool, name="spell_school", create_type=False)
 SpellRangeTypeType = SAEnum(SpellRangeType, name="spell_range_type", create_type=False)
 DamageTypeType = SAEnum(DamageType, name="damage_type", create_type=False)
+HealingTargetType = SAEnum(HealingTarget, name="healing_target", create_type=False)
+ItemTypeType = SAEnum(ItemType, name="item_type", create_type=False)
+ItemRarityType = SAEnum(ItemRarity, name="item_rarity", create_type=False)
+FeatureSourceTypeType = SAEnum(FeatureSourceType, name="feature_source_type", create_type=False)
+ConditionTypeType = SAEnum(ConditionType, name="condition_type", create_type=False)

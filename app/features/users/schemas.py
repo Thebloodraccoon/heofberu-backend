@@ -4,7 +4,8 @@ import re
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import UserRole
-from app.exceptions.user_exceptions import InvalidEmailException, InvalidPasswordException
+from app.core.exceptions import InvalidEmailException
+from app.features.users.exceptions import InvalidPasswordException
 
 
 class UserBase(BaseModel):

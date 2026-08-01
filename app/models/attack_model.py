@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
-from app.models.enums import AbilityScoreType, AttackTypeType, DamageTypeType
+from app.models.enums import AbilityScoreType, AttackTypeType, DamageTypeType, DiceTypeColumn
 from app.settings import settings
 
 
@@ -20,7 +20,8 @@ class Attack(settings.Base):  # type: ignore
 
     bonus_attack = Column(Integer, nullable=False, default=0)
     bonus_damage = Column(Integer, nullable=False, default=0)
-    damage_dice = Column(String(30), nullable=False, default="")
+    damage_dice_count = Column(Integer, nullable=True)  # e.g. 2
+    damage_dice_type = Column(DiceTypeColumn, nullable=True)  # e.g. D6 -> "2d6" combined
     damage_type = Column(DamageTypeType, nullable=True)
     range = Column(String(50), nullable=False, default="")
     notes = Column(Text, nullable=False, default="")

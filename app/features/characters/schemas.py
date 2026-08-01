@@ -1,7 +1,12 @@
 from pydantic import BaseModel, ConfigDict
 
 from app.constants import AbilityScore
-from app.features.spells.schemas import SpellResponse
+from app.features.characters.attacks.schemas import AttackResponse
+from app.features.characters.proficiencies.schemas import (
+    SavingThrowProficiencyResponse,
+    SkillProficiencyResponse,
+)
+from app.features.characters.spells.schemas import SpellSlotResponse
 
 
 class CharacterBase(BaseModel):
@@ -53,7 +58,8 @@ class CharacterCreate(CharacterBase):
 
 
 class CharacterUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics).
+    """
+    All fields optional — only provided fields are updated (PATCH semantics).
 
     Skill proficiencies, saving throw proficiencies, and spell slots are
     managed through their own dedicated endpoints, not through this schema.
@@ -102,167 +108,14 @@ class CharacterUpdate(BaseModel):
     spell_attack_misc_bonus: int | None = None
 
 
-class HpUpdate(BaseModel):
-    """Update a character's HP either by a relative delta or by setting
-    absolute values. Provide either `delta` or one/both of
-    `current_hp`/`temp_hp` — not both styles at once.
-    """
-
-    delta: int | None = None
-    current_hp: int | None = None
-    temp_hp: int | None = None
-
-
-class SkillProficiencyItem(BaseModel):
-    skill_id: int
-    is_expertise: bool = False
-
-
-class SkillProficienciesUpdate(BaseModel):
-    """Full replacement list of a character's skill proficiencies."""
-
-    skill_proficiencies: list[SkillProficiencyItem]
-
-
-class SavingThrowProficienciesUpdate(BaseModel):
-    """Full replacement list of a character's saving throw proficiencies."""
-
-    saving_throws: list[AbilityScore]
-
-
-class SkillProficiencyResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    skill_id: int
-    is_expertise: bool
-
-
-class SavingThrowProficiencyResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    ability: AbilityScore
-
-
-class SpellSlotResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    spell_level: str
-    total: int
-    used: int
-
-
-class SpellSlotUpdate(BaseModel):
-    """Update the used/total count for a single spell slot level."""
-
-    level: str
-    used: int | None = None
-    total: int | None = None
-
-
-class RestRequest(BaseModel):
-    type: str  # "short" or "long"
-
-
-class CharacterSpellAdd(BaseModel):
-    spell_id: int
-
-
-class CharacterSpellPrepareUpdate(BaseModel):
-    is_prepared: bool
-
-
-class CharacterSpellResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    spell_id: int
-    is_prepared: bool
-    spell: SpellResponse
-
-
-class AttackBase(BaseModel):
-    name: str
-    attack_type: str  # e.g. MELEE, RANGED, SPELL
-    ability: AbilityScore
-    is_proficient: bool = True
-
-    bonus_attack: int = 0
-    bonus_damage: int = 0
-    damage_dice: str = ""
-    damage_type: str | None = None
-    range: str = ""
-    notes: str = ""
-
-
-class AttackCreate(AttackBase):
-    pass
-
-
-class AttackUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics)."""
-
-    name: str | None = None
-    attack_type: str | None = None
-    ability: AbilityScore | None = None
-    is_proficient: bool | None = None
-
-    bonus_attack: int | None = None
-    bonus_damage: int | None = None
-    damage_dice: str | None = None
-    damage_type: str | None = None
-    range: str | None = None
-    notes: str | None = None
-
-
-class AttackResponse(AttackBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    character_id: int
-
-
-class RollCheckRequest(BaseModel):
-    """Request a skill check or saving throw roll.
-
-    Provide exactly one of `skill_id` (skill check) or `ability` (raw
-    ability check or saving throw, depending on `check_type`).
-    """
-
-    skill_id: int | None = None
-    ability: AbilityScore | None = None
-    check_type: str = "check"  # "check" or "save"
-
-
-class RollCheckResponse(BaseModel):
-    d20_roll: int
-    ability: AbilityScore
-    ability_modifier: int
-    proficiency_bonus: int
-    is_proficient: bool
-    total: int
-    check_type: str
-    skill_id: int | None = None
-
-
-class RollAttackRequest(BaseModel):
-    attack_id: int
-
-
-class RollAttackResponse(BaseModel):
-    attack_id: int
-    attack_name: str
-    d20_roll: int
-    ability_modifier: int
-    proficiency_bonus: int
-    is_proficient: bool
-    attack_total: int
-    damage_dice: str
-    damage_roll: int
-    damage_modifier: int
-    damage_total: int
-    is_critical: bool
-
-
 class CharacterResponse(CharacterBase):
+    """
+    Aggregates response schemas from every sub-domain into one payload.
+
+    This is the one place the sub-domains' schemas are pulled together —
+    each sub-domain package otherwise stays independent of the others.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

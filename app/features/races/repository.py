@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
-from app.core.repository import BaseRepository
+from app.core.base_repository import BaseRepository
+from app.models import Character
 from app.models.race_association_models import RaceAbilityBonus
 from app.models.race_model import Race
 from app.models.skill_model import Skill
@@ -10,32 +11,58 @@ class RaceRepository(BaseRepository[Race]):
     def __init__(self, db: Session):
         super().__init__(Race, db)
 
-    def get_all(self) -> list[Race]:
-        """Get all races, ordered by name (overrides base pagination-based get_all)."""
-        return self.db.query(Race).order_by(Race.name).all()
-
     def get_by_name(self, name: str) -> Race | None:
         return self.db.query(Race).filter(Race.name == name).first()
 
-    def set_ability_bonuses(self, race: Race, bonuses: list[dict]) -> Race:
-        """Replace all ability bonuses for a race with the given list."""
+    def is_in_use(self, race_id: int) -> bool:
+        """
+        Check whether the race is currently assigned to any character
+        (characters.race_id), which would block deletion at the DB level
+        via ON DELETE RESTRICT.
+        """
+        return self.db.query(Character).filter(Character.race_id == race_id).first() is not None
+
+    def set_ability_bonuses(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> Race:
+        """
+        Replace all ability bonuses for a race with the given list.
+
+        ``commit`` lets callers that need atomicity across multiple writes
+        (e.g. creating a race + its bonuses + its skills together) defer
+        the commit and flush instead, without duplicating this method.
+        """
+
         self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == race.id).delete()
 
         for item in bonuses:
             self.db.add(RaceAbilityBonus(race_id=race.id, ability=item["ability"], bonus=item["bonus"]))
 
-        self.db.commit()
-        self.db.refresh(race)
+        if commit:
+            self.db.commit()
+            self.db.refresh(race)
+        else:
+            self.db.flush()
+
         return race
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         if not skill_ids:
             return []
+
         return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()
 
-    def set_skills(self, race: Race, skills: list[Skill]) -> Race:
-        """Replace all granted skills for a race with the given list."""
+    def set_skills(self, race: Race, skills: list[Skill], *, commit: bool = True) -> Race:
+        """
+        Replace all granted skills for a race with the given list.
+
+        See ``set_ability_bonuses`` for the meaning of ``commit=False``.
+        """
+
         race.granted_skills = skills
-        self.db.commit()
-        self.db.refresh(race)
+
+        if commit:
+            self.db.commit()
+            self.db.refresh(race)
+        else:
+            self.db.flush()
+
         return race

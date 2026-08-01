@@ -5,8 +5,10 @@ from app.settings import settings
 
 
 class Skill(settings.Base):  # type: ignore
-    """Reference table of skills (e.g. Perception, Stealth), shared across
-    races, classes and characters."""
+    """
+    Reference table of skills (e.g. Perception, Stealth), shared across
+    races, classes and characters.
+    """
 
     __tablename__ = "skills"
 

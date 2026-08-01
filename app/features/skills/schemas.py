@@ -27,3 +27,14 @@ class SkillResponse(SkillBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class SkillBriefResponse(BaseModel):
+    """Lightweight listing row: no description."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    key: str
+    name: str
+    ability: AbilityScore
