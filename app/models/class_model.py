@@ -40,6 +40,12 @@ class Class(settings.Base):  # type: ignore
         "Skill",
         secondary=class_available_skills,
     )
+    spell_slot_progression = relationship(
+        "ClassSpellSlotProgression",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ClassSpellSlotProgression.class_level, ClassSpellSlotProgression.spell_level",
+    )
     characters = relationship("Character", back_populates="character_class")
     created_by = relationship("User")
 

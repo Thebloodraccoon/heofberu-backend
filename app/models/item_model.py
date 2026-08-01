@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
-from app.models.enums import DamageTypeType, ItemRarityType, ItemTypeType, DiceTypeColumn
+from app.models.enums import DamageTypeType, DiceTypeColumn, ItemRarityType, ItemTypeType
 from app.settings import settings
 
 

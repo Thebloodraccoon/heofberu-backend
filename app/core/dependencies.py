@@ -13,7 +13,6 @@ from app.features.backgrounds.service import BackgroundService
 from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.core.service import CharacterService
 from app.features.characters.proficiencies.service import CharacterProficiencyService
-from app.features.characters.rolls.service import CharacterRollService
 from app.features.characters.spells.service import CharacterSpellService
 from app.features.classes.service import ClassService
 from app.features.features.service import FeatureService
@@ -128,15 +127,6 @@ def get_character_attack_service(db: DatabaseDep) -> CharacterAttackService:
 
 
 CharacterAttackServiceDep = Annotated[CharacterAttackService, Depends(get_character_attack_service)]
-
-
-def get_character_roll_service(db: DatabaseDep) -> CharacterRollService:
-    """Get Character roll service instance."""
-
-    return CharacterRollService(db)
-
-
-CharacterRollServiceDep = Annotated[CharacterRollService, Depends(get_character_roll_service)]
 
 
 def get_skill_service(db: DatabaseDep) -> SkillService:
