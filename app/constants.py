@@ -87,6 +87,11 @@ class DamageType(str, Enum):
     THUNDER = "THUNDER"
 
 
+class HealingTarget(str, Enum):
+    HP = "HP"
+    TEMP_HP = "TEMP_HP"
+
+
 class ItemType(str, Enum):
     WEAPON = "WEAPON"
     ARMOR = "ARMOR"
@@ -152,6 +157,7 @@ SPELL_LEVELS = [level.value for level in SpellLevel]
 SPELL_SCHOOLS = [school.value for school in SpellSchool]
 SPELL_RANGE_TYPES = [range_type.value for range_type in SpellRangeType]
 DAMAGE_TYPES = [damage_type.value for damage_type in DamageType]
+HEALING_TARGETS = [target.value for target in HealingTarget]
 ITEM_TYPES = [item_type.value for item_type in ItemType]
 ITEM_RARITIES = [rarity.value for rarity in ItemRarity]
 FEATURE_SOURCE_TYPES = [source_type.value for source_type in FeatureSourceType]
@@ -164,6 +170,7 @@ ON_DELETE_RESTRICT = "RESTRICT"
 
 def create_enum_constraint(field_name: str, values: list, nullable: bool = True) -> str:
     """Creates a line for CheckContraint with ENUM values."""
+
     values_str = ", ".join(repr(v) for v in values)
 
     if nullable:
@@ -174,6 +181,7 @@ def create_enum_constraint(field_name: str, values: list, nullable: bool = True)
 
 def create_range_constraint(field_name: str, min_val: int, max_val: int, nullable: bool = True) -> str:
     """Creates a line for CheckContraint with a numerical range."""
+
     constraint = f"({field_name} >= {min_val} AND {field_name} <= {max_val})"
 
     if nullable:

@@ -9,12 +9,15 @@ from app.constants import UserRole
 from app.core.exceptions import GmAccessException
 from app.features.auth.service import AuthService
 from app.features.auth.token_utils import verify_token
+from app.features.backgrounds.service import BackgroundService
 from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.core.service import CharacterService
 from app.features.characters.proficiencies.service import CharacterProficiencyService
 from app.features.characters.rolls.service import CharacterRollService
 from app.features.characters.spells.service import CharacterSpellService
 from app.features.classes.service import ClassService
+from app.features.features.service import FeatureService
+from app.features.items.service import ItemService
 from app.features.races.service import RaceService
 from app.features.skills.service import SkillService
 from app.features.spells.service import SpellService
@@ -152,3 +155,30 @@ def get_class_service(db: DatabaseDep) -> ClassService:
 
 
 ClassServiceDep = Annotated[ClassService, Depends(get_class_service)]
+
+
+def get_background_service(db: DatabaseDep) -> BackgroundService:
+    """Get Background service instance."""
+
+    return BackgroundService(db)
+
+
+BackgroundServiceDep = Annotated[BackgroundService, Depends(get_background_service)]
+
+
+def get_feature_service(db: DatabaseDep) -> FeatureService:
+    """Get Feature service instance."""
+
+    return FeatureService(db)
+
+
+FeatureServiceDep = Annotated[FeatureService, Depends(get_feature_service)]
+
+
+def get_item_service(db: DatabaseDep) -> ItemService:
+    """Get Item service instance."""
+
+    return ItemService(db)
+
+
+ItemServiceDep = Annotated[ItemService, Depends(get_item_service)]

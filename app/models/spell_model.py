@@ -6,10 +6,12 @@ from app.models.enums import (
     AttackTypeType,
     DamageTypeType,
     DiceTypeColumn,
+    HealingTargetType,
     SpellLevelType,
     SpellRangeTypeType,
     SpellSchoolType,
 )
+from app.models.spell_association_models import spell_classes, spell_races
 from app.settings import settings
 
 
@@ -28,8 +30,13 @@ class Spell(settings.Base):  # type: ignore
     range_type = Column(SpellRangeTypeType, nullable=False)
     range_value = Column(Integer)
 
-    components = Column(String(100), nullable=False)  # e.g. "VERBAL,SOMATIC,MATERIAL"
-    material = Column(Text)
+    # Components (replaces the old free-text `components` string)
+    has_verbal = Column(Boolean, nullable=False, default=False)
+    has_somatic = Column(Boolean, nullable=False, default=False)
+    has_material = Column(Boolean, nullable=False, default=False)
+    is_material_consumed = Column(Boolean, nullable=False, default=False)
+    material = Column(Text)  # material component description, relevant when has_material=True
+
     is_ritual = Column(Boolean, nullable=False, default=False)
 
     duration = Column(String(50), nullable=False)
@@ -41,6 +48,11 @@ class Spell(settings.Base):  # type: ignore
     damage_dice_count = Column(Integer, nullable=True)  # e.g. 2
     damage_dice_type = Column(DiceTypeColumn, nullable=True)  # e.g. D6 -> "2d6" combined
 
+    # Healing (NULL healing_target means the spell doesn't heal)
+    healing_target = Column(HealingTargetType, nullable=True)
+    healing_dice_count = Column(Integer, nullable=True)
+    healing_dice_type = Column(DiceTypeColumn, nullable=True)
+
     description = Column(Text, nullable=False)
     higher_levels = Column(Text)
 
@@ -48,6 +60,9 @@ class Spell(settings.Base):  # type: ignore
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     created_by = relationship("User")
+
+    available_classes = relationship("Class", secondary=spell_classes)
+    available_races = relationship("Race", secondary=spell_races)
 
     def __repr__(self):
         return f"<Spell(id={self.id}, name='{self.name}', level='{self.level}')>"

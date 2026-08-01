@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
-from app.models.enums import DamageTypeType, ItemRarityType, ItemTypeType
+from app.models.enums import DamageTypeType, ItemRarityType, ItemTypeType, DiceTypeColumn
 from app.settings import settings
 
 
@@ -24,7 +24,8 @@ class Item(settings.Base):  # type: ignore
     cost_gold = Column(Numeric(10, 2), nullable=True)
 
     # Weapon-specific (nullable when not applicable)
-    damage_dice = Column(String(30), nullable=True)
+    damage_dice_count = Column(Integer, nullable=True)  # e.g. 2
+    damage_dice_type = Column(DiceTypeColumn, nullable=True)  # e.g. D6 -> "2d6" combined
     damage_type = Column(DamageTypeType, nullable=True)
     weapon_properties = Column(String(300), nullable=True)  # e.g. "FINESSE,LIGHT,THROWN"
 

@@ -1,6 +1,15 @@
 from pydantic import BaseModel, ConfigDict
 
-from app.constants import AbilityScore, AttackType, DamageType, DiceType, SpellLevel, SpellRangeType, SpellSchool
+from app.constants import (
+    AbilityScore,
+    AttackType,
+    DamageType,
+    DiceType,
+    HealingTarget,
+    SpellLevel,
+    SpellRangeType,
+    SpellSchool,
+)
 
 
 class SpellBase(BaseModel):
@@ -12,8 +21,13 @@ class SpellBase(BaseModel):
     range_type: SpellRangeType
     range_value: int | None = None
 
-    components: str  # e.g. "VERBAL,SOMATIC,MATERIAL"
-    material: str | None = None
+    # Components (replaces the old free-text `components` string).
+    has_verbal: bool = False
+    has_somatic: bool = False
+    has_material: bool = False
+    is_material_consumed: bool = False
+    material: str | None = None  # material component description, relevant when has_material=True
+
     is_ritual: bool = False
 
     duration: str
@@ -26,16 +40,38 @@ class SpellBase(BaseModel):
     damage_dice_count: int | None = None  # e.g. 2
     damage_dice_type: DiceType | None = None  # e.g. D6 -> "2d6" combined
 
+    # None means the spell doesn't heal.
+    healing_target: HealingTarget | None = None
+    healing_dice_count: int | None = None
+    healing_dice_type: DiceType | None = None
+
     description: str
     higher_levels: str | None = None
 
 
 class SpellCreate(SpellBase):
-    pass
+    """
+    Create payload for a spell.
+
+    ``available_classes`` / ``available_races`` are optional. If omitted
+    (or left empty), the spell is unrestricted — available to every class
+    and race. If provided, they're saved together with the spell in a
+    single transaction, matching how ``RaceCreate`` handles ability bonuses
+    and granted skills.
+    """
+
+    available_classes: list[int] | None = None
+    available_races: list[int] | None = None
 
 
 class SpellUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics)."""
+    """
+    All fields optional — only provided fields are updated (PATCH semantics).
+
+    Deliberately does NOT include available_classes/available_races: those
+    keep their own PUT endpoints with explicit full-replace semantics, same
+    reasoning as Race's ability-bonuses/granted-skills split.
+    """
 
     name: str | None = None
     school: SpellSchool | None = None
@@ -43,7 +79,10 @@ class SpellUpdate(BaseModel):
     cast_time: str | None = None
     range_type: SpellRangeType | None = None
     range_value: int | None = None
-    components: str | None = None
+    has_verbal: bool | None = None
+    has_somatic: bool | None = None
+    has_material: bool | None = None
+    is_material_consumed: bool | None = None
     material: str | None = None
     is_ritual: bool | None = None
     duration: str | None = None
@@ -53,8 +92,41 @@ class SpellUpdate(BaseModel):
     damage_type: DamageType | None = None
     damage_dice_count: int | None = None
     damage_dice_type: DiceType | None = None
+    healing_target: HealingTarget | None = None
+    healing_dice_count: int | None = None
+    healing_dice_type: DiceType | None = None
     description: str | None = None
     higher_levels: str | None = None
+
+
+class ClassAvailabilityUpdate(BaseModel):
+    """Full replacement list of class IDs a spell is available to. Empty = unrestricted."""
+
+    class_ids: list[int]
+
+
+class RaceAvailabilityUpdate(BaseModel):
+    """Full replacement list of race IDs a spell is available to. Empty = unrestricted."""
+
+    race_ids: list[int]
+
+
+class ClassBriefResponse(BaseModel):
+    """Minimal class info, embedded in SpellResponse.available_classes."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
+class RaceBriefResponse(BaseModel):
+    """Minimal race info, embedded in SpellResponse.available_races."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
 
 
 class SpellResponse(SpellBase):
@@ -63,10 +135,19 @@ class SpellResponse(SpellBase):
     id: int
     is_homebrew: bool
     created_by_id: int | None = None
+    available_classes: list[ClassBriefResponse] = []
+    available_races: list[RaceBriefResponse] = []
 
 
 class SpellBriefResponse(BaseModel):
-    """Lightweight listing row."""
+    """
+    Lightweight listing row.
+
+    Includes available_classes/available_races so listing/dropdown UI can
+    filter or badge spells by availability without a follow-up call to
+    `GET /spells/{spell_id}`. Still excludes components, description,
+    dice, and other heavier detail fields.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,3 +156,5 @@ class SpellBriefResponse(BaseModel):
     school: SpellSchool
     level: SpellLevel
     is_homebrew: bool
+    available_classes: list[ClassBriefResponse] = []
+    available_races: list[RaceBriefResponse] = []
