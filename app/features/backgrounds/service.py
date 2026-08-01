@@ -65,7 +65,7 @@ class BackgroundService(
         class uses.
         """
 
-        items = self.db.query(Background).order_by(Background.id).offset(skip).limit(limit).all()
+        items = self.repository.get_all_brief(skip=skip, limit=limit)
         return [self.brief_schema.model_validate(item) for item in items]
 
     def create_background(

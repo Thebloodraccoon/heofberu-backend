@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import Character
@@ -13,6 +13,18 @@ class RaceRepository(BaseRepository[Race]):
 
     def get_by_name(self, name: str) -> Race | None:
         return self.db.query(Race).filter(Race.name == name).first()
+
+    def get_all(self, *, skip: int = 0, limit: int = 100) -> list[Race]:
+        return (
+            self.db.query(Race)
+            .options(
+                selectinload(Race.ability_bonuses),
+                selectinload(Race.granted_skills),
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
     def is_in_use(self, race_id: int) -> bool:
         """

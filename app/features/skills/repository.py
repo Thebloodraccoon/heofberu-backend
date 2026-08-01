@@ -1,3 +1,4 @@
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.base_repository import BaseRepository
@@ -28,10 +29,12 @@ class SkillRepository(BaseRepository[Skill]):
         granted by a background (background_skills), or held as a
         proficiency by a character (character_skill_proficiencies).
         """
-        checks = (
-            self.db.query(race_skills).filter(race_skills.c.skill_id == skill_id).first(),
-            self.db.query(class_available_skills).filter(class_available_skills.c.skill_id == skill_id).first(),
-            self.db.query(background_skills).filter(background_skills.c.skill_id == skill_id).first(),
-            self.db.query(CharacterSkillProficiency).filter(CharacterSkillProficiency.skill_id == skill_id).first(),
+        query = select(
+            or_(
+                exists().where(race_skills.c.skill_id == skill_id),
+                exists().where(class_available_skills.c.skill_id == skill_id),
+                exists().where(background_skills.c.skill_id == skill_id),
+                exists().where(CharacterSkillProficiency.skill_id == skill_id),
+            )
         )
-        return any(check is not None for check in checks)
+        return bool(self.db.execute(query).scalar())

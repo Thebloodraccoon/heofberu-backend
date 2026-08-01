@@ -152,7 +152,7 @@ class BaseRepository(Generic[ModelType]):
 
         return db_obj
 
-    def update(self, db_obj: ModelType, update_data: dict[str, Any]) -> ModelType:
+    def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
         """
         Apply ``update_data`` onto an existing record and return it, refreshed.
 
@@ -167,7 +167,8 @@ class BaseRepository(Generic[ModelType]):
                 setattr(db_obj, field, value)
 
         self.db.commit()
-        self.db.refresh(db_obj)
+        if refresh:
+            self.db.refresh(db_obj)
 
         return db_obj
 

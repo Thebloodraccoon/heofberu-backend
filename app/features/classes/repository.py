@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, ClassSpellSlotProgression, Skill
@@ -10,6 +10,20 @@ class ClassRepository(BaseRepository[Class]):
 
     def get_by_name(self, name: str) -> Class | None:
         return self.db.query(Class).filter(Class.name == name).first()
+
+    def get_all(self, *, skip: int = 0, limit: int = 100) -> list[Class]:
+        return (
+            self.db.query(Class)
+            .options(
+                selectinload(Class.available_skills),
+                selectinload(Class.primary_abilities),
+                selectinload(Class.saving_throws),
+                selectinload(Class.spell_slot_progression),
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
     def is_in_use(self, class_id: int) -> bool:
         """

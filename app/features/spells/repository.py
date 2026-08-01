@@ -1,4 +1,6 @@
-from sqlalchemy.orm import Session
+from typing import Any
+
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models.class_model import Class
@@ -12,6 +14,31 @@ class SpellRepository(BaseRepository[Spell]):
 
     def get_by_name(self, name: str) -> Spell | None:
         return self.db.query(Spell).filter(Spell.name == name).first()
+
+    def get_all(self, *, skip: int = 0, limit: int = 100) -> list[Spell]:
+        return (
+            self.db.query(Spell)
+            .options(
+                selectinload(Spell.available_classes),
+                selectinload(Spell.available_races),
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def get_all_brief(self, *, skip: int = 0, limit: int = 100,
+    ) -> list[Spell]:
+        return (
+            self.db.query(Spell)
+            .options(
+                selectinload(Spell.available_classes),
+                selectinload(Spell.available_races),
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
     def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
         if not class_ids:

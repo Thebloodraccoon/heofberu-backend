@@ -95,13 +95,6 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         """
         Update a feature, re-validating source_type/FK consistency against
         the merged (existing + incoming) state.
-
-        Unlike a simple field-by-field PATCH, this can't rely on
-        ``FeatureUpdate``'s own schema validation alone: a request that
-        only changes ``class_id`` doesn't carry ``source_type`` in its
-        payload, so the schema has no way to know whether the *resulting*
-        record is still consistent. Merging onto the current record first
-        closes that gap.
         """
 
         feature = self._get_or_404(feature_id)
@@ -113,10 +106,6 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
             if fk_name in fields:
                 return fields[fk_name]
             if source_type_changing:
-                # source_type changed but this FK wasn't explicitly touched:
-                # don't carry over the old value (e.g. RACE -> FEAT should
-                # not silently keep the stale race_id) — the caller must
-                # set the new source_type's FK explicitly.
                 return None
             return getattr(feature, fk_name)
 

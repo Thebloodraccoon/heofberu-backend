@@ -61,7 +61,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         instead, and lets Pydantic pick out just the brief fields.
         """
 
-        items = self.db.query(Spell).order_by(Spell.id).offset(skip).limit(limit).all()
+        items = self.repository.get_all_brief(skip=skip, limit=limit)
         return [self.brief_schema.model_validate(item) for item in items]
 
     def create_spell(self, spell_data: SpellCreate) -> SpellResponse:
