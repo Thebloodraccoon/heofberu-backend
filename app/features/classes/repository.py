@@ -29,6 +29,27 @@ class ClassRepository(BaseRepository[Class]):
         """
         return self.db.query(Character).filter(Character.class_id == class_id).first() is not None
 
+    def get_spell_slot_progression(self, class_id: int, class_level: int) -> dict[str, int]:
+        """
+        Return ``{spell_level: slots}`` for a single ``(class_id, class_level)``
+        pair, i.e. the slots a class grants a character at that class level.
+
+        Only levels with an explicit ``ClassSpellSlotProgression`` row are
+        included — a non-caster class (or a caster with no row for this
+        level) simply returns ``{}``. Used by
+        ``CharacterService`` to apply/refresh a character's actual spell
+        slot totals whenever their level or class changes.
+        """
+        rows = (
+            self.db.query(ClassSpellSlotProgression)
+            .filter(
+                ClassSpellSlotProgression.class_id == class_id,
+                ClassSpellSlotProgression.class_level == class_level,
+            )
+            .all()
+        )
+        return {row.spell_level: row.slots for row in rows}
+
     def set_primary_abilities(self, character_class: Class, abilities: list[str], *, commit: bool = True) -> Class:
         """
         Replace all primary abilities for a class with the given list.

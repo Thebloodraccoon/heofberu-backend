@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from app.features.auth.endpoints import router as auth_router
 from app.features.backgrounds.endpoints import router as background_router
 
-# from app.features.characters.router import router as character_router
+from app.features.characters.router import router as character_router
 from app.features.classes.endpoints import router as class_router
 from app.features.feats.endpoints import router as feat_router
 from app.features.features.endpoints import router as feature_router
@@ -28,7 +28,7 @@ _feature_routers = (
     feat_router,
     feature_router,
     item_router,
-    # character_router,
+    character_router,
 )
 
 for _router in _feature_routers:

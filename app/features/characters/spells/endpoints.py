@@ -1,9 +1,8 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Body, status
 
 from app.core.dependencies import CharacterSpellServiceDep, CurrentUserDep
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
-    CharacterSpellPrepareUpdate,
     CharacterSpellResponse,
     SpellSlotResponse,
     SpellSlotUpdate,
@@ -12,64 +11,127 @@ from app.features.characters.spells.schemas import (
 router = APIRouter(tags=["Characters Spells"])
 
 
-@router.get("/{character_id}/spell-slots", response_model=list[SpellSlotResponse])
+@router.get(
+    "/{character_id}/spell-slots",
+    response_model=list[SpellSlotResponse],
+    summary="List a character's spell slots",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
 def get_character_spell_slots(character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep):
     """Get all spell slot entries (by level) for a character."""
     return spell_service.get_spell_slots(character_id, current_user)
 
 
-@router.patch("/{character_id}/spell-slots", response_model=SpellSlotResponse)
+@router.patch(
+    "/{character_id}/spell-slots",
+    response_model=SpellSlotResponse,
+    summary="Spend or restore spell slots at a level",
+    responses={
+        400: {"description": "`used` would be negative or exceed `total`."},
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
 def update_character_spell_slot(
     character_id: int,
-    data: SpellSlotUpdate,
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
+    data: SpellSlotUpdate = Body(
+        openapi_examples={
+            "spend": {
+                "summary": "Spend a slot (cast a level-3 spell)",
+                "value": {"level": "LEVEL_3", "used": 2},
+            },
+            "restore": {
+                "summary": "Restore all slots at a level",
+                "value": {"level": "LEVEL_3", "used": 0},
+            },
+            "grant": {
+                "summary": "Set the total for a level (manual override)",
+                "value": {"level": "LEVEL_3", "total": 4},
+            },
+        },
+    ),
 ):
     """
-    Spend or restore spell slots at a given level (e.g. {"level": "level_3", "used": 2}).
+    Spend or restore spell slots at a given level.
 
-    Creates the slot entry if it doesn't exist yet (e.g. to grant a
-    character's initial slots at a level).
+    Creates the slot entry if it doesn't exist yet. Slot totals are
+    normally kept in sync automatically from the character's class/level
+    progression (on create and on level-up/class change via
+    `PATCH /characters/{character_id}`) — this endpoint is for spending
+    slots as spells are cast, restoring them, or a manual override.
     """
     return spell_service.update_spell_slot(character_id, data, current_user)
 
 
-@router.get("/{character_id}/spells", response_model=list[CharacterSpellResponse])
+@router.get(
+    "/{character_id}/spells",
+    response_model=list[CharacterSpellResponse],
+    summary="List a character's known spells",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
 def get_character_spells(character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep):
-    """List all spells known by the character, with prepared status."""
+    """List all spells known by the character."""
     return spell_service.get_known_spells(character_id, current_user)
 
 
-@router.post("/{character_id}/spells", response_model=CharacterSpellResponse, status_code=201)
+@router.post(
+    "/{character_id}/spells",
+    response_model=CharacterSpellResponse,
+    status_code=201,
+    summary="Add a spell to a character's known spells",
+    responses={
+        400: {
+            "description": (
+                "The spell's class/race restrictions exclude this character, or the "
+                "character already knows as many spells of this level as they have slots for."
+            )
+        },
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character or spell exists with the given ID."},
+        409: {"description": "The character already knows this spell."},
+    },
+)
 def add_character_spell(
     character_id: int,
     data: CharacterSpellAdd,
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
 ):
-    """Add a spell to the character's known spells (e.g. {"spell_id": 5})."""
+    """
+    Add a spell to the character's known spells (e.g. `{"spell_id": 5}`).
+
+    There is no separate "prepared" state — knowing a spell is having it
+    ready to cast. Choosing a spell is capped by the character's spell
+    slot totals: a character may know at most as many spells of a given
+    level as they have slots of that level. To swap a known spell for a
+    different one, remove the old one first to free up its slot.
+    """
     return spell_service.add_known_spell(character_id, data, current_user)
 
 
-@router.delete("/{character_id}/spells/{spell_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{character_id}/spells/{spell_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a spell from a character's known spells",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID, or the character does not know this spell."},
+    },
+)
 def remove_character_spell(
     character_id: int,
     spell_id: int,
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
 ):
-    """Remove a spell from the character's known spells."""
+    """Remove a spell from the character's known spells, freeing up its slot."""
     spell_service.remove_known_spell(character_id, spell_id, current_user)
     return None
-
-
-@router.patch("/{character_id}/spells/{spell_id}", response_model=CharacterSpellResponse)
-def update_character_spell_prepared(
-    character_id: int,
-    spell_id: int,
-    data: CharacterSpellPrepareUpdate,
-    spell_service: CharacterSpellServiceDep,
-    current_user: CurrentUserDep,
-):
-    """Toggle whether a known spell is currently prepared."""
-    return spell_service.set_spell_prepared(character_id, spell_id, data, current_user)

@@ -16,6 +16,7 @@ from app.models.character_association_models import (  # noqa: F401
 from app.models.character_condition_model import CharacterCondition  # noqa: F401
 from app.models.character_feature_model import CharacterFeature  # noqa: F401
 from app.models.character_item_model import CharacterItem  # noqa: F401
+from app.models.character_ability_score_model import CharacterAbilityScore  # noqa: F401
 
 # Character and everything that depends on it.
 from app.models.character_model import Character  # noqa: F401

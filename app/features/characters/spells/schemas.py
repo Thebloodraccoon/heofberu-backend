@@ -23,13 +23,8 @@ class CharacterSpellAdd(BaseModel):
     spell_id: int
 
 
-class CharacterSpellPrepareUpdate(BaseModel):
-    is_prepared: bool
-
-
 class CharacterSpellResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     spell_id: int
-    is_prepared: bool
     spell: SpellResponse

@@ -147,6 +147,14 @@ class Character(settings.Base):  # type: ignore
         passive_deletes=True,
     )
 
+    ability_score_cache = relationship(
+        "CharacterAbilityScore",
+        back_populates="character",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     __table_args__ = (
         CheckConstraint("level >= 1 AND level <= 20", name="check_character_level_range"),
         CheckConstraint("current_hp >= 0", name="check_current_hp_nonnegative"),

@@ -1,13 +1,16 @@
 from sqlalchemy.orm import Session
 
 from app.core.base_repository import BaseRepository
+from app.models import CharacterAbilityScore
 from app.models.character_association_models import (
+    CharacterFeat,
     CharacterSavingThrowProficiency,
     CharacterSkillProficiency,
     CharacterSpellSlot,
 )
 from app.models.character_model import Character
 from app.models.character_spell_model import CharacterSpell
+from app.models.spell_model import Spell
 
 
 class CharacterRepository(BaseRepository[Character]):
@@ -155,6 +158,56 @@ class CharacterRepository(BaseRepository[Character]):
     def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
         return self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).all()
 
+    def apply_spell_slot_progression(self, character_id: int, slots_by_level: dict[str, int]) -> list[CharacterSpellSlot]:
+        """
+        Sync a character's actual ``CharacterSpellSlot.total`` values to
+        match ``slots_by_level`` (as returned by
+        ``ClassRepository.get_spell_slot_progression`` for the character's
+        current class/level).
+
+        For each level in ``slots_by_level``: upsert the slot row, setting
+        ``total`` to the given value. ``used`` is left untouched unless it
+        would exceed the new ``total``, in which case it's clamped down to
+        ``total`` (so the ``used <= total`` invariant always holds — this
+        can only ever reduce ``used``, never invent slots as "spent").
+
+        For any level the character currently has a row for but that is
+        *not* present in ``slots_by_level`` (e.g. leveling down, or
+        switching to a class that doesn't grant that level): the row's
+        ``total`` is set to 0 and ``used`` is clamped to 0 with it, rather
+        than deleted — this keeps history/ordering stable and matches
+        ``upsert_spell_slot``'s "0 total = no slots" convention elsewhere.
+
+        Levels never granted and not currently present in the character's
+        rows are left alone (no zero-row is created for them).
+        """
+
+        existing = {slot.spell_level: slot for slot in self.get_all_spell_slots(character_id)}
+
+        for level, total in slots_by_level.items():
+            slot = existing.get(level)
+            if slot is None:
+                self.db.add(
+                    CharacterSpellSlot(
+                        character_id=character_id,
+                        spell_level=level,
+                        total=total,
+                        used=0,
+                    )
+                )
+            else:
+                slot.total = total
+                if slot.used > total:
+                    slot.used = total
+
+        for level, slot in existing.items():
+            if level not in slots_by_level:
+                slot.total = 0
+                slot.used = 0
+
+        self.db.commit()
+        return self.get_all_spell_slots(character_id)
+
     def reset_all_spell_slots(self, character_id: int) -> None:
         """Set used=0 for every spell slot entry of the character (long rest)."""
 
@@ -177,7 +230,7 @@ class CharacterRepository(BaseRepository[Character]):
         )
 
     def add_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell:
-        character_spell = CharacterSpell(character_id=character_id, spell_id=spell_id, is_prepared=False)
+        character_spell = CharacterSpell(character_id=character_id, spell_id=spell_id)
         self.db.add(character_spell)
         self.db.commit()
         self.db.refresh(character_spell)
@@ -188,8 +241,110 @@ class CharacterRepository(BaseRepository[Character]):
         self.db.commit()
         return True
 
-    def set_spell_prepared(self, character_spell: CharacterSpell, is_prepared: bool) -> CharacterSpell:
-        character_spell.is_prepared = is_prepared
+    def count_known_spells_at_level(self, character_id: int, level: str) -> int:
+        """
+        Count how many spells the character already knows at a given
+        ``Spell.level`` — compared against ``CharacterSpellSlot.total``
+        for that level to cap how many spells of that level can be known
+        at once. See ``CharacterSpellService.add_known_spell``.
+        """
+
+        return (
+            self.db.query(CharacterSpell)
+            .join(Spell, Spell.id == CharacterSpell.spell_id)
+            .filter(
+                CharacterSpell.character_id == character_id,
+                Spell.level == level,
+            )
+            .count()
+        )
+
+    def get_character_feats(self, character_id: int) -> list[CharacterFeat]:
+        """Get every feat grant for a character."""
+
+        return self.db.query(CharacterFeat).filter(CharacterFeat.character_id == character_id).all()
+
+    def get_character_feat_by_id(self, character_id: int, character_feat_id: int) -> CharacterFeat | None:
+        """Fetch a single feat grant by its own id, scoped to the character."""
+
+        return (
+            self.db.query(CharacterFeat)
+            .filter(
+                CharacterFeat.id == character_feat_id,
+                CharacterFeat.character_id == character_id,
+            )
+            .first()
+        )
+
+    def get_character_feat_by_feat_id(self, character_id: int, feat_id: int) -> CharacterFeat | None:
+        """Fetch a character's grant for a specific feat, if any (used for duplicate checks)."""
+
+        return (
+            self.db.query(CharacterFeat)
+            .filter(
+                CharacterFeat.character_id == character_id,
+                CharacterFeat.feat_id == feat_id,
+            )
+            .first()
+        )
+
+    def add_character_feat(
+        self, character_id: int, feat_id: int, ability_score_increase_id: int | None
+    ) -> CharacterFeat:
+        """Grant a feat to a character, with an optional ASI choice."""
+
+        grant = CharacterFeat(
+            character_id=character_id,
+            feat_id=feat_id,
+            ability_score_increase_id=ability_score_increase_id,
+        )
+        self.db.add(grant)
         self.db.commit()
-        self.db.refresh(character_spell)
-        return character_spell
+        self.db.refresh(grant)
+        return grant
+
+    def set_character_feat_ability_score_increase(
+        self, grant: CharacterFeat, ability_score_increase_id: int | None
+    ) -> CharacterFeat:
+        """Set (or clear, if ``None``) the ASI choice on an existing feat grant."""
+
+        grant.ability_score_increase_id = ability_score_increase_id
+        self.db.commit()
+        self.db.refresh(grant)
+        return grant
+
+    def remove_character_feat(self, grant: CharacterFeat) -> bool:
+        """Revoke a feat grant."""
+
+        self.db.delete(grant)
+        self.db.commit()
+        return True
+
+    def get_ability_score_cache(self, character_id: int) -> CharacterAbilityScore | None:
+        """Fetch the cached effective-ability-score row, or None if never computed."""
+
+        return (
+            self.db.query(CharacterAbilityScore)
+            .filter(CharacterAbilityScore.character_id == character_id)
+            .first()
+        )
+
+    def upsert_ability_score_cache(self, character_id: int, totals: dict) -> CharacterAbilityScore:
+        """
+        Create or update the cached effective ability scores for a
+        character. ``totals`` keys are ``strength_total``,
+        ``dexterity_total``, ``constitution_total``,
+        ``intelligence_total``, ``wisdom_total``, ``charisma_total``.
+        """
+
+        cache = self.get_ability_score_cache(character_id)
+        if cache is None:
+            cache = CharacterAbilityScore(character_id=character_id, **totals)
+            self.db.add(cache)
+        else:
+            for field, value in totals.items():
+                setattr(cache, field, value)
+
+        self.db.commit()
+        self.db.refresh(cache)
+        return cache
