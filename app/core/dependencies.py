@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import UserRole
 from app.core.exceptions import GmAccessException, InvalidTokenException
-from app.core.token_utils import verify_token, is_token_blacklisted
+from app.core.token_utils import is_token_blacklisted, verify_token
 from app.features.auth.service import AuthService
 from app.features.backgrounds.service import BackgroundService
 from app.features.characters.attacks.service import CharacterAttackService

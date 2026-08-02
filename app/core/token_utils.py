@@ -1,5 +1,5 @@
-import uuid
 from datetime import datetime, timedelta, timezone
+import uuid
 
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
@@ -68,12 +68,12 @@ class DecodedToken:
     @property
     def remaining_seconds(self) -> int:
         """
-                Seconds until this token's own expiration, floored at 0.
+        Seconds until this token's own expiration, floored at 0.
 
-                Used as the blacklist entry's TTL: once the token would have
-                expired naturally anyway, there's no need to keep the blacklist
-                entry around — Redis expires it for us at the same moment.
-                """
+        Used as the blacklist entry's TTL: once the token would have
+        expired naturally anyway, there's no need to keep the blacklist
+        entry around — Redis expires it for us at the same moment.
+        """
 
         remaining_seconds = self.expires_at - datetime.now(timezone.utc)
         return max(int(remaining_seconds.total_seconds()), 0)

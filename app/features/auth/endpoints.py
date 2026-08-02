@@ -1,11 +1,33 @@
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request, Response, status
 
 from app.core.dependencies import AuthServiceDep, CurrentUserDep, TokenDep
 from app.core.token_utils import verify_token
-from app.features.auth.schemas import LoginRequest, LoginResponse, LogoutResponse, RefreshResponse
+from app.features.auth.schemas import (
+    LoginRequest,
+    LoginResponse,
+    LogoutResponse,
+    RefreshResponse,
+    RegisterRequest,
+    RegisterResponse,
+)
 from app.features.auth.service import REFRESH_COOKIE_NAME
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
+def register(request: RegisterRequest, response: Response, auth_service: AuthServiceDep):
+    """
+    Publicly self-register a new account.
+
+    Unauthenticated — anyone can call this. The new account is always
+    created with the ``PLAYER`` role (see ``RegisterRequest``); creating
+    a user with an arbitrary role still requires a GM via
+    ``POST /users/``. On success, the caller is logged in immediately
+    (access token in the response body, refresh token set as an
+    httponly cookie), the same as ``/auth/login``.
+    """
+    return auth_service.register(request, response)
 
 
 @router.post("/login", response_model=LoginResponse)
