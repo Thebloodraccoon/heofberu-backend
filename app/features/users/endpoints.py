@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Query, status
 
 from app.constants import UserRole
+from app.core.base_service import Page
 from app.core.dependencies import GmUserDep, UserServiceDep
 from app.features.users.schemas import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-@router.get("/", response_model=list[UserResponse])
+@router.get("/", response_model=Page[UserResponse])
 def get_all_users(
     user_service: UserServiceDep,
     _: GmUserDep,
-    page: int = Query(0, ge=0, description="Page number (0-indexed)"),
+    page: int = Query(1, ge=0, description="Page number (0-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
     role: UserRole | None = Query(None, description="Filter by exact role"),
     search: str | None = Query(None, description="Case-insensitive partial match against username/email"),

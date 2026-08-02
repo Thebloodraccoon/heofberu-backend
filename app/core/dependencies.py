@@ -6,9 +6,9 @@ from fastapi.security.http import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.constants import UserRole
-from app.core.exceptions import GmAccessException
+from app.core.exceptions import GmAccessException, InvalidTokenException
+from app.core.token_utils import verify_token, is_token_blacklisted
 from app.features.auth.service import AuthService
-from app.features.auth.token_utils import verify_token
 from app.features.backgrounds.service import BackgroundService
 from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.core.service import CharacterService
@@ -57,8 +57,12 @@ def get_current_user(
     user_service: UserServiceDep,
     token: TokenDep,
 ) -> UserResponse:
-    email = verify_token(token, "access")
-    return user_service.get_user_by_email(email)
+    decoded = verify_token(token, "access")
+
+    if is_token_blacklisted(decoded.jti):
+        raise InvalidTokenException()
+
+    return user_service.get_user_by_email(decoded.email)
 
 
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]

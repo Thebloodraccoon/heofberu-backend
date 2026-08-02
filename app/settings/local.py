@@ -1,6 +1,6 @@
-from contextlib import asynccontextmanager
+from contextlib import contextmanager
 
-from redis.asyncio import Redis
+from redis import Redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -48,13 +48,10 @@ def get_db():
         db.close()
 
 
-@asynccontextmanager
-async def get_redis():
-    redis_client = Redis.from_url(
-        REDIS_URL,
-        decode_responses=True,
-    )
+@contextmanager
+def get_redis():
+    redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
     try:
         yield redis_client
     finally:
-        await redis_client.aclose()
+        redis_client.close()
