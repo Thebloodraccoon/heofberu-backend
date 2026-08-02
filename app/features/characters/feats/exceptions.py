@@ -37,10 +37,7 @@ class InvalidAbilityScoreIncreaseException(HTTPException):
         self.ability_score_increase_id = ability_score_increase_id
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Ability score increase {ability_score_increase_id} is not a valid "
-                f"choice for feat {feat_id}."
-            ),
+            detail=(f"Ability score increase {ability_score_increase_id} is not a valid choice for feat {feat_id}."),
         )
 
 

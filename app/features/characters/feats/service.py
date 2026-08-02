@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 
-from app.features.characters.access import get_character_for_user
 from app.features.characters.ability_score_service import (
     TOTAL_FIELD_BY_ABILITY,
     CharacterAbilityScoreCalculator,
 )
+from app.features.characters.access import get_character_for_user
 from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
     CharacterFeatNotFoundException,
@@ -49,9 +49,7 @@ class CharacterFeatService:
         grants = self.repository.get_character_feats(character_id)
         return [CharacterFeatResponse.model_validate(grant) for grant in grants]
 
-    def add_feat(
-        self, character_id: int, data: CharacterFeatAdd, current_user: UserResponse
-    ) -> CharacterFeatResponse:
+    def add_feat(self, character_id: int, data: CharacterFeatAdd, current_user: UserResponse) -> CharacterFeatResponse:
         """
         Grant a feat to a character.
 
@@ -110,9 +108,7 @@ class CharacterFeatService:
             feat = self.feat_repository.get_by_id(grant.feat_id)
             self._validate_ability_score_increase(feat, data.ability_score_increase_id)
 
-        updated_grant = self.repository.set_character_feat_ability_score_increase(
-            grant, data.ability_score_increase_id
-        )
+        updated_grant = self.repository.set_character_feat_ability_score_increase(grant, data.ability_score_increase_id)
 
         self._recalculate_ability_cache(character)
 

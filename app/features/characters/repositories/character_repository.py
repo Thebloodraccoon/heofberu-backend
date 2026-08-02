@@ -158,7 +158,9 @@ class CharacterRepository(BaseRepository[Character]):
     def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
         return self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).all()
 
-    def apply_spell_slot_progression(self, character_id: int, slots_by_level: dict[str, int]) -> list[CharacterSpellSlot]:
+    def apply_spell_slot_progression(
+        self, character_id: int, slots_by_level: dict[str, int]
+    ) -> list[CharacterSpellSlot]:
         """
         Sync a character's actual ``CharacterSpellSlot.total`` values to
         match ``slots_by_level`` (as returned by
@@ -323,11 +325,7 @@ class CharacterRepository(BaseRepository[Character]):
     def get_ability_score_cache(self, character_id: int) -> CharacterAbilityScore | None:
         """Fetch the cached effective-ability-score row, or None if never computed."""
 
-        return (
-            self.db.query(CharacterAbilityScore)
-            .filter(CharacterAbilityScore.character_id == character_id)
-            .first()
-        )
+        return self.db.query(CharacterAbilityScore).filter(CharacterAbilityScore.character_id == character_id).first()
 
     def upsert_ability_score_cache(self, character_id: int, totals: dict) -> CharacterAbilityScore:
         """

@@ -2,8 +2,8 @@ from sqlalchemy.orm import Session
 
 from app.features.backgrounds.exceptions import BackgroundNotFoundException
 from app.features.backgrounds.repository import BackgroundRepository
-from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.ability_score_service import CharacterAbilityScoreCalculator
+from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.core.exceptions import InvalidHpUpdateException, InvalidRestTypeException
 from app.features.characters.core.schemas import HpUpdate, RestRequest
 from app.features.characters.repositories.character_repository import CharacterRepository
@@ -296,7 +296,5 @@ class CharacterService:
             cache_row = self.repository.get_ability_score_cache(character.id)
 
         response = CharacterResponse.model_validate(character)
-        response.ability_scores = (
-            AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
-        )
+        response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
         return response

@@ -6,7 +6,6 @@ from app.models.character_model import Character
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
 
-
 _BASE_FIELD_BY_ABILITY = {
     AbilityScore.STR: "strength",
     AbilityScore.DEX: "dexterity",
@@ -63,9 +62,7 @@ class CharacterAbilityScoreCalculator:
         totals = {ability: getattr(character, _BASE_FIELD_BY_ABILITY[ability]) for ability in AbilityScore}
 
         if character.race_id is not None:
-            race_bonuses = (
-                self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == character.race_id).all()
-            )
+            race_bonuses = self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == character.race_id).all()
             for bonus in race_bonuses:
                 totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
 

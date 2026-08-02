@@ -60,10 +60,7 @@ class SpellNotAvailableToCharacterException(HTTPException):
         self.spell_id = spell_id
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Spell {spell_id} is not available to character {character_id}'s "
-                f"class or race."
-            ),
+            detail=(f"Spell {spell_id} is not available to character {character_id}'s class or race."),
         )
 
 

@@ -81,7 +81,9 @@ def add_character_feat(
     responses={
         400: {"description": "`ability_score_increase_id` doesn't belong to this feat."},
         403: {"description": "You do not have access to this character."},
-        404: {"description": "No character exists with the given ID, or no feat grant exists with the given `character_feat_id`."},
+        404: {
+            "description": "No character exists with the given ID, or no feat grant exists with the given `character_feat_id`."
+        },
     },
 )
 def update_character_feat(
@@ -107,7 +109,9 @@ def update_character_feat(
     summary="Revoke a feat from a character",
     responses={
         403: {"description": "You do not have access to this character."},
-        404: {"description": "No character exists with the given ID, or no feat grant exists with the given `character_feat_id`."},
+        404: {
+            "description": "No character exists with the given ID, or no feat grant exists with the given `character_feat_id`."
+        },
     },
 )
 def remove_character_feat(

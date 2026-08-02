@@ -79,8 +79,6 @@ class CharacterCreate(CharacterBase):
     ``RaceNotFoundException`` / ``BackgroundNotFoundException``.
     """
 
-    pass
-
 
 class CharacterUpdate(BaseModel):
     """
