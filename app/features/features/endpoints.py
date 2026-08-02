@@ -19,6 +19,7 @@ def get_features(
     class_id: int | None = None,
     race_id: int | None = None,
     background_id: int | None = None,
+    feat_id: int | None = None,
     search: str | None = None,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -49,6 +50,7 @@ def get_features(
         "class_id": class_id,
         "race_id": race_id,
         "background_id": background_id,
+        "feat_id": feat_id,
     }
     return feature_service.get_all(page=page, size=size, filters=filters, search=search)
 
@@ -64,14 +66,15 @@ def get_features_brief(
     class_id: int | None = None,
     race_id: int | None = None,
     background_id: int | None = None,
+    feat_id: int | None = None,
     search: str | None = None,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
     Return a paginated list of features with only `id`, `name`,
-    `source_type`, `class_id`, `race_id`, `background_id`, `level`, and
-    `is_homebrew`.
+    `source_type`, `class_id`, `race_id`, `background_id`, `feat_id`,
+    `level`, and `is_homebrew`.
 
     Open endpoint, no authentication required.
 
@@ -90,6 +93,7 @@ def get_features_brief(
         "class_id": class_id,
         "race_id": race_id,
         "background_id": background_id,
+        "feat_id": feat_id,
     }
     return feature_service.list_brief(page=page, size=size, filters=filters, search=search)
 
@@ -119,7 +123,7 @@ def get_feature(feature_id: int, feature_service: FeatureServiceDep):
     responses={
         400: {
             "description": (
-                "source_type/class_id/race_id/background_id/level/subclass_name "
+                "source_type/class_id/race_id/background_id/feat_id/level/subclass_name "
                 "combination is inconsistent — see FeatureBase's validator."
             )
         },
@@ -161,10 +165,11 @@ def create_feature(
                 },
             },
             "feat": {
-                "summary": "Feat (no source FK)",
+                "summary": "Feat benefit (references a Feat record)",
                 "value": {
                     "name": "Alert",
                     "source_type": "FEAT",
+                    "feat_id": 1,
                     "description": "You gain a +5 bonus to initiative and can't be surprised while conscious.",
                 },
             },
@@ -179,8 +184,9 @@ def create_feature(
       `subclass_name`); `level` is meaningful for both.
     - `RACE` -> `race_id` required.
     - `BACKGROUND` -> `background_id` required.
-    - `FEAT` / `OTHER` -> none of `class_id`/`race_id`/`background_id` may
-      be set.
+    - `FEAT` -> `feat_id` required, referencing the granting `Feat`.
+    - `OTHER` -> none of `class_id`/`race_id`/`background_id`/`feat_id`
+      may be set.
 
     Setting a FK that doesn't match `source_type` (or omitting the one
     that does) is rejected with a 400.
@@ -203,9 +209,10 @@ def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service:
 
     Only fields included in the request body are changed; omitted fields
     are left as-is. If `source_type` is changed, the matching FK
-    (`class_id`/`race_id`/`background_id`) must be included explicitly in
-    the same request — the previous FK is not carried over automatically,
-    to avoid leaving a stale reference from the old source_type.
+    (`class_id`/`race_id`/`background_id`/`feat_id`) must be included
+    explicitly in the same request — the previous FK is not carried over
+    automatically, to avoid leaving a stale reference from the old
+    source_type.
     """
     return feature_service.update_feature(feature_id, update_data)
 

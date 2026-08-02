@@ -5,6 +5,7 @@ from app.features.backgrounds.endpoints import router as background_router
 
 # from app.features.characters.router import router as character_router
 from app.features.classes.endpoints import router as class_router
+from app.features.feats.endpoints import router as feat_router
 from app.features.features.endpoints import router as feature_router
 from app.features.items.endpoints import router as item_router
 from app.features.ping.endpoints import router as ping_router
@@ -24,6 +25,7 @@ _feature_routers = (
     skill_router,
     spell_router,
     background_router,
+    feat_router,
     feature_router,
     item_router,
     # character_router,

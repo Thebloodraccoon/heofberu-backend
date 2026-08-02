@@ -5,6 +5,7 @@ Revises: 7e70b8a81bb9
 Create Date: 2026-08-02 00:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -13,22 +14,33 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'xxxxxxxxxxxx'
-down_revision: Union[str, None] = '7e70b8a81bb9'
+revision: str = "xxxxxxxxxxxx"
+down_revision: Union[str, None] = "7e70b8a81bb9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 spell_cast_time_enum = postgresql.ENUM(
-    'ACTION', 'BONUS_ACTION', 'REACTION', 'SPECIAL',
-    name='spell_cast_time',
+    "ACTION",
+    "BONUS_ACTION",
+    "REACTION",
+    "SPECIAL",
+    name="spell_cast_time",
 )
 
 spell_duration_enum = postgresql.ENUM(
-    'INSTANTANEOUS', 'ONE_ROUND', 'ONE_MINUTE', 'TEN_MINUTES', 'ONE_HOUR',
-    'EIGHT_HOURS', 'TWENTY_FOUR_HOURS', 'SEVEN_DAYS', 'THIRTY_DAYS',
-    'UNTIL_DISPELLED', 'SPECIAL',
-    name='spell_duration',
+    "INSTANTANEOUS",
+    "ONE_ROUND",
+    "ONE_MINUTE",
+    "TEN_MINUTES",
+    "ONE_HOUR",
+    "EIGHT_HOURS",
+    "TWENTY_FOUR_HOURS",
+    "SEVEN_DAYS",
+    "THIRTY_DAYS",
+    "UNTIL_DISPELLED",
+    "SPECIAL",
+    name="spell_duration",
 )
 
 
@@ -40,20 +52,41 @@ def upgrade() -> None:
     spell_duration_enum.create(bind, checkfirst=True)
 
     op.add_column(
-        'spells',
-        sa.Column('cast_time_new', sa.Enum(
-            'ACTION', 'BONUS_ACTION', 'REACTION', 'SPECIAL',
-            name='spell_cast_time', create_type=False,
-        ), nullable=True),
+        "spells",
+        sa.Column(
+            "cast_time_new",
+            sa.Enum(
+                "ACTION",
+                "BONUS_ACTION",
+                "REACTION",
+                "SPECIAL",
+                name="spell_cast_time",
+                create_type=False,
+            ),
+            nullable=True,
+        ),
     )
     op.add_column(
-        'spells',
-        sa.Column('duration_new', sa.Enum(
-            'INSTANTANEOUS', 'ONE_ROUND', 'ONE_MINUTE', 'TEN_MINUTES', 'ONE_HOUR',
-            'EIGHT_HOURS', 'TWENTY_FOUR_HOURS', 'SEVEN_DAYS', 'THIRTY_DAYS',
-            'UNTIL_DISPELLED', 'SPECIAL',
-            name='spell_duration', create_type=False,
-        ), nullable=True),
+        "spells",
+        sa.Column(
+            "duration_new",
+            sa.Enum(
+                "INSTANTANEOUS",
+                "ONE_ROUND",
+                "ONE_MINUTE",
+                "TEN_MINUTES",
+                "ONE_HOUR",
+                "EIGHT_HOURS",
+                "TWENTY_FOUR_HOURS",
+                "SEVEN_DAYS",
+                "THIRTY_DAYS",
+                "UNTIL_DISPELLED",
+                "SPECIAL",
+                name="spell_duration",
+                create_type=False,
+            ),
+            nullable=True,
+        ),
     )
 
     op.execute("""
@@ -78,19 +111,19 @@ def upgrade() -> None:
         END::spell_duration
     """)
 
-    op.drop_column('spells', 'cast_time')
-    op.drop_column('spells', 'duration')
-    op.alter_column('spells', 'cast_time_new', new_column_name='cast_time')
-    op.alter_column('spells', 'duration_new', new_column_name='duration')
-    op.alter_column('spells', 'cast_time', nullable=False)
-    op.alter_column('spells', 'duration', nullable=False)
+    op.drop_column("spells", "cast_time")
+    op.drop_column("spells", "duration")
+    op.alter_column("spells", "cast_time_new", new_column_name="cast_time")
+    op.alter_column("spells", "duration_new", new_column_name="duration")
+    op.alter_column("spells", "cast_time", nullable=False)
+    op.alter_column("spells", "duration", nullable=False)
 
 
 def downgrade() -> None:
     """Downgrade schema."""
 
-    op.add_column('spells', sa.Column('cast_time_old', sa.String(length=50), nullable=True))
-    op.add_column('spells', sa.Column('duration_old', sa.String(length=50), nullable=True))
+    op.add_column("spells", sa.Column("cast_time_old", sa.String(length=50), nullable=True))
+    op.add_column("spells", sa.Column("duration_old", sa.String(length=50), nullable=True))
 
     op.execute("""
         UPDATE spells SET cast_time_old = CASE cast_time
@@ -116,13 +149,13 @@ def downgrade() -> None:
         END
     """)
 
-    op.drop_column('spells', 'cast_time')
-    op.drop_column('spells', 'duration')
+    op.drop_column("spells", "cast_time")
+    op.drop_column("spells", "duration")
 
-    op.alter_column('spells', 'cast_time_old', new_column_name='cast_time')
-    op.alter_column('spells', 'duration_old', new_column_name='duration')
-    op.alter_column('spells', 'cast_time', nullable=False)
-    op.alter_column('spells', 'duration', nullable=False)
+    op.alter_column("spells", "cast_time_old", new_column_name="cast_time")
+    op.alter_column("spells", "duration_old", new_column_name="duration")
+    op.alter_column("spells", "cast_time", nullable=False)
+    op.alter_column("spells", "duration", nullable=False)
 
     spell_cast_time_enum.drop(op.get_bind(), checkfirst=True)
     spell_duration_enum.drop(op.get_bind(), checkfirst=True)

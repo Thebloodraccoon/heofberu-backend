@@ -52,3 +52,34 @@ class CharacterSpellSlot(settings.Base):  # type: ignore
             f"<CharacterSpellSlot(character_id={self.character_id}, "
             f"level='{self.spell_level}', used={self.used}/{self.total})>"
         )
+
+
+class CharacterFeat(settings.Base):  # type: ignore
+    """
+    A feat granted to a character. Uses a surrogate key rather than a
+    composite (character_id, feat_id) PK because some feats can be taken
+    more than once (e.g. Elemental Adept for different damage types).
+
+    `ability_score_increase_id` records which of the feat's ASI choices
+    (see FeatAbilityScoreIncrease) the player selected, if any; NULL if
+    the feat grants no ability score increase or none was applicable.
+    """
+
+    __tablename__ = "character_feats"
+
+    id = Column(Integer, primary_key=True)
+    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    feat_id = Column(Integer, ForeignKey("feats.id", ondelete="RESTRICT"), nullable=False, index=True)
+    ability_score_increase_id = Column(
+        Integer,
+        ForeignKey("feat_ability_score_increases.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    character = relationship("Character", back_populates="character_feats")
+    feat = relationship("Feat")
+    ability_score_increase = relationship("FeatAbilityScoreIncrease")
+
+    def __repr__(self):
+        return f"<CharacterFeat(character_id={self.character_id}, feat_id={self.feat_id})>"

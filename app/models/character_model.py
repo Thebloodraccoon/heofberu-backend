@@ -132,6 +132,14 @@ class Character(settings.Base):  # type: ignore
     )
     items = relationship("Item", secondary="character_items", viewonly=True)
 
+    character_feats = relationship(
+        "CharacterFeat",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    feats = relationship("Feat", secondary="character_feats", viewonly=True)
+
     conditions = relationship(
         "CharacterCondition",
         back_populates="character",

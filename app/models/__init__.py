@@ -8,6 +8,7 @@ from app.models.campaign_character_model import CampaignCharacter  # noqa: F401
 # Campaign and its associations.
 from app.models.campaign_model import Campaign  # noqa: F401
 from app.models.character_association_models import (  # noqa: F401
+    CharacterFeat,
     CharacterSavingThrowProficiency,
     CharacterSkillProficiency,
     CharacterSpellSlot,
@@ -28,6 +29,9 @@ from app.models.class_association_models import (  # noqa: F401
 # Class and its associations.
 from app.models.class_model import Class  # noqa: F401
 from app.models.class_spell_slot_progression_model import ClassSpellSlotProgression  # noqa: F401
+
+# Feat.
+from app.models.feat_model import Feat  # noqa: F401
 
 # Feature (class/subclass/race/background features and feats).
 from app.models.feature_model import Feature  # noqa: F401

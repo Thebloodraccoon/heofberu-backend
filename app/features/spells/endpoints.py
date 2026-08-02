@@ -144,6 +144,7 @@ def get_spells_brief(
     }
     return spell_service.list_brief(page=page, size=size, filters=filters, search=search)
 
+
 @router.get(
     "/{spell_id}",
     response_model=SpellResponse,

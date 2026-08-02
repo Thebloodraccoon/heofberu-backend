@@ -3,8 +3,8 @@ from sqlalchemy import Enum as SAEnum
 from app.constants import (
     AbilityScore,
     AttackType,
-    ConditionType,
     Component,
+    ConditionType,
     DamageType,
     DiceType,
     FeatureSourceType,

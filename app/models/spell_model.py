@@ -8,9 +8,11 @@ from app.models.enums import (
     DamageTypeType,
     DiceTypeColumn,
     HealingTargetType,
+    SpellCastTimeType,
+    SpellDurationType,
     SpellLevelType,
     SpellRangeTypeType,
-    SpellSchoolType, SpellDurationType, SpellCastTimeType,
+    SpellSchoolType,
 )
 from app.models.spell_association_models import spell_classes, spell_races
 from app.settings import settings

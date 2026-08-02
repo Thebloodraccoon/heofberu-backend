@@ -15,6 +15,7 @@ from app.features.characters.core.service import CharacterService
 from app.features.characters.proficiencies.service import CharacterProficiencyService
 from app.features.characters.spells.service import CharacterSpellService
 from app.features.classes.service import ClassService
+from app.features.feats.service import FeatService
 from app.features.features.service import FeatureService
 from app.features.items.service import ItemService
 from app.features.races.service import RaceService
@@ -154,6 +155,15 @@ def get_background_service(db: DatabaseDep) -> BackgroundService:
 
 
 BackgroundServiceDep = Annotated[BackgroundService, Depends(get_background_service)]
+
+
+def get_feat_service(db: DatabaseDep) -> FeatService:
+    """Get Feat service instance."""
+
+    return FeatService(db)
+
+
+FeatServiceDep = Annotated[FeatService, Depends(get_feat_service)]
 
 
 def get_feature_service(db: DatabaseDep) -> FeatureService:

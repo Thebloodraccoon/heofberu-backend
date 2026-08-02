@@ -47,7 +47,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         return self.response_schema.model_validate(user)
 
-
     def create_user(self, data: UserCreate) -> UserResponse:
         """
         Create a user after checking email/username aren't already taken.
