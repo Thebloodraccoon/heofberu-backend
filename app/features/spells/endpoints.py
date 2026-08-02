@@ -1,5 +1,16 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
+from app.constants import (
+    AttackType,
+    DamageType,
+    HealingTarget,
+    SpellCastTime,
+    SpellDuration,
+    SpellLevel,
+    SpellRangeType,
+    SpellSchool,
+)
+from app.core.base_service import Page
 from app.core.dependencies import GmUserDep, SpellServiceDep
 from app.features.spells.schemas import (
     ClassAvailabilityUpdate,
@@ -15,15 +26,24 @@ router = APIRouter(prefix="/spells", tags=["Spells"])
 
 @router.get(
     "/",
-    response_model=list[SpellResponse],
+    response_model=Page[SpellResponse],
     summary="List spells (full detail)",
 )
 def get_spells(
     spell_service: SpellServiceDep,
-    skip: int = 0,
-    limit: int = 100,
-    school: str | None = None,
-    level: str | None = None,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    school: SpellSchool | None = None,
+    level: SpellLevel | None = None,
+    cast_time: SpellCastTime | None = None,
+    range_type: SpellRangeType | None = None,
+    duration: SpellDuration | None = None,
+    attack_type: AttackType | None = None,
+    damage_type: DamageType | None = None,
+    healing_target: HealingTarget | None = None,
+    is_ritual: bool | None = None,
+    is_concentration: bool | None = None,
+    is_homebrew: bool | None = None,
     search: str | None = None,
 ):
     """
@@ -32,27 +52,61 @@ def get_spells(
 
     Open endpoint, no authentication required.
 
-    `school` and `level` are exact matches (e.g. `school=EVOCATION`,
-    `level=LEVEL_1`) and can be combined. `search` is a case-insensitive
-    partial match against the spell name.
+    All filters below are exact matches and can be freely combined
+    (AND'd together); `search` is a case-insensitive partial match
+    against the spell name, combined with any filters.
+
+    - `school` — e.g. `EVOCATION`
+    - `level` — e.g. `LEVEL_1`, `CANTRIP`
+    - `cast_time` — e.g. `ACTION`, `BONUS_ACTION`, `REACTION`
+    - `range_type` — e.g. `RANGED`, `TOUCH`, `SELF`
+    - `duration` — e.g. `INSTANTANEOUS`, `ONE_MINUTE`
+    - `attack_type` — e.g. `RANGED_ATTACK`, `MELEE_ATTACK`
+    - `damage_type` — e.g. `FIRE`, `RADIANT`
+    - `healing_target` — e.g. `HP`, `TEMP_HP`
+    - `is_ritual` / `is_concentration` / `is_homebrew` — boolean flags
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching spells across every page, not just this one.
 
     For a lighter payload, use `GET /spells/brief` instead.
     """
-    filters = {"school": school, "level": level}
-    return spell_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
+    filters = {
+        "school": school,
+        "level": level,
+        "cast_time": cast_time,
+        "range_type": range_type,
+        "duration": duration,
+        "attack_type": attack_type,
+        "damage_type": damage_type,
+        "healing_target": healing_target,
+        "is_ritual": is_ritual,
+        "is_concentration": is_concentration,
+        "is_homebrew": is_homebrew,
+    }
+    return spell_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
     "/brief",
-    response_model=list[SpellBriefResponse],
+    response_model=Page[SpellBriefResponse],
     summary="List spells (minimal fields)",
 )
 def get_spells_brief(
     spell_service: SpellServiceDep,
-    skip: int = 0,
-    limit: int = 100,
-    school: str | None = None,
-    level: str | None = None,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    school: SpellSchool | None = None,
+    level: SpellLevel | None = None,
+    cast_time: SpellCastTime | None = None,
+    range_type: SpellRangeType | None = None,
+    duration: SpellDuration | None = None,
+    attack_type: AttackType | None = None,
+    damage_type: DamageType | None = None,
+    healing_target: HealingTarget | None = None,
+    is_ritual: bool | None = None,
+    is_concentration: bool | None = None,
+    is_homebrew: bool | None = None,
     search: str | None = None,
 ):
     """
@@ -61,9 +115,13 @@ def get_spells_brief(
 
     Open endpoint, no authentication required.
 
-    `school` and `level` are exact matches and can be combined; `search`
-    is a case-insensitive partial match against the spell name — same
-    semantics as `GET /spells/`.
+    Supports the same filters as `GET /spells/` — `school`, `level`,
+    `cast_time`, `range_type`, `duration`, `attack_type`, `damage_type`,
+    `healing_target`, `is_ritual`, `is_concentration`, `is_homebrew` — all
+    exact matches, freely combinable, plus `search` as a case-insensitive
+    partial match against the spell name.
+
+    Response is `{items, total, page, size}`, same shape as `GET /spells/`.
 
     Does not include components, description, dice, or other heavier
     detail fields — use `GET /spells/{spell_id}` for the full record.
@@ -71,9 +129,20 @@ def get_spells_brief(
     payload is unnecessary but availability still needs to be shown or
     filtered on.
     """
-    filters = {"school": school, "level": level}
-    return spell_service.list_brief(skip=skip, limit=limit, filters=filters, search=search)
-
+    filters = {
+        "school": school,
+        "level": level,
+        "cast_time": cast_time,
+        "range_type": range_type,
+        "duration": duration,
+        "attack_type": attack_type,
+        "damage_type": damage_type,
+        "healing_target": healing_target,
+        "is_ritual": is_ritual,
+        "is_concentration": is_concentration,
+        "is_homebrew": is_homebrew,
+    }
+    return spell_service.list_brief(page=page, size=size, filters=filters, search=search)
 
 @router.get(
     "/{spell_id}",
@@ -115,14 +184,12 @@ def create_spell(
                     "name": "Mage Armor",
                     "school": "ABJURATION",
                     "level": "LEVEL_1",
-                    "cast_time": "1 action",
+                    "cast_time": "ACTION",
                     "range_type": "TOUCH",
-                    "has_verbal": True,
-                    "has_somatic": True,
-                    "has_material": True,
+                    "components": ["VERBAL", "SOMATIC", "MATERIAL"],
                     "is_material_consumed": False,
                     "material": "a piece of cured leather",
-                    "duration": "8 hours",
+                    "duration": "EIGHT_HOURS",
                     "description": "You touch a willing creature who isn't wearing armor, and its base AC becomes 13 + its Dexterity modifier.",
                 },
             },
@@ -133,16 +200,14 @@ def create_spell(
                     "name": "Guiding Bolt",
                     "school": "EVOCATION",
                     "level": "LEVEL_1",
-                    "cast_time": "1 action",
+                    "cast_time": "ACTION",
                     "range_type": "RANGED",
                     "range_value": 120,
-                    "has_verbal": True,
-                    "has_somatic": True,
-                    "has_material": False,
+                    "components": ["VERBAL", "SOMATIC"],
                     "is_material_consumed": False,
                     "material": None,
                     "is_ritual": False,
-                    "duration": "1 round",
+                    "duration": "ONE_ROUND",
                     "is_concentration": False,
                     "attack_type": "RANGED_ATTACK",
                     "save_stat": None,
@@ -160,18 +225,50 @@ def create_spell(
                     "name": "Cure Wounds",
                     "school": "EVOCATION",
                     "level": "LEVEL_1",
-                    "cast_time": "1 action",
+                    "cast_time": "ACTION",
                     "range_type": "TOUCH",
-                    "has_verbal": True,
-                    "has_somatic": True,
-                    "has_material": False,
+                    "components": ["VERBAL", "SOMATIC"],
                     "is_material_consumed": False,
-                    "duration": "Instantaneous",
+                    "duration": "INSTANTANEOUS",
                     "description": "A creature you touch regains a number of hit points.",
                     "healing_target": "HP",
                     "healing_dice_count": 1,
                     "healing_dice_type": "D8",
                     "available_classes": [2, 3, 5, 7],
+                },
+            },
+            "ritual_utility": {
+                "summary": "Ritual spell with no attack, damage, or healing",
+                "description": "Shows is_ritual and a longer concentration duration.",
+                "value": {
+                    "name": "Detect Magic",
+                    "school": "DIVINATION",
+                    "level": "LEVEL_1",
+                    "cast_time": "ACTION",
+                    "range_type": "SELF",
+                    "components": ["VERBAL", "SOMATIC"],
+                    "is_material_consumed": False,
+                    "is_ritual": True,
+                    "duration": "TEN_MINUTES",
+                    "is_concentration": True,
+                    "description": "For the duration, you sense the presence of magic within 30 feet of you.",
+                    "available_classes": [2, 3, 4, 7, 10, 11, 12],
+                },
+            },
+            "reaction_spell": {
+                "summary": "Reaction-cast spell",
+                "description": "Shows cast_time=REACTION and a save-based (no attack roll) effect.",
+                "value": {
+                    "name": "Shield",
+                    "school": "ABJURATION",
+                    "level": "LEVEL_1",
+                    "cast_time": "REACTION",
+                    "range_type": "SELF",
+                    "components": ["VERBAL", "SOMATIC"],
+                    "is_material_consumed": False,
+                    "duration": "ONE_ROUND",
+                    "description": "An invisible barrier of magical force appears and protects you, granting +5 AC until the start of your next turn.",
+                    "available_classes": [10, 12],
                 },
             },
         },

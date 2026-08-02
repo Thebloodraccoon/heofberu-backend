@@ -337,9 +337,36 @@ class BaseRepository(Generic[ModelType]):
         return query.offset(skip).limit(limit).all()
 
     def count_all(self) -> int:
-        """Count the total number of records in the table."""
+        """Count the total number of records in the table, unconditionally."""
 
         return self.db.query(self.model).count()
+
+    def count(self, *, filters: dict[str, Any] | None = None, search: str | None = None) -> int:
+        """
+        Count records matching ``filters``/``search``, using the same
+        conditions as :meth:`get_all`/:meth:`get_brief`.
+
+        This is the counterpart needed for a ``{items, total, page, size}``
+        listing response: the item count for the *current page* is
+        ``len(items)``, but ``total`` (the count across all pages) must be
+        computed by re-running the same ``filters``/``search`` conditions
+        without ``offset``/``limit``. Kept as a separate method rather than
+        folded into ``get_all`` since a ``COUNT(*)`` query and a row-fetch
+        query are different queries — combining them would mean either two
+        round-trips disguised as one call, or a less efficient combined
+        query (e.g. a window function) that isn't needed for the common
+        case.
+
+        No ``default_load_options`` here — a count doesn't touch
+        relationships, so eager-loading is irrelevant (and would be wasted
+        work) for this query.
+        """
+
+        query = self.db.query(self.model)
+        query = self._apply_filters(query, filters)
+        query = self._apply_search(query, search)
+
+        return query.count()
 
     def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
         """

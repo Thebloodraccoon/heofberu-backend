@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
+from app.core.base_service import Page
 from app.core.dependencies import BackgroundServiceDep, GmUserDep
 from app.features.backgrounds.schemas import (
     BackgroundBriefResponse,
@@ -14,13 +15,13 @@ router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
 
 @router.get(
     "/",
-    response_model=list[BackgroundResponse],
+    response_model=Page[BackgroundResponse],
     summary="List backgrounds (full detail)",
 )
 def get_backgrounds(
     background_service: BackgroundServiceDep,
-    skip: int = 0,
-    limit: int = 100,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
     search: str | None = None,
 ):
     """
@@ -32,20 +33,23 @@ def get_backgrounds(
     `search` is a case-insensitive partial match against the background
     name.
 
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching backgrounds across every page, not just this one.
+
     For a lighter payload, use `GET /backgrounds/brief` instead.
     """
-    return background_service.get_all(skip=skip, limit=limit, search=search)
+    return background_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(
     "/brief",
-    response_model=list[BackgroundBriefResponse],
+    response_model=Page[BackgroundBriefResponse],
     summary="List backgrounds (minimal fields)",
 )
 def get_backgrounds_brief(
     background_service: BackgroundServiceDep,
-    skip: int = 0,
-    limit: int = 100,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
     search: str | None = None,
 ):
     """
@@ -57,12 +61,14 @@ def get_backgrounds_brief(
     `search` is a case-insensitive partial match against the background
     name.
 
+    Response is `{items, total, page, size}`, same shape as `GET /backgrounds/`.
+
     Does not include feature text, personality suggestions, or
     description — use `GET /backgrounds/{background_id}` for the full
     record. Intended for dropdowns, tables, and similar listing UI where
     the full payload is unnecessary.
     """
-    return background_service.list_brief(skip=skip, limit=limit, search=search)
+    return background_service.list_brief(page=page, size=size, search=search)
 
 
 @router.get(
@@ -77,6 +83,8 @@ def get_background(background_id: int, background_service: BackgroundServiceDep)
     """
     Return a single background by ID, with full detail — including
     granted skills.
+
+    Response is `{items, total, page, size}`, same shape as `GET /backgrounds/`.
 
     Open endpoint, no authentication required.
     """

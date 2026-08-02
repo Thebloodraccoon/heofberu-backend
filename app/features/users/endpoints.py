@@ -21,14 +21,17 @@ def get_all_users(
 
     `role` is an exact match. `search` is a case-insensitive partial
     match against username or email, and can be combined with `role`.
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching users across every page, not just this one.
     """
-    return user_service.get_all_users(page=page, size=size, role=role, search=search)
+    return user_service.get_all(page=page, size=size, filters={"role": role}, search=search)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDep):
     """Get user by ID."""
-    return user_service.get_user_by_id(user_id)
+    return user_service.get_by_id(user_id)
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

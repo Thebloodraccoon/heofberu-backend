@@ -1,15 +1,24 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import (
     AbilityScore,
     AttackType,
+    Component,
     DamageType,
     DiceType,
     HealingTarget,
+    SpellCastTime,
+    SpellDuration,
     SpellLevel,
     SpellRangeType,
     SpellSchool,
 )
+
+
+def _validate_unique_components(components: list[Component]) -> list[Component]:
+    if len(components) != len(set(components)):
+        raise ValueError("Duplicate spell component(s) are not allowed.")
+    return components
 
 
 class SpellBase(BaseModel):
@@ -17,20 +26,17 @@ class SpellBase(BaseModel):
     school: SpellSchool
     level: SpellLevel
 
-    cast_time: str
+    cast_time: SpellCastTime
     range_type: SpellRangeType
     range_value: int | None = None
 
-    # Components (replaces the old free-text `components` string).
-    has_verbal: bool = False
-    has_somatic: bool = False
-    has_material: bool = False
+    components: list[Component] = []
     is_material_consumed: bool = False
-    material: str | None = None  # material component description, relevant when has_material=True
+    material: str | None = None  # material component description, relevant when Component.MATERIAL is in `components`
 
     is_ritual: bool = False
 
-    duration: str
+    duration: SpellDuration
     is_concentration: bool = False
 
     # None means the spell has no attack roll (e.g. a save-based or utility spell).
@@ -47,6 +53,10 @@ class SpellBase(BaseModel):
 
     description: str
     higher_levels: str | None = None
+
+    @field_validator("components")
+    def validate_unique_components(cls, value):
+        return _validate_unique_components(value)
 
 
 class SpellCreate(SpellBase):
@@ -76,16 +86,14 @@ class SpellUpdate(BaseModel):
     name: str | None = None
     school: SpellSchool | None = None
     level: SpellLevel | None = None
-    cast_time: str | None = None
+    cast_time: SpellCastTime | None = None
     range_type: SpellRangeType | None = None
     range_value: int | None = None
-    has_verbal: bool | None = None
-    has_somatic: bool | None = None
-    has_material: bool | None = None
+    components: list[Component] | None = None
     is_material_consumed: bool | None = None
     material: str | None = None
     is_ritual: bool | None = None
-    duration: str | None = None
+    duration: SpellDuration | None = None
     is_concentration: bool | None = None
     attack_type: AttackType | None = None
     save_stat: AbilityScore | None = None
@@ -97,6 +105,12 @@ class SpellUpdate(BaseModel):
     healing_dice_type: DiceType | None = None
     description: str | None = None
     higher_levels: str | None = None
+
+    @field_validator("components")
+    def validate_unique_components(cls, value):
+        if value is None:
+            return value
+        return _validate_unique_components(value)
 
 
 class ClassAvailabilityUpdate(BaseModel):

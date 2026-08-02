@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.constants import UserRole
 from app.core.base_service import BaseService
 from app.core.security import get_password_hash
 from app.features.users.exceptions import (
@@ -39,11 +38,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
             not_found_exception_factory=lambda user_id: UserNotFoundException(user_id=user_id),
         )
 
-    def get_user_by_id(self, user_id: int) -> UserResponse:
-        """Return a single user by ID, or raise ``UserNotFoundException``."""
-
-        return self.get_by_id(user_id)
-
     def get_user_by_email(self, email: str) -> UserResponse:
         """Return a single user by email, or raise ``UserNotFoundException``."""
 
@@ -53,31 +47,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         return self.response_schema.model_validate(user)
 
-    def get_all_users(
-        self,
-        *,
-        page: int = 0,
-        size: int = 50,
-        role: UserRole | None = None,
-        search: str | None = None,
-    ) -> list[UserResponse]:
-        """
-        Return a page of users, serialized to ``UserResponse``.
-
-        Args:
-            page: Page number, 0-indexed.
-            size: Maximum number of records to return.
-            role: Optional exact-match filter on ``role`` (e.g. only
-                ``PLAYER`` or only ``GM``).
-            search: Optional case-insensitive substring match against
-                ``username``/``email`` — see ``UserRepository``'s pinned
-                ``search_fields`` (deliberately excludes
-                ``hashed_password``).
-
-        """
-
-        filters = {"role": role}
-        return self.get_all(skip=page * size, limit=size, filters=filters, search=search)
 
     def create_user(self, data: UserCreate) -> UserResponse:
         """
@@ -156,4 +125,3 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         if user.email == settings.ADMIN_LOGIN:
             raise DefaultUserProtectedException()
-    

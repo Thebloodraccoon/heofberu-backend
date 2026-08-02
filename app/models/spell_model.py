@@ -1,15 +1,16 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import ARRAY, Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.enums import (
     AbilityScoreType,
     AttackTypeType,
+    ComponentType,
     DamageTypeType,
     DiceTypeColumn,
     HealingTargetType,
     SpellLevelType,
     SpellRangeTypeType,
-    SpellSchoolType,
+    SpellSchoolType, SpellDurationType, SpellCastTimeType,
 )
 from app.models.spell_association_models import spell_classes, spell_races
 from app.settings import settings
@@ -26,20 +27,17 @@ class Spell(settings.Base):  # type: ignore
     school = Column(SpellSchoolType, nullable=False)
     level = Column(SpellLevelType, nullable=False, index=True)
 
-    cast_time = Column(String(50), nullable=False)
+    cast_time = Column(SpellCastTimeType, nullable=False)
     range_type = Column(SpellRangeTypeType, nullable=False)
     range_value = Column(Integer)
 
-    # Components (replaces the old free-text `components` string)
-    has_verbal = Column(Boolean, nullable=False, default=False)
-    has_somatic = Column(Boolean, nullable=False, default=False)
-    has_material = Column(Boolean, nullable=False, default=False)
+    components = Column(ARRAY(ComponentType), nullable=False, default=list)
     is_material_consumed = Column(Boolean, nullable=False, default=False)
-    material = Column(Text)  # material component description, relevant when has_material=True
+    material = Column(Text)  # material component description, relevant when Component.MATERIAL is in `components`
 
     is_ritual = Column(Boolean, nullable=False, default=False)
 
-    duration = Column(String(50), nullable=False)
+    duration = Column(SpellDurationType, nullable=False)
     is_concentration = Column(Boolean, nullable=False, default=False)
 
     attack_type = Column(AttackTypeType, nullable=True)  # NULL if the spell has no attack roll

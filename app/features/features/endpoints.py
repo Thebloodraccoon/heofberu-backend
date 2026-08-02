@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
 from app.constants import FeatureSourceType
+from app.core.base_service import Page
 from app.core.dependencies import FeatureServiceDep, GmUserDep
 from app.features.features.schemas import FeatureBriefResponse, FeatureCreate, FeatureResponse, FeatureUpdate
 
@@ -9,7 +10,7 @@ router = APIRouter(prefix="/features", tags=["Features"])
 
 @router.get(
     "/",
-    response_model=list[FeatureResponse],
+    response_model=Page[FeatureResponse],
     summary="List features (full detail, filterable)",
 )
 def get_features(
@@ -19,8 +20,8 @@ def get_features(
     race_id: int | None = None,
     background_id: int | None = None,
     search: str | None = None,
-    skip: int = 0,
-    limit: int = 50,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
     Return a paginated list of features, with full detail, ordered by
@@ -37,6 +38,9 @@ def get_features(
 
     `search` is a case-insensitive partial match against the features name.
 
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching features across every page, not just this one.
+
     For a lighter payload, use `GET /features/brief` instead.
     """
 
@@ -46,12 +50,12 @@ def get_features(
         "race_id": race_id,
         "background_id": background_id,
     }
-    return feature_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
+    return feature_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
     "/brief",
-    response_model=list[FeatureBriefResponse],
+    response_model=Page[FeatureBriefResponse],
     summary="List features (minimal fields, filterable)",
 )
 def get_features_brief(
@@ -61,8 +65,8 @@ def get_features_brief(
     race_id: int | None = None,
     background_id: int | None = None,
     search: str | None = None,
-    skip: int = 0,
-    limit: int = 50,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
     Return a paginated list of features with only `id`, `name`,
@@ -71,12 +75,14 @@ def get_features_brief(
 
     Open endpoint, no authentication required.
 
+    `search` is a case-insensitive partial match against the features name.
+
+    Response is `{items, total, page, size}`, same shape as `GET /features/`.
+
     Same filters as `GET /features/`. Does not include the description —
     use `GET /features/{feature_id}` for the full record. Intended for
     dropdowns, tables, and similar listing UI where the full payload is
     unnecessary.
-
-    `search` is a case-insensitive partial match against the features name.
     """
 
     filters = {
@@ -85,7 +91,7 @@ def get_features_brief(
         "race_id": race_id,
         "background_id": background_id,
     }
-    return feature_service.list_brief(skip=skip, limit=limit, filters=filters, search=search)
+    return feature_service.list_brief(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(

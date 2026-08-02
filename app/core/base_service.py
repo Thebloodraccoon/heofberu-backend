@@ -15,6 +15,58 @@ BriefSchema = TypeVar("BriefSchema", bound=BaseModel, default=BaseModel)
 NotFoundExceptionFactory = Callable[[int], Exception]
 BeforeUpdateHook = Callable[[ModelType, dict], None]
 
+ItemSchema = TypeVar("ItemSchema", bound=BaseModel)
+
+
+class Page(BaseModel, Generic[ItemSchema]):
+    """
+    Generic ``{items, total, page, size}`` envelope for a paginated listing.
+
+    Replaces returning a bare ``list[ResponseSchema]`` from
+    :meth:`BaseService.get_all`/:meth:`BaseService.list_brief`: a bare list
+    tells the caller nothing about how many records exist beyond the
+    current page, so a client can't render "page 3 of 12" or know whether
+    to show a "next page" control without a second, separate request.
+
+    ``page``/``size`` here echo back the *request's* pagination (1-indexed
+    page number and page size) rather than the ``skip``/``limit`` the
+    repository layer uses internally — ``skip``/``limit`` is
+    offset/count, which is the natural vocabulary for a SQL query, while
+    ``page``/``size`` is the natural vocabulary for an API client
+    ("give me page 2"). The conversion between the two happens once, in
+    :func:`_paginate`, rather than being duplicated in every endpoint.
+
+    Deliberately a thin data container with no computed convenience
+    properties (``has_next``, ``pages``, etc.) beyond what's already
+    here — a client that needs "is there a next page" can compare
+    ``page * size < total``, and adding derived fields here risks them
+    drifting out of sync with ``total``/``size`` if either is ever
+    patched independently (e.g. by a caching layer).
+    """
+
+    items: list[ItemSchema]
+    total: int
+    page: int
+    size: int
+
+
+def _paginate(page: int, size: int) -> tuple[int, int]:
+    """
+    Convert a 1-indexed ``(page, size)`` pair into the ``(skip, limit)``
+    the repository layer expects.
+
+    ``page`` is 1-indexed (page 1 is the first page) since that's the
+    more common convention for an end-user-facing API parameter; the
+    repository/base-class layer's ``skip``/``limit`` remains 0-indexed
+    offset/count, since that maps directly onto SQL's ``OFFSET``/``LIMIT``.
+    Callers should treat ``page < 1`` as ``page = 1`` (endpoints are
+    expected to enforce this via ``Query(ge=1, ...)``; this helper does
+    not re-validate it).
+    """
+
+    skip = (page - 1) * size
+    return skip, size
+
 
 class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, BriefSchema]):
     """
@@ -86,17 +138,19 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     def get_all(
         self,
-        skip: int = 0,
-        limit: int = 100,
+        page: int = 1,
+        size: int = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
-    ) -> list[ResponseSchema]:
+    ) -> Page[ResponseSchema]:
         """
-        Return a page of records, serialized to ``ResponseSchema``.
+        Return a page of records, serialized to ``ResponseSchema``, wrapped
+        in a ``Page`` envelope with ``total`` (the count across every page,
+        not just this one).
 
         Args:
-            skip: Number of records to skip (offset-based pagination).
-            limit: Maximum number of records to return.
+            page: 1-indexed page number.
+            size: Maximum number of records per page.
             filters: Optional exact-match filters, passed straight through
                 to ``repository.get_all`` — see
                 ``BaseRepository._apply_filters`` for the exact semantics
@@ -117,10 +171,23 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
                 A repository with no searchable fields (``search_fields=[]``)
                 silently ignores this.
 
+        ``total`` is computed via ``repository.count(filters=filters,
+        search=search)`` — a second query using the *same* conditions as
+        the page fetch, minus ``skip``/``limit`` — so it reflects "how many
+        records match this filter/search", not the table's grand total.
+
         """
 
+        skip, limit = _paginate(page, size)
         items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
-        return [self.response_schema.model_validate(item) for item in items]
+        total = self.repository.count(filters=filters, search=search)
+
+        return Page(
+            items=[self.response_schema.model_validate(item) for item in items],
+            total=total,
+            page=page,
+            size=size,
+        )
 
     def get_by_id(self, item_id: int) -> ResponseSchema:
         """Return a single record by ID, or raise the feature's not-found exception."""
@@ -130,13 +197,14 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     def list_brief(
         self,
-        skip: int = 0,
-        limit: int = 100,
+        page: int = 1,
+        size: int = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
-    ) -> list[BriefSchema]:
+    ) -> Page[BriefSchema]:
         """
-        Return a paginated, lightweight listing of records.
+        Return a paginated, lightweight listing of records, wrapped in a
+        ``Page`` envelope with ``total``.
 
         The columns selected are derived from ``brief_schema``: every field
         name declared on it is looked up as an attribute on ``ModelType``
@@ -149,8 +217,8 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         derive columns from or validate rows against.
 
         Args:
-            skip: Number of records to skip (offset-based pagination).
-            limit: Maximum number of records to return.
+            page: 1-indexed page number.
+            size: Maximum number of records per page.
             filters: Optional exact-match filters, passed straight through
                 to ``repository.get_brief`` — same semantics as on
                 :meth:`get_all`. The filter conditions are checked against
@@ -165,6 +233,12 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
                 selected brief columns, so a field can be searched even if
                 it isn't part of ``brief_schema``.
 
+        ``total`` uses the same ``repository.count(filters=filters,
+        search=search)`` as :meth:`get_all` — the brief listing and the
+        full listing always agree on how many records match, since they
+        share the same underlying ``self.repository.model`` and the same
+        filter/search conditions; only the selected columns differ.
+
         """
 
         if self.brief_schema is None:
@@ -173,10 +247,18 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         model = self.repository.model
         columns = [getattr(model, field_name) for field_name in self.brief_schema.model_fields]
 
+        skip, limit = _paginate(page, size)
         rows = self.repository.get_brief(
             *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
         )
-        return [self.brief_schema.model_validate(row, from_attributes=True) for row in rows]
+        total = self.repository.count(filters=filters, search=search)
+
+        return Page(
+            items=[self.brief_schema.model_validate(row, from_attributes=True) for row in rows],
+            total=total,
+            page=page,
+            size=size,
+        )
 
     def create(self, create_data: CreateSchema) -> ResponseSchema:
         """

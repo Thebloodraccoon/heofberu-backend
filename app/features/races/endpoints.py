@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
+from app.constants import RaceSize
+from app.core.base_service import Page
 from app.core.dependencies import GmUserDep, RaceServiceDep
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
@@ -15,14 +17,14 @@ router = APIRouter(prefix="/races", tags=["Races"])
 
 @router.get(
     "/",
-    response_model=list[RaceResponse],
+    response_model=Page[RaceResponse],
     summary="List races (full detail)",
 )
 def get_races(
     race_service: RaceServiceDep,
-    skip: int = 0,
-    limit: int = 10,
-    size: str | None = None,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    race_size: RaceSize | None = None,
     search: str | None = None,
 ):
     """
@@ -31,26 +33,29 @@ def get_races(
 
     Open endpoint, no authentication required.
 
-    `size` is an exact match (e.g. `size=MEDIUM`). `search` is a
+    `race_size` is an exact match (e.g. `size=MEDIUM`). `search` is a
     case-insensitive partial match against the race name and can be
     combined with `size`.
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching races across every page, not just this one.
 
     For a lighter payload (no bonuses/skills), use `GET /races/brief`
     instead.
     """
-    return race_service.get_all(skip=skip, limit=limit, filters={"size": size}, search=search)
+    return race_service.get_all(page=page, size=size, filters={"size": race_size}, search=search)
 
 
 @router.get(
     "/brief",
-    response_model=list[RaceBriefResponse],
+    response_model=Page[RaceBriefResponse],
     summary="List races (minimal fields)",
 )
 def get_races_brief(
     race_service: RaceServiceDep,
-    skip: int = 0,
-    limit: int = 10,
-    size: str | None = None,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    race_size: str | None = None,
     search: str | None = None,
 ):
     """
@@ -59,15 +64,17 @@ def get_races_brief(
 
     Open endpoint, no authentication required.
 
-    `size` is an exact match (e.g. `size=MEDIUM`). `search` is a
+    `race_size` is an exact match (e.g. `size=MEDIUM`). `search` is a
     case-insensitive partial match against the race name and can be
     combined with `size`.
+
+    Response is `{items, total, page, size}`, same shape as `GET /races/`.
 
     Does not include ability bonuses or granted skills — use
     `GET /races/{race_id}` for the full record. Intended for dropdowns,
     tables, and similar listing UI where the full payload is unnecessary.
     """
-    return race_service.list_brief(skip=skip, limit=limit, filters={"size": size}, search=search)
+    return race_service.list_brief(page=page, size=size, filters={"size": race_size}, search=search)
 
 
 @router.get(

@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
+from app.core.base_service import Page
 from app.core.dependencies import ClassServiceDep, GmUserDep
 from app.features.classes.schemas import (
     AvailableSkillsUpdate,
@@ -16,10 +17,15 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
 
 @router.get(
     "/",
-    response_model=list[ClassResponse],
+    response_model=Page[ClassResponse],
     summary="List classes (full detail)",
 )
-def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 10, search: str | None = None):
+def get_classes(
+    class_service: ClassServiceDep,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    search: str | None = None,
+):
     """
     Return a paginated list of classes, ordered by name, each with full
     detail — including primary abilities, saving throws, and available
@@ -29,18 +35,26 @@ def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 10, 
 
     `search` is a case-insensitive partial match against the class name.
 
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching classes across every page, not just this one.
+
     For a lighter payload (no abilities/throws/skills), use
     `GET /classes/brief` instead.
     """
-    return class_service.get_all(skip=skip, limit=limit, search=search)
+    return class_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(
     "/brief",
-    response_model=list[ClassBriefResponse],
+    response_model=Page[ClassBriefResponse],
     summary="List classes (minimal fields)",
 )
-def get_classes_brief(class_service: ClassServiceDep, skip: int = 0, limit: int = 10, search: str | None = None):
+def get_classes_brief(
+    class_service: ClassServiceDep,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    search: str | None = None,
+):
     """
     Return a paginated list of classes with only `id`, `name`, `hit_dice`,
     and `is_homebrew`.
@@ -49,12 +63,14 @@ def get_classes_brief(class_service: ClassServiceDep, skip: int = 0, limit: int 
 
     `search` is a case-insensitive partial match against the class name.
 
+    Response is `{items, total, page, size}`, same shape as `GET /classes/`.
+
     Does not include primary abilities, saving throws, or available
     skills — use `GET /classes/{class_id}` for the full record. Intended
     for dropdowns, tables, and similar listing UI where the full payload
     is unnecessary.
     """
-    return class_service.list_brief(skip=skip, limit=limit, search=search)
+    return class_service.list_brief(page=page, size=size, search=search)
 
 
 @router.get(

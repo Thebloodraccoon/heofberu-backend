@@ -63,6 +63,33 @@ class SpellSchool(str, Enum):
     TRANSMUTATION = "TRANSMUTATION"
 
 
+class SpellCastTime(str, Enum):
+    ACTION = "ACTION"
+    BONUS_ACTION = "BONUS_ACTION"
+    REACTION = "REACTION"
+    SPECIAL = "SPECIAL"
+
+
+class SpellDuration(str, Enum):
+    INSTANTANEOUS = "INSTANTANEOUS"
+    ONE_ROUND = "ONE_ROUND"
+    ONE_MINUTE = "ONE_MINUTE"
+    TEN_MINUTES = "TEN_MINUTES"
+    ONE_HOUR = "ONE_HOUR"
+    EIGHT_HOURS = "EIGHT_HOURS"
+    TWENTY_FOUR_HOURS = "TWENTY_FOUR_HOURS"
+    SEVEN_DAYS = "SEVEN_DAYS"
+    THIRTY_DAYS = "THIRTY_DAYS"
+    UNTIL_DISPELLED = "UNTIL_DISPELLED"
+    SPECIAL = "SPECIAL"
+
+
+class Component(str, Enum):
+    VERBAL = "VERBAL"
+    SOMATIC = "SOMATIC"
+    MATERIAL = "MATERIAL"
+
+
 class SpellRangeType(str, Enum):
     SELF = "SELF"
     TOUCH = "TOUCH"

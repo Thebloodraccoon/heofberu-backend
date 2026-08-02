@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
+from app.constants import AbilityScore
+from app.core.base_service import Page
 from app.core.dependencies import GmUserDep, SkillServiceDep
 from app.features.skills.schemas import SkillBriefResponse, SkillCreate, SkillResponse, SkillUpdate
 
@@ -8,14 +10,15 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
 
 @router.get(
     "/",
-    response_model=list[SkillResponse],
+    response_model=Page[SkillResponse],
     summary="List skills (full detail)",
 )
 def get_skills(
     skill_service: SkillServiceDep,
-    skip: int = 0,
-    limit: int = 10,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
     search: str | None = None,
+    ability: AbilityScore | None = None,
 ):
     """
     Return a paginated list of skills, with full detail.
@@ -23,23 +26,28 @@ def get_skills(
     Open endpoint, no authentication required.
 
     `search` is a case-insensitive partial match against the skill name
-    and key.
+    and key. `ability` is an exact match (e.g. `ability=WIS`) and can be
+    combined with `search`.
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching skills across every page, not just this one.
 
     For a lighter payload, use `GET /skills/brief` instead.
     """
-    return skill_service.get_all(skip=skip, limit=limit, search=search)
+    return skill_service.get_all(page=page, size=size, search=search, filters={"ability": ability})
 
 
 @router.get(
     "/brief",
-    response_model=list[SkillBriefResponse],
+    response_model=Page[SkillBriefResponse],
     summary="List skills (minimal fields)",
 )
 def get_skills_brief(
     skill_service: SkillServiceDep,
-    skip: int = 0,
-    limit: int = 10,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
     search: str | None = None,
+    ability: AbilityScore | None = None,
 ):
     """
     Return a paginated list of skills with only `id`, `key`, `name`, and
@@ -48,13 +56,16 @@ def get_skills_brief(
     Open endpoint, no authentication required.
 
     `search` is a case-insensitive partial match against the skill name
-    and key.
+    and key. `ability` is an exact match (e.g. `ability=WIS`) and can be
+    combined with `search`.
+
+    Response is `{items, total, page, size}`, same shape as `GET /skills/`.
 
     Does not include the description — use `GET /skills/{skill_id}` for
     the full record. Intended for dropdowns, tables, and similar listing
     UI where the full payload is unnecessary.
     """
-    return skill_service.list_brief(skip=skip, limit=limit, search=search)
+    return skill_service.list_brief(page=page, size=size, search=search, filters={"ability": ability})
 
 
 @router.get(

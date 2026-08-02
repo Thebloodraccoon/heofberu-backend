@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
+from app.constants import ItemType, ItemRarity
+from app.core.base_service import Page
 from app.core.dependencies import GmUserDep, ItemServiceDep
 from app.features.items.schemas import ItemBriefResponse, ItemCreate, ItemResponse, ItemUpdate
 
@@ -8,43 +10,48 @@ router = APIRouter(prefix="/items", tags=["Items"])
 
 @router.get(
     "/",
-    response_model=list[ItemResponse],
+    response_model=Page[ItemResponse],
     summary="List items (full detail)",
 )
 def get_items(
     item_service: ItemServiceDep,
-    item_type: str | None = None,
-    rarity: str | None = None,
+    item_type: ItemType | None = None,
+    rarity: ItemRarity | None = None,
     search: str | None = None,
-    skip: int = 0,
-    limit: int = 50,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
     Return a paginated list of items, with full detail.
 
     Open endpoint, no authentication required.
 
-    `item_type`/`rarity` are exact matches. `search` is a case-insensitive
-    partial match against the item name. All can be combined.
+    `item_type`/`rarity` are exact matches on
+    their enums (invalid values → `422`, and `/docs` shows them as dropdowns).
+    `search` is a case-insensitive partial match against the item name.
+    All can be combined.
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching items across every page, not just this one.
 
     For a lighter payload, use `GET /items/brief` instead.
     """
     filters = {"item_type": item_type, "rarity": rarity}
-    return item_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
+    return item_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
     "/brief",
-    response_model=list[ItemBriefResponse],
+    response_model=Page[ItemBriefResponse],
     summary="List items (minimal fields)",
 )
 def get_items_brief(
     item_service: ItemServiceDep,
-    item_type: str | None = None,
-    rarity: str | None = None,
+    item_type: ItemType | None = None,
+    rarity: ItemRarity | None = None,
     search: str | None = None,
-    skip: int = 0,
-    limit: int = 50,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
     Return a paginated list of items with only `id`, `name`, `item_type`,
@@ -52,15 +59,20 @@ def get_items_brief(
 
     Open endpoint, no authentication required.
 
+    `item_type`/`rarity` are exact matches on
+    their enums (invalid values → `422`, and `/docs` shows them as dropdowns).
+    `search` is a case-insensitive partial match against the item name.
+    All can be combined.
+
+    Response is `{items, total, page, size}`, same shape as `GET /items/`.
+
     Does not include weapon/armor detail fields or description — use
     `GET /items/{item_id}` for the full record. Intended for dropdowns,
     tables, and similar listing UI where the full payload is unnecessary.
 
-    `item_type`/`rarity` are exact matches. `search` is a case-insensitive
-    partial match against the item name. All can be combined.
     """
     filters = {"item_type": item_type, "rarity": rarity}
-    return item_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
+    return item_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
