@@ -19,7 +19,7 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
     response_model=list[ClassResponse],
     summary="List classes (full detail)",
 )
-def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 10):
+def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 10, search: str | None = None):
     """
     Return a paginated list of classes, ordered by name, each with full
     detail — including primary abilities, saving throws, and available
@@ -27,10 +27,12 @@ def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 10):
 
     Open endpoint, no authentication required.
 
+    `search` is a case-insensitive partial match against the class name.
+
     For a lighter payload (no abilities/throws/skills), use
     `GET /classes/brief` instead.
     """
-    return class_service.get_all(skip=skip, limit=limit)
+    return class_service.get_all(skip=skip, limit=limit, search=search)
 
 
 @router.get(
@@ -38,19 +40,21 @@ def get_classes(class_service: ClassServiceDep, skip: int = 0, limit: int = 10):
     response_model=list[ClassBriefResponse],
     summary="List classes (minimal fields)",
 )
-def get_classes_brief(class_service: ClassServiceDep, skip: int = 0, limit: int = 10):
+def get_classes_brief(class_service: ClassServiceDep, skip: int = 0, limit: int = 10, search: str | None = None):
     """
     Return a paginated list of classes with only `id`, `name`, `hit_dice`,
     and `is_homebrew`.
 
     Open endpoint, no authentication required.
 
+    `search` is a case-insensitive partial match against the class name.
+
     Does not include primary abilities, saving throws, or available
     skills — use `GET /classes/{class_id}` for the full record. Intended
     for dropdowns, tables, and similar listing UI where the full payload
     is unnecessary.
     """
-    return class_service.list_brief(skip=skip, limit=limit)
+    return class_service.list_brief(skip=skip, limit=limit, search=search)
 
 
 @router.get(
@@ -97,6 +101,7 @@ def create_class(
                     "name": "Fighter",
                     "hit_dice": "D10",
                     "spellcasting_ability": None,
+                    "is_homebrew": "false",
                     "primary_abilities": ["STR"],
                     "saving_throws": ["STR", "CON"],
                 },
@@ -108,6 +113,7 @@ def create_class(
                     "hit_dice": "D6",
                     "skill_choice_count": 2,
                     "description": "A scholarly magic-user.",
+                    "is_homebrew": "false",
                     "spellcasting_ability": "INT",
                     "primary_abilities": ["INT"],
                     "saving_throws": ["INT", "WIS"],

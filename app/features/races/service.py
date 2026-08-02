@@ -26,16 +26,21 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
     Adds behaviors the generic base class doesn't provide:
       - a uniqueness check on ``name`` before create/update;
+      - a ``name``/``size`` ``search`` on top of listing, since
+        ``BaseService.get_all``/``list_brief`` only know about exact-match
+        ``filters`` and have no notion of a free-text search;
       - management of ability bonuses and granted skills, which live in
         their own association tables and have no generic base-class
-        equivalent. ``create_race`` can optionally set them up front, in
-        the same transaction as the race itself;
+        equivalent. ``create_race`` sets them up front, in the same
+        transaction as the race itself, via ``BaseService._atomic()``;
       - a delete guard that blocks removing a race still assigned to any
         character, since the FK is ``ON DELETE RESTRICT``.
 
-    ``get_by_id`` and ``list_brief`` are inherited unchanged from
-    ``BaseService`` — races add no behavior on top of them, so endpoints
-    call those directly rather than through pass-through wrappers here.
+    ``get_by_id`` is inherited unchanged from ``BaseService`` — races add
+    no behavior on top of it, so endpoints call it directly. ``get_all``
+    and ``list_brief`` are overridden here (not left as pass-throughs)
+    purely to add the ``search`` parameter; the pagination/filters/
+    serialization logic underneath is still the base class's.
     ``delete`` is overridden as ``delete_race`` to add the in-use guard;
     endpoints should call ``delete_race``, not the inherited ``delete``.
     ``list_brief`` derives its columns from ``RaceBriefResponse``'s field
@@ -51,7 +56,6 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
             not_found_exception_factory=lambda race_id: RaceNotFoundException(race_id=race_id),
             brief_schema=RaceBriefResponse,
         )
-        self.db = db
 
     def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
         """
@@ -64,45 +68,38 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
         ``race_data.ability_bonuses`` / ``race_data.granted_skills`` are
         optional. If supplied, they're set in the *same transaction* as the
         race itself (base fields + bonuses + skills all commit together, or
-        none do) — this is what lets a client create a fully-formed race in
-        one request instead of one POST plus two PUTs.
+        none do) via ``BaseService._atomic()`` — this is what lets a client
+        create a fully-formed race in one request instead of one POST plus
+        two PUTs.
 
-        Every write inside the nested transaction below passes
-        ``commit=False`` — including ``repository.create`` itself. A plain
-        ``session.commit()`` from any of them would commit (and close) the
-        *entire* outer transaction, not just the ``begin_nested()``
-        SAVEPOINT, breaking the context manager on exit. Only the final
-        ``self.db.commit()`` after the ``with`` block should ever fire.
+        Every write inside ``_atomic()`` passes ``commit=False`` —
+        including ``repository.create`` itself — per the hazard documented
+        on ``_atomic()``/``BaseRepository.create``.
         """
 
         self._check_name_available(race_data.name)
 
         skills = None
         if race_data.granted_skills:
-            skills, missing_ids = self._resolve_skill_ids(race_data.granted_skills)
+            found = self.repository.get_skills_by_ids(race_data.granted_skills)
+            skills, missing_ids = self.resolve_ids(found, race_data.granted_skills)
             if missing_ids:
                 raise InvalidSkillIdsException(missing_ids)
 
         payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills"})
         payload["created_by_id"] = created_by_id
 
-        try:
-            with self.db.begin_nested():
-                item = self.repository.create(payload, commit=False)
+        with self._atomic():
+            item = self.repository.create(payload, commit=False)
 
-                if race_data.ability_bonuses:
-                    bonuses = [{"ability": b.ability, "bonus": b.bonus} for b in race_data.ability_bonuses]
-                    self.repository.set_ability_bonuses(item, bonuses, commit=False)
+            if race_data.ability_bonuses:
+                bonuses = [{"ability": b.ability, "bonus": b.bonus} for b in race_data.ability_bonuses]
+                self.repository.set_ability_bonuses(item, bonuses, commit=False)
 
-                if skills:
-                    self.repository.set_skills(item, skills, commit=False)
+            if skills:
+                self.repository.set_skills(item, skills, commit=False)
 
-            self.db.commit()
-            self.db.refresh(item)
-        except Exception:
-            self.db.rollback()
-            raise
-
+        self.repository.refresh(item)
         return self.response_schema.model_validate(item)
 
     def update_race(self, race_id: int, update_data: RaceUpdate) -> RaceResponse:
@@ -149,7 +146,8 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         race = self._get_or_404(race_id)
 
-        skills, missing_ids = self._resolve_skill_ids(data.skill_ids)
+        found = self.repository.get_skills_by_ids(data.skill_ids)
+        skills, missing_ids = self.resolve_ids(found, data.skill_ids)
         if missing_ids:
             raise InvalidSkillIdsException(missing_ids)
 
@@ -161,11 +159,3 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         if self.repository.get_by_name(name):
             raise RaceNameAlreadyExistsException(name)
-
-    def _resolve_skill_ids(self, skill_ids: list[int]):
-        """Look up skills by id, returning (found_skills, missing_ids)."""
-
-        skills = self.repository.get_skills_by_ids(skill_ids)
-        found_ids = {skill.id for skill in skills}
-        missing_ids = [skill_id for skill_id in skill_ids if skill_id not in found_ids]
-        return skills, missing_ids

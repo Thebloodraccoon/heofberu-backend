@@ -1,5 +1,6 @@
-from collections.abc import Callable
-from typing import Generic
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from typing import Any, Generic
 
 from pydantic import BaseModel
 from typing_extensions import TypeVar
@@ -83,17 +84,42 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         self.brief_schema = brief_schema
         self._not_found_exception_factory = not_found_exception_factory
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> list[ResponseSchema]:
+    def get_all(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+    ) -> list[ResponseSchema]:
         """
         Return a page of records, serialized to ``ResponseSchema``.
 
         Args:
             skip: Number of records to skip (offset-based pagination).
             limit: Maximum number of records to return.
+            filters: Optional exact-match filters, passed straight through
+                to ``repository.get_all`` — see
+                ``BaseRepository._apply_filters`` for the exact semantics
+                (only keys naming an actual model attribute, with a
+                non-``None`` value, are applied). Lets a feature's filtered
+                listing (e.g. ``GET /features/?class_id=3``) go through
+                this method instead of writing its own service method, as
+                long as the filtering is plain exact-match — a feature
+                needing anything more (ranges, a different sort together
+                with the filter) still overrides :meth:`get_all` itself,
+                the same as before.
+            search: Optional case-insensitive substring match, passed
+                straight through to ``repository.get_all`` — see
+                ``BaseRepository._apply_search`` for the exact semantics
+                (OR'd across the repository's ``search_fields``, either
+                pinned at construction or auto-detected from the model's
+                text columns). Combines with ``filters`` (AND'd together).
+                A repository with no searchable fields (``search_fields=[]``)
+                silently ignores this.
 
         """
 
-        items = self.repository.get_all(skip=skip, limit=limit)
+        items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
         return [self.response_schema.model_validate(item) for item in items]
 
     def get_by_id(self, item_id: int) -> ResponseSchema:
@@ -102,7 +128,13 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         item = self._get_or_404(item_id)
         return self.response_schema.model_validate(item)
 
-    def list_brief(self, skip: int = 0, limit: int = 100) -> list[BriefSchema]:
+    def list_brief(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+    ) -> list[BriefSchema]:
         """
         Return a paginated, lightweight listing of records.
 
@@ -119,6 +151,19 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         Args:
             skip: Number of records to skip (offset-based pagination).
             limit: Maximum number of records to return.
+            filters: Optional exact-match filters, passed straight through
+                to ``repository.get_brief`` — same semantics as on
+                :meth:`get_all`. The filter conditions are checked against
+                ``self.repository.model``'s attributes, not against the
+                selected brief columns, so a field can be filtered on even
+                if it isn't part of ``brief_schema``.
+            search: Optional case-insensitive substring match, passed
+                straight through to ``repository.get_brief`` — same
+                semantics as on :meth:`get_all`. Like ``filters``, this is
+                checked against ``self.repository.model``'s attributes
+                (the repository's ``search_fields``), not against the
+                selected brief columns, so a field can be searched even if
+                it isn't part of ``brief_schema``.
 
         """
 
@@ -128,7 +173,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         model = self.repository.model
         columns = [getattr(model, field_name) for field_name in self.brief_schema.model_fields]
 
-        rows = self.repository.get_brief(*columns, order_by=model.id, skip=skip, limit=limit)
+        rows = self.repository.get_brief(
+            *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
+        )
         return [self.brief_schema.model_validate(row, from_attributes=True) for row in rows]
 
     def create(self, create_data: CreateSchema) -> ResponseSchema:
@@ -201,3 +248,104 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
             raise self._not_found_exception_factory(item_id)
 
         return item
+
+    @staticmethod
+    def resolve_ids(items: list, requested_ids: list[int]) -> tuple[list, list[int]]:
+        """
+        Split ``requested_ids`` into what was actually found vs. what's missing.
+
+        Generic replacement for the repeated "resolve IDs → collect missing"
+        pattern that shows up per-feature (e.g. what used to be
+        ``ClassService._resolve_skill_ids``, ``RaceService._resolve_skill_ids``,
+        ``SpellService._resolve_class_ids``/``_resolve_race_ids``): a feature
+        service looks up a batch of related records by ID via its own
+        repository method (the *lookup* stays feature-specific — different
+        model, different table, e.g. ``repository.get_skills_by_ids``), then
+        calls this to figure out which of the requested IDs didn't resolve.
+
+        A ``staticmethod`` rather than an instance method since it doesn't
+        touch ``self.repository`` — the items are already fetched by the
+        time this is called, so nothing here is model-specific.
+
+        Args:
+            items: Already-fetched related records (each must expose ``id``).
+            requested_ids: The IDs that were asked for.
+
+        Returns:
+            ``(items, missing_ids)`` — ``items`` is passed through unchanged
+            (so call sites can keep unpacking both, same as before),
+            ``missing_ids`` preserves the order of ``requested_ids``.
+
+        Example:
+            Replacing a feature-local resolver::
+
+                def _resolve_skill_ids(self, skill_ids: list[int]):
+                    skills = self.repository.get_skills_by_ids(skill_ids)
+                    return self.resolve_ids(skills, skill_ids)
+
+            Or calling it directly at the use site without even keeping
+            the wrapper::
+
+                skills = self.repository.get_skills_by_ids(class_data.available_skills)
+                skills, missing_ids = self.resolve_ids(skills, class_data.available_skills)
+
+        """
+        found_ids = {item.id for item in items}
+        missing_ids = [requested_id for requested_id in requested_ids if requested_id not in found_ids]
+        return items, missing_ids
+
+    @contextmanager
+    def _atomic(self) -> Generator[None, None, None]:
+        """
+        Wrap a multistep creation/write inside a single all-or-nothing transaction.
+
+        Generic replacement for the repeated ``begin_nested()`` +
+        ``commit=False`` + ``rollback``-on-``except`` block that shows up in
+        every feature's "create the record plus its association-table rows
+        together" method (e.g. what used to be duplicated across
+        ``ClassService.create_class``, ``RaceService.create_race``,
+        ``SpellService.create_spell``).
+
+        Every repository write performed inside the ``with`` block MUST
+        pass ``commit=False`` (including the initial ``repository.create``
+        call) — a plain ``session.commit()`` from any of them would commit
+        the *entire* outer transaction, not just this method's
+        ``begin_nested()`` SAVEPOINT, leaving the ``begin_nested()`` context
+        manager holding a reference to an already-closed transaction and
+        raising ``Can't operate on closed transaction`` on exit. This is
+        the same hazard documented on ``BaseRepository.create``.
+
+        On success, commits once after the ``with`` block exits. On any
+        exception, rolls back and re-raises — callers don't need their own
+        try/except around this.
+
+        Note this does *not* call ``self.repository.db.refresh(item)``
+        afterward — refreshing isn't part of the write transaction itself,
+        and the caller doesn't have ``item`` in scope from inside a
+        ``@contextmanager``. Call ``refresh`` explicitly after the ``with``
+        block if the caller needs autogenerated fields reloaded.
+
+        Example:
+            ::
+
+                def create_class(self, class_data: ClassCreate, ...) -> ClassResponse:
+                    ...
+                    with self._atomic():
+                        item = self.repository.create(payload, commit=False)
+                        if class_data.primary_abilities:
+                            self.repository.set_primary_abilities(
+                                item, class_data.primary_abilities, commit=False
+                            )
+                        ...
+                    self.repository.db.refresh(item)
+                    return self.response_schema.model_validate(item)
+
+        """
+        db = self.repository.db
+        try:
+            with db.begin_nested():
+                yield
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise

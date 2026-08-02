@@ -18,17 +18,27 @@ router = APIRouter(prefix="/races", tags=["Races"])
     response_model=list[RaceResponse],
     summary="List races (full detail)",
 )
-def get_races(race_service: RaceServiceDep, skip: int = 0, limit: int = 10):
+def get_races(
+    race_service: RaceServiceDep,
+    skip: int = 0,
+    limit: int = 10,
+    size: str | None = None,
+    search: str | None = None,
+):
     """
     Return a paginated list of races, each with full detail — including
     ability bonuses and granted skills.
 
     Open endpoint, no authentication required.
 
+    `size` is an exact match (e.g. `size=MEDIUM`). `search` is a
+    case-insensitive partial match against the race name and can be
+    combined with `size`.
+
     For a lighter payload (no bonuses/skills), use `GET /races/brief`
     instead.
     """
-    return race_service.get_all(skip=skip, limit=limit)
+    return race_service.get_all(skip=skip, limit=limit, filters={"size": size}, search=search)
 
 
 @router.get(
@@ -36,18 +46,28 @@ def get_races(race_service: RaceServiceDep, skip: int = 0, limit: int = 10):
     response_model=list[RaceBriefResponse],
     summary="List races (minimal fields)",
 )
-def get_races_brief(race_service: RaceServiceDep, skip: int = 0, limit: int = 10):
+def get_races_brief(
+    race_service: RaceServiceDep,
+    skip: int = 0,
+    limit: int = 10,
+    size: str | None = None,
+    search: str | None = None,
+):
     """
     Return a paginated list of races with only `id`, `name`, `size`, and
     `is_homebrew`.
 
     Open endpoint, no authentication required.
 
+    `size` is an exact match (e.g. `size=MEDIUM`). `search` is a
+    case-insensitive partial match against the race name and can be
+    combined with `size`.
+
     Does not include ability bonuses or granted skills — use
     `GET /races/{race_id}` for the full record. Intended for dropdowns,
     tables, and similar listing UI where the full payload is unnecessary.
     """
-    return race_service.list_brief(skip=skip, limit=limit)
+    return race_service.list_brief(skip=skip, limit=limit, filters={"size": size}, search=search)
 
 
 @router.get(
@@ -85,7 +105,12 @@ def create_race(
         openapi_examples={
             "minimal": {
                 "summary": "Minimal — base fields only",
-                "value": {"name": "Elf", "size": "MEDIUM", "speed": 30},
+                "value": {
+                    "name": "Elf",
+                    "size": "MEDIUM",
+                    "speed": 30,
+                    "is_homebrew": "false",
+                },
             },
             "with_bonuses_and_skills": {
                 "summary": "With ability bonuses and granted skills",
@@ -94,6 +119,7 @@ def create_race(
                     "size": "MEDIUM",
                     "speed": 30,
                     "traits": "Darkvision, Fey Ancestry",
+                    "is_homebrew": "false",
                     "ability_bonuses": [{"ability": "DEX", "bonus": 2}],
                     "granted_skills": [3, 7],
                 },

@@ -53,20 +53,6 @@ class BackgroundService(
             not_found_exception_factory=lambda background_id: BackgroundNotFoundException(background_id=background_id),
             brief_schema=BackgroundBriefResponse,
         )
-        self.db = db
-
-    def list_brief(self, skip: int = 0, limit: int = 100) -> list[BackgroundBriefResponse]:
-        """
-        Return a paginated, lightweight listing of backgrounds.
-
-        Overrides ``BaseService.list_brief`` because ``granted_skills`` is
-        a relationship, not a column, and can't be selected via the
-        generic ``db.query(Background.name, ...)`` approach the base
-        class uses.
-        """
-
-        items = self.repository.get_all_brief(skip=skip, limit=limit)
-        return [self.brief_schema.model_validate(item) for item in items]
 
     def create_background(
         self, background_data: BackgroundCreate, created_by_id: int | None = None
@@ -90,25 +76,21 @@ class BackgroundService(
 
         skills = None
         if background_data.granted_skills:
-            skills, missing_ids = self._resolve_skill_ids(background_data.granted_skills)
+            found = self.repository.get_skills_by_ids(background_data.granted_skills)
+            skills, missing_ids = self.resolve_ids(found, background_data.granted_skills)
             if missing_ids:
                 raise InvalidSkillIdsException(missing_ids)
 
         payload = background_data.model_dump(exclude={"granted_skills"})
         payload["created_by_id"] = created_by_id
 
-        try:
-            with self.db.begin_nested():
-                item = self.repository.create(payload, commit=False)
+        with self._atomic():
+            item = self.repository.create(payload, commit=False)
 
-                if skills:
-                    self.repository.set_skills(item, skills, commit=False)
+            if skills:
+                self.repository.set_skills(item, skills, commit=False)
 
-            self.db.commit()
-            self.db.refresh(item)
-        except Exception:
-            self.db.rollback()
-            raise
+        self.repository.refresh(item)
 
         return self.response_schema.model_validate(item)
 
@@ -126,7 +108,8 @@ class BackgroundService(
 
         background = self._get_or_404(background_id)
 
-        skills, missing_ids = self._resolve_skill_ids(data.skill_ids)
+        found = self.repository.get_skills_by_ids(data.skill_ids)
+        skills, missing_ids = self.resolve_ids(found, data.skill_ids)
         if missing_ids:
             raise InvalidSkillIdsException(missing_ids)
 
@@ -138,11 +121,3 @@ class BackgroundService(
 
         if self.repository.get_by_name(name):
             raise BackgroundNameAlreadyExistsException(name)
-
-    def _resolve_skill_ids(self, skill_ids: list[int]):
-        """Look up skills by id, returning (found_skills, missing_ids)."""
-
-        skills = self.repository.get_skills_by_ids(skill_ids)
-        found_ids = {skill.id for skill in skills}
-        missing_ids = [skill_id for skill_id in skill_ids if skill_id not in found_ids]
-        return skills, missing_ids

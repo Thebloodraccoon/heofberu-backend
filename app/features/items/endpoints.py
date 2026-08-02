@@ -11,15 +11,26 @@ router = APIRouter(prefix="/items", tags=["Items"])
     response_model=list[ItemResponse],
     summary="List items (full detail)",
 )
-def get_items(item_service: ItemServiceDep, skip: int = 0, limit: int = 50):
+def get_items(
+    item_service: ItemServiceDep,
+    item_type: str | None = None,
+    rarity: str | None = None,
+    search: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+):
     """
     Return a paginated list of items, with full detail.
 
     Open endpoint, no authentication required.
 
+    `item_type`/`rarity` are exact matches. `search` is a case-insensitive
+    partial match against the item name. All can be combined.
+
     For a lighter payload, use `GET /items/brief` instead.
     """
-    return item_service.get_all(skip=skip, limit=limit)
+    filters = {"item_type": item_type, "rarity": rarity}
+    return item_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
 
 
 @router.get(
@@ -27,7 +38,14 @@ def get_items(item_service: ItemServiceDep, skip: int = 0, limit: int = 50):
     response_model=list[ItemBriefResponse],
     summary="List items (minimal fields)",
 )
-def get_items_brief(item_service: ItemServiceDep, skip: int = 0, limit: int = 50):
+def get_items_brief(
+    item_service: ItemServiceDep,
+    item_type: str | None = None,
+    rarity: str | None = None,
+    search: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+):
     """
     Return a paginated list of items with only `id`, `name`, `item_type`,
     `rarity`, `cost_gold`, and `is_homebrew`.
@@ -37,8 +55,12 @@ def get_items_brief(item_service: ItemServiceDep, skip: int = 0, limit: int = 50
     Does not include weapon/armor detail fields or description — use
     `GET /items/{item_id}` for the full record. Intended for dropdowns,
     tables, and similar listing UI where the full payload is unnecessary.
+
+    `item_type`/`rarity` are exact matches. `search` is a case-insensitive
+    partial match against the item name. All can be combined.
     """
-    return item_service.list_brief(skip=skip, limit=limit)
+    filters = {"item_type": item_type, "rarity": rarity}
+    return item_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
 
 
 @router.get(

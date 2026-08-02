@@ -11,15 +11,23 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
     response_model=list[SkillResponse],
     summary="List skills (full detail)",
 )
-def get_skills(skill_service: SkillServiceDep, skip: int = 0, limit: int = 10):
+def get_skills(
+    skill_service: SkillServiceDep,
+    skip: int = 0,
+    limit: int = 10,
+    search: str | None = None,
+):
     """
     Return a paginated list of skills, with full detail.
 
     Open endpoint, no authentication required.
 
+    `search` is a case-insensitive partial match against the skill name
+    and key.
+
     For a lighter payload, use `GET /skills/brief` instead.
     """
-    return skill_service.get_all(skip=skip, limit=limit)
+    return skill_service.get_all(skip=skip, limit=limit, search=search)
 
 
 @router.get(
@@ -27,18 +35,26 @@ def get_skills(skill_service: SkillServiceDep, skip: int = 0, limit: int = 10):
     response_model=list[SkillBriefResponse],
     summary="List skills (minimal fields)",
 )
-def get_skills_brief(skill_service: SkillServiceDep, skip: int = 0, limit: int = 10):
+def get_skills_brief(
+    skill_service: SkillServiceDep,
+    skip: int = 0,
+    limit: int = 10,
+    search: str | None = None,
+):
     """
     Return a paginated list of skills with only `id`, `key`, `name`, and
     `ability`.
 
     Open endpoint, no authentication required.
 
+    `search` is a case-insensitive partial match against the skill name
+    and key.
+
     Does not include the description — use `GET /skills/{skill_id}` for
     the full record. Intended for dropdowns, tables, and similar listing
     UI where the full payload is unnecessary.
     """
-    return skill_service.list_brief(skip=skip, limit=limit)
+    return skill_service.list_brief(skip=skip, limit=limit, search=search)
 
 
 @router.get(

@@ -8,11 +8,11 @@ from app.features.skills.exceptions import (
     SkillNotFoundException,
 )
 from app.features.skills.repository import SkillRepository
-from app.features.skills.schemas import SkillCreate, SkillResponse, SkillUpdate
+from app.features.skills.schemas import SkillBriefResponse, SkillCreate, SkillResponse, SkillUpdate
 from app.models.skill_model import Skill
 
 
-class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse]):
+class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, SkillBriefResponse]):
     """
     Skill-specific CRUD service built on :class:`BaseService`.
 
@@ -32,6 +32,7 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse]):
             repository=SkillRepository(db),
             response_schema=SkillResponse,
             not_found_exception_factory=lambda skill_id: SkillNotFoundException(skill_id=skill_id),
+            brief_schema=SkillBriefResponse,
         )
 
     def create_skill(self, skill_data: SkillCreate) -> SkillResponse:

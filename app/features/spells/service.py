@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -44,25 +46,6 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
             not_found_exception_factory=lambda spell_id: SpellNotFoundException(spell_id=spell_id),
             brief_schema=SpellBriefResponse,
         )
-        self.db = db
-
-    def list_brief(self, skip: int = 0, limit: int = 100) -> list[SpellBriefResponse]:
-        """
-        Return a paginated, lightweight listing of spells.
-
-        Overrides ``BaseService.list_brief``: the generic base builds its
-        query by selecting individual columns named after
-        ``brief_schema``'s fields (``db.query(Spell.name, Spell.school,
-        ...)``), which only works for plain scalar columns. ``available_classes``
-        / ``available_races`` are relationships (backed by the
-        ``spell_classes`` / ``spell_races`` association tables), not
-        columns, so they can't be selected that way — this override loads
-        full ``Spell`` rows (with those relationships eagerly joined)
-        instead, and lets Pydantic pick out just the brief fields.
-        """
-
-        items = self.repository.get_all_brief(skip=skip, limit=limit)
-        return [self.brief_schema.model_validate(item) for item in items]
 
     def create_spell(self, spell_data: SpellCreate) -> SpellResponse:
         """
@@ -79,35 +62,33 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
 
         self._check_name_available(spell_data.name)
 
-        classes = None
-        if spell_data.available_classes:
-            classes, missing_ids = self._resolve_class_ids(spell_data.available_classes)
-            if missing_ids:
-                raise InvalidClassIdsException(missing_ids)
-
-        races = None
-        if spell_data.available_races:
-            races, missing_ids = self._resolve_race_ids(spell_data.available_races)
-            if missing_ids:
-                raise InvalidRaceIdsException(missing_ids)
+        classes = (
+            self._resolve_or_raise(
+                self.repository.get_classes_by_ids, spell_data.available_classes, InvalidClassIdsException
+            )
+            if spell_data.available_classes
+            else None
+        )
+        races = (
+            self._resolve_or_raise(
+                self.repository.get_races_by_ids, spell_data.available_races, InvalidRaceIdsException
+            )
+            if spell_data.available_races
+            else None
+        )
 
         payload = spell_data.model_dump(exclude={"available_classes", "available_races"})
 
-        try:
-            with self.db.begin_nested():
-                item = self.repository.create(payload, commit=False)
+        with self._atomic():
+            item = self.repository.create(payload, commit=False)
 
-                if classes:
-                    self.repository.set_classes(item, classes, commit=False)
+            if classes:
+                self.repository.set_classes(item, classes, commit=False)
 
-                if races:
-                    self.repository.set_races(item, races, commit=False)
+            if races:
+                self.repository.set_races(item, races, commit=False)
 
-            self.db.commit()
-            self.db.refresh(item)
-        except Exception:
-            self.db.rollback()
-            raise
+        self.repository.refresh(item)
 
         return self.response_schema.model_validate(item)
 
@@ -124,10 +105,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         """Fully replace the classes a spell is available to. Empty list = unrestricted."""
 
         spell = self._get_or_404(spell_id)
-
-        classes, missing_ids = self._resolve_class_ids(data.class_ids)
-        if missing_ids:
-            raise InvalidClassIdsException(missing_ids)
+        classes = self._resolve_or_raise(self.repository.get_classes_by_ids, data.class_ids, InvalidClassIdsException)
 
         updated_spell = self.repository.set_classes(spell, classes)
         return self.response_schema.model_validate(updated_spell)
@@ -136,10 +114,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         """Fully replace the races a spell is available to. Empty list = unrestricted."""
 
         spell = self._get_or_404(spell_id)
-
-        races, missing_ids = self._resolve_race_ids(data.race_ids)
-        if missing_ids:
-            raise InvalidRaceIdsException(missing_ids)
+        races = self._resolve_or_raise(self.repository.get_races_by_ids, data.race_ids, InvalidRaceIdsException)
 
         updated_spell = self.repository.set_races(spell, races)
         return self.response_schema.model_validate(updated_spell)
@@ -150,18 +125,15 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         if self.repository.get_by_name(name):
             raise SpellNameAlreadyExistsException(name)
 
-    def _resolve_class_ids(self, class_ids: list[int]):
-        """Look up classes by id, returning (found_classes, missing_ids)."""
-
-        classes = self.repository.get_classes_by_ids(class_ids)
-        found_ids = {c.id for c in classes}
-        missing_ids = [class_id for class_id in class_ids if class_id not in found_ids]
-        return classes, missing_ids
-
-    def _resolve_race_ids(self, race_ids: list[int]):
-        """Look up races by id, returning (found_races, missing_ids)."""
-
-        races = self.repository.get_races_by_ids(race_ids)
-        found_ids = {r.id for r in races}
-        missing_ids = [race_id for race_id in race_ids if race_id not in found_ids]
-        return races, missing_ids
+    def _resolve_or_raise(self, lookup_fn: Callable[[list[int]], list], ids: list[int], exception_cls: type[Exception]):
+        """
+        Resolve `ids` via `lookup_fn`, raising `exception_cls(missing_ids)` if any
+        don't resolve. Thin wrapper around `BaseService.resolve_ids` that also
+        owns the "raise on missing" part, since every call site here does both
+        together anyway.
+        """
+        found = lookup_fn(ids)
+        items, missing_ids = self.resolve_ids(found, ids)
+        if missing_ids:
+            raise exception_cls(missing_ids)
+        return items

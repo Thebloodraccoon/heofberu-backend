@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
 
-from app.constants import FeatureSourceType
 from app.core.base_service import BaseService
 from app.features.features.exceptions import FeatureNotFoundException, InvalidFeatureSourceException
 from app.features.features.repository import FeatureRepository
@@ -20,9 +19,14 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
 
     Adds behaviors the generic base class doesn't provide:
       - filtered listing by source_type/class_id/race_id/background_id
-        (``list_filtered``), since GM tooling and character-building UI
-        both need "all features for class X" / "all racial traits for
-        race Y" style queries;
+        (``list_filtered``/``list_filtered_brief``), since GM tooling and
+        character-building UI both need "all features for class X" /
+        "all racial traits for race Y" style queries. These are thin
+        named-parameter wrappers around ``BaseService.get_all``/
+        ``list_brief``'s generic ``filters`` dict (which in turn reaches
+        ``FeatureRepository.get_all``, overridden only to sort by name
+        instead of ``id``) — there's no bespoke ``get_filtered`` method
+        anymore, exact-match filtering is handled generically;
       - re-validation of source_type/FK consistency on update. ``FeatureCreate``
         already validates this at the schema level (a full record is
         available), but ``FeatureUpdate`` is a partial PATCH payload and
@@ -33,7 +37,11 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
 
     ``create`` is inherited unchanged from ``BaseService`` — no extra
     setup work is needed beyond what ``FeatureCreate``'s own validator
-    already enforces.
+    already enforces. No custom transaction handling is needed anywhere
+    in this service (unlike ``ClassService``/``RaceService``/etc.) since
+    ``Feature`` has no association-table relationships to set up
+    alongside the base record — every write here is a single repository
+    call, so there's no ``self._atomic()`` use site.
     """
 
     repository: FeatureRepository
@@ -45,51 +53,6 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
             not_found_exception_factory=lambda feature_id: FeatureNotFoundException(feature_id=feature_id),
             brief_schema=FeatureBriefResponse,
         )
-        self.db = db
-
-    def list_filtered(
-        self,
-        *,
-        source_type: FeatureSourceType | None = None,
-        class_id: int | None = None,
-        race_id: int | None = None,
-        background_id: int | None = None,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[FeatureResponse]:
-        """Return features matching the given filters, serialized."""
-
-        items = self.repository.get_filtered(
-            source_type=source_type,
-            class_id=class_id,
-            race_id=race_id,
-            background_id=background_id,
-            skip=skip,
-            limit=limit,
-        )
-        return [self.response_schema.model_validate(item) for item in items]
-
-    def list_filtered_brief(
-        self,
-        *,
-        source_type: FeatureSourceType | None = None,
-        class_id: int | None = None,
-        race_id: int | None = None,
-        background_id: int | None = None,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[FeatureBriefResponse]:
-        """Same filters as ``list_filtered``, serialized to the lightweight brief schema."""
-
-        items = self.repository.get_filtered(
-            source_type=source_type,
-            class_id=class_id,
-            race_id=race_id,
-            background_id=background_id,
-            skip=skip,
-            limit=limit,
-        )
-        return [self.brief_schema.model_validate(item) for item in items]
 
     def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
         """

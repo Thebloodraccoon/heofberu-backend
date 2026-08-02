@@ -7,30 +7,12 @@ from app.models.skill_model import Skill
 
 class BackgroundRepository(BaseRepository[Background]):
     def __init__(self, db: Session):
-        super().__init__(Background, db)
+        super().__init__(
+            Background, db, default_load_options=[selectinload(Background.granted_skills)], search_fields=["name"]
+        )
 
     def get_by_name(self, name: str) -> Background | None:
         return self.db.query(Background).filter(Background.name == name).first()
-
-    def get_all(self, *, skip: int = 0, limit: int = 100) -> list[Background]:
-        return (
-            self.db.query(Background)
-            .options(selectinload(Background.granted_skills))
-            .order_by(Background.id)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-
-    def get_all_brief(self, *, skip: int = 0, limit: int = 100) -> list[Background]:
-        return (
-            self.db.query(Background)
-            .options(selectinload(Background.granted_skills))
-            .order_by(Background.id)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         if not skill_ids:

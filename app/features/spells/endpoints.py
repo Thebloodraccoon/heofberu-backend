@@ -18,16 +18,28 @@ router = APIRouter(prefix="/spells", tags=["Spells"])
     response_model=list[SpellResponse],
     summary="List spells (full detail)",
 )
-def get_spells(spell_service: SpellServiceDep, skip: int = 0, limit: int = 100):
+def get_spells(
+    spell_service: SpellServiceDep,
+    skip: int = 0,
+    limit: int = 100,
+    school: str | None = None,
+    level: str | None = None,
+    search: str | None = None,
+):
     """
     Return a paginated list of spell, with full detail — including
     available classes and available races.
 
     Open endpoint, no authentication required.
 
+    `school` and `level` are exact matches (e.g. `school=EVOCATION`,
+    `level=LEVEL_1`) and can be combined. `search` is a case-insensitive
+    partial match against the spell name.
+
     For a lighter payload, use `GET /spells/brief` instead.
     """
-    return spell_service.get_all(skip=skip, limit=limit)
+    filters = {"school": school, "level": level}
+    return spell_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
 
 
 @router.get(
@@ -35,12 +47,23 @@ def get_spells(spell_service: SpellServiceDep, skip: int = 0, limit: int = 100):
     response_model=list[SpellBriefResponse],
     summary="List spells (minimal fields)",
 )
-def get_spells_brief(spell_service: SpellServiceDep, skip: int = 0, limit: int = 100):
+def get_spells_brief(
+    spell_service: SpellServiceDep,
+    skip: int = 0,
+    limit: int = 100,
+    school: str | None = None,
+    level: str | None = None,
+    search: str | None = None,
+):
     """
     Return a paginated list of spells with only `id`, `name`, `school`,
     `level`, `is_homebrew`, `available_classes`, and `available_races`.
 
     Open endpoint, no authentication required.
+
+    `school` and `level` are exact matches and can be combined; `search`
+    is a case-insensitive partial match against the spell name — same
+    semantics as `GET /spells/`.
 
     Does not include components, description, dice, or other heavier
     detail fields — use `GET /spells/{spell_id}` for the full record.
@@ -48,7 +71,8 @@ def get_spells_brief(spell_service: SpellServiceDep, skip: int = 0, limit: int =
     payload is unnecessary but availability still needs to be shown or
     filtered on.
     """
-    return spell_service.list_brief(skip=skip, limit=limit)
+    filters = {"school": school, "level": level}
+    return spell_service.list_brief(skip=skip, limit=limit, filters=filters, search=search)
 
 
 @router.get(

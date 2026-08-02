@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query, status
 
+from app.constants import UserRole
 from app.core.dependencies import GmUserDep, UserServiceDep
 from app.features.users.schemas import UserCreate, UserResponse, UserUpdate
 
@@ -12,9 +13,16 @@ def get_all_users(
     _: GmUserDep,
     page: int = Query(0, ge=0, description="Page number (0-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
+    role: UserRole | None = Query(None, description="Filter by exact role"),
+    search: str | None = Query(None, description="Case-insensitive partial match against username/email"),
 ):
-    """Get all users with pagination."""
-    return user_service.get_all_users(page=page, size=size)
+    """
+    Get all users with pagination.
+
+    `role` is an exact match. `search` is a case-insensitive partial
+    match against username or email, and can be combined with `role`.
+    """
+    return user_service.get_all_users(page=page, size=size, role=role, search=search)
 
 
 @router.get("/{user_id}", response_model=UserResponse)

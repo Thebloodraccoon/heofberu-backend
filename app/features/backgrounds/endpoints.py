@@ -17,16 +17,24 @@ router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
     response_model=list[BackgroundResponse],
     summary="List backgrounds (full detail)",
 )
-def get_backgrounds(background_service: BackgroundServiceDep, skip: int = 0, limit: int = 100):
+def get_backgrounds(
+    background_service: BackgroundServiceDep,
+    skip: int = 0,
+    limit: int = 100,
+    search: str | None = None,
+):
     """
     Return a paginated list of backgrounds, each with full detail —
     including granted skills.
 
     Open endpoint, no authentication required.
 
+    `search` is a case-insensitive partial match against the background
+    name.
+
     For a lighter payload, use `GET /backgrounds/brief` instead.
     """
-    return background_service.get_all(skip=skip, limit=limit)
+    return background_service.get_all(skip=skip, limit=limit, search=search)
 
 
 @router.get(
@@ -34,19 +42,27 @@ def get_backgrounds(background_service: BackgroundServiceDep, skip: int = 0, lim
     response_model=list[BackgroundBriefResponse],
     summary="List backgrounds (minimal fields)",
 )
-def get_backgrounds_brief(background_service: BackgroundServiceDep, skip: int = 0, limit: int = 100):
+def get_backgrounds_brief(
+    background_service: BackgroundServiceDep,
+    skip: int = 0,
+    limit: int = 100,
+    search: str | None = None,
+):
     """
     Return a paginated list of backgrounds with only `id`, `name`,
     `is_homebrew`, and `granted_skills`.
 
     Open endpoint, no authentication required.
 
+    `search` is a case-insensitive partial match against the background
+    name.
+
     Does not include feature text, personality suggestions, or
     description — use `GET /backgrounds/{background_id}` for the full
     record. Intended for dropdowns, tables, and similar listing UI where
     the full payload is unnecessary.
     """
-    return background_service.list_brief(skip=skip, limit=limit)
+    return background_service.list_brief(skip=skip, limit=limit, search=search)
 
 
 @router.get(
@@ -84,7 +100,7 @@ def create_background(
         openapi_examples={
             "minimal": {
                 "summary": "Minimal — base fields only",
-                "value": {"name": "Acolyte"},
+                "value": {"name": "Acolyte", "is_homebrew": "false"},
             },
             "with_skills": {
                 "summary": "With feature and granted skills",
@@ -97,6 +113,7 @@ def create_background(
                     "bonds_suggestions": "I would die to recover an ancient relic of my faith.",
                     "flaws_suggestions": "I judge others harshly, and myself even more severely.",
                     "description": "You have spent your life in the service of a temple.",
+                    "is_homebrew": "false",
                     "granted_skills": [4, 9],
                 },
             },

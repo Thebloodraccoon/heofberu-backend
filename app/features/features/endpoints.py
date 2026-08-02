@@ -18,6 +18,7 @@ def get_features(
     class_id: int | None = None,
     race_id: int | None = None,
     background_id: int | None = None,
+    search: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ):
@@ -34,16 +35,18 @@ def get_features(
     of source_type (relevant since CLASS and SUBCLASS features both key
     off `class_id`).
 
+    `search` is a case-insensitive partial match against the features name.
+
     For a lighter payload, use `GET /features/brief` instead.
     """
-    return feature_service.list_filtered(
-        source_type=source_type,
-        class_id=class_id,
-        race_id=race_id,
-        background_id=background_id,
-        skip=skip,
-        limit=limit,
-    )
+
+    filters = {
+        "source_type": source_type,
+        "class_id": class_id,
+        "race_id": race_id,
+        "background_id": background_id,
+    }
+    return feature_service.get_all(skip=skip, limit=limit, filters=filters, search=search)
 
 
 @router.get(
@@ -57,6 +60,7 @@ def get_features_brief(
     class_id: int | None = None,
     race_id: int | None = None,
     background_id: int | None = None,
+    search: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ):
@@ -71,15 +75,17 @@ def get_features_brief(
     use `GET /features/{feature_id}` for the full record. Intended for
     dropdowns, tables, and similar listing UI where the full payload is
     unnecessary.
+
+    `search` is a case-insensitive partial match against the features name.
     """
-    return feature_service.list_filtered_brief(
-        source_type=source_type,
-        class_id=class_id,
-        race_id=race_id,
-        background_id=background_id,
-        skip=skip,
-        limit=limit,
-    )
+
+    filters = {
+        "source_type": source_type,
+        "class_id": class_id,
+        "race_id": race_id,
+        "background_id": background_id,
+    }
+    return feature_service.list_brief(skip=skip, limit=limit, filters=filters, search=search)
 
 
 @router.get(
@@ -115,7 +121,7 @@ def get_feature(feature_id: int, feature_service: FeatureServiceDep):
 )
 def create_feature(
     feature_service: FeatureServiceDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
     feature_data: FeatureCreate = Body(
         openapi_examples={
             "class_feature": {

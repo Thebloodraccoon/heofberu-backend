@@ -6,24 +6,20 @@ from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, 
 
 class ClassRepository(BaseRepository[Class]):
     def __init__(self, db: Session):
-        super().__init__(Class, db)
-
-    def get_by_name(self, name: str) -> Class | None:
-        return self.db.query(Class).filter(Class.name == name).first()
-
-    def get_all(self, *, skip: int = 0, limit: int = 100) -> list[Class]:
-        return (
-            self.db.query(Class)
-            .options(
+        super().__init__(
+            Class,
+            db,
+            default_load_options=[
                 selectinload(Class.available_skills),
                 selectinload(Class.primary_abilities),
                 selectinload(Class.saving_throws),
                 selectinload(Class.spell_slot_progression),
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
+            ],
+            search_fields=["name"],
         )
+
+    def get_by_name(self, name: str) -> Class | None:
+        return self.db.query(Class).filter(Class.name == name).first()
 
     def is_in_use(self, class_id: int) -> bool:
         """

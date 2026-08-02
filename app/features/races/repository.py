@@ -8,23 +8,38 @@ from app.models.skill_model import Skill
 
 
 class RaceRepository(BaseRepository[Race]):
+    """
+    Race-specific repository built on :class:`BaseRepository`.
+
+    ``ability_bonuses`` and ``granted_skills`` are always part of
+    ``RaceResponse``, so they're wired up as ``default_load_options``
+    rather than re-implemented here via a hand-rolled ``get_all`` override.
+
+    ``search_fields=["name"]`` pins free-text ``search`` (on the inherited
+    ``get_all``/``get_brief``) to just ``name`` — without this, the base
+    class's auto-detection would also search ``traits`` (also a text
+    column on ``Race``), which isn't the intended behavior here. ``size``
+    stays available as an exact-match ``filters`` key, inherited unchanged.
+
+    ``get_all`` and ``get_brief`` are *not* overridden here anymore: the
+    base class's pagination + eager-loading (``default_load_options``) +
+    exact-match ``filters`` + free-text ``search`` (``search_fields``)
+    cover everything races need.
+    """
+
     def __init__(self, db: Session):
-        super().__init__(Race, db)
+        super().__init__(
+            Race,
+            db,
+            default_load_options=[
+                selectinload(Race.ability_bonuses),
+                selectinload(Race.granted_skills),
+            ],
+            search_fields=["name"],
+        )
 
     def get_by_name(self, name: str) -> Race | None:
         return self.db.query(Race).filter(Race.name == name).first()
-
-    def get_all(self, *, skip: int = 0, limit: int = 100) -> list[Race]:
-        return (
-            self.db.query(Race)
-            .options(
-                selectinload(Race.ability_bonuses),
-                selectinload(Race.granted_skills),
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
 
     def is_in_use(self, race_id: int) -> bool:
         """

@@ -10,7 +10,7 @@ class UserRepository(BaseRepository[User]):
     """Repository for the essence of User."""
 
     def __init__(self, db: Session):
-        super().__init__(User, db)
+        super().__init__(User, db, search_fields=["username", "email"])
 
     def get_by_email(self, email: str) -> User | None:
         """Obtaining a user by email."""

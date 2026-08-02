@@ -1,5 +1,3 @@
-from typing import Any
-
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
@@ -10,44 +8,26 @@ from app.models.spell_model import Spell
 
 class SpellRepository(BaseRepository[Spell]):
     def __init__(self, db: Session):
-        super().__init__(Spell, db)
+        super().__init__(
+            Spell,
+            db,
+            default_load_options=[selectinload(Spell.available_classes), selectinload(Spell.available_races)],
+            search_fields=["name"],
+        )
 
     def get_by_name(self, name: str) -> Spell | None:
         return self.db.query(Spell).filter(Spell.name == name).first()
 
-    def get_all(self, *, skip: int = 0, limit: int = 100) -> list[Spell]:
-        return (
-            self.db.query(Spell)
-            .options(
-                selectinload(Spell.available_classes),
-                selectinload(Spell.available_races),
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-
-    def get_all_brief(self, *, skip: int = 0, limit: int = 100,
-    ) -> list[Spell]:
-        return (
-            self.db.query(Spell)
-            .options(
-                selectinload(Spell.available_classes),
-                selectinload(Spell.available_races),
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-
     def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
         if not class_ids:
             return []
+
         return self.db.query(Class).filter(Class.id.in_(class_ids)).all()
 
     def get_races_by_ids(self, race_ids: list[int]) -> list[Race]:
         if not race_ids:
             return []
+
         return self.db.query(Race).filter(Race.id.in_(race_ids)).all()
 
     def set_classes(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> Spell:

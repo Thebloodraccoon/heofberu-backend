@@ -28,20 +28,22 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
     Class-specific CRUD service built on :class:`BaseService`.
 
     Adds behaviors the generic base class doesn't provide:
-      - a plain, unpaginated ``get_all`` (classes are listed in full, sorted
-        by name, via ``ClassRepository.get_all``) — overridden here on the
-        *service* too, not just the repository, so the public contract
-        (no ``skip``/``limit``) is explicit rather than silently breaking
-        callers that assume ``BaseService``'s paginated signature;
       - a uniqueness check on ``name`` before create/update;
       - management of primary abilities, saving throws, and available
         skills, which live in their own association tables and have no
         generic base-class equivalent. ``create_class`` sets all three up
-        front, in the same transaction as the class itself;
+        front, in the same transaction as the class itself (via
+        ``BaseService._atomic``);
       - a delete guard that blocks removing a class still assigned to any
         character, since the FK is ``ON DELETE RESTRICT``;
       - a consistency check tying ``spellcasting_ability`` to
         ``primary_abilities`` — see ``create_class`` and ``update_class``.
+
+    ``get_all`` and ``get_by_id`` are inherited unchanged from
+    ``BaseService`` — paginated, ordered by ``id`` (the default from
+    ``BaseRepository.get_all``) with all four association-table
+    relationships eager-loaded via ``ClassRepository``'s
+    ``default_load_options``.
     """
 
     repository: ClassRepository
@@ -53,7 +55,6 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
             not_found_exception_factory=lambda class_id: ClassNotFoundException(class_id=class_id),
             brief_schema=ClassBriefResponse,
         )
-        self.db = db
 
     def create_class(self, class_data: ClassCreate, created_by_id: int | None = None) -> ClassResponse:
         """
@@ -66,53 +67,42 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         ``primary_abilities``, ``saving_throws``, and ``available_skills``
         are stored in their own association tables and are set in the
         *same transaction* as the class itself (base fields + all three
-        commit together, or none do). ``available_skills`` is optional —
-        a class can be created without granting any skill choices, same
-        as Race's ``granted_skills``.
+        commit together, or none do), via ``self._atomic()``.
+        ``available_skills`` is optional — a class can be created without
+        granting any skill choices, same as Race's ``granted_skills``.
 
         The consistency check that ``spellcasting_ability`` (if set) is
         also in ``primary_abilities`` already ran in
         ``ClassCreate.validate_spellcasting_ability_is_primary`` at the
         schema layer, since both fields are always present together on a
-        create payload — no DB lookup needed there, unlike on update.
-
-        Every write inside the nested transaction below passes
-        ``commit=False`` — including ``repository.create`` itself. A plain
-        ``session.commit()`` from any of them would commit (and close) the
-        *entire* outer transaction, not just the ``begin_nested()``
-        SAVEPOINT, breaking the context manager on exit. Only the final
-        ``self.db.commit()`` after the ``with`` block should ever fire.
+        creation payload — no DB lookup needed there, unlike on update.
         """
 
         self._check_name_available(class_data.name)
 
         skills = None
         if class_data.available_skills:
-            skills, missing_ids = self._resolve_skill_ids(class_data.available_skills)
+            found = self.repository.get_skills_by_ids(class_data.available_skills)
+            skills, missing_ids = self.resolve_ids(found, class_data.available_skills)
             if missing_ids:
                 raise InvalidSkillIdsException(missing_ids)
 
         payload = class_data.model_dump(exclude={"primary_abilities", "saving_throws", "available_skills"})
         payload["created_by_id"] = created_by_id
 
-        try:
-            with self.db.begin_nested():
-                item = self.repository.create(payload, commit=False)
+        with self._atomic():
+            item = self.repository.create(payload, commit=False)
 
-                if class_data.primary_abilities:
-                    self.repository.set_primary_abilities(item, class_data.primary_abilities, commit=False)
+            if class_data.primary_abilities:
+                self.repository.set_primary_abilities(item, class_data.primary_abilities, commit=False)
 
-                if class_data.saving_throws:
-                    self.repository.set_saving_throws(item, class_data.saving_throws, commit=False)
+            if class_data.saving_throws:
+                self.repository.set_saving_throws(item, class_data.saving_throws, commit=False)
 
-                if skills:
-                    self.repository.set_available_skills(item, skills, commit=False)
+            if skills:
+                self.repository.set_available_skills(item, skills, commit=False)
 
-            self.db.commit()
-            self.db.refresh(item)
-        except Exception:
-            self.db.rollback()
-            raise
+        self.repository.refresh(item)
 
         return self.response_schema.model_validate(item)
 
@@ -201,7 +191,8 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         character_class = self._get_or_404(class_id)
 
-        skills, missing_ids = self._resolve_skill_ids(data.skill_ids)
+        found = self.repository.get_skills_by_ids(data.skill_ids)
+        skills, missing_ids = self.resolve_ids(found, data.skill_ids)
         if missing_ids:
             raise InvalidSkillIdsException(missing_ids)
 
@@ -234,11 +225,3 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         if self.repository.get_by_name(name):
             raise ClassNameAlreadyExistsException(name)
-
-    def _resolve_skill_ids(self, skill_ids: list[int]):
-        """Look up skills by id, returning (found_skills, missing_ids)."""
-
-        skills = self.repository.get_skills_by_ids(skill_ids)
-        found_ids = {skill.id for skill in skills}
-        missing_ids = [skill_id for skill_id in skill_ids if skill_id not in found_ids]
-        return skills, missing_ids
