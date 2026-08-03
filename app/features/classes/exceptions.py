@@ -12,17 +12,6 @@ class ClassNotFoundException(HTTPException):
         )
 
 
-class ClassNameAlreadyExistsException(HTTPException):
-    """Raised when attempting to create/rename a class to a name that's already taken."""
-
-    def __init__(self, name: str):
-        self.name = name
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Class with name '{name}' already exists.",
-        )
-
-
 class ClassInUseException(HTTPException):
     """
     Raised when attempting to delete a class that is still assigned to one

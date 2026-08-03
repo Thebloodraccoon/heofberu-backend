@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from app.core.base_service import BaseService
 from app.features.classes.exceptions import (
     ClassInUseException,
-    ClassNameAlreadyExistsException,
     ClassNotFoundException,
     InvalidClassLevelException,
     InvalidSkillIdsException,
@@ -80,9 +79,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         skills = (
             self._resolve_or_raise(
-                self.repository.get_skills_by_ids,
-                class_data.available_skills,
-                InvalidSkillIdsException
+                self.repository.get_skills_by_ids, class_data.available_skills, InvalidSkillIdsException
             )
             if class_data.available_skills
             else None
@@ -189,11 +186,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         character_class = self._get_or_404(class_id)
 
-        skills = self._resolve_or_raise(
-            self.repository.get_skills_by_ids,
-            data.skill_ids,
-            InvalidSkillIdsException
-        )
+        skills = self._resolve_or_raise(self.repository.get_skills_by_ids, data.skill_ids, InvalidSkillIdsException)
 
         updated_class = self.repository.set_available_skills(character_class, skills)
         return self.response_schema.model_validate(updated_class)

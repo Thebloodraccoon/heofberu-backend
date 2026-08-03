@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
 from app.features.backgrounds.exceptions import (
-    BackgroundNameAlreadyExistsException,
     BackgroundNotFoundException,
     InvalidSkillIdsException,
 )
@@ -100,11 +99,7 @@ class BackgroundService(
 
         background = self._get_or_404(background_id)
 
-        skills = self._resolve_or_raise(
-            self.repository.get_skills_by_ids,
-            data.skill_ids,
-            InvalidSkillIdsException
-        )
+        skills = self._resolve_or_raise(self.repository.get_skills_by_ids, data.skill_ids, InvalidSkillIdsException)
 
         updated_background = self.repository.set_skills(background, skills)
         return self.response_schema.model_validate(updated_background)

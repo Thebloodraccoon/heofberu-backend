@@ -36,6 +36,7 @@ class InvalidEmailException(HTTPException):
             detail=message,
         )
 
+
 class RecordAlreadyExistsError(Exception):
     """Data Layer Exception: A record with this unique field already exists."""
 

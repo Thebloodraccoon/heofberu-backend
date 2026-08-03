@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.exceptions import RecordAlreadyExistsError
+
 logger = logging.getLogger(__name__)
 
 
@@ -119,6 +121,26 @@ def setup_error_handlers(app):
 
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content=error_response.to_dict(),
+        )
+
+    @app.exception_handler(RecordAlreadyExistsError)
+    async def record_already_exists_handler(request: Request, exc: RecordAlreadyExistsError):
+        """Handle uniqueness violations raised by BaseRepository._check_uniqueness."""
+
+        request_id = getattr(request.state, "request_id", None)
+
+        logger.warning(f"Uniqueness violation: {exc.message} - Path: {request.url.path} - Request ID: {request_id}")
+
+        error_response = ErrorResponse(
+            error_type="RecordAlreadyExistsError",
+            message=exc.message,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request_id=request_id,
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
             content=error_response.to_dict(),
         )
 

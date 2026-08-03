@@ -378,7 +378,7 @@ class BaseRepository(Generic[ModelType]):
         Checks the uniqueness of the fields specified in self._unique_fields.
         If the value already exists, throws a generic error.
         """
-        
+
         if not self._unique_fields:
             return
 
@@ -391,11 +391,7 @@ class BaseRepository(Generic[ModelType]):
                     query = query.filter(self.model.id != exclude_id)
 
                 if query.first() is not None:
-                    raise RecordAlreadyExistsError(
-                        model_name=self.model.__name__,
-                        field=field,
-                        value=value
-                    )
+                    raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
 
     def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
         """

@@ -12,17 +12,6 @@ class RaceNotFoundException(HTTPException):
         )
 
 
-class RaceNameAlreadyExistsException(HTTPException):
-    """Raised when attempting to create/rename a race to a name that's already taken."""
-
-    def __init__(self, name: str):
-        self.name = name
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Race with name '{name}' already exists.",
-        )
-
-
 class RaceInUseException(HTTPException):
     """
     Raised when attempting to delete a race that is still assigned to one

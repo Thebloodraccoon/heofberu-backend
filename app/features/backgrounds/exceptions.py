@@ -12,17 +12,6 @@ class BackgroundNotFoundException(HTTPException):
         )
 
 
-class BackgroundNameAlreadyExistsException(HTTPException):
-    """Raised when attempting to create/rename a background to a name that's already taken."""
-
-    def __init__(self, name: str):
-        self.name = name
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Background with name '{name}' already exists.",
-        )
-
-
 class InvalidSkillIdsException(HTTPException):
     """Raised when one or more provided skill IDs do not correspond to existing skills."""
 

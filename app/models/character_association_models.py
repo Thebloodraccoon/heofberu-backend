@@ -77,9 +77,7 @@ class CharacterFeat(settings.Base):  # type: ignore
         index=True,
     )
 
-    __table_args__ = (
-        UniqueConstraint("character_id", "feat_id", name="uq_character_feat"),
-    )
+    __table_args__ = (UniqueConstraint("character_id", "feat_id", name="uq_character_feat"),)
 
     character = relationship("Character", back_populates="character_feats")
     feat = relationship("Feat")

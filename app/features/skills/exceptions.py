@@ -12,17 +12,6 @@ class SkillNotFoundException(HTTPException):
         )
 
 
-class SkillKeyAlreadyExistsException(HTTPException):
-    """Raised when attempting to create/rename a skill to a key that's already taken."""
-
-    def __init__(self, key: str):
-        self.key = key
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Skill with key '{key}' already exists.",
-        )
-
-
 class SkillInUseException(HTTPException):
     """
     Raised when attempting to delete a skill that is still referenced by one

@@ -14,14 +14,6 @@ class SpellNotFoundException(HTTPException):
         super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
 
-class SpellNameAlreadyExistsException(HTTPException):
-    def __init__(self, name: str):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Spell with name '{name}' already exists.",
-        )
-
-
 class InvalidClassIdsException(HTTPException):
     """Raised when one or more provided class IDs do not correspond to existing classes."""
 

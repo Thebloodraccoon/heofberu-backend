@@ -4,7 +4,6 @@ from app.core.base_service import BaseService
 from app.features.spells.exceptions import (
     InvalidClassIdsException,
     InvalidRaceIdsException,
-    SpellNameAlreadyExistsException,
     SpellNotFoundException,
 )
 from app.features.spells.repository import SpellRepository

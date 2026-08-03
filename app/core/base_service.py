@@ -386,10 +386,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         return items, missing_ids
 
     def _resolve_or_raise(
-            self,
-            lookup_fn: Callable[[list[int]], list],
-            ids: list[int],
-            exception_cls: type[Exception]
+        self, lookup_fn: Callable[[list[int]], list], ids: list[int], exception_cls: type[Exception]
     ) -> list:
         """
         Resolve `ids` via `lookup_fn`, raising `exception_cls(missing_ids)` if any

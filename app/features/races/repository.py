@@ -36,7 +36,7 @@ class RaceRepository(BaseRepository[Race]):
                 selectinload(Race.granted_skills),
             ],
             search_fields=["name"],
-            unique_fields=["name"]
+            unique_fields=["name"],
         )
 
     def is_in_use(self, race_id: int) -> bool:

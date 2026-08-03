@@ -12,17 +12,6 @@ class ItemNotFoundException(HTTPException):
         )
 
 
-class ItemNameAlreadyExistsException(HTTPException):
-    """Raised when attempting to create/rename an item to a name that's already taken."""
-
-    def __init__(self, name: str):
-        self.name = name
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Item with name '{name}' already exists.",
-        )
-
-
 class ItemInUseException(HTTPException):
     """
     Raised when attempting to delete an item that is still owned by one or

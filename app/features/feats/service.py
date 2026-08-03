@@ -2,7 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.feats.exceptions import FeatInUseException, FeatNameAlreadyExistsException, FeatNotFoundException
+from app.features.feats.exceptions import FeatInUseException, FeatNotFoundException
 from app.features.feats.repository import FeatRepository
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
@@ -85,4 +85,3 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
         increases = [{"ability": item.ability, "amount": item.amount} for item in data.ability_score_increases]
         updated_feat = self.repository.set_ability_score_increases(feat, increases)
         return self.response_schema.model_validate(updated_feat)
-
