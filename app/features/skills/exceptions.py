@@ -1,16 +1,6 @@
 from fastapi import HTTPException, status
 
 
-class SkillNotFoundException(HTTPException):
-    """Raised when a skill with the given ID does not exist."""
-
-    def __init__(self, skill_id: int):
-        self.skill_id = skill_id
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill with id {skill_id} not found.",
-        )
-
 
 class SkillInUseException(HTTPException):
     """

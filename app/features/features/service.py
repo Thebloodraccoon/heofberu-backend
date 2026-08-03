@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.features.exceptions import FeatureNotFoundException, InvalidFeatureSourceException
+from app.features.features.exceptions import InvalidFeatureSourceException
 from app.features.features.repository import FeatureRepository
 from app.features.features.schemas import (
     FeatureBriefResponse,
@@ -50,7 +50,6 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         super().__init__(
             repository=FeatureRepository(db),
             response_schema=FeatureResponse,
-            not_found_exception_factory=lambda feature_id: FeatureNotFoundException(feature_id=feature_id),
             brief_schema=FeatureBriefResponse,
         )
 

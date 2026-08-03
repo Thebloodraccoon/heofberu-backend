@@ -2,7 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.feats.exceptions import FeatInUseException, FeatNotFoundException
+from app.features.feats.exceptions import FeatInUseException
 from app.features.feats.repository import FeatRepository
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
@@ -32,7 +32,6 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
         super().__init__(
             repository=FeatRepository(db),
             response_schema=FeatResponse,
-            not_found_exception_factory=lambda feat_id: FeatNotFoundException(feat_id=feat_id),
             brief_schema=FeatBriefResponse,
         )
 

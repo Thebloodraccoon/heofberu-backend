@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from app.core.base_service import BaseService
 from app.features.classes.exceptions import (
     ClassInUseException,
-    ClassNotFoundException,
     InvalidClassLevelException,
     InvalidSkillIdsException,
     SpellcastingAbilityNotPrimaryException,
@@ -51,7 +50,6 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,
-            not_found_exception_factory=lambda class_id: ClassNotFoundException(class_id=class_id),
             brief_schema=ClassBriefResponse,
         )
 

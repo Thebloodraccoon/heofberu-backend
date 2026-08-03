@@ -1,5 +1,5 @@
 from .config import MiddlewareConfig
-from .error_handler import ErrorResponse, setup_error_handlers
+from .error_handler import setup_error_handlers
 from .logging import LoggingMiddleware
 from .rate_limit import RateLimitMiddleware
 from .request_id import RequestIDMiddleware
@@ -9,7 +9,6 @@ __all__ = [
     # Configuration
     "MiddlewareConfig",
     # Error handling
-    "ErrorResponse",
     "setup_error_handlers",
     # Middleware classes
     "LoggingMiddleware",

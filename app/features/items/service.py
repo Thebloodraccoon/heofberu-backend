@@ -2,7 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.items.exceptions import ItemInUseException, ItemNotFoundException
+from app.features.items.exceptions import ItemInUseException
 from app.features.items.repository import ItemRepository
 from app.features.items.schemas import ItemBriefResponse, ItemCreate, ItemResponse, ItemUpdate
 from app.models.item_model import Item
@@ -34,7 +34,6 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemBr
         super().__init__(
             repository=ItemRepository(db),
             response_schema=ItemResponse,
-            not_found_exception_factory=lambda item_id: ItemNotFoundException(item_id=item_id),
             brief_schema=ItemBriefResponse,
         )
 

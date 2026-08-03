@@ -8,7 +8,7 @@ from starlette import status
 from typing_extensions import TypeVar
 
 from app.core.base_repository import BaseRepository, ModelType
-from app.core.exceptions import RecordAlreadyExistsError
+from app.core.exceptions import RecordAlreadyExistsError, RecordNotFoundError
 
 CreateSchema = TypeVar("CreateSchema", bound=BaseModel)
 UpdateSchema = TypeVar("UpdateSchema", bound=BaseModel)
@@ -117,7 +117,6 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
                             spell_id=spell_id
                         ),
                         brief_schema=SpellBriefResponse,
-                    )
 
         ``not_found_exception_factory`` receives the missing ``item_id``
         and must return (not raise) an ``Exception`` instance; the base
@@ -131,13 +130,11 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         self,
         repository: BaseRepository[ModelType],
         response_schema: type[ResponseSchema],
-        not_found_exception_factory: NotFoundExceptionFactory,
         brief_schema: type[BriefSchema] | None = None,
     ):
         self.repository = repository
         self.response_schema = response_schema
         self.brief_schema = brief_schema
-        self._not_found_exception_factory = not_found_exception_factory
 
     def get_all(
         self,
@@ -168,9 +165,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
             search: Optional case-insensitive substring match, passed
                 straight through to ``repository.get_all`` — see
                 ``BaseRepository._apply_search`` for the exact semantics
-                (OR'd across the repository's ``search_fields``, either
+                (Or's across the repository's ``search_fields``, either
                 pinned at construction or auto-detected from the model's
-                text columns). Combines with ``filters`` (AND'd together).
+                text columns). Combines with ``filters`` (Anand together).
                 A repository with no searchable fields (``search_fields=[]``)
                 silently ignores this.
 
@@ -336,7 +333,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         item = self.repository.get_by_id(item_id)
         if not item:
-            raise self._not_found_exception_factory(item_id)
+            raise RecordNotFoundError(model_name=self.repository.model.__name__, id=str(item_id))
 
         return item
 

@@ -4,7 +4,6 @@ from app.core.base_service import BaseService
 from app.features.spells.exceptions import (
     InvalidClassIdsException,
     InvalidRaceIdsException,
-    SpellNotFoundException,
 )
 from app.features.spells.repository import SpellRepository
 from app.features.spells.schemas import (
@@ -40,7 +39,6 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         super().__init__(
             repository=SpellRepository(db),
             response_schema=SpellResponse,
-            not_found_exception_factory=lambda spell_id: SpellNotFoundException(spell_id=spell_id),
             brief_schema=SpellBriefResponse,
         )
 

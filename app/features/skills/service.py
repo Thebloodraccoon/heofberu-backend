@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from app.core.base_service import BaseService
 from app.features.skills.exceptions import (
     SkillInUseException,
-    SkillNotFoundException,
 )
 from app.features.skills.repository import SkillRepository
 from app.features.skills.schemas import SkillBriefResponse, SkillCreate, SkillResponse, SkillUpdate
@@ -30,7 +29,6 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, S
         super().__init__(
             repository=SkillRepository(db),
             response_schema=SkillResponse,
-            not_found_exception_factory=lambda skill_id: SkillNotFoundException(skill_id=skill_id),
             brief_schema=SkillBriefResponse,
         )
 

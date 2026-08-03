@@ -33,7 +33,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         super().__init__(
             repository=UserRepository(db),
             response_schema=UserResponse,
-            not_found_exception_factory=lambda user_id: UserNotFoundException(user_id=user_id),
         )
 
     def get_user_by_email(self, email: str) -> UserResponse:

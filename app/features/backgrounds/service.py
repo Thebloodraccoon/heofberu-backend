@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
 from app.features.backgrounds.exceptions import (
-    BackgroundNotFoundException,
     InvalidSkillIdsException,
 )
 from app.features.backgrounds.repository import BackgroundRepository
@@ -49,7 +48,6 @@ class BackgroundService(
         super().__init__(
             repository=BackgroundRepository(db),
             response_schema=BackgroundResponse,
-            not_found_exception_factory=lambda background_id: BackgroundNotFoundException(background_id=background_id),
             brief_schema=BackgroundBriefResponse,
         )
 

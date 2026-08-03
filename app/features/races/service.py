@@ -5,7 +5,6 @@ from app.core.base_service import BaseService
 from app.features.races.exceptions import (
     InvalidSkillIdsException,
     RaceInUseException,
-    RaceNotFoundException,
 )
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
@@ -52,7 +51,6 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,
-            not_found_exception_factory=lambda race_id: RaceNotFoundException(race_id=race_id),
             brief_schema=RaceBriefResponse,
         )
 

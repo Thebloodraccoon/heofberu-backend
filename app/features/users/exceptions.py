@@ -2,11 +2,8 @@ from fastapi import HTTPException, status
 
 
 class UserNotFoundException(HTTPException):
-    def __init__(self, user_id: int | None = None, email: str | None = None):
+    def __init__(self, email: str | None = None):
         detail = "404 User is not found"
-
-        if user_id:
-            detail = f"User with ID {user_id} is not found."
 
         if email:
             detail = f"User with email {email} is not found."

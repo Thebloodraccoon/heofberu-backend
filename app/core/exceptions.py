@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -46,3 +47,55 @@ class RecordAlreadyExistsError(Exception):
         self.value = value
         self.message = f"{model_name} with {field} '{value}' already exists."
         super().__init__(self.message)
+
+
+class RecordNotFoundError(Exception):
+    """Data Layer Exception: A record with the given ID does not exist."""
+
+    def __init__(self, model_name: str, id: str):
+        self.model_name = model_name
+        self.id = id
+        self.message = f"{model_name} with id {id} not found."
+        super().__init__(self.message)
+
+
+def get_timestamp() -> str:
+    """Get current timestamp in ISO format."""
+    return datetime.now().isoformat() + "Z"
+
+
+class ErrorResponse:
+    """Standardized error response format."""
+
+    def __init__(
+        self,
+        error_type: str,
+        message: str,
+        status_code: int,
+        details: Any = None,
+        request_id: str | None = None,
+    ):
+        self.error_type = error_type
+        self.message = message
+        self.status_code = status_code
+        self.details = details
+        self.request_id = request_id
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert error response to dictionary format."""
+        response = {
+            "error": {
+                "type": self.error_type,
+                "message": self.message,
+                "status_code": self.status_code,
+                "timestamp": get_timestamp(),
+            }
+        }
+
+        if self.details:
+            response["error"]["details"] = self.details
+
+        if self.request_id:
+            response["error"]["request_id"] = self.request_id
+
+        return response
