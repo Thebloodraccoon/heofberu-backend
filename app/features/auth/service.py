@@ -20,7 +20,6 @@ from app.features.auth.schemas import (
     RegisterRequest,
     RegisterResponse,
 )
-from app.features.users.exceptions import UserEmailAlreadyExistsException, UserNameAlreadyExistsException
 from app.features.users.repository import UserRepository
 
 REFRESH_COOKIE_NAME = "refresh_token"
@@ -59,9 +58,6 @@ class AuthService:
         a clear 400 before hitting the database's own unique constraint.
         """
 
-        self._check_email_available(request.email)
-        self._check_username_available(request.username)
-
         user_data = {
             "username": request.username,
             "email": request.email,
@@ -94,7 +90,8 @@ class AuthService:
         new_access_token = create_access_token(data={"sub": user.email})
         return RefreshResponse(access_token=new_access_token)
 
-    def logout(self, access_token: DecodedToken, refresh_token_str: str | None) -> LogoutResponse:
+    @staticmethod
+    def logout(access_token: DecodedToken, refresh_token_str: str | None) -> LogoutResponse:
         """
         Revoke the current access token and, if present, the refresh
         token cookie — both immediately unusable rather than left to
@@ -120,18 +117,6 @@ class AuthService:
                 blacklist_token(decoded_refresh.jti, decoded_refresh.remaining_seconds, reason="logout")
 
         return LogoutResponse(detail="Successful logout")
-
-    def _check_email_available(self, email: str) -> None:
-        """Raise ``UserEmailAlreadyExistsException`` if ``email`` is already taken."""
-
-        if self.user_repo.get_by_email(email):
-            raise UserEmailAlreadyExistsException(email)
-
-    def _check_username_available(self, username: str) -> None:
-        """Raise ``UserNameAlreadyExistsException`` if ``username`` is already taken."""
-
-        if self.user_repo.get_by_username(username):
-            raise UserNameAlreadyExistsException(name=username)
 
     @staticmethod
     def _issue_tokens(email: str, response: Response) -> str:
