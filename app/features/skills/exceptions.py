@@ -1,7 +1,6 @@
 from fastapi import HTTPException, status
 
 
-
 class SkillInUseException(HTTPException):
     """
     Raised when attempting to delete a skill that is still referenced by one

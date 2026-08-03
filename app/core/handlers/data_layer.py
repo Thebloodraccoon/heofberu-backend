@@ -38,12 +38,12 @@ async def record_not_found_handler(request: Request, exc: RecordNotFoundError):
     error_response = ErrorResponse(
         error_type="RecordNotFoundError",
         message=exc.message,
-        status_code=status.HTTP_400_BAD_REQUEST,
+        status_code=status.HTTP_404_NOT_FOUND,
         request_id=request_id,
     )
 
     return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
+        status_code=status.HTTP_404_NOT_FOUND,
         content=error_response.to_dict(),
     )
 
