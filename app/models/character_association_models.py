@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.models.enums import AbilityScoreType, SpellLevelType
@@ -75,6 +75,10 @@ class CharacterFeat(settings.Base):  # type: ignore
         ForeignKey("feat_ability_score_increases.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("character_id", "feat_id", name="uq_character_feat"),
     )
 
     character = relationship("Character", back_populates="character_feats")

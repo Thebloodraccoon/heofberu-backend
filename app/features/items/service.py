@@ -48,22 +48,11 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemBr
         input.
         """
 
-        self._check_name_available(item_data.name)
-
         payload = item_data.model_dump()
         payload["created_by_id"] = created_by_id
 
         item = self.repository.create(payload)
         return self.response_schema.model_validate(item)
-
-    def update_item(self, item_id: int, update_data: ItemUpdate) -> ItemResponse:
-        """Update an item, re-checking name uniqueness if the name is changing."""
-
-        def check_name_available_if_changing(item: Item, fields: dict) -> None:
-            if "name" in fields and fields["name"] != item.name:
-                self._check_name_available(fields["name"])
-
-        return self.update(item_id, update_data, before_update=check_name_available_if_changing)
 
     def delete_item(self, item_id: int) -> bool:
         """
@@ -85,9 +74,3 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemBr
         except IntegrityError:
             self.repository.db.rollback()
             raise ItemInUseException(item_id=item_id)
-
-    def _check_name_available(self, name: str) -> None:
-        """Raise ``ItemNameAlreadyExistsException`` if ``name`` is already in use."""
-
-        if self.repository.get_by_name(name):
-            raise ItemNameAlreadyExistsException(name)

@@ -72,14 +72,15 @@ class BackgroundService(
         behind every nested write passing ``commit=False``.
         """
 
-        self._check_name_available(background_data.name)
-
-        skills = None
-        if background_data.granted_skills:
-            found = self.repository.get_skills_by_ids(background_data.granted_skills)
-            skills, missing_ids = self.resolve_ids(found, background_data.granted_skills)
-            if missing_ids:
-                raise InvalidSkillIdsException(missing_ids)
+        skills = (
+            self._resolve_or_raise(
+                self.repository.get_skills_by_ids,
+                background_data.granted_skills,
+                InvalidSkillIdsException,
+            )
+            if background_data.granted_skills
+            else None
+        )
 
         payload = background_data.model_dump(exclude={"granted_skills"})
         payload["created_by_id"] = created_by_id
@@ -94,30 +95,16 @@ class BackgroundService(
 
         return self.response_schema.model_validate(item)
 
-    def update_background(self, background_id: int, update_data: BackgroundUpdate) -> BackgroundResponse:
-        """Update a background, re-checking name uniqueness if the name is changing."""
-
-        def check_name_available_if_changing(background: Background, fields: dict) -> None:
-            if "name" in fields and fields["name"] != background.name:
-                self._check_name_available(fields["name"])
-
-        return self.update(background_id, update_data, before_update=check_name_available_if_changing)
-
     def set_skills(self, background_id: int, data: SkillsUpdate) -> BackgroundResponse:
         """Fully replace the skills granted by a background."""
 
         background = self._get_or_404(background_id)
 
-        found = self.repository.get_skills_by_ids(data.skill_ids)
-        skills, missing_ids = self.resolve_ids(found, data.skill_ids)
-        if missing_ids:
-            raise InvalidSkillIdsException(missing_ids)
+        skills = self._resolve_or_raise(
+            self.repository.get_skills_by_ids,
+            data.skill_ids,
+            InvalidSkillIdsException
+        )
 
         updated_background = self.repository.set_skills(background, skills)
         return self.response_schema.model_validate(updated_background)
-
-    def _check_name_available(self, name: str) -> None:
-        """Raise ``BackgroundNameAlreadyExistsException`` if ``name`` is already in use."""
-
-        if self.repository.get_by_name(name):
-            raise BackgroundNameAlreadyExistsException(name)

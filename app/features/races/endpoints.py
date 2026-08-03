@@ -163,7 +163,7 @@ def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceService
     `PUT /races/{race_id}/ability-bonuses` and `PUT /races/{race_id}/skills`
     for those.
     """
-    return race_service.update_race(race_id, update_data)
+    return race_service.update(race_id, update_data)
 
 
 @router.delete(

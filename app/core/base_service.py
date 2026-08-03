@@ -2,10 +2,13 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any, Generic
 
+from fastapi import HTTPException
 from pydantic import BaseModel
+from starlette import status
 from typing_extensions import TypeVar
 
 from app.core.base_repository import BaseRepository, ModelType
+from app.core.exceptions import RecordAlreadyExistsError
 
 CreateSchema = TypeVar("CreateSchema", bound=BaseModel)
 UpdateSchema = TypeVar("UpdateSchema", bound=BaseModel)
@@ -269,8 +272,11 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         ``super().create(...)`` if the feature requires it.
         """
 
-        item = self.repository.create(create_data.model_dump())
-        return self.response_schema.model_validate(item)
+        try:
+            item = self.repository.create(create_data.model_dump())
+            return self.response_schema.model_validate(item)
+        except RecordAlreadyExistsError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
     def update(
         self,
@@ -309,8 +315,11 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         if before_update:
             before_update(item, fields)
 
-        updated_item = self.repository.update(item, fields)
-        return self.response_schema.model_validate(updated_item)
+        try:
+            updated_item = self.repository.update(item, fields)
+            return self.response_schema.model_validate(updated_item)
+        except RecordAlreadyExistsError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
     def delete(self, item_id: int) -> bool:
         """
@@ -375,6 +384,26 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         found_ids = {item.id for item in items}
         missing_ids = [requested_id for requested_id in requested_ids if requested_id not in found_ids]
         return items, missing_ids
+
+    def _resolve_or_raise(
+            self,
+            lookup_fn: Callable[[list[int]], list],
+            ids: list[int],
+            exception_cls: type[Exception]
+    ) -> list:
+        """
+        Resolve `ids` via `lookup_fn`, raising `exception_cls(missing_ids)` if any
+        don't resolve. Thin wrapper around `resolve_ids` to eliminate boilerplate
+        across feature services.
+        """
+        if not ids:
+            return []
+
+        found = lookup_fn(ids)
+        items, missing_ids = self.resolve_ids(found, ids)
+        if missing_ids:
+            raise exception_cls(missing_ids)
+        return items
 
     @contextmanager
     def _atomic(self) -> Generator[None, None, None]:

@@ -1,7 +1,10 @@
 from typing import Any, Generic, Protocol, TypeVar
 
 from sqlalchemy import String, Text, inspect, or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+
+from app.core.exceptions import RecordAlreadyExistsError
 
 
 class ModelProtocol(Protocol):
@@ -128,11 +131,13 @@ class BaseRepository(Generic[ModelType]):
         db: Session,
         default_load_options: list[Any] | None = None,
         search_fields: list[str] | None = None,
+        unique_fields: list[str] | None = None,
     ):
         self.model = model
         self.db = db
         self._default_load_options = default_load_options or []
         self._search_fields = search_fields if search_fields is not None else self._detect_text_fields()
+        self._unique_fields = unique_fields or []
 
     def _detect_text_fields(self) -> list[str]:
         """
@@ -368,6 +373,30 @@ class BaseRepository(Generic[ModelType]):
 
         return query.count()
 
+    def _check_uniqueness(self, data: dict[str, Any], exclude_id: int | None = None) -> None:
+        """
+        Checks the uniqueness of the fields specified in self._unique_fields.
+        If the value already exists, throws a generic error.
+        """
+        
+        if not self._unique_fields:
+            return
+
+        for field in self._unique_fields:
+            if field in data and data[field] is not None:
+                value = data[field]
+                query = self.db.query(self.model).filter(getattr(self.model, field) == value)
+
+                if exclude_id is not None:
+                    query = query.filter(self.model.id != exclude_id)
+
+                if query.first() is not None:
+                    raise RecordAlreadyExistsError(
+                        model_name=self.model.__name__,
+                        field=field,
+                        value=value
+                    )
+
     def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
         """
         Create a new record from ``obj_data`` and return it.
@@ -394,13 +423,18 @@ class BaseRepository(Generic[ModelType]):
         on exit.
         """
 
-        db_obj = self.model(**obj_data)
+        self._check_uniqueness(obj_data)
 
+        db_obj = self.model(**obj_data)
         self.db.add(db_obj)
 
         if commit:
-            self.db.commit()
-            self.db.refresh(db_obj)
+            try:
+                self.db.commit()
+                self.db.refresh(db_obj)
+            except SQLAlchemyError:
+                self.db.rollback()
+                raise
         else:
             self.db.flush()
 
@@ -416,21 +450,31 @@ class BaseRepository(Generic[ModelType]):
         through a Pydantic update schema) if stricter behavior is needed.
         """
 
+        self._check_uniqueness(update_data, exclude_id=db_obj.id)
+
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        self.db.commit()
-        if refresh:
-            self.db.refresh(db_obj)
+        try:
+            self.db.commit()
+            if refresh:
+                self.db.refresh(db_obj)
+        except SQLAlchemyError:
+            self.db.rollback()
+            raise
 
         return db_obj
 
     def delete(self, db_obj: ModelType) -> bool:
         """Delete ``db_obj`` from the database, returning ``True`` on success."""
 
-        self.db.delete(db_obj)
-        self.db.commit()
+        try:
+            self.db.delete(db_obj)
+            self.db.commit()
+        except SQLAlchemyError:
+            self.db.rollback()
+            raise
 
         return True
 

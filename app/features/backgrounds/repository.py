@@ -8,11 +8,8 @@ from app.models.skill_model import Skill
 class BackgroundRepository(BaseRepository[Background]):
     def __init__(self, db: Session):
         super().__init__(
-            Background, db, default_load_options=[selectinload(Background.granted_skills)], search_fields=["name"]
+            Background, db, default_load_options=[selectinload(Background.granted_skills)], search_fields=["name"], unique_fields=["name"]
         )
-
-    def get_by_name(self, name: str) -> Background | None:
-        return self.db.query(Background).filter(Background.name == name).first()
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         if not skill_ids:

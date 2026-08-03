@@ -165,7 +165,7 @@ def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatService
     are left as-is. Does not touch ability score increase choices — use
     `PUT /feats/{feat_id}/ability-score-increases` for those.
     """
-    return feat_service.update_feat(feat_id, update_data)
+    return feat_service.update(feat_id, update_data)
 
 
 @router.delete(

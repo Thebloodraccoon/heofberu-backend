@@ -1,7 +1,7 @@
 """add feats and character feats
 
 Revision ID: 44caee54d6b8
-Revises: xxxxxxxxxxxx
+Revises: 4b17bc9bfef5
 Create Date: 2026-08-02 19:28:57.387665
 
 """
@@ -15,7 +15,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "44caee54d6b8"
-down_revision: Union[str, None] = "xxxxxxxxxxxx"
+down_revision: Union[str, None] = "4b17bc9bfef5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -35,21 +35,6 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, S
             brief_schema=SkillBriefResponse,
         )
 
-    def create_skill(self, skill_data: SkillCreate) -> SkillResponse:
-        """Create a skill after checking its key isn't already taken."""
-
-        self._check_key_available(skill_data.key)
-        return self.create(skill_data)
-
-    def update_skill(self, skill_id: int, update_data: SkillUpdate) -> SkillResponse:
-        """Update a skill, re-checking key uniqueness if the key is changing."""
-
-        def check_key_available_if_changing(skill: Skill, fields: dict) -> None:
-            if "key" in fields and fields["key"] != skill.key:
-                self._check_key_available(fields["key"])
-
-        return self.update(skill_id, update_data, before_update=check_key_available_if_changing)
-
     def delete_skill(self, skill_id: int) -> bool:
         """
         Delete a skill by ID, raising ``SkillInUseException`` if it's still
@@ -72,9 +57,3 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, S
         except IntegrityError:
             self.repository.db.rollback()
             raise SkillInUseException(skill_id=skill_id)
-
-    def _check_key_available(self, key: str) -> None:
-        """Raise ``SkillKeyAlreadyExistsException`` if ``key`` is already in use."""
-
-        if self.repository.get_by_key(key):
-            raise SkillKeyAlreadyExistsException(key)

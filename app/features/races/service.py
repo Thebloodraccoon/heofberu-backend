@@ -77,14 +77,15 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
         on ``_atomic()``/``BaseRepository.create``.
         """
 
-        self._check_name_available(race_data.name)
-
-        skills = None
-        if race_data.granted_skills:
-            found = self.repository.get_skills_by_ids(race_data.granted_skills)
-            skills, missing_ids = self.resolve_ids(found, race_data.granted_skills)
-            if missing_ids:
-                raise InvalidSkillIdsException(missing_ids)
+        skills = (
+            self._resolve_or_raise(
+                self.repository.get_skills_by_ids,
+                race_data.granted_skills,
+                InvalidSkillIdsException
+            )
+            if race_data.granted_skills
+            else None
+        )
 
         payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills"})
         payload["created_by_id"] = created_by_id
@@ -101,15 +102,6 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         self.repository.refresh(item)
         return self.response_schema.model_validate(item)
-
-    def update_race(self, race_id: int, update_data: RaceUpdate) -> RaceResponse:
-        """Update a race, re-checking name uniqueness if the name is changing."""
-
-        def check_name_available_if_changing(race: Race, fields: dict) -> None:
-            if "name" in fields and fields["name"] != race.name:
-                self._check_name_available(fields["name"])
-
-        return self.update(race_id, update_data, before_update=check_name_available_if_changing)
 
     def delete_race(self, race_id: int) -> bool:
         """
@@ -146,16 +138,11 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         race = self._get_or_404(race_id)
 
-        found = self.repository.get_skills_by_ids(data.skill_ids)
-        skills, missing_ids = self.resolve_ids(found, data.skill_ids)
-        if missing_ids:
-            raise InvalidSkillIdsException(missing_ids)
+        skills = self._resolve_or_raise(
+            self.repository.get_skills_by_ids,
+            data.skill_ids,
+            InvalidSkillIdsException
+        )
 
         updated_race = self.repository.set_skills(race, skills)
         return self.response_schema.model_validate(updated_race)
-
-    def _check_name_available(self, name: str) -> None:
-        """Raise ``RaceNameAlreadyExistsException`` if ``name`` is already in use."""
-
-        if self.repository.get_by_name(name):
-            raise RaceNameAlreadyExistsException(name)

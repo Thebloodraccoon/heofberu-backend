@@ -36,10 +36,8 @@ class RaceRepository(BaseRepository[Race]):
                 selectinload(Race.granted_skills),
             ],
             search_fields=["name"],
+            unique_fields=["name"]
         )
-
-    def get_by_name(self, name: str) -> Race | None:
-        return self.db.query(Race).filter(Race.name == name).first()
 
     def is_in_use(self, race_id: int) -> bool:
         """

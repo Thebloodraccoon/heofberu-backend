@@ -46,8 +46,6 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
         ``RaceService.create_race``.
         """
 
-        self._check_name_available(feat_data.name)
-
         payload = feat_data.model_dump(exclude={"ability_score_increases"})
         payload["created_by_id"] = created_by_id
 
@@ -62,15 +60,6 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
 
         self.repository.refresh(item)
         return self.response_schema.model_validate(item)
-
-    def update_feat(self, feat_id: int, update_data: FeatUpdate) -> FeatResponse:
-        """Update a feat, re-checking name uniqueness if the name is changing."""
-
-        def check_name_available_if_changing(feat: Feat, fields: dict) -> None:
-            if "name" in fields and fields["name"] != feat.name:
-                self._check_name_available(fields["name"])
-
-        return self.update(feat_id, update_data, before_update=check_name_available_if_changing)
 
     def delete_feat(self, feat_id: int) -> bool:
         """
@@ -97,8 +86,3 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
         updated_feat = self.repository.set_ability_score_increases(feat, increases)
         return self.response_schema.model_validate(updated_feat)
 
-    def _check_name_available(self, name: str) -> None:
-        """Raise ``FeatNameAlreadyExistsException`` if ``name`` is already in use."""
-
-        if self.repository.get_by_name(name):
-            raise FeatNameAlreadyExistsException(name)

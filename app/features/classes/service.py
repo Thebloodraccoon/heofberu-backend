@@ -78,14 +78,15 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         creation payload — no DB lookup needed there, unlike on update.
         """
 
-        self._check_name_available(class_data.name)
-
-        skills = None
-        if class_data.available_skills:
-            found = self.repository.get_skills_by_ids(class_data.available_skills)
-            skills, missing_ids = self.resolve_ids(found, class_data.available_skills)
-            if missing_ids:
-                raise InvalidSkillIdsException(missing_ids)
+        skills = (
+            self._resolve_or_raise(
+                self.repository.get_skills_by_ids,
+                class_data.available_skills,
+                InvalidSkillIdsException
+            )
+            if class_data.available_skills
+            else None
+        )
 
         payload = class_data.model_dump(exclude={"primary_abilities", "saving_throws", "available_skills"})
         payload["created_by_id"] = created_by_id
@@ -132,9 +133,6 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         character_class = self._get_or_404(class_id)
 
         fields = update_data.model_dump(exclude_unset=True, exclude={"primary_abilities", "saving_throws"})
-
-        if "name" in fields and fields["name"] != character_class.name:
-            self._check_name_available(fields["name"])
 
         if update_data.primary_abilities is not None and update_data.spellcasting_ability is None:
             current_spellcasting_ability = character_class.spellcasting_ability
@@ -191,10 +189,11 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         character_class = self._get_or_404(class_id)
 
-        found = self.repository.get_skills_by_ids(data.skill_ids)
-        skills, missing_ids = self.resolve_ids(found, data.skill_ids)
-        if missing_ids:
-            raise InvalidSkillIdsException(missing_ids)
+        skills = self._resolve_or_raise(
+            self.repository.get_skills_by_ids,
+            data.skill_ids,
+            InvalidSkillIdsException
+        )
 
         updated_class = self.repository.set_available_skills(character_class, skills)
         return self.response_schema.model_validate(updated_class)
@@ -219,9 +218,3 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         updated_class = self.repository.set_spell_slots(character_class, class_level, slots_by_spell_level)
         return self.response_schema.model_validate(updated_class)
-
-    def _check_name_available(self, name: str) -> None:
-        """Raise ``ClassNameAlreadyExistsException`` if ``name`` is already in use."""
-
-        if self.repository.get_by_name(name):
-            raise ClassNameAlreadyExistsException(name)

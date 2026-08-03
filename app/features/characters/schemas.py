@@ -106,11 +106,6 @@ class CharacterUpdate(BaseModel):
     image_path: str | None = None
     level: int | None = Field(default=None, ge=1, le=20)
 
-    class_id: int = None
-    subclass: str | None = None
-    race_id: int | None = None
-    background_id: int | None = None
-
     current_hp: int | None = Field(default=None, ge=0)
     max_hp: int | None = Field(default=None, ge=0)
     temp_hp: int | None = Field(default=None, ge=0)
@@ -121,13 +116,6 @@ class CharacterUpdate(BaseModel):
     initiative_bonus: int | None = None
     passive_perception_bonus: int | None = None
     has_jack_of_all_trades: bool | None = None
-
-    strength: int | None = Field(default=None, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
-    dexterity: int | None = Field(default=None, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
-    constitution: int | None = Field(default=None, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
-    intelligence: int | None = Field(default=None, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
-    wisdom: int | None = Field(default=None, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
-    charisma: int | None = Field(default=None, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
 
     proficiencies: str | None = None
 

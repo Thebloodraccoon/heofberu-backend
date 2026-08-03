@@ -305,7 +305,7 @@ def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellSe
     use `PUT /spells/{spell_id}/classes` and `PUT /spells/{spell_id}/races`
     for those.
     """
-    return spell_service.update_spell(spell_id, update_data)
+    return spell_service.update(spell_id, update_data)
 
 
 @router.delete(

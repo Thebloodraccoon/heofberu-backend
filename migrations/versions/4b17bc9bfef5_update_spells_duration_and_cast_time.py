@@ -1,6 +1,6 @@
 """Convert spells.cast_time and spells.duration to native enums
 
-Revision ID: xxxxxxxxxxxx
+Revision ID: 4b17bc9bfef5
 Revises: 7e70b8a81bb9
 Create Date: 2026-08-02 00:00:00.000000
 
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision: str = "xxxxxxxxxxxx"
+revision: str = "4b17bc9bfef5"
 down_revision: Union[str, None] = "7e70b8a81bb9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

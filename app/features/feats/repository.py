@@ -21,10 +21,8 @@ class FeatRepository(BaseRepository[Feat]):
             db,
             default_load_options=[selectinload(Feat.ability_score_increases)],
             search_fields=["name"],
+            unique_fields=["name"]
         )
-
-    def get_by_name(self, name: str) -> Feat | None:
-        return self.db.query(Feat).filter(Feat.name == name).first()
 
     def is_in_use(self, feat_id: int) -> bool:
         """

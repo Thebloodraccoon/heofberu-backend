@@ -157,7 +157,7 @@ def update_background(
     are left as-is. Does not touch granted skills — use
     `PUT /backgrounds/{background_id}/skills` for that.
     """
-    return background_service.update_background(background_id, update_data)
+    return background_service.update(background_id, update_data)
 
 
 @router.delete(

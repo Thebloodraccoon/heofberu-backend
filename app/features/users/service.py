@@ -7,8 +7,6 @@ from app.core.security import get_password_hash
 from app.features.users.exceptions import (
     DefaultUserProtectedException,
     SelfDeletionException,
-    UserEmailAlreadyExistsException,
-    UserNameAlreadyExistsException,
     UserNotFoundException,
 )
 from app.features.users.repository import UserRepository
@@ -56,9 +54,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         repository, so this bypasses the generic ``super().create(...)``.
         """
 
-        self._check_email_available(data.email)
-        self._check_username_available(data.username)
-
         user_data = data.model_dump()
         del user_data["password"]
         user_data["hashed_password"] = get_password_hash(data.password)
@@ -77,12 +72,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         user = self._get_or_404(user_id)
         self._ensure_not_default_user(user)
         fields = data.model_dump(exclude_unset=True)
-
-        if "email" in fields:
-            self._check_email_available(fields["email"], user_id=user_id)
-
-        if "username" in fields:
-            self._check_username_available(fields["username"], user_id=user_id)
 
         fields["updated_at"] = datetime.now(timezone.utc)
         updated_user = self.repository.update(user, fields)
@@ -103,20 +92,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         self._ensure_not_default_user(user)
         return self.repository.delete(user)
-
-    def _check_email_available(self, email: str, user_id: int | None = None) -> None:
-        """Raise ``UserEmailAlreadyExistsException`` if ``email`` is taken by another user."""
-
-        existing_user = self.repository.get_by_email(email)
-        if existing_user and (user_id is None or existing_user.id != user_id):
-            raise UserEmailAlreadyExistsException(email)
-
-    def _check_username_available(self, username: str, user_id: int | None = None) -> None:
-        """Raise ``UserNameAlreadyExistsException`` if ``username`` is taken by another user."""
-
-        existing_user = self.repository.get_by_username(username)
-        if existing_user and (user_id is None or existing_user.id != user_id):
-            raise UserNameAlreadyExistsException(name=username)
 
     @staticmethod
     def _ensure_not_default_user(user: User) -> None:

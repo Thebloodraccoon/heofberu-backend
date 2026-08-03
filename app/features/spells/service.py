@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -60,8 +58,6 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         just the ``begin_nested()`` SAVEPOINT.
         """
 
-        self._check_name_available(spell_data.name)
-
         classes = (
             self._resolve_or_raise(
                 self.repository.get_classes_by_ids, spell_data.available_classes, InvalidClassIdsException
@@ -92,15 +88,6 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
 
         return self.response_schema.model_validate(item)
 
-    def update_spell(self, spell_id: int, update_data: SpellUpdate) -> SpellResponse:
-        """Update a spell, re-checking name uniqueness if the name is changing."""
-
-        def check_name_available_if_changing(spell: Spell, fields: dict) -> None:
-            if "name" in fields and fields["name"] != spell.name:
-                self._check_name_available(fields["name"])
-
-        return self.update(spell_id, update_data, before_update=check_name_available_if_changing)
-
     def set_classes(self, spell_id: int, data: ClassAvailabilityUpdate) -> SpellResponse:
         """Fully replace the classes a spell is available to. Empty list = unrestricted."""
 
@@ -118,22 +105,3 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
 
         updated_spell = self.repository.set_races(spell, races)
         return self.response_schema.model_validate(updated_spell)
-
-    def _check_name_available(self, name: str) -> None:
-        """Raise ``SpellNameAlreadyExistsException`` if ``name`` is already in use."""
-
-        if self.repository.get_by_name(name):
-            raise SpellNameAlreadyExistsException(name)
-
-    def _resolve_or_raise(self, lookup_fn: Callable[[list[int]], list], ids: list[int], exception_cls: type[Exception]):
-        """
-        Resolve `ids` via `lookup_fn`, raising `exception_cls(missing_ids)` if any
-        don't resolve. Thin wrapper around `BaseService.resolve_ids` that also
-        owns the "raise on missing" part, since every call site here does both
-        together anyway.
-        """
-        found = lookup_fn(ids)
-        items, missing_ids = self.resolve_ids(found, ids)
-        if missing_ids:
-            raise exception_cls(missing_ids)
-        return items

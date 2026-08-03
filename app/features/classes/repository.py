@@ -16,10 +16,8 @@ class ClassRepository(BaseRepository[Class]):
                 selectinload(Class.spell_slot_progression),
             ],
             search_fields=["name"],
+            unique_fields=["name"]
         )
-
-    def get_by_name(self, name: str) -> Class | None:
-        return self.db.query(Class).filter(Class.name == name).first()
 
     def is_in_use(self, class_id: int) -> bool:
         """

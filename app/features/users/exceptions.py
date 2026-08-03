@@ -22,22 +22,6 @@ class InvalidPasswordException(HTTPException):
         )
 
 
-class UserEmailAlreadyExistsException(HTTPException):
-    def __init__(self, email: str):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"User with email {email} already exists.",
-        )
-
-
-class UserNameAlreadyExistsException(HTTPException):
-    def __init__(self, name: str):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"User with name {name} already exists.",
-        )
-
-
 class DefaultUserProtectedException(HTTPException):
     def __init__(self, message: str = "The default admin user cannot be updated or deleted."):
         super().__init__(

@@ -13,10 +13,8 @@ class SpellRepository(BaseRepository[Spell]):
             db,
             default_load_options=[selectinload(Spell.available_classes), selectinload(Spell.available_races)],
             search_fields=["name"],
+            unique_fields=["name"]
         )
-
-    def get_by_name(self, name: str) -> Spell | None:
-        return self.db.query(Spell).filter(Spell.name == name).first()
 
     def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
         if not class_ids:

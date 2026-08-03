@@ -120,7 +120,7 @@ def create_skill(
     ),
 ):
     """Create a new skill. **GM only.**"""
-    return skill_service.create_skill(skill_data)
+    return skill_service.create(skill_data)
 
 
 @router.patch(
@@ -139,7 +139,7 @@ def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillSe
     Only fields included in the request body are changed; omitted fields
     are left as-is.
     """
-    return skill_service.update_skill(skill_id, update_data)
+    return skill_service.update(skill_id, update_data)
 
 
 @router.delete(

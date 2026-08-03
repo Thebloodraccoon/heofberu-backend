@@ -172,7 +172,7 @@ def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemService
     Only fields included in the request body are changed; omitted fields
     are left as-is.
     """
-    return item_service.update_item(item_id, update_data)
+    return item_service.update(item_id, update_data)
 
 
 @router.delete(
