@@ -2,9 +2,9 @@ from sqlalchemy.orm import Session
 
 from app.features.characters.access import get_character_for_user
 from app.features.characters.attacks.exceptions import AttackNotFoundException
+from app.features.characters.attacks.repository import AttackRepository
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
-from app.features.characters.repositories.attack_repository import AttackRepository
-from app.features.characters.repositories.character_repository import CharacterRepository
+from app.features.characters.core.repository import CharacterRepository
 from app.features.users.schemas import UserResponse
 from app.models.attack_model import Attack
 

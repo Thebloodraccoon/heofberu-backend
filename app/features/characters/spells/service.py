@@ -1,14 +1,14 @@
 from sqlalchemy.orm import Session
 
 from app.features.characters.access import get_character_for_user
-from app.features.characters.repositories.character_repository import CharacterRepository
+from app.features.characters.core.repository import CharacterRepository
+from app.features.characters.spells.eligibility import CharacterSpellEligibilityChecker
 from app.features.characters.spells.exceptions import (
     CharacterSpellAlreadyKnownException,
     CharacterSpellNotFoundException,
     InvalidSpellSlotUsageException,
-    NoSpellSlotAvailableException,
-    SpellNotAvailableToCharacterException,
 )
+from app.features.characters.spells.repository import CharacterSpellRepository
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
@@ -18,9 +18,7 @@ from app.features.characters.spells.schemas import (
 from app.features.spells.exceptions import SpellNotFoundException
 from app.features.spells.repository import SpellRepository
 from app.features.users.schemas import UserResponse
-from app.models.character_model import Character
 from app.models.character_spell_model import CharacterSpell
-from app.models.spell_model import Spell
 
 
 class CharacterSpellService:
@@ -35,28 +33,33 @@ class CharacterSpellService:
     ready to cast. Choosing a spell (``add_known_spell``) is capped by the
     character's spell slot totals: a character may know at most as many
     spells of a given level as they have ``CharacterSpellSlot.total`` at
-    that level (see ``_check_slot_available``). To swap a known spell for
-    a different one, remove the old one and add the new one — that frees
-    up the slot it was occupying. Nothing about knowing a spell resets on
-    rest; only ``CharacterSpellSlot.used`` (actual casting) does, via
+    that level — enforced by ``CharacterSpellEligibilityChecker``, not
+    inline here (see that class). To swap a known spell for a different
+    one, remove the old one and add the new one — that frees up the slot
+    it was occupying. Nothing about knowing a spell resets on rest; only
+    ``CharacterSpellSlot.used`` (actual casting) does, via
     ``CharacterService.rest``, and how that's tracked day-to-day is left
     entirely to the GM.
 
-    ``add_known_spell`` also checks the spell's ``available_classes``/
-    ``available_races`` restrictions (if any) against the character's
-    class/race — see ``_check_spell_available_to_character``.
+    Uses two repositories:
+      - ``CharacterRepository`` — access control only (fetching the
+        owning character to check GM/owner permission).
+      - ``CharacterSpellRepository`` — the actual spell slot / known
+        spell rows.
     """
 
     def __init__(self, db: Session):
         self.repository = CharacterRepository(db)
+        self.character_spell_repository = CharacterSpellRepository(db)
         self.spell_repository = SpellRepository(db)
+        self.eligibility_checker = CharacterSpellEligibilityChecker(self.character_spell_repository)
 
     def get_spell_slots(self, character_id: int, current_user: UserResponse) -> list[SpellSlotResponse]:
         """Return all spell slot entries (by level) for a character."""
 
         get_character_for_user(self.repository, character_id, current_user)
 
-        slots = self.repository.get_all_spell_slots(character_id)
+        slots = self.character_spell_repository.get_all_spell_slots(character_id)
         return [SpellSlotResponse.model_validate(slot) for slot in slots]
 
     def update_spell_slot(
@@ -71,7 +74,7 @@ class CharacterSpellService:
 
         get_character_for_user(self.repository, character_id, current_user)
 
-        existing = self.repository.get_spell_slot(character_id, data.level)
+        existing = self.character_spell_repository.get_spell_slot(character_id, data.level)
         current_total = existing.total if existing else 0
         current_used = existing.used if existing else 0
 
@@ -81,7 +84,7 @@ class CharacterSpellService:
         if new_used < 0 or new_used > new_total:
             raise InvalidSpellSlotUsageException()
 
-        slot = self.repository.upsert_spell_slot(character_id, data.level, new_total, new_used)
+        slot = self.character_spell_repository.upsert_spell_slot(character_id, data.level, new_total, new_used)
         return SpellSlotResponse.model_validate(slot)
 
     def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:
@@ -89,7 +92,7 @@ class CharacterSpellService:
 
         get_character_for_user(self.repository, character_id, current_user)
 
-        known_spells = self.repository.get_known_spells(character_id)
+        known_spells = self.character_spell_repository.get_known_spells(character_id)
         return [CharacterSpellResponse.model_validate(cs) for cs in known_spells]
 
     def add_known_spell(
@@ -104,7 +107,8 @@ class CharacterSpellService:
         class/race restrictions exclude this character, or
         ``NoSpellSlotAvailableException`` if the character already knows
         as many spells of this level as they have slots for — remove one
-        first to make room.
+        first to make room. The latter two checks are delegated to
+        ``CharacterSpellEligibilityChecker``.
         """
 
         character = get_character_for_user(self.repository, character_id, current_user)
@@ -113,14 +117,13 @@ class CharacterSpellService:
         if not spell:
             raise SpellNotFoundException(spell_id=data.spell_id)
 
-        existing = self.repository.get_known_spell(character_id, data.spell_id)
+        existing = self.character_spell_repository.get_known_spell(character_id, data.spell_id)
         if existing:
             raise CharacterSpellAlreadyKnownException(character_id=character_id, spell_id=data.spell_id)
 
-        self._check_spell_available_to_character(character, spell)
-        self._check_slot_available(character_id, spell)
+        self.eligibility_checker.check(character, spell)
 
-        character_spell = self.repository.add_known_spell(character_id, data.spell_id)
+        character_spell = self.character_spell_repository.add_known_spell(character_id, data.spell_id)
         return CharacterSpellResponse.model_validate(character_spell)
 
     def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> bool:
@@ -129,50 +132,13 @@ class CharacterSpellService:
         get_character_for_user(self.repository, character_id, current_user)
 
         character_spell = self._get_known_spell_or_404(character_id, spell_id)
-        return self.repository.remove_known_spell(character_spell)
+        return self.character_spell_repository.remove_known_spell(character_spell)
 
     def _get_known_spell_or_404(self, character_id: int, spell_id: int) -> CharacterSpell:
         """Fetch a known-spell entry, or raise ``CharacterSpellNotFoundException``."""
 
-        character_spell = self.repository.get_known_spell(character_id, spell_id)
+        character_spell = self.character_spell_repository.get_known_spell(character_id, spell_id)
         if not character_spell:
             raise CharacterSpellNotFoundException(character_id=character_id, spell_id=spell_id)
 
         return character_spell
-
-    def _check_spell_available_to_character(self, character: Character, spell: Spell) -> None:
-        """
-        Raise ``SpellNotAvailableToCharacterException`` unless ``spell`` is
-        available to ``character``'s class or race.
-
-        Each dimension (class, race) is independently unrestricted when
-        ``spell.available_classes``/``available_races`` is empty. A spell
-        is available to the character if it is unrestricted (or matches)
-        on *both* dimensions that are actually restricted — i.e. an empty
-        list never excludes, a non-empty list requires membership.
-        """
-
-        class_ok = not spell.available_classes or any(c.id == character.class_id for c in spell.available_classes)
-        race_ok = not spell.available_races or (
-            character.race_id is not None and any(r.id == character.race_id for r in spell.available_races)
-        )
-
-        if not (class_ok and race_ok):
-            raise SpellNotAvailableToCharacterException(character_id=character.id, spell_id=spell.id)
-
-    def _check_slot_available(self, character_id: int, spell: Spell) -> None:
-        """
-        Raise ``NoSpellSlotAvailableException`` unless the character has a
-        free spell slot at ``spell.level`` to know another spell of that
-        level. "Free" = ``CharacterSpellSlot.total`` at that level minus
-        the number of spells already known at that level. A missing slot
-        entry for the level is treated as 0 total slots.
-        """
-
-        slot = self.repository.get_spell_slot(character_id, spell.level)
-        total_slots = slot.total if slot is not None else 0
-
-        known_at_level = self.repository.count_known_spells_at_level(character_id, spell.level)
-
-        if known_at_level >= total_slots:
-            raise NoSpellSlotAvailableException(character_id=character_id, level=spell.level)

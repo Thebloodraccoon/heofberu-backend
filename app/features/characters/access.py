@@ -1,5 +1,5 @@
+from app.features.characters.core.repository import CharacterRepository
 from app.features.characters.exceptions import CharacterAccessDeniedException, CharacterNotFoundException
-from app.features.characters.repositories.character_repository import CharacterRepository
 from app.features.users.schemas import UserResponse
 from app.models.character_model import Character
 
