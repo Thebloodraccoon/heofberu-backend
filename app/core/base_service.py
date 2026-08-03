@@ -2,13 +2,11 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any, Generic
 
-from fastapi import HTTPException
 from pydantic import BaseModel
-from starlette import status
 from typing_extensions import TypeVar
 
 from app.core.base_repository import BaseRepository, ModelType
-from app.core.exceptions import RecordAlreadyExistsError, RecordNotFoundError
+from app.core.exceptions import RecordNotFoundError
 
 CreateSchema = TypeVar("CreateSchema", bound=BaseModel)
 UpdateSchema = TypeVar("UpdateSchema", bound=BaseModel)
@@ -139,11 +137,8 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
     def create(self, create_data: CreateSchema) -> ResponseSchema:
         """Persist a new record and return it serialized. No business-rule validation is done here."""
 
-        try:
-            item = self.repository.create(create_data.model_dump())
-            return self.response_schema.model_validate(item)
-        except RecordAlreadyExistsError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+        item = self.repository.create(create_data.model_dump())
+        return self.response_schema.model_validate(item)
 
     def update(
         self,
@@ -168,11 +163,8 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         if before_update:
             before_update(item, fields)
 
-        try:
-            updated_item = self.repository.update(item, fields)
-            return self.response_schema.model_validate(updated_item)
-        except RecordAlreadyExistsError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+        updated_item = self.repository.update(item, fields)
+        return self.response_schema.model_validate(updated_item)
 
     def delete(self, item_id: int) -> bool:
         """Delete a record by ID, returning ``True`` on success."""
@@ -226,6 +218,10 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         Every repository write inside the ``with`` block MUST pass
         ``commit=False``. Commits once on success; rolls back and
         re-raises on any exception.
+
+        See also: ``BaseRepository._commit_or_rollback`` for the single-write
+        case — use that (indirectly, via ``commit=True``) when only one
+        repository call is involved; use ``_atomic()`` when more than one is.
 
         Example::
 

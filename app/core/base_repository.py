@@ -1,3 +1,5 @@
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any, Generic, Protocol, TypeVar
 
 from sqlalchemy import String, Text, inspect, or_
@@ -189,6 +191,17 @@ class BaseRepository(Generic[ModelType]):
                 if query.first() is not None:
                     raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
 
+    @contextmanager
+    def _commit_or_rollback(self) -> Generator[None, None, None]:
+        """Commit on success, rollback and re-raise on SQLAlchemyError."""
+
+        try:
+            yield
+            self.db.commit()
+        except SQLAlchemyError:
+            self.db.rollback()
+            raise
+
     def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
         """
         Create a record from ``obj_data`` and return it.
@@ -203,12 +216,9 @@ class BaseRepository(Generic[ModelType]):
         self.db.add(db_obj)
 
         if commit:
-            try:
-                self.db.commit()
-                self.db.refresh(db_obj)
-            except SQLAlchemyError:
-                self.db.rollback()
-                raise
+            with self._commit_or_rollback():
+                pass
+            self.db.refresh(db_obj)
         else:
             self.db.flush()
 
@@ -223,25 +233,18 @@ class BaseRepository(Generic[ModelType]):
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        try:
-            self.db.commit()
-            if refresh:
-                self.db.refresh(db_obj)
-        except SQLAlchemyError:
-            self.db.rollback()
-            raise
+        with self._commit_or_rollback():
+            pass
+        if refresh:
+            self.db.refresh(db_obj)
 
         return db_obj
 
     def delete(self, db_obj: ModelType) -> bool:
         """Delete ``db_obj``, returning ``True`` on success."""
 
-        try:
+        with self._commit_or_rollback():
             self.db.delete(db_obj)
-            self.db.commit()
-        except SQLAlchemyError:
-            self.db.rollback()
-            raise
 
         return True
 
