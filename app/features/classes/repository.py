@@ -17,6 +17,7 @@ class ClassRepository(BaseRepository[Class]):
             ],
             search_fields=["name"],
             unique_fields=["name"],
+            check_in_use_on_delete=True,
         )
 
     def is_in_use(self, class_id: int) -> bool:

@@ -207,7 +207,7 @@ def delete_class(class_id: int, class_service: ClassServiceDep, _: GmUserDep):
     available skills. Blocked if the class is still assigned to one or
     more characters.
     """
-    class_service.delete_class(class_id)
+    class_service.delete(class_id)
     return None
 
 

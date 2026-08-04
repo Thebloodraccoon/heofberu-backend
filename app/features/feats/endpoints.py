@@ -185,7 +185,7 @@ def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: GmUserDep):
     the feat is still granted to one or more characters, or referenced by
     a Feature.
     """
-    feat_service.delete_feat(feat_id)
+    feat_service.delete(feat_id)
     return None
 
 

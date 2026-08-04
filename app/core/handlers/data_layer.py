@@ -3,7 +3,13 @@ import logging
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 
-from app.core.exceptions import ErrorResponse, RecordAlreadyExistsError, RecordIdsInvalidError, RecordNotFoundError
+from app.core.exceptions import (
+    ErrorResponse,
+    RecordAlreadyExistsError,
+    RecordIdsInvalidError,
+    RecordInUseError,
+    RecordNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +74,29 @@ async def record_ids_invalid_handler(request: Request, exc: RecordIdsInvalidErro
     )
 
 
+async def record_in_use_handler(request: Request, exc: RecordInUseError):
+    """Handle in-use conflicts raised by BaseRepository.delete."""
+
+    request_id = getattr(request.state, "request_id", None)
+
+    logger.warning(f"In-use conflict: {exc.message} - Path: {request.url.path} - Request ID: {request_id}")
+
+    error_response = ErrorResponse(
+        error_type="RecordInUseError",
+        message=exc.message,
+        status_code=status.HTTP_409_CONFLICT,
+        request_id=request_id,
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content=error_response.to_dict(),
+    )
+
+
 HANDLERS = [
     (RecordAlreadyExistsError, record_already_exists_handler),
     (RecordNotFoundError, record_not_found_handler),
     (RecordIdsInvalidError, record_ids_invalid_handler),
+    (RecordInUseError, record_in_use_handler),
 ]

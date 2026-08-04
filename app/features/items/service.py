@@ -52,24 +52,3 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemBr
 
         item = self.repository.create(payload)
         return self.response_schema.model_validate(item)
-
-    def delete_item(self, item_id: int) -> bool:
-        """
-        Delete an item by ID, raising ``ItemInUseException`` if it's still
-        owned by any character.
-
-        Raises the feature's not-found exception if ``item_id`` doesn't
-        exist. The in-use check happens before deletion, with an
-        ``IntegrityError`` safety net in case of a race condition between
-        the check and the actual delete (the FK is ``ON DELETE RESTRICT``).
-        """
-        item = self._get_or_404(item_id)
-
-        if self.repository.is_in_use(item_id):
-            raise ItemInUseException(item_id=item_id)
-
-        try:
-            return self.repository.delete(item)
-        except IntegrityError:
-            self.repository.db.rollback()
-            raise ItemInUseException(item_id=item_id)

@@ -159,5 +159,5 @@ def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: GmUserDep):
     or a character's skill proficiencies (raises `SkillInUseException`,
     mapped to a 409 by the global exception handler).
     """
-    skill_service.delete_skill(skill_id)
+    skill_service.delete(skill_id)
     return None

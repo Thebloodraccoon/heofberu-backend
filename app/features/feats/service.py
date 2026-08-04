@@ -1,8 +1,6 @@
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.feats.exceptions import FeatInUseException
 from app.features.feats.repository import FeatRepository
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
@@ -59,22 +57,6 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
 
         self.repository.refresh(item)
         return self.response_schema.model_validate(item)
-
-    def delete_feat(self, feat_id: int) -> bool:
-        """
-        Delete a feat by ID, raising ``FeatInUseException`` if it's still
-        granted to any character or referenced by a Feature.
-        """
-        feat = self._get_or_404(feat_id)
-
-        if self.repository.is_in_use(feat_id):
-            raise FeatInUseException(feat_id=feat_id)
-
-        try:
-            return self.repository.delete(feat)
-        except IntegrityError:
-            self.repository.db.rollback()
-            raise FeatInUseException(feat_id=feat_id)
 
     def set_ability_score_increases(self, feat_id: int, data: AbilityScoreIncreasesUpdate) -> FeatResponse:
         """Fully replace a feat's ASI choices."""

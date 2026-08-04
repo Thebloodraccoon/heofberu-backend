@@ -183,7 +183,7 @@ def delete_race(race_id: int, race_service: RaceServiceDep, _: GmUserDep):
     skills. Blocked if the race is still assigned to one or more
     characters.
     """
-    race_service.delete_race(race_id)
+    race_service.delete(race_id)
     return None
 
 

@@ -1,10 +1,6 @@
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.races.exceptions import (
-    RaceInUseException,
-)
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
@@ -94,27 +90,6 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         self.repository.refresh(item)
         return self.response_schema.model_validate(item)
-
-    def delete_race(self, race_id: int) -> bool:
-        """
-        Delete a race by ID, raising ``RaceInUseException`` if it's still
-        assigned to any character.
-
-        Raises the feature's not-found exception if ``race_id`` doesn't
-        exist. The in-use check happens before deletion, with an
-        ``IntegrityError`` safety net in case of a race condition between
-        the check and the actual delete (the FK is ``ON DELETE RESTRICT``).
-        """
-        race = self._get_or_404(race_id)
-
-        if self.repository.is_in_use(race_id):
-            raise RaceInUseException(race_id=race_id)
-
-        try:
-            return self.repository.delete(race)
-        except IntegrityError:
-            self.repository.db.rollback()
-            raise RaceInUseException(race_id=race_id)
 
     def set_ability_bonuses(self, race_id: int, data: AbilityBonusesUpdate) -> RaceResponse:
         """Fully replace a race's ability score bonuses."""

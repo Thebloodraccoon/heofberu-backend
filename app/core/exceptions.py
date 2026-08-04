@@ -109,3 +109,27 @@ class RecordIdsInvalidError(Exception):
         self.ids = ids
         self.message = f"Invalid {model_name} id(s): {ids}."
         super().__init__(self.message)
+
+
+class RecordInUseError(Exception):
+    """
+    Raised when attempting to delete a record that is still referenced
+    elsewhere (e.g. via an ON DELETE RESTRICT foreign key), and therefore
+    cannot be removed.
+
+    Mirrors RecordNotFoundError / RecordIdsInvalidError: a plain,
+    feature-agnostic exception caught by a single handler in data_layer.py
+    and turned into a 409 response, instead of every feature defining its
+    own FooInUseException(HTTPException).
+    """
+
+    def __init__(self, model_name: str, model_id: int | str, reason: str | None = None):
+        self.model_name = model_name
+        self.model_id = model_id
+        self.reason = reason
+        self.message = (
+            f"{model_name} with id {model_id} is still in use and cannot be deleted."
+            if reason is None
+            else f"{model_name} with id {model_id} is still in use and cannot be deleted: {reason}."
+        )
+        super().__init__(self.message)

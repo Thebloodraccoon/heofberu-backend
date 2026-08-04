@@ -37,6 +37,7 @@ class RaceRepository(BaseRepository[Race]):
             ],
             search_fields=["name"],
             unique_fields=["name"],
+            check_in_use_on_delete=True,
         )
 
     def is_in_use(self, race_id: int) -> bool:

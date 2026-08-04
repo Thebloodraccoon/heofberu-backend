@@ -11,16 +11,3 @@ class FeatNotFoundException(HTTPException):
             detail=f"Feat with id {feat_id} not found.",
         )
 
-
-class FeatInUseException(HTTPException):
-    """
-    Raised when attempting to delete a feat that is still granted to one
-    or more characters, and therefore cannot be removed.
-    """
-
-    def __init__(self, feat_id: int):
-        self.feat_id = feat_id
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Feat with id {feat_id} is still in use and cannot be deleted.",
-        )

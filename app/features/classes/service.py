@@ -1,9 +1,7 @@
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
 from app.features.classes.exceptions import (
-    ClassInUseException,
     InvalidClassLevelException,
     SpellcastingAbilityNotPrimaryException,
 )
@@ -31,16 +29,14 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         generic base-class equivalent. ``create_class`` sets all three up
         front, in the same transaction as the class itself (via
         ``BaseService._atomic``);
-      - a delete guard that blocks removing a class still assigned to any
-        character, since the FK is ``ON DELETE RESTRICT``;
       - a consistency check tying ``spellcasting_ability`` to
         ``primary_abilities`` — see ``create_class`` and ``update_class``.
 
-    ``get_all`` and ``get_by_id`` are inherited unchanged from
-    ``BaseService`` — paginated, ordered by ``id`` (the default from
-    ``BaseRepository.get_all``) with all four association-table
-    relationships eager-loaded via ``ClassRepository``'s
-    ``default_load_options``.
+    ``get_all``, ``get_by_id``, and ``delete`` are inherited unchanged from
+    ``BaseService``. ``delete``'s "still in use" guard (raising
+    ``RecordInUseError`` if the class is still assigned to any character)
+    lives in ``ClassRepository`` (``check_in_use_on_delete=True`` +
+    ``is_in_use``), not here — see ``BaseRepository.delete``.
     """
 
     repository: ClassRepository
@@ -147,27 +143,6 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
             character_class = self.repository.set_saving_throws(character_class, update_data.saving_throws)
 
         return self.response_schema.model_validate(character_class)
-
-    def delete_class(self, class_id: int) -> bool:
-        """
-        Delete a class by ID, raising ``ClassInUseException`` if it's still
-        assigned to any character.
-
-        Raises the feature's not-found exception if ``class_id`` doesn't
-        exist. The in-use check happens before deletion, with an
-        ``IntegrityError`` safety net in case of a race condition between
-        the check and the actual delete (the FK is ``ON DELETE RESTRICT``).
-        """
-        character_class = self._get_or_404(class_id)
-
-        if self.repository.is_in_use(class_id):
-            raise ClassInUseException(class_id=class_id)
-
-        try:
-            return self.repository.delete(character_class)
-        except IntegrityError:
-            self.repository.db.rollback()
-            raise ClassInUseException(class_id=class_id)
 
     def set_saving_throws(self, class_id: int, data: SavingThrowsUpdate) -> ClassResponse:
         """Fully replace a class's saving throw proficiencies."""

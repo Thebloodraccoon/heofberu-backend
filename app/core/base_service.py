@@ -168,8 +168,14 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         return self.response_schema.model_validate(updated_item)
 
     def delete(self, item_id: int) -> bool:
-        """Delete a record by ID, returning ``True`` on success."""
+        """
+        Delete a record by ID, returning ``True`` on success.
 
+        If the repository was constructed with ``check_in_use_on_delete=True``,
+        ``self.repository.delete`` itself raises ``RecordInUseError`` when
+        the record is still referenced elsewhere -- no extra handling
+        needed here; see ``BaseRepository.delete``/``is_in_use``.
+        """
         item = self._get_or_404(item_id)
         return self.repository.delete(item)
 

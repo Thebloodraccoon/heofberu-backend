@@ -6,7 +6,7 @@ from sqlalchemy import String, Text, inspect, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import RecordAlreadyExistsError
+from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
 
 
 class ModelProtocol(Protocol):
@@ -37,12 +37,24 @@ class BaseRepository(Generic[ModelType]):
             disable search.
         unique_fields: Columns checked by :meth:`_check_uniqueness` on
             create/update.
+        check_in_use_on_delete: If ``True``, :meth:`delete` calls
+            :meth:`is_in_use` first and raises ``RecordInUseError``
+            instead of deleting. Subclasses opting in MUST override
+            :meth:`is_in_use`; the base implementation raises
+            ``NotImplementedError``.
 
     Example::
 
         class SpellRepository(BaseRepository[Spell]):
             def __init__(self, db: Session):
                 super().__init__(Spell, db)
+
+        class FeatRepository(BaseRepository[Feat]):
+            def __init__(self, db: Session):
+                super().__init__(Feat, db, unique_fields=["name"], check_in_use_on_delete=True)
+
+            def is_in_use(self, model_id: int) -> bool:
+                return self.db.query(CharacterFeat).filter(CharacterFeat.feat_id == model_id).first() is not None
     """
 
     def __init__(
@@ -52,12 +64,14 @@ class BaseRepository(Generic[ModelType]):
         default_load_options: list[Any] | None = None,
         search_fields: list[str] | None = None,
         unique_fields: list[str] | None = None,
+        check_in_use_on_delete: bool = False,
     ):
         self.model = model
         self.db = db
         self._default_load_options = default_load_options or []
         self._search_fields = search_fields if search_fields is not None else self._detect_text_fields()
         self._unique_fields = unique_fields or []
+        self._check_in_use_on_delete = check_in_use_on_delete
 
     def _detect_text_fields(self) -> list[str]:
         """Auto-detect ``String``/``Text`` column names on ``self.model``."""
@@ -240,11 +254,39 @@ class BaseRepository(Generic[ModelType]):
 
         return db_obj
 
-    def delete(self, db_obj: ModelType) -> bool:
-        """Delete ``db_obj``, returning ``True`` on success."""
+    def is_in_use(self, model_id: int) -> bool:
+        """
+        Return whether ``model_id`` is still referenced elsewhere and
+        therefore cannot be deleted.
 
-        with self._commit_or_rollback():
-            self.db.delete(db_obj)
+        Only called by :meth:`delete` when ``check_in_use_on_delete=True``
+        was passed in ``__init__``. Base implementation raises
+        ``NotImplementedError`` -- subclasses opting in via that flag MUST
+        override this with their own FK check (see class docstring).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} was constructed with check_in_use_on_delete=True but does not override "
+            f"is_in_use()."
+        )
+
+    def delete(self, db_obj: ModelType) -> bool:
+        """
+        Delete ``db_obj``, returning ``True`` on success.
+
+        If ``check_in_use_on_delete`` was set in ``__init__``, calls
+        :meth:`is_in_use` first and raises ``RecordInUseError`` instead of
+        deleting -- plus a ``SQLAlchemyError`` safety net around the actual
+        delete, in case of a race between the check and the delete
+        (relevant when the guarded FK is ``ON DELETE RESTRICT``).
+        """
+        if self._check_in_use_on_delete and self.is_in_use(db_obj.id):
+            raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
+
+        try:
+            with self._commit_or_rollback():
+                self.db.delete(db_obj)
+        except SQLAlchemyError:
+            raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
 
         return True
 

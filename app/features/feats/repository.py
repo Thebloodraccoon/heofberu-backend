@@ -22,6 +22,7 @@ class FeatRepository(BaseRepository[Feat]):
             default_load_options=[selectinload(Feat.ability_score_increases)],
             search_fields=["name"],
             unique_fields=["name"],
+            check_in_use_on_delete=True,
         )
 
     def is_in_use(self, feat_id: int) -> bool:
