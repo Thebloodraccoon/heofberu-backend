@@ -1,8 +1,6 @@
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.items.exceptions import ItemInUseException
 from app.features.items.repository import ItemRepository
 from app.features.items.schemas import ItemBriefResponse, ItemCreate, ItemResponse, ItemUpdate
 from app.models.item_model import Item

@@ -11,7 +11,13 @@ from app.models.skill_model import Skill
 
 class SkillRepository(BaseRepository[Skill]):
     def __init__(self, db: Session):
-        super().__init__(Skill, db, search_fields=["name", "key"], unique_fields=["name", "key"], check_in_use_on_delete=True,)
+        super().__init__(
+            Skill,
+            db,
+            search_fields=["name", "key"],
+            unique_fields=["name", "key"],
+            check_in_use_on_delete=True,
+        )
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         if not skill_ids:

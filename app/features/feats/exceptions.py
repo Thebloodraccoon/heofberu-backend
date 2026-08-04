@@ -10,4 +10,3 @@ class FeatNotFoundException(HTTPException):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Feat with id {feat_id} not found.",
         )
-

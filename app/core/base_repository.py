@@ -265,8 +265,7 @@ class BaseRepository(Generic[ModelType]):
         override this with their own FK check (see class docstring).
         """
         raise NotImplementedError(
-            f"{type(self).__name__} was constructed with check_in_use_on_delete=True but does not override "
-            f"is_in_use()."
+            f"{type(self).__name__} was constructed with check_in_use_on_delete=True but does not override is_in_use()."
         )
 
     def delete(self, db_obj: ModelType) -> bool:

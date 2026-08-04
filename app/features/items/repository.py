@@ -7,7 +7,13 @@ from app.models.item_model import Item
 
 class ItemRepository(BaseRepository[Item]):
     def __init__(self, db: Session):
-        super().__init__(Item, db, search_fields=["name"], unique_fields=["name"], check_in_use_on_delete=True,)
+        super().__init__(
+            Item,
+            db,
+            search_fields=["name"],
+            unique_fields=["name"],
+            check_in_use_on_delete=True,
+        )
 
     def is_in_use(self, item_id: int) -> bool:
         """
