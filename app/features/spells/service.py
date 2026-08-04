@@ -1,10 +1,6 @@
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
-from app.features.spells.exceptions import (
-    InvalidClassIdsException,
-    InvalidRaceIdsException,
-)
 from app.features.spells.repository import SpellRepository
 from app.features.spells.schemas import (
     ClassAvailabilityUpdate,
@@ -56,16 +52,12 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         """
 
         classes = (
-            self._resolve_or_raise(
-                self.repository.get_classes_by_ids, spell_data.available_classes, InvalidClassIdsException
-            )
+            self.resolve_ids(self.repository.get_classes_by_ids, spell_data.available_classes, "Classes")
             if spell_data.available_classes
             else None
         )
         races = (
-            self._resolve_or_raise(
-                self.repository.get_races_by_ids, spell_data.available_races, InvalidRaceIdsException
-            )
+            self.resolve_ids(self.repository.get_races_by_ids, spell_data.available_races, "Races")
             if spell_data.available_races
             else None
         )
@@ -89,7 +81,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         """Fully replace the classes a spell is available to. Empty list = unrestricted."""
 
         spell = self._get_or_404(spell_id)
-        classes = self._resolve_or_raise(self.repository.get_classes_by_ids, data.class_ids, InvalidClassIdsException)
+        classes = self.resolve_ids(self.repository.get_classes_by_ids, data.class_ids, "Classes")
 
         updated_spell = self.repository.set_classes(spell, classes)
         return self.response_schema.model_validate(updated_spell)
@@ -98,7 +90,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         """Fully replace the races a spell is available to. Empty list = unrestricted."""
 
         spell = self._get_or_404(spell_id)
-        races = self._resolve_or_raise(self.repository.get_races_by_ids, data.race_ids, InvalidRaceIdsException)
+        races = self.resolve_ids(self.repository.get_races_by_ids, data.race_ids, "Races")
 
         updated_spell = self.repository.set_races(spell, races)
         return self.response_schema.model_validate(updated_spell)

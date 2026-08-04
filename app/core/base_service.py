@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing_extensions import TypeVar
 
 from app.core.base_repository import BaseRepository, ModelType
-from app.core.exceptions import RecordNotFoundError
+from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 
 CreateSchema = TypeVar("CreateSchema", bound=BaseModel)
 UpdateSchema = TypeVar("UpdateSchema", bound=BaseModel)
@@ -15,6 +15,7 @@ BriefSchema = TypeVar("BriefSchema", bound=BaseModel, default=BaseModel)
 BeforeUpdateHook = Callable[[ModelType, dict], None]
 
 ItemSchema = TypeVar("ItemSchema", bound=BaseModel)
+ResolvedItem = TypeVar("ResolvedItem")
 
 
 class Page(BaseModel, Generic[ItemSchema]):
@@ -177,38 +178,27 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         item = self.repository.get_by_id(item_id)
         if not item:
-            raise RecordNotFoundError(model_name=self.repository.model.__name__, id=str(item_id))
+            raise RecordNotFoundError(model_name=self.repository.model.__name__, model_id=str(item_id))
 
         return item
 
     @staticmethod
-    def resolve_ids(items: list, requested_ids: list[int]) -> tuple[list, list[int]]:
-        """
-        Split ``requested_ids`` into found items and missing IDs.
+    def resolve_ids(
+        lookup_fn: Callable[[list[int]], list[ResolvedItem]], ids: list[int], model_name: str
+    ) -> list[ResolvedItem]:
+        """Resolve ``ids`` via ``lookup_fn``, raising ``RecordIdsInvalidError`` if any don't resolve."""
 
-        Args:
-            items: Already-fetched related records (each must expose ``id``).
-            requested_ids: The IDs that were asked for.
-
-        Returns:
-            ``(items, missing_ids)``, preserving ``requested_ids`` order for missing.
-        """
-        found_ids = {item.id for item in items}
-        missing_ids = [requested_id for requested_id in requested_ids if requested_id not in found_ids]
-        return items, missing_ids
-
-    def _resolve_or_raise(
-        self, lookup_fn: Callable[[list[int]], list], ids: list[int], exception_cls: type[Exception]
-    ) -> list:
-        """Resolve ``ids`` via ``lookup_fn``, raising ``exception_cls(missing_ids)`` if any don't resolve."""
         if not ids:
             return []
 
-        found = lookup_fn(ids)
-        items, missing_ids = self.resolve_ids(found, ids)
+        founds = lookup_fn(ids)
+        found_ids = {found.id for found in founds}
+        missing_ids = [item_id for item_id in ids if item_id not in found_ids]
+
         if missing_ids:
-            raise exception_cls(missing_ids)
-        return items
+            raise RecordIdsInvalidError(model_name=model_name, ids=missing_ids)
+
+        return founds
 
     @contextmanager
     def _atomic(self) -> Generator[None, None, None]:

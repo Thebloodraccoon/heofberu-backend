@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
 from app.features.races.exceptions import (
-    InvalidSkillIdsException,
     RaceInUseException,
 )
 from app.features.races.repository import RaceRepository
@@ -75,9 +74,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
         """
 
         skills = (
-            self._resolve_or_raise(
-                self.repository.get_skills_by_ids, race_data.granted_skills, InvalidSkillIdsException
-            )
+            self.resolve_ids(self.repository.get_skills_by_ids, race_data.granted_skills, "Skills")
             if race_data.granted_skills
             else None
         )
@@ -133,7 +130,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         race = self._get_or_404(race_id)
 
-        skills = self._resolve_or_raise(self.repository.get_skills_by_ids, data.skill_ids, InvalidSkillIdsException)
+        skills = self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
 
         updated_race = self.repository.set_skills(race, skills)
         return self.response_schema.model_validate(updated_race)

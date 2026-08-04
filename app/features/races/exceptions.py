@@ -24,14 +24,3 @@ class RaceInUseException(HTTPException):
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Race with id {race_id} is still in use and cannot be deleted.",
         )
-
-
-class InvalidSkillIdsException(HTTPException):
-    """Raised when one or more provided skill IDs do not correspond to existing skills."""
-
-    def __init__(self, skill_ids: list[int]):
-        self.skill_ids = skill_ids
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid skill id(s): {skill_ids}",
-        )

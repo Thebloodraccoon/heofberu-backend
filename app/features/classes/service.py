@@ -5,7 +5,6 @@ from app.core.base_service import BaseService
 from app.features.classes.exceptions import (
     ClassInUseException,
     InvalidClassLevelException,
-    InvalidSkillIdsException,
     SpellcastingAbilityNotPrimaryException,
 )
 from app.features.classes.repository import ClassRepository
@@ -76,9 +75,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         """
 
         skills = (
-            self._resolve_or_raise(
-                self.repository.get_skills_by_ids, class_data.available_skills, InvalidSkillIdsException
-            )
+            self.resolve_ids(self.repository.get_skills_by_ids, class_data.available_skills, "Skills")
             if class_data.available_skills
             else None
         )
@@ -184,7 +181,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         character_class = self._get_or_404(class_id)
 
-        skills = self._resolve_or_raise(self.repository.get_skills_by_ids, data.skill_ids, InvalidSkillIdsException)
+        skills = self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
 
         updated_class = self.repository.set_available_skills(character_class, skills)
         return self.response_schema.model_validate(updated_class)
