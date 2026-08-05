@@ -1,3 +1,5 @@
+"""Character schemas, including the aggregated CharacterResponse."""
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import AbilityScore
@@ -17,6 +19,8 @@ ABILITY_SCORE_MAX = 18
 
 
 class CharacterBase(BaseModel):
+    """Base character fields shared by create and response schemas."""
+
     name: str
     image_path: str | None = None
     level: int = Field(default=1, ge=1, le=20)
@@ -84,22 +88,13 @@ class CharacterUpdate(BaseModel):
     """
     All fields optional — only provided fields are updated (PATCH semantics).
 
-    Skill proficiencies, saving throw proficiencies, spell slots, and
-    known spells are managed through their own dedicated endpoints, not
-    through this schema.
+    Skill proficiencies, saving throw proficiencies, spell slots, known
+    spells, and attacks are managed through their own dedicated endpoints,
+    not through this schema.
 
-    If ``class_id``/``race_id``/``background_id`` are included, they are
-    re-validated for existence the same as on create.
-
-    ``class_id`` is intentionally typed as plain ``int`` (not ``int |
-    None``): the field can be omitted from the request (in which case it
-    keeps its current value — PATCH semantics via ``exclude_unset``), but
-    it cannot be explicitly set to ``null``, since ``Character.class_id``
-    is a required, non-nullable column. Sending ``"class_id": null``
-    is rejected with a 422 at the schema layer rather than reaching the
-    service and failing as a DB ``IntegrityError``. ``race_id`` and
-    ``background_id`` remain ``int | None`` since those columns are
-    nullable — explicitly clearing them is a valid operation.
+    Note: ``class_id``, ``race_id``, and ``background_id`` cannot be
+    changed via this schema — a character's class, race, and background
+    are set at creation and are not editable here.
     """
 
     name: str | None = None
@@ -162,10 +157,12 @@ class CharacterResponse(CharacterBase):
     ``ability_scores`` holds the effective (post-bonus) totals, kept
     distinct from the base ``strength``..``charisma`` fields inherited
     from ``CharacterBase`` so callers can always see both the raw input
-    and the computed result. It's optional in the response only because
-    a freshly-created character may not have a cache row yet on some
-    codepaths (e.g. serialized before the first recalculation) —
-    ``CharacterService`` always populates it after create/update/get by ID.
+    and the computed result. It is optional only on the listing path
+    (``CharacterService.get_characters``), which reads the cache as-is
+    without recomputing — a character never fetched individually (and so
+    with no cache row yet) reports ``None`` here. ``get_character``
+    always refreshes before returning, and create/update recompute
+    whenever the change can affect ability scores.
     """
 
     model_config = ConfigDict(from_attributes=True)

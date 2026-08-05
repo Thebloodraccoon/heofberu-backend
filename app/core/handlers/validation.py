@@ -1,3 +1,5 @@
+"""Exception handler for Pydantic ``ValidationError`` (422 responses)."""
+
 import logging
 
 from fastapi import Request, status

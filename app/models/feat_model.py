@@ -1,3 +1,5 @@
+"""ORM models for feats and their ability-score-increase options."""
+
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 

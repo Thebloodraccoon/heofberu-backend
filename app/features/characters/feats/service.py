@@ -1,3 +1,5 @@
+"""Character feat service: granting, updating, and revoking feats."""
+
 from sqlalchemy.orm import Session
 
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
@@ -37,12 +39,13 @@ class CharacterFeatService:
     than each maintaining its own recalculate-and-upsert logic (see
     that class's docstring for why this was consolidated).
 
-    Uses three collaborators:
+    Uses four collaborators:
       - ``CharacterRepository`` — access control only (fetching the
         owning character to check GM/owner permission via
         ``get_character_for_user``); no feat data lives here anymore.
       - ``CharacterFeatRepository`` — the actual ``character_feats``
         grant rows (CRUD).
+      - ``FeatRepository`` — looking up feats and their ASI choices.
       - ``CharacterAbilityCacheService`` — decides when/how to
         recompute and persist ``character_ability_scores``.
     """
@@ -144,6 +147,7 @@ class CharacterFeatService:
         return result
 
     def _get_grant_or_404(self, character_id: int, character_feat_id: int) -> CharacterFeat:
+        """Fetch a feat grant scoped to the character, or raise ``CharacterFeatNotFoundException``."""
         grant = self.feat_grant_repository.get_character_feat_by_id(character_id, character_feat_id)
         if not grant:
             raise CharacterFeatNotFoundException(character_id=character_id, character_feat_id=character_feat_id)

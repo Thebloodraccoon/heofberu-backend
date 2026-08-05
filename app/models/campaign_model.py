@@ -1,3 +1,5 @@
+"""ORM model for campaigns (GM-run groups of player characters)."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text

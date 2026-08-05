@@ -1,3 +1,5 @@
+"""Character spell service: slots and known spells management."""
+
 from sqlalchemy.orm import Session
 
 from app.features.characters.access import get_character_for_user
@@ -41,11 +43,15 @@ class CharacterSpellService:
     ``CharacterService.rest``, and how that's tracked day-to-day is left
     entirely to the GM.
 
-    Uses two repositories:
+    Uses three repositories:
       - ``CharacterRepository`` — access control only (fetching the
         owning character to check GM/owner permission).
       - ``CharacterSpellRepository`` — the actual spell slot / known
         spell rows.
+      - ``SpellRepository`` — looking up the reference spell when adding
+        a known spell.
+    Eligibility rules (class/race restrictions, slot capacity) are
+    delegated to ``CharacterSpellEligibilityChecker``.
     """
 
     def __init__(self, db: Session):

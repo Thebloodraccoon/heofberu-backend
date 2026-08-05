@@ -1,3 +1,5 @@
+"""Exception handlers for HTTP-layer exceptions (FastAPI and Starlette)."""
+
 import logging
 
 from fastapi import HTTPException, Request

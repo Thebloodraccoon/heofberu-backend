@@ -1,3 +1,5 @@
+"""Skill endpoints: listing and CRUD."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.constants import AbilityScore
@@ -156,8 +158,8 @@ def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: GmUserDep):
     Delete a skill. **GM only.**
 
     Blocked if the skill is still referenced by a race, class, background,
-    or a character's skill proficiencies (raises `SkillInUseException`,
-    mapped to a 409 by the global exception handler).
+    or a character's skill proficiencies (the service raises
+    ``RecordInUseError``, mapped to a 409 by the global exception handler).
     """
     skill_service.delete(skill_id)
     return None

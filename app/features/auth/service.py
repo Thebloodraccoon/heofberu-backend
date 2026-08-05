@@ -1,3 +1,5 @@
+"""Business logic for authentication: login, registration, token refresh, logout."""
+
 from fastapi import Response
 from sqlalchemy.orm import Session
 
@@ -27,6 +29,8 @@ REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 
 class AuthService:
+    """Orchestrates login, registration, token refresh, and logout."""
+
     def __init__(self, db: Session):
         self.user_repo = UserRepository(db)
 
@@ -98,12 +102,13 @@ class AuthService:
         expire naturally.
 
         ``access_token`` is the already-verified token behind the
-        request (from ``CurrentUserDep`` — see ``endpoints.logout``), so
-        no re-verification happens here. ``refresh_token_str`` is read
-        directly from the request cookie; a missing/invalid one is
-        tolerated (nothing to revoke, and a user who already lost their
-        refresh cookie shouldn't be blocked from logging out the access
-        token they do have).
+        request — decoded once by ``get_current_user`` (via
+        ``CurrentUserDep``) and again in ``endpoints.logout`` to hand its
+        ``jti``/TTL here; no re-verification happens in this method.
+        ``refresh_token_str`` is read directly from the request cookie; a
+        missing/invalid one is tolerated (nothing to revoke, and a user
+        who already lost their refresh cookie shouldn't be blocked from
+        logging out the access token they do have).
         """
 
         blacklist_token(access_token.jti, access_token.remaining_seconds, reason="logout")

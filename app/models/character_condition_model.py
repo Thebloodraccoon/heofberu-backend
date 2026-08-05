@@ -1,3 +1,5 @@
+"""ORM model for active conditions/status effects on a character."""
+
 from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 

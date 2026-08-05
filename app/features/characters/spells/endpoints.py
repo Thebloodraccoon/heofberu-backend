@@ -1,3 +1,5 @@
+"""Character spell endpoints: slots, known spells, and learning."""
+
 from fastapi import APIRouter, Body, status
 
 from app.core.dependencies import CharacterSpellServiceDep, CurrentUserDep
@@ -61,7 +63,7 @@ def update_character_spell_slot(
 
     Creates the slot entry if it doesn't exist yet. Slot totals are
     normally kept in sync automatically from the character's class/level
-    progression (on create and on level-up/class change via
+    progression (on create and on level-up via
     `PATCH /characters/{character_id}`) — this endpoint is for spending
     slots as spells are cast, restoring them, or a manual override.
     """

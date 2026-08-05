@@ -1,3 +1,5 @@
+"""Item endpoints: listing and CRUD."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.constants import ItemRarity, ItemType
@@ -188,8 +190,9 @@ def delete_item(item_id: int, item_service: ItemServiceDep, _: GmUserDep):
     """
     Delete an item. **GM only.**
 
-    Blocked if the item is still owned by one or more characters
-    (`ItemInUseException`, mapped to a 409).
+    Blocked if the item is still owned by one or more characters (the
+    service raises ``RecordInUseError``, mapped to a 409 by the global
+    exception handler).
     """
-    item_service.delete_item(item_id)
+    item_service.delete(item_id)
     return None

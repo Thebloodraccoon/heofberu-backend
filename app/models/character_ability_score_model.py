@@ -1,3 +1,5 @@
+"""ORM model for cached, precomputed effective ability scores."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer
@@ -15,9 +17,10 @@ class CharacterAbilityScore(settings.Base):  # type: ignore
 
     This is a cache, not a source of truth: the base values on
     ``Character`` remain authoritative. Rows here are recomputed and
-    upserted by ``CharacterAbilityService.recalculate`` whenever a
-    single character is fetched by ID, and whenever the character (or
-    its class/race/feats) is created or updated. Listing endpoints
+    persisted by ``CharacterAbilityCacheService.refresh`` whenever a
+    single character is fetched by ID, whenever a character is created,
+    whenever a feat is granted/updated/removed, and on character updates
+    that touch the base ability scores or ``race_id``. Listing endpoints
     (``GET /characters/``) intentionally read this cache as-is, without
     recomputing, to avoid N recalculations per page — see
     ``CharacterService.get_characters``.

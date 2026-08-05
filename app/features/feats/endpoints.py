@@ -1,3 +1,5 @@
+"""Feat endpoints: listing, CRUD, and ASI-choice management."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.core.base_service import Page

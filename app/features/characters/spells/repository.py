@@ -1,3 +1,5 @@
+"""Character spell repository: slots and known spells."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_repository import BaseRepository
@@ -21,6 +23,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         super().__init__(CharacterSpellSlot, db)
 
     def get_spell_slot(self, character_id: int, level: str) -> CharacterSpellSlot | None:
+        """Fetch a character's spell slot entry for a level, or None."""
         return (
             self.db.query(CharacterSpellSlot)
             .filter(
@@ -61,6 +64,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         return slot
 
     def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
+        """List all of a character's spell slot entries."""
         return self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).all()
 
     def apply_spell_slot_progression(
@@ -124,9 +128,11 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         self.db.commit()
 
     def get_known_spells(self, character_id: int) -> list[CharacterSpell]:
+        """List all spells known by the character."""
         return self.db.query(CharacterSpell).filter(CharacterSpell.character_id == character_id).all()
 
     def get_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell | None:
+        """Fetch a single known-spell entry, or None if not present."""
         return (
             self.db.query(CharacterSpell)
             .filter(
@@ -137,6 +143,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         )
 
     def add_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell:
+        """Add a spell to the character's known spells."""
         character_spell = CharacterSpell(character_id=character_id, spell_id=spell_id)
         self.db.add(character_spell)
         self.db.commit()
@@ -144,6 +151,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         return character_spell
 
     def remove_known_spell(self, character_spell: CharacterSpell) -> bool:
+        """Remove a spell from the character's known spells."""
         self.db.delete(character_spell)
         self.db.commit()
         return True

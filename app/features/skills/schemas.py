@@ -1,9 +1,13 @@
+"""Request/response schemas for the skill endpoints."""
+
 from pydantic import BaseModel, ConfigDict
 
 from app.constants import AbilityScore
 
 
 class SkillBase(BaseModel):
+    """Base skill fields shared by create and response schemas."""
+
     key: str
     name: str
     ability: AbilityScore
@@ -11,7 +15,7 @@ class SkillBase(BaseModel):
 
 
 class SkillCreate(SkillBase):
-    pass
+    """Payload for creating a skill (GM only)."""
 
 
 class SkillUpdate(BaseModel):
@@ -24,6 +28,8 @@ class SkillUpdate(BaseModel):
 
 
 class SkillResponse(SkillBase):
+    """Full skill representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

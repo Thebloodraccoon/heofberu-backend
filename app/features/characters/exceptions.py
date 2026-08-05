@@ -1,3 +1,5 @@
+"""Character-specific HTTP exceptions."""
+
 from fastapi import HTTPException, status
 
 
@@ -25,8 +27,7 @@ class CharacterAccessDeniedException(HTTPException):
 class InvalidSkillIdsException(HTTPException):
     """
     Raised when one or more provided skill IDs do not correspond to existing
-    skills. Shared by proficiencies (skill_id lookups) and rolls (skill_id
-    lookups).
+    skills. Raised by the proficiencies sub-domain on skill_id lookups.
     """
 
     def __init__(self, skill_ids: list[int]):

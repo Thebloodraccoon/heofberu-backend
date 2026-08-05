@@ -1,8 +1,12 @@
+"""Pydantic settings model: loads runtime configuration from the environment."""
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
+    """Application settings loaded from environment variables / ``.env`` file."""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     # App

@@ -1,3 +1,11 @@
+"""
+Generic service layer: fetch -> validate -> persist -> serialize orchestration.
+
+Provides :class:`BaseService` (a model-generic CRUD orchestrator sitting on
+top of :class:`BaseRepository`), the paginated :class:`Page` envelope, and
+the schema type variables services bind to.
+"""
+
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any, Generic

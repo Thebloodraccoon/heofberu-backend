@@ -1,3 +1,5 @@
+"""Class repository: base CRUD plus abilities/throws/skills/spell-slot management."""
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
@@ -5,6 +7,8 @@ from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, 
 
 
 class ClassRepository(BaseRepository[Class]):
+    """Class-specific repository built on :class:`BaseRepository`."""
+
     def __init__(self, db: Session):
         super().__init__(
             Class,
@@ -91,6 +95,7 @@ class ClassRepository(BaseRepository[Class]):
         return character_class
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
+        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
         if not skill_ids:
             return []
         return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()

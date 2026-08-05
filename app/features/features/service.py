@@ -1,3 +1,5 @@
+"""Feature CRUD service with source_type/FK consistency re-validation."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -18,15 +20,10 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
     Feature-specific CRUD service built on :class:`BaseService`.
 
     Adds behaviors the generic base class doesn't provide:
-      - filtered listing by source_type/class_id/race_id/background_id
-        (``list_filtered``/``list_filtered_brief``), since GM tooling and
-        character-building UI both need "all features for class X" /
-        "all racial traits for race Y" style queries. These are thin
-        named-parameter wrappers around ``BaseService.get_all``/
-        ``list_brief``'s generic ``filters`` dict (which in turn reaches
-        ``FeatureRepository.get_all``, overridden only to sort by name
-        instead of ``id``) — there's no bespoke ``get_filtered`` method
-        anymore, exact-match filtering is handled generically;
+      - filtered listing by source_type/class_id/race_id/background_id/
+        feat_id via the inherited ``get_all``/``list_brief`` generic
+        ``filters`` dict (exact-match, AND'd) — no bespoke filtered
+        methods, exact-match filtering is handled generically;
       - re-validation of source_type/FK consistency on update. ``FeatureCreate``
         already validates this at the schema level (a full record is
         available), but ``FeatureUpdate`` is a partial PATCH payload and

@@ -1,9 +1,13 @@
+"""Request/response schemas for the race endpoints."""
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, RaceSize
 
 
 class RaceBase(BaseModel):
+    """Base race fields shared by create, update, and response schemas."""
+
     name: str
     size: RaceSize = RaceSize.MEDIUM
     speed: int = 30
@@ -48,12 +52,14 @@ class RaceCreate(RaceBase):
 
     @field_validator("ability_bonuses")
     def validate_unique_abilities(cls, value):
+        """Reject bonus lists containing duplicate ability scores."""
         if value is None:
             return value
         return _validate_unique_abilities(value)
 
     @field_validator("granted_skills")
     def validate_unique_skill_ids(cls, value):
+        """Reject lists containing duplicate skill IDs."""
         if value is None:
             return value
         return _validate_unique_skill_ids(value)
@@ -83,10 +89,13 @@ class AbilityBonusesUpdate(BaseModel):
 
     @field_validator("ability_bonuses")
     def validate_unique_abilities(cls, ability_bonuses):
+        """Reject bonus lists containing duplicate ability scores."""
         return _validate_unique_abilities(ability_bonuses)
 
 
 class AbilityBonusResponse(BaseModel):
+    """A race's ability score bonus as returned in responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     ability: AbilityScore
@@ -100,10 +109,13 @@ class SkillsUpdate(BaseModel):
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
+        """Reject lists containing duplicate skill IDs."""
         return _validate_unique_skill_ids(skill_ids)
 
 
 class SkillResponse(BaseModel):
+    """Brief skill representation embedded in race responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -114,6 +126,8 @@ class SkillResponse(BaseModel):
 
 
 class RaceResponse(RaceBase):
+    """Full race representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -126,9 +140,9 @@ class RaceBriefResponse(BaseModel):
     """
     Lightweight listing row: no ability bonuses / granted skills, no traits/description.
 
-    Backed by ``RaceRepository.get_all_brief``, which selects only these
-    columns directly (no relationship loading), so this is cheap even for
-    a large, unpaginated-per-page listing.
+    Served by the inherited ``BaseService.list_brief`` column-select path
+    (``BaseRepository.get_brief``), which loads only these columns, is
+    paginated, and is ordered by ``Race.id``.
     """
 
     model_config = ConfigDict(from_attributes=True)

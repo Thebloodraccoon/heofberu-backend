@@ -1,3 +1,5 @@
+"""Cache-table repository for a character's effective ability scores."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_repository import BaseRepository

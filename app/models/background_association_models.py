@@ -1,3 +1,5 @@
+"""Association table linking backgrounds to the skills they grant proficiency in."""
+
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from app.settings import settings

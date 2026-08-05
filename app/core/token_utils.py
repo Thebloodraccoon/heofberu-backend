@@ -1,3 +1,11 @@
+"""
+JWT creation, verification, and blacklisting utilities.
+
+Implements access/refresh token creation with unique ``jti`` claims,
+signature/expiry/type verification, and Redis-backed revocation of
+individual tokens.
+"""
+
 from datetime import datetime, timedelta, timezone
 import uuid
 

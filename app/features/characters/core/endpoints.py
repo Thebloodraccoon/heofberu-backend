@@ -1,3 +1,5 @@
+"""Character core endpoints: CRUD, HP updates, and resting."""
+
 from fastapi import APIRouter, status
 
 from app.core.dependencies import CharacterServiceDep, CurrentUserDep
@@ -101,13 +103,13 @@ def update_character(
     can only update their own.
 
     Only fields included in the request body are changed; omitted fields
-    are left as-is. Any of `class_id`/`race_id`/`background_id` included
-    in the request are re-validated for existence, same as on create.
+    are left as-is. `class_id`, `race_id`, and `background_id` are not
+    editable here — they're set at creation.
 
-    If `class_id` and/or `level` are part of the update, the character's
-    spell slot totals are re-synced to the (possibly new) class/level's
-    progression — used slots already recorded are preserved unless they'd
-    now exceed the new total, in which case they're clamped down.
+    If `level` is part of the update, the character's spell slot totals
+    are re-synced to the new level's progression — used slots already
+    recorded are preserved unless they'd now exceed the new total, in
+    which case they're clamped down.
 
     Skill proficiencies, saving throw proficiencies, known spells, and
     attacks are managed through their own dedicated endpoints, not

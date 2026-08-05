@@ -1,3 +1,5 @@
+"""Item CRUD service with created_by attribution."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -17,13 +19,10 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemBr
         ``ON DELETE RESTRICT`` (unlike Background, whose FK is
         ``SET NULL`` — see ``BackgroundService`` for the contrasting case).
 
-    ``get_by_id`` and ``list_brief`` are inherited unchanged from
-    ``BaseService`` — items add no relationship fields on top of them, so
-    the generic column-select ``list_brief`` works as-is (contrast with
-    ``SpellService``/``BackgroundService``, which override it because
-    their brief schemas include relationship fields). ``delete`` is
-    overridden as ``delete_item`` to add the in-use guard; endpoints
-    should call ``delete_item``, not the inherited ``delete``.
+    ``get_by_id``, ``list_brief``, and ``delete`` are all inherited
+    unchanged from ``BaseService`` — the in-use delete guard is enforced
+    by ``BaseRepository.delete`` via ``check_in_use_on_delete=True`` +
+    ``ItemRepository.is_in_use``.
     """
 
     repository: ItemRepository

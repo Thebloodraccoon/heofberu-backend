@@ -1,3 +1,5 @@
+"""Feature endpoints: listing, CRUD, and source-consistent filtering."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.constants import FeatureSourceType
@@ -26,7 +28,7 @@ def get_features(
 ):
     """
     Return a paginated list of features, with full detail, ordered by
-    name.
+    id.
 
     Open endpoint, no authentication required.
 
@@ -189,7 +191,7 @@ def create_feature(
       may be set.
 
     Setting a FK that doesn't match `source_type` (or omitting the one
-    that does) is rejected with a 400.
+    that does) is rejected with a 422 validation error at the schema layer.
     """
     return feature_service.create(feature_data)
 

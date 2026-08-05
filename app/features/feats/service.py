@@ -1,3 +1,5 @@
+"""Feat CRUD service including ASI-choice management."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService

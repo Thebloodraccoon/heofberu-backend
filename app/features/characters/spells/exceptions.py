@@ -1,8 +1,16 @@
+"""Exceptions for the character spells sub-domain."""
+
 from fastapi import HTTPException, status
 
 
 class SpellSlotNotFoundException(HTTPException):
-    """Raised when the character has no spell slot entry for the given level."""
+    """
+    Raised when the character has no spell slot entry for the given level.
+
+    Currently unused — ``CharacterSpellService.update_spell_slot`` creates
+    missing entries on demand rather than raising. Reserved for a strict
+    read path.
+    """
 
     def __init__(self, character_id: int, level: str):
         self.character_id = character_id
@@ -50,9 +58,9 @@ class SpellNotAvailableToCharacterException(HTTPException):
     restrictions (if any) don't include the character's class/race.
 
     A spell with an empty list for either dimension is unrestricted on
-    that dimension (see ``SpellRepository``'s docstring convention) — this
-    is only raised when at least one dimension is restricted and the
-    character's class/race isn't in it.
+    that dimension (see ``SpellCreate`` for the empty-list-unrestricted
+    convention) — this is only raised when at least one dimension is
+    restricted and the character's class/race isn't in it.
     """
 
     def __init__(self, character_id: int, spell_id: int):

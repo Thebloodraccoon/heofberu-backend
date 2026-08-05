@@ -1,3 +1,5 @@
+"""Race endpoints: listing, CRUD, and ability-bonus/skill management."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.constants import RaceSize
@@ -33,9 +35,9 @@ def get_races(
 
     Open endpoint, no authentication required.
 
-    `race_size` is an exact match (e.g. `size=MEDIUM`). `search` is a
-    case-insensitive partial match against the race name and can be
-    combined with `size`.
+    `race_size` is an exact match (e.g. `race_size=MEDIUM`). `search` is a
+    case-insensitive partial match against the race name; both can be
+    combined.
 
     Response is `{items, total, page, size}` — `total` is the count of
     matching races across every page, not just this one.
@@ -64,9 +66,9 @@ def get_races_brief(
 
     Open endpoint, no authentication required.
 
-    `race_size` is an exact match (e.g. `size=MEDIUM`). `search` is a
-    case-insensitive partial match against the race name and can be
-    combined with `size`.
+    `race_size` is an exact match (e.g. `race_size=MEDIUM`). `search` is a
+    case-insensitive partial match against the race name; both can be
+    combined.
 
     Response is `{items, total, page, size}`, same shape as `GET /races/`.
 

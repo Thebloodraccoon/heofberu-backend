@@ -1,7 +1,11 @@
+"""Request/response schemas for the background endpoints."""
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class BackgroundBase(BaseModel):
+    """Base background fields shared by create, update, and response schemas."""
+
     name: str
     feature_name: str = ""
     feature_description: str = ""
@@ -35,6 +39,7 @@ class BackgroundCreate(BackgroundBase):
 
     @field_validator("granted_skills")
     def validate_unique_skill_ids(cls, value):
+        """Reject lists containing duplicate skill IDs."""
         if value is None:
             return value
         return _validate_unique_skill_ids(value)
@@ -67,10 +72,13 @@ class SkillsUpdate(BaseModel):
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
+        """Reject lists containing duplicate skill IDs."""
         return _validate_unique_skill_ids(skill_ids)
 
 
 class SkillResponse(BaseModel):
+    """Brief skill representation embedded in background responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -80,6 +88,8 @@ class SkillResponse(BaseModel):
 
 
 class BackgroundResponse(BackgroundBase):
+    """Full background representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

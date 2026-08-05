@@ -1,3 +1,5 @@
+"""Registers the global exception handlers on the FastAPI application."""
+
 from app.core.handlers import ALL_HANDLERS
 
 

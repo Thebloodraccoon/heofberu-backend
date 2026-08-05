@@ -1,3 +1,11 @@
+"""
+Application exceptions and the standardized error response format.
+
+Defines the ``ErrorResponse`` payload shape plus the auth/access exceptions
+(HTTP-layer) and the feature-agnostic data-layer exceptions that the global
+handlers in ``app/core/handlers`` map to HTTP responses.
+"""
+
 from datetime import datetime
 from typing import Any
 
@@ -48,6 +56,8 @@ class ErrorResponse:
 
 
 class GmAccessException(HTTPException):
+    """Raised (403) when a non-GM user tries to access a GM-only endpoint."""
+
     def __init__(self):
         super().__init__(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -56,6 +66,8 @@ class GmAccessException(HTTPException):
 
 
 class InvalidCredentialsException(HTTPException):
+    """Raised (401) when the provided email or password is incorrect."""
+
     def __init__(self):
         super().__init__(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,6 +76,8 @@ class InvalidCredentialsException(HTTPException):
 
 
 class InvalidTokenException(HTTPException):
+    """Raised (401) when a token is missing, malformed, expired, or of the wrong type."""
+
     def __init__(self):
         super().__init__(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -73,6 +87,8 @@ class InvalidTokenException(HTTPException):
 
 
 class InvalidEmailException(HTTPException):
+    """Raised (400) when a supplied email address fails validation."""
+
     def __init__(self, message: str = "Invalid email address"):
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,

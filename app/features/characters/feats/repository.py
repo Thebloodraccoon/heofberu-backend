@@ -1,3 +1,5 @@
+"""Character feat repository: feat-grant row CRUD."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_repository import BaseRepository

@@ -1,3 +1,5 @@
+"""Character proficiency repository: skill and saving-throw full-replace."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_repository import BaseRepository
@@ -25,6 +27,7 @@ class CharacterProficiencyRepository(BaseRepository[CharacterSkillProficiency]):
         super().__init__(CharacterSkillProficiency, db)
 
     def get_skill_proficiency(self, character_id: int, skill_id: int) -> CharacterSkillProficiency | None:
+        """Fetch a single skill proficiency row, or None if not present."""
         return (
             self.db.query(CharacterSkillProficiency)
             .filter(
@@ -35,6 +38,7 @@ class CharacterProficiencyRepository(BaseRepository[CharacterSkillProficiency]):
         )
 
     def get_saving_throw_proficiency(self, character_id: int, ability: str) -> CharacterSavingThrowProficiency | None:
+        """Fetch a single saving throw proficiency row, or None if not present."""
         return (
             self.db.query(CharacterSavingThrowProficiency)
             .filter(

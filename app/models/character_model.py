@@ -1,3 +1,5 @@
+"""ORM model for the D&D 5e character sheet."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import (

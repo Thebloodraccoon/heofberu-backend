@@ -1,3 +1,5 @@
+"""ORM model for features acquired by a character (with per-character notes)."""
+
 from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 

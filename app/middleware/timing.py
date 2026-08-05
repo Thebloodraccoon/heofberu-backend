@@ -1,3 +1,5 @@
+"""Middleware that measures and reports request processing time."""
+
 from collections.abc import Callable
 import logging
 import time
@@ -17,6 +19,8 @@ class TimingMiddleware(BaseHTTPMiddleware):
         self.slow_threshold = slow_threshold
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Measure processing time, set the ``X-Process-Time`` header, and log slow requests."""
+
         start_time = time.time()
 
         response = await call_next(request)

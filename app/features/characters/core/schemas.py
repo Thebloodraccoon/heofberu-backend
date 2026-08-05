@@ -1,3 +1,5 @@
+"""Schemas for HP updates and rests."""
+
 from pydantic import BaseModel
 
 
@@ -14,4 +16,6 @@ class HpUpdate(BaseModel):
 
 
 class RestRequest(BaseModel):
+    """Rest request body: ``type`` must be ``"short"`` or ``"long"``."""
+
     type: str  # "short" or "long"

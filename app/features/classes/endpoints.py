@@ -1,3 +1,5 @@
+"""Class endpoints: listing, CRUD, and ability/throw/skill/progression management."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.core.base_service import Page
@@ -27,7 +29,7 @@ def get_classes(
     search: str | None = None,
 ):
     """
-    Return a paginated list of classes, ordered by name, each with full
+    Return a paginated list of classes, ordered by id, each with full
     detail — including primary abilities, saving throws, and available
     skills.
 

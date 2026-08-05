@@ -1,3 +1,5 @@
+"""ORM model for the class spell-slot progression reference table."""
+
 from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 

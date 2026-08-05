@@ -1,3 +1,5 @@
+"""Skill repository: base CRUD plus reference lookups and in-use guard."""
+
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,8 @@ from app.models.skill_model import Skill
 
 
 class SkillRepository(BaseRepository[Skill]):
+    """Skill-specific repository built on :class:`BaseRepository`."""
+
     def __init__(self, db: Session):
         super().__init__(
             Skill,
@@ -20,6 +24,7 @@ class SkillRepository(BaseRepository[Skill]):
         )
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
+        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
         if not skill_ids:
             return []
         return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()

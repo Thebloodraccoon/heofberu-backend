@@ -1,3 +1,11 @@
+"""
+Generic repository layer: common CRUD operations for SQLAlchemy models.
+
+Provides :class:`BaseRepository` (a reusable, model-generic CRUD base with
+filtering, search, pagination, uniqueness checks and delete-in-use guards)
+plus the model protocol and type aliases it relies on.
+"""
+
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any, Generic, Protocol, TypeVar
@@ -296,6 +304,11 @@ class BaseRepository(Generic[ModelType]):
         return db_obj
 
     def exists_by_id(self, model_id: int) -> bool:
-        """Return whether a record with ``model_id`` exists, without loading it."""
+        """
+        Return whether a record with ``model_id`` exists, as a bool.
+
+        The presence check fetches the row via ``first()`` and discards it,
+        so the record is hydrated even though only its existence is used.
+        """
 
         return self.db.query(self.model).filter(self.model.id == model_id).first() is not None

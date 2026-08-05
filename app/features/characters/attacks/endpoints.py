@@ -1,3 +1,5 @@
+"""Character attack endpoints: listing and CRUD."""
+
 from fastapi import APIRouter, status
 
 from app.core.dependencies import CharacterAttackServiceDep, CurrentUserDep

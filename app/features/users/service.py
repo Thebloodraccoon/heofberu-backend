@@ -1,3 +1,5 @@
+"""User CRUD service with password hashing and admin/self-deletion guards."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -20,11 +22,13 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
     User-specific CRUD service built on :class:`BaseService`.
 
     Adds behaviors the generic base class doesn't provide:
-      - a uniqueness check on ``email`` and ``username`` before create/update;
       - password hashing on create;
       - protection of the seeded default admin user from update/delete;
       - a self-deletion guard on delete;
       - lookup by email, used by the auth feature.
+
+    (Email/username uniqueness is enforced by ``UserRepository`` via
+    ``BaseRepository._check_uniqueness`` on create/update.)
     """
 
     repository: UserRepository
@@ -80,9 +84,9 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         """
         Delete a user by ID.
 
-        Raises the feature's not-found exception if ``user_id`` doesn't
-        exist. Blocked for self-deletion and for the seeded default admin
-        user.
+        Raises ``RecordNotFoundError`` (mapped to a 404) if ``user_id``
+        doesn't exist. Blocked for self-deletion and for the seeded default
+        admin user.
         """
 
         user = self._get_or_404(user_id)

@@ -1,9 +1,13 @@
+"""Request/response schemas for the class endpoints."""
+
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import AbilityScore, DiceType, SpellLevel
 
 
 class ClassBase(BaseModel):
+    """Base class fields shared by create, update, and response schemas."""
+
     name: str
     hit_dice: DiceType
     skill_choice_count: int = 2
@@ -55,20 +59,24 @@ class ClassCreate(ClassBase):
 
     @field_validator("primary_abilities")
     def validate_unique_primary_abilities(cls, primary_abilities):
+        """Reject lists containing duplicate abilities."""
         return _validate_unique_primary_abilities(primary_abilities)
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws(cls, saving_throws):
+        """Reject lists containing duplicate abilities."""
         return _validate_unique_saving_throws(saving_throws)
 
     @field_validator("available_skills")
     def validate_unique_available_skills(cls, available_skills):
+        """Reject lists containing duplicate skill IDs."""
         if available_skills is None:
             return available_skills
         return _validate_unique_skill_ids(available_skills)
 
     @model_validator(mode="after")
     def validate_spellcasting_ability_is_primary(self):
+        """Ensure a non-null ``spellcasting_ability`` is also a primary ability."""
         if self.spellcasting_ability is not None and self.spellcasting_ability not in self.primary_abilities:
             raise ValueError(
                 f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
@@ -111,18 +119,21 @@ class ClassUpdate(BaseModel):
 
     @field_validator("primary_abilities")
     def validate_unique_primary_abilities(cls, primary_abilities):
+        """Reject lists containing duplicate abilities."""
         if primary_abilities is None:
             return primary_abilities
         return _validate_unique_primary_abilities(primary_abilities)
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws_update(cls, saving_throws):
+        """Reject lists containing duplicate abilities."""
         if saving_throws is None:
             return saving_throws
         return _validate_unique_saving_throws(saving_throws)
 
     @model_validator(mode="after")
     def validate_spellcasting_ability_is_primary_if_both_set(self):
+        """Ensure a non-null ``spellcasting_ability`` is primary when both are provided."""
         if (
             self.spellcasting_ability is not None
             and self.primary_abilities is not None
@@ -141,6 +152,7 @@ class SavingThrowsUpdate(BaseModel):
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws(cls, saving_throws):
+        """Reject lists containing duplicate abilities."""
         return _validate_unique_saving_throws(saving_throws)
 
 
@@ -151,6 +163,7 @@ class AvailableSkillsUpdate(BaseModel):
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
+        """Reject lists containing duplicate skill IDs."""
         return _validate_unique_skill_ids(skill_ids)
 
 
@@ -180,6 +193,7 @@ class SpellSlotProgressionUpdate(BaseModel):
 
     @field_validator("slots")
     def validate_unique_spell_levels(cls, slots):
+        """Reject lists containing duplicate ``spell_level`` entries."""
         levels = [entry.spell_level for entry in slots]
         if len(levels) != len(set(levels)):
             raise ValueError("Duplicate spell_level entries are not allowed.")
@@ -187,6 +201,8 @@ class SpellSlotProgressionUpdate(BaseModel):
 
 
 class SpellSlotProgressionResponse(BaseModel):
+    """Spell slots granted at one class level, as returned in responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     class_level: int
@@ -195,18 +211,24 @@ class SpellSlotProgressionResponse(BaseModel):
 
 
 class PrimaryAbilityResponse(BaseModel):
+    """A class's primary ability score, as returned in responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     ability: AbilityScore
 
 
 class SavingThrowResponse(BaseModel):
+    """A class's saving throw proficiency, as returned in responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     ability: AbilityScore
 
 
 class SkillResponse(BaseModel):
+    """Brief skill representation embedded in class responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -217,6 +239,8 @@ class SkillResponse(BaseModel):
 
 
 class ClassResponse(ClassBase):
+    """Full class representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

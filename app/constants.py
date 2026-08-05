@@ -1,12 +1,24 @@
+"""
+Shared enums and helper constants used across the application.
+
+Contains the canonical domain enumerations (roles, dice, spell and item
+metadata, conditions, ...) together with backward-compatible string lists
+and helpers that build raw SQL check constraints.
+"""
+
 from enum import Enum
 
 
 class UserRole(str, Enum):
+    """Role of a registered user: GM or player."""
+
     GM = "gm"
     PLAYER = "player"
 
 
 class RaceSize(str, Enum):
+    """Creature size category of a race, from Tiny to Gargantuan."""
+
     TINY = "TINY"
     SMALL = "SMALL"
     MEDIUM = "MEDIUM"
@@ -16,6 +28,8 @@ class RaceSize(str, Enum):
 
 
 class AbilityScore(str, Enum):
+    """The six D&D ability scores (Strength through Charisma)."""
+
     STR = "STR"
     DEX = "DEX"
     CON = "CON"
@@ -25,6 +39,8 @@ class AbilityScore(str, Enum):
 
 
 class DiceType(str, Enum):
+    """Standard polyhedral die types used for damage and ability rolls."""
+
     D4 = "D4"
     D6 = "D6"
     D8 = "D8"
@@ -35,11 +51,15 @@ class DiceType(str, Enum):
 
 
 class AttackType(str, Enum):
+    """Category of an attack: melee or ranged."""
+
     MELEE_ATTACK = "MELEE_ATTACK"
     RANGED_ATTACK = "RANGED_ATTACK"
 
 
 class SpellLevel(str, Enum):
+    """Spell level, including cantrips (level 0)."""
+
     CANTRIP = "CANTRIP"
     LEVEL_1 = "LEVEL_1"
     LEVEL_2 = "LEVEL_2"
@@ -53,6 +73,8 @@ class SpellLevel(str, Enum):
 
 
 class SpellSchool(str, Enum):
+    """The eight schools of magic."""
+
     ABJURATION = "ABJURATION"
     CONJURATION = "CONJURATION"
     DIVINATION = "DIVINATION"
@@ -64,6 +86,8 @@ class SpellSchool(str, Enum):
 
 
 class SpellCastTime(str, Enum):
+    """Time required to cast a spell (action, bonus action, reaction, special)."""
+
     ACTION = "ACTION"
     BONUS_ACTION = "BONUS_ACTION"
     REACTION = "REACTION"
@@ -71,6 +95,8 @@ class SpellCastTime(str, Enum):
 
 
 class SpellDuration(str, Enum):
+    """Duration of a spell's effect (instantaneous to until dispelled)."""
+
     INSTANTANEOUS = "INSTANTANEOUS"
     ONE_ROUND = "ONE_ROUND"
     ONE_MINUTE = "ONE_MINUTE"
@@ -85,12 +111,16 @@ class SpellDuration(str, Enum):
 
 
 class Component(str, Enum):
+    """Spell components: verbal, somatic, material."""
+
     VERBAL = "VERBAL"
     SOMATIC = "SOMATIC"
     MATERIAL = "MATERIAL"
 
 
 class SpellRangeType(str, Enum):
+    """Spell range category: self, touch, ranged, sight, unlimited."""
+
     SELF = "SELF"
     TOUCH = "TOUCH"
     RANGED = "RANGED"
@@ -99,6 +129,8 @@ class SpellRangeType(str, Enum):
 
 
 class DamageType(str, Enum):
+    """Damage types: physical (slashing, piercing, bludgeoning) and elemental."""
+
     SLASHING = "SLASHING"
     PIERCING = "PIERCING"
     BLUDGEONING = "BLUDGEONING"
@@ -115,11 +147,15 @@ class DamageType(str, Enum):
 
 
 class HealingTarget(str, Enum):
+    """What a healing effect restores: HP or temporary HP."""
+
     HP = "HP"
     TEMP_HP = "TEMP_HP"
 
 
 class ItemType(str, Enum):
+    """Categories of items: weapons, armor, consumables, magic items, etc."""
+
     WEAPON = "WEAPON"
     ARMOR = "ARMOR"
     SHIELD = "SHIELD"
@@ -138,6 +174,8 @@ class ItemType(str, Enum):
 
 
 class ItemRarity(str, Enum):
+    """Rarity of a magic item; NONE marks non-magical mundane items."""
+
     COMMON = "COMMON"
     UNCOMMON = "UNCOMMON"
     RARE = "RARE"
@@ -148,6 +186,8 @@ class ItemRarity(str, Enum):
 
 
 class FeatureSourceType(str, Enum):
+    """Origin of a feature: class, subclass, race, background, feat, other."""
+
     CLASS = "CLASS"
     SUBCLASS = "SUBCLASS"
     RACE = "RACE"
@@ -157,6 +197,8 @@ class FeatureSourceType(str, Enum):
 
 
 class ConditionType(str, Enum):
+    """The standard D&D conditions a creature can be under."""
+
     BLINDED = "BLINDED"
     CHARMED = "CHARMED"
     DEAFENED = "DEAFENED"

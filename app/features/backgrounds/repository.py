@@ -1,3 +1,5 @@
+"""Background repository: base CRUD plus granted-skill management."""
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
@@ -6,6 +8,8 @@ from app.models.skill_model import Skill
 
 
 class BackgroundRepository(BaseRepository[Background]):
+    """Background-specific repository built on :class:`BaseRepository`."""
+
     def __init__(self, db: Session):
         super().__init__(
             Background,
@@ -16,6 +20,7 @@ class BackgroundRepository(BaseRepository[Background]):
         )
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
+        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
         if not skill_ids:
             return []
 

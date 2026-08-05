@@ -1,3 +1,5 @@
+"""Shared helpers used by the middleware modules."""
+
 from fastapi import Request
 
 

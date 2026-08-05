@@ -1,3 +1,5 @@
+"""Background CRUD service including granted-skill management."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -32,11 +34,10 @@ class BackgroundService(
     used as-is, no ``delete_background`` override needed.
 
     ``get_by_id`` and ``list_brief`` are inherited unchanged from
-    ``BaseService``. ``list_brief`` derives its columns from
-    ``BackgroundBriefResponse``'s field names — since ``granted_skills``
-    is a relationship rather than a plain column, this override replaces
-    the generic column-select query with one that loads full rows instead
-    (see ``SpellService.list_brief`` for the same situation and reasoning).
+    ``BaseService``. Note that the inherited ``list_brief`` derives its
+    columns from ``BackgroundBriefResponse``'s field names, which include
+    the ``granted_skills`` relationship — unlike brief schemas made up of
+    plain columns only.
     """
 
     repository: BackgroundRepository

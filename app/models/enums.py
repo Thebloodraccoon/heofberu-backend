@@ -1,3 +1,10 @@
+"""
+SQLAlchemy enum column types mapped from the shared domain enums.
+
+Each entry is a native PostgreSQL ENUM (``create_type=False``); the actual
+``CREATE TYPE`` statements live in the Alembic migrations.
+"""
+
 from sqlalchemy import Enum as SAEnum
 
 from app.constants import (

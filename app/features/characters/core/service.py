@@ -1,3 +1,5 @@
+"""Character core service: CRUD, HP management, and resting."""
+
 from sqlalchemy.orm import Session
 
 from app.features.backgrounds.exceptions import BackgroundNotFoundException
@@ -35,15 +37,15 @@ class CharacterService:
 
     Handles the character record itself, plus validating its foreign
     keys (class/race/background). Proficiencies, spell slots, known
-    spells, attacks, feats, and dice rolling each live in their own
-    subdomain package since they're independent subdomains with their
-    own schemas/services.
+    spells, attacks, and feats each live in their own subdomain package
+    since they're independent subdomains with their own
+    schemas/services.
 
     Ability score cache policy is decided by ``CharacterAbilityCacheService``
     (see that class), not here — this service only tells it *when* a
-    write might have touched ability scores (via
-    ``ABILITY_AFFECTING_FIELDS``), same field set the feat subdomain
-    uses when granting/revoking a feat with an ASI choice:
+    write might have touched ability scores, via
+    ``CharacterAbilityCacheService.fields_affect_ability_scores`` (the
+    ``ABILITY_AFFECTING_FIELDS`` set):
       - ``get_character`` (single record, by ID) always calls
         ``refresh`` before returning — this is the one read path
         guaranteed to be fresh, and it's cheap since it's scoped to one
@@ -53,9 +55,10 @@ class CharacterService:
         recalculations per page. A character that's never been fetched
         individually (and therefore has no cache row yet) shows
         ``ability_scores`` as ``None``.
-      - ``create_character`` and ``update_character`` always refresh
-        after writing, so a client reading the response right after a
-        write sees correct totals without needing a follow-up GET.
+      - ``create_character`` always refreshes after writing.
+        ``update_character`` refreshes only when the PATCHed fields
+        intersect ``ABILITY_AFFECTING_FIELDS``; otherwise the existing
+        cache row is read as-is.
 
     Spell slot progression policy (see
     ``ClassRepository.get_spell_slot_progression`` /
@@ -65,15 +68,17 @@ class CharacterService:
         already has ``CharacterSpellSlot`` rows on creation instead of
         needing a manual PATCH to ``/spell-slots`` first.
       - ``update_character`` re-applies the progression whenever
-        ``class_id`` and/or ``level`` is part of the PATCH — a level-up
-        (or class change) grants/adjusts slot totals automatically. Any
-        ``used`` already recorded on a level is preserved unless it would
-        now exceed the new ``total``, in which case it's clamped down —
-        see ``apply_spell_slot_progression`` for the exact semantics.
-      - A non-caster class (or any class/level pair with no progression
-        rows) simply applies an empty mapping, which zeroes out any
-        slots the character previously had — appropriate for e.g.
-        multiclassing away from a caster.
+        ``level`` is part of the PATCH — a level-up grants/adjusts slot
+        totals automatically. (``class_id`` is not editable via the
+        update schema; a class change requires recreating the character.)
+        Any ``used`` already recorded on a level is preserved unless it
+        would now exceed the new ``total``, in which case it's clamped
+        down — see ``apply_spell_slot_progression`` for the exact
+        semantics.
+      - A class/level pair with no progression rows simply applies an
+        empty mapping, which zeroes out any slots the character
+        previously had — appropriate for e.g. multiclassing away from a
+        caster.
     """
 
     def __init__(self, db: Session):
@@ -137,11 +142,11 @@ class CharacterService:
         """
         Partially update a character, enforcing GM/owner access.
 
-        Any of ``class_id``/``race_id``/``background_id`` included in the
-        request are re-validated for existence, same as on create. If
-        ``class_id`` and/or ``level`` are part of the update, the
-        character's spell slot totals are re-synced to the (possibly new)
-        class/level's progression — see class docstring.
+        Only fields present in ``CharacterUpdate`` are changeable —
+        ``class_id``, ``race_id``, and ``background_id`` are set at
+        creation and cannot be changed here. If ``level`` is part of the
+        update, the character's spell slot totals are re-synced to the
+        new level's progression — see class docstring.
         """
 
         character = get_character_for_user(self.repository, character_id, current_user)
@@ -238,10 +243,9 @@ class CharacterService:
         ``race_id``/``background_id`` additionally accept ``None`` to mean
         "explicitly clearing the field" (also skip validation — there's
         nothing to check, since those columns are nullable). ``class_id``
-        has no such case: ``Character.class_id`` is required and
-        non-nullable, and ``CharacterUpdate.class_id`` rejects an explicit
-        ``null`` at the schema layer, so by the time this runs it's either
-        ``"unset"`` or a concrete id to check.
+        never receives ``None``: it is required on create and is not a
+        field of ``CharacterUpdate``, so it is either ``"unset"`` or a
+        concrete id to check.
         """
 
         if class_id != "unset" and not self.class_repository.exists_by_id(class_id):

@@ -1,3 +1,5 @@
+"""Character lookup and ownership access-control helpers."""
+
 from app.features.characters.core.repository import CharacterRepository
 from app.features.characters.exceptions import CharacterAccessDeniedException, CharacterNotFoundException
 from app.features.users.schemas import UserResponse

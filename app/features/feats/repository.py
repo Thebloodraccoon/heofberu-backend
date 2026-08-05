@@ -1,3 +1,5 @@
+"""Feat repository: base CRUD plus ASI-choice management and in-use guard."""
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
@@ -28,9 +30,9 @@ class FeatRepository(BaseRepository[Feat]):
     def is_in_use(self, feat_id: int) -> bool:
         """
         Check whether the feat is currently granted to any character
-        (character_feats.feat_id) or referenced by a Feature
-        (features.feat_id), either of which would block deletion at the
-        DB level via ON DELETE RESTRICT/CASCADE respectively.
+        (character_feats.feat_id, ON DELETE RESTRICT) or referenced by a
+        Feature (features.feat_id, ON DELETE CASCADE), either of which blocks
+        deletion by this guard.
         """
         granted = self.db.query(CharacterFeat).filter(CharacterFeat.feat_id == feat_id).first() is not None
         referenced = self.db.query(Feature).filter(Feature.feat_id == feat_id).first() is not None

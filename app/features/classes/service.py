@@ -1,3 +1,5 @@
+"""Class CRUD service including abilities/throws/skills/spell-slot management."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService

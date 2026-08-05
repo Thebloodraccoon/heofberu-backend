@@ -1,3 +1,5 @@
+"""Feat-specific HTTP exceptions."""
+
 from fastapi import HTTPException, status
 
 

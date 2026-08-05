@@ -1,3 +1,5 @@
+"""ORM models for character sub-resources: skills, saving throws, spell slots, feats."""
+
 from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 
@@ -57,8 +59,9 @@ class CharacterSpellSlot(settings.Base):  # type: ignore
 class CharacterFeat(settings.Base):  # type: ignore
     """
     A feat granted to a character. Uses a surrogate key rather than a
-    composite (character_id, feat_id) PK because some feats can be taken
-    more than once (e.g. Elemental Adept for different damage types).
+    composite (character_id, feat_id) PK so the association stays open
+    for future per-grant fields. A character may hold each feat at most
+    once — enforced by the unique constraint on (character_id, feat_id).
 
     `ability_score_increase_id` records which of the feat's ASI choices
     (see FeatAbilityScoreIncrease) the player selected, if any; NULL if

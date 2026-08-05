@@ -1,3 +1,5 @@
+"""Character feat endpoints: grant, update, and revoke."""
+
 from fastapi import APIRouter, status
 
 from app.core.dependencies import CharacterFeatServiceDep, CurrentUserDep

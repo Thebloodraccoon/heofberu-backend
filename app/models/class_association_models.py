@@ -1,3 +1,5 @@
+"""ORM models/tables for class sub-resources: available skills, primary abilities, saving throws."""
+
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from app.models.enums import AbilityScoreType

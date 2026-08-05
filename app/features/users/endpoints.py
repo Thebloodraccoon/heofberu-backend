@@ -1,3 +1,5 @@
+"""User management endpoints (GM-only)."""
+
 from fastapi import APIRouter, Query, status
 
 from app.constants import UserRole
@@ -12,7 +14,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 def get_all_users(
     user_service: UserServiceDep,
     _: GmUserDep,
-    page: int = Query(1, ge=0, description="Page number (0-indexed)"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
     role: UserRole | None = Query(None, description="Filter by exact role"),
     search: str | None = Query(None, description="Case-insensitive partial match against username/email"),

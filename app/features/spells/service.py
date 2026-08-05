@@ -1,3 +1,5 @@
+"""Spell CRUD service with transactional class/race availability setup."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -18,8 +20,8 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
     Spell-specific CRUD service built on :class:`BaseService`.
 
     Adds behaviors the generic base class doesn't provide:
-      - a plain, unpaginated ``get_all`` (spells are listed in full, sorted
-        by name, via ``SpellRepository.get_all``);
+      - the inherited paginated ``get_all``/``list_brief`` (ordered by
+        ``Spell.id``, searchable on ``name``);
       - a uniqueness check on ``name`` before create/update;
       - management of class/race availability, which lives in its own
         association tables (``spell_classes`` / ``spell_races``) and has no

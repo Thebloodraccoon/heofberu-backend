@@ -1,3 +1,5 @@
+"""Per-stage configuration for the custom and built-in middlewares."""
+
 from typing import Any
 
 from app.settings import settings

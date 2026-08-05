@@ -1,3 +1,5 @@
+"""Request/response schemas for the feature endpoints."""
+
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.constants import FeatureSourceType
@@ -50,6 +52,8 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
 
 
 class FeatureBase(BaseModel):
+    """Base feature fields, including the source_type/FK consistency rules."""
+
     name: str
     source_type: FeatureSourceType
 
@@ -66,12 +70,13 @@ class FeatureBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_source_fk_consistency(self):
+        """Enforce that exactly the FK matching ``source_type`` is set."""
         _validate_source_fk_consistency(self.source_type, self.__dict__)
         return self
 
 
 class FeatureCreate(FeatureBase):
-    pass
+    """Payload for creating a feature (GM only)."""
 
 
 class FeatureUpdate(BaseModel):
@@ -98,6 +103,8 @@ class FeatureUpdate(BaseModel):
 
 
 class FeatureResponse(FeatureBase):
+    """Full feature representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

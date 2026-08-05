@@ -1,9 +1,13 @@
+"""Request/response schemas for the feat endpoints."""
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
 
 
 class FeatBase(BaseModel):
+    """Base feat fields shared by create, update, and response schemas."""
+
     name: str
     description: str = ""
 
@@ -45,6 +49,7 @@ class FeatCreate(FeatBase):
 
     @field_validator("ability_score_increases")
     def validate_unique_asi_abilities(cls, value):
+        """Reject ASI lists containing duplicate abilities."""
         if value is None:
             return value
         return _validate_unique_asi_abilities(value)
@@ -74,10 +79,13 @@ class AbilityScoreIncreasesUpdate(BaseModel):
 
     @field_validator("ability_score_increases")
     def validate_unique_asi_abilities(cls, ability_score_increases):
+        """Reject ASI lists containing duplicate abilities."""
         return _validate_unique_asi_abilities(ability_score_increases)
 
 
 class AbilityScoreIncreaseResponse(BaseModel):
+    """A feat's ASI choice as returned in responses."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -86,6 +94,8 @@ class AbilityScoreIncreaseResponse(BaseModel):
 
 
 class FeatResponse(FeatBase):
+    """Full feat representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

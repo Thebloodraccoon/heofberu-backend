@@ -1,3 +1,5 @@
+"""User repository: user-specific queries on top of :class:`BaseRepository`."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session

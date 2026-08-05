@@ -1,3 +1,5 @@
+"""Request/response schemas for the item endpoints."""
+
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
@@ -6,6 +8,8 @@ from app.constants import DamageType, DiceType, ItemRarity, ItemType
 
 
 class ItemBase(BaseModel):
+    """Base item fields, including weapon- and armor-specific attributes."""
+
     name: str
     item_type: ItemType
     rarity: ItemRarity = ItemRarity.NONE
@@ -32,7 +36,7 @@ class ItemBase(BaseModel):
 
 
 class ItemCreate(ItemBase):
-    pass
+    """Payload for creating an item (GM only)."""
 
 
 class ItemUpdate(BaseModel):
@@ -58,6 +62,8 @@ class ItemUpdate(BaseModel):
 
 
 class ItemResponse(ItemBase):
+    """Full item representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

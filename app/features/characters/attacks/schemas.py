@@ -1,9 +1,13 @@
+"""Schemas for a character's attacks."""
+
 from pydantic import BaseModel, ConfigDict
 
 from app.constants import AbilityScore, AttackType, DamageType, DiceType
 
 
 class AttackBase(BaseModel):
+    """Base attack fields shared by create and response schemas."""
+
     name: str
     attack_type: AttackType
     ability: AbilityScore
@@ -21,7 +25,7 @@ class AttackBase(BaseModel):
 
 
 class AttackCreate(AttackBase):
-    pass
+    """Payload for adding an attack to a character."""
 
 
 class AttackUpdate(BaseModel):
@@ -42,6 +46,8 @@ class AttackUpdate(BaseModel):
 
 
 class AttackResponse(AttackBase):
+    """Full attack representation returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int

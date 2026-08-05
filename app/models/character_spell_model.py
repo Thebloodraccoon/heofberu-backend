@@ -1,3 +1,5 @@
+"""ORM model for the character <-> spell "known spells" association."""
+
 from sqlalchemy import Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 

@@ -1,3 +1,5 @@
+"""ORM model for the campaign <-> character membership association."""
+
 from sqlalchemy import Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 

@@ -1,3 +1,5 @@
+"""Catch-all handler for any exception not handled more specifically."""
+
 import logging
 
 from fastapi import Request, status

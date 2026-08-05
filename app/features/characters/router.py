@@ -1,3 +1,5 @@
+"""Aggregates the character sub-domain routers under /characters."""
+
 from fastapi import APIRouter
 
 from app.features.characters.attacks.endpoints import router as attacks_router

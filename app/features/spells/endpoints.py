@@ -1,3 +1,5 @@
+"""Spell endpoints: listing, CRUD, and class/race availability management."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.constants import (

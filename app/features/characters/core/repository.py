@@ -1,3 +1,5 @@
+"""Character repository: base CRUD plus owner scoping and HP updates."""
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository

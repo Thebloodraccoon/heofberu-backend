@@ -1,3 +1,5 @@
+"""Skill CRUD service with in-use delete guard."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -11,8 +13,6 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, S
     Skill-specific CRUD service built on :class:`BaseService`.
 
     Adds behaviors the generic base class doesn't provide:
-      - a plain, unpaginated ``get_all`` (skills are listed in full, sorted
-        by name, via ``SkillRepository.get_all_sorted``);
       - a uniqueness check on ``key`` before create/update;
       - a delete guard that blocks removing a skill still referenced by any
         race, class, background, or character skill proficiency, since the

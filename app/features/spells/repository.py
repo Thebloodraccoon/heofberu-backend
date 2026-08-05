@@ -1,3 +1,5 @@
+"""Spell repository: base CRUD plus class/race availability management."""
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
@@ -7,6 +9,8 @@ from app.models.spell_model import Spell
 
 
 class SpellRepository(BaseRepository[Spell]):
+    """Spell-specific repository built on :class:`BaseRepository`."""
+
     def __init__(self, db: Session):
         super().__init__(
             Spell,
@@ -17,12 +21,14 @@ class SpellRepository(BaseRepository[Spell]):
         )
 
     def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
+        """Fetch the classes matching ``class_ids`` (order not guaranteed)."""
         if not class_ids:
             return []
 
         return self.db.query(Class).filter(Class.id.in_(class_ids)).all()
 
     def get_races_by_ids(self, race_ids: list[int]) -> list[Race]:
+        """Fetch the races matching ``race_ids`` (order not guaranteed)."""
         if not race_ids:
             return []
 

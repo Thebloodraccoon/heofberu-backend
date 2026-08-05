@@ -1,3 +1,5 @@
+"""ORM model for the reference table of spells."""
+
 from sqlalchemy import ARRAY, Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 

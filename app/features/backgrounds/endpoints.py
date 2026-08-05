@@ -1,3 +1,5 @@
+"""Background endpoints: listing, CRUD, and granted-skill management."""
+
 from fastapi import APIRouter, Body, Query
 
 from app.core.base_service import Page
@@ -83,8 +85,6 @@ def get_background(background_id: int, background_service: BackgroundServiceDep)
     """
     Return a single background by ID, with full detail — including
     granted skills.
-
-    Response is `{items, total, page, size}`, same shape as `GET /backgrounds/`.
 
     Open endpoint, no authentication required.
     """

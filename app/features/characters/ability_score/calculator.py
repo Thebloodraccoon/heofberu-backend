@@ -1,3 +1,5 @@
+"""Pure calculation of a character's effective ability scores."""
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.constants import AbilityScore
@@ -56,7 +58,7 @@ class CharacterAbilityScoreCalculator:
         """
         Return a dict of ``{"strength_total": int, ..., "charisma_total": int}``
         for the given character, ready to pass to
-        ``CharacterRepository.upsert_ability_score_cache``.
+        ``CharacterAbilityScoreCacheRepository.upsert``.
         """
 
         totals = {ability: getattr(character, _BASE_FIELD_BY_ABILITY[ability]) for ability in AbilityScore}

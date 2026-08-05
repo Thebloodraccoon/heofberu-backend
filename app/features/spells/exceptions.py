@@ -1,7 +1,11 @@
+"""Spell-specific HTTP exceptions."""
+
 from fastapi import HTTPException, status
 
 
 class SpellNotFoundException(HTTPException):
+    """Raised when a spell with the given ID or name does not exist."""
+
     def __init__(self, spell_id: int | None = None, name: str | None = None):
         detail = "Spell is not found"
 

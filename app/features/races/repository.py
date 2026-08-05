@@ -1,3 +1,5 @@
+"""Race repository: base CRUD plus ability-bonus/skill management."""
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
@@ -71,6 +73,7 @@ class RaceRepository(BaseRepository[Race]):
         return race
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
+        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
         if not skill_ids:
             return []
 

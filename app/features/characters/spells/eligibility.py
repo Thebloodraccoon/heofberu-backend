@@ -1,3 +1,5 @@
+"""Eligibility rules for a character learning a spell."""
+
 from app.features.characters.spells.exceptions import (
     NoSpellSlotAvailableException,
     SpellNotAvailableToCharacterException,

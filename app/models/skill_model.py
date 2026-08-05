@@ -1,3 +1,5 @@
+"""ORM model for the reference table of skills."""
+
 from sqlalchemy import Column, Integer, String, Text
 
 from app.models.enums import AbilityScoreType

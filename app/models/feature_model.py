@@ -1,3 +1,5 @@
+"""ORM model for the reference table of discrete rules features."""
+
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 

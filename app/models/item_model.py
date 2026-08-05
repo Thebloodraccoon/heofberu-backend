@@ -1,3 +1,5 @@
+"""ORM model for the reference table of equipment and magic items."""
+
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 

@@ -1,3 +1,5 @@
+"""Character attack CRUD service."""
+
 from sqlalchemy.orm import Session
 
 from app.features.characters.access import get_character_for_user

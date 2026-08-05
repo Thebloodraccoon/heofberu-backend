@@ -1,3 +1,5 @@
+"""Cache invalidation policy and persistence for effective ability scores."""
+
 from sqlalchemy.orm import Session
 
 from app.features.characters.ability_score.calculator import CharacterAbilityScoreCalculator

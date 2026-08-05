@@ -1,3 +1,5 @@
+"""Race CRUD service including ability-bonus and skill management."""
+
 from sqlalchemy.orm import Session
 
 from app.core.base_service import BaseService
@@ -19,25 +21,23 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
     Adds behaviors the generic base class doesn't provide:
       - a uniqueness check on ``name`` before create/update;
-      - a ``name``/``size`` ``search`` on top of listing, since
-        ``BaseService.get_all``/``list_brief`` only know about exact-match
-        ``filters`` and have no notion of a free-text search;
+      - free-text ``search`` on the race name (via the inherited ``search``
+        parameter, pinned by ``RaceRepository``'s ``search_fields``) and
+        exact-match ``size`` filtering;
       - management of ability bonuses and granted skills, which live in
         their own association tables and have no generic base-class
         equivalent. ``create_race`` sets them up front, in the same
         transaction as the race itself, via ``BaseService._atomic()``;
       - a delete guard that blocks removing a race still assigned to any
-        character, since the FK is ``ON DELETE RESTRICT``.
+        character (``characters.race_id`` is ``ON DELETE SET NULL`` at the
+        DB level, so the guard is what prevents detachment).
 
-    ``get_by_id`` is inherited unchanged from ``BaseService`` — races add
-    no behavior on top of it, so endpoints call it directly. ``get_all``
-    and ``list_brief`` are overridden here (not left as pass-throughs)
-    purely to add the ``search`` parameter; the pagination/filters/
-    serialization logic underneath is still the base class's.
-    ``delete`` is overridden as ``delete_race`` to add the in-use guard;
-    endpoints should call ``delete_race``, not the inherited ``delete``.
-    ``list_brief`` derives its columns from ``RaceBriefResponse``'s field
-    names (id, name, size, is_homebrew) and is ordered by ``Race.id``.
+    ``get_by_id``, ``get_all``, ``list_brief``, and ``delete`` are all
+    inherited unchanged from ``BaseService`` — the in-use delete guard
+    lives in ``BaseRepository.delete`` (via ``check_in_use_on_delete=True``
+    + ``RaceRepository.is_in_use``). ``list_brief`` derives its columns
+    from ``RaceBriefResponse``'s field names (id, name, size, is_homebrew)
+    and is ordered by ``Race.id``.
     """
 
     repository: RaceRepository

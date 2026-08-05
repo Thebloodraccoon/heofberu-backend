@@ -1,3 +1,11 @@
+"""
+Exception handler for SQLAlchemy errors.
+
+Converts generic ``SQLAlchemyError`` to a 500, and ``IntegrityError`` to a
+400 with a best-effort human-readable message derived from the constraint
+type (unique / foreign key / not-null).
+"""
+
 import logging
 
 from fastapi import Request, status

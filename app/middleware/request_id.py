@@ -1,3 +1,5 @@
+"""Middleware that tags every request and response with a unique request ID."""
+
 from collections.abc import Callable
 import uuid
 

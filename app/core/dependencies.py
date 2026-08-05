@@ -1,3 +1,11 @@
+"""
+FastAPI dependency providers and annotated dependency aliases.
+
+Centralizes the database session, JWT bearer security, the current-user /
+GM-guard dependencies, and the per-feature service dependencies consumed by
+the endpoint layers.
+"""
+
 from typing import Annotated
 
 from fastapi import Depends
@@ -58,6 +66,12 @@ def get_current_user(
     user_service: UserServiceDep,
     token: TokenDep,
 ) -> UserResponse:
+    """
+    Resolve the authenticated user from the bearer token.
+
+    Validates the token signature/expiry, rejects blacklisted tokens, and
+    returns the matching user, raising ``InvalidTokenException`` otherwise.
+    """
     decoded = verify_token(token, "access")
 
     if is_token_blacklisted(decoded.jti):

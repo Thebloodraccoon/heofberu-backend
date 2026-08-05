@@ -1,3 +1,5 @@
+"""Exceptions for the character attacks sub-domain."""
+
 from fastapi import HTTPException, status
 
 
@@ -5,8 +7,7 @@ class AttackNotFoundException(HTTPException):
     """
     Raised when an attack with the given ID does not exist on this character.
 
-    Used by both the attacks sub-domain (CRUD) and the rolls sub-domain
-    (attack roll lookups).
+    Used by the attacks sub-domain (CRUD).
     """
 
     def __init__(self, character_id: int, attack_id: int):

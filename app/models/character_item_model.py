@@ -1,3 +1,5 @@
+"""ORM model for items owned by a character (stacks with equip/attunement state)."""
+
 from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 

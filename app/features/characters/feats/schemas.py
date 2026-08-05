@@ -1,3 +1,5 @@
+"""Schemas for granting feats to a character."""
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -5,11 +7,11 @@ class CharacterFeatAdd(BaseModel):
     """
     Grant a feat to a character.
 
-    ``ability_score_increase_id`` is only required for feats that offer
-    an ability-score-increase choice (see ``Feat.ability_score_increases``);
-    it must reference one of that specific feat's own rows — validated in
-    ``CharacterFeatService._validate_ability_score_increase``. Omit it
-    entirely for feats that don't offer a choice.
+    ``ability_score_increase_id`` is optional. If provided, it must
+    reference one of that specific feat's own ``Feat.ability_score_increases``
+    rows — validated in ``CharacterFeatService._validate_ability_score_increase``.
+    Omit it entirely for feats that don't offer a choice (or to grant the
+    feat without selecting an ASI).
     """
 
     feat_id: int

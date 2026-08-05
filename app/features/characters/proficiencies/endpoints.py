@@ -1,3 +1,5 @@
+"""Character proficiency endpoints (skills and saving throws)."""
+
 from fastapi import APIRouter, Body
 
 from app.core.dependencies import CharacterProficiencyServiceDep, CurrentUserDep

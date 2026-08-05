@@ -1,3 +1,5 @@
+"""ORM models/tables for race sub-resources: granted skills and ability bonuses."""
+
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from app.models.enums import AbilityScoreType

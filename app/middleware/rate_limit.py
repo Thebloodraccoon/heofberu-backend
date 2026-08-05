@@ -1,3 +1,5 @@
+"""Simple in-memory per-IP rate limiting middleware."""
+
 from collections.abc import Callable
 import time
 

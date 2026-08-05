@@ -1,3 +1,5 @@
+"""Local-stage settings: engine, session factory, and DB/Redis accessors."""
+
 from contextlib import contextmanager
 
 from redis import Redis
@@ -41,6 +43,8 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db():
+    """FastAPI dependency yielding a session, closing it after the request."""
+
     db = SessionLocal()
     try:
         yield db
@@ -50,6 +54,8 @@ def get_db():
 
 @contextmanager
 def get_redis():
+    """Context manager yielding a connected Redis client and closing it afterwards."""
+
     redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
     try:
         yield redis_client

@@ -1,9 +1,13 @@
+"""Schemas for character skill and saving-throw proficiencies."""
+
 from pydantic import BaseModel, ConfigDict
 
 from app.constants import AbilityScore
 
 
 class SkillProficiencyItem(BaseModel):
+    """A single skill proficiency entry: ``skill_id`` plus an expertise flag."""
+
     skill_id: int
     is_expertise: bool = False
 
@@ -21,6 +25,8 @@ class SavingThrowProficienciesUpdate(BaseModel):
 
 
 class SkillProficiencyResponse(BaseModel):
+    """A skill proficiency row returned on the character."""
+
     model_config = ConfigDict(from_attributes=True)
 
     skill_id: int
@@ -28,6 +34,8 @@ class SkillProficiencyResponse(BaseModel):
 
 
 class SavingThrowProficiencyResponse(BaseModel):
+    """A saving throw proficiency row returned on the character."""
+
     model_config = ConfigDict(from_attributes=True)
 
     ability: AbilityScore

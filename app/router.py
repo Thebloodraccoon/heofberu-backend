@@ -1,3 +1,5 @@
+"""Aggregates all feature routers under the ``/api`` prefix."""
+
 from fastapi import APIRouter
 
 from app.features.auth.endpoints import router as auth_router

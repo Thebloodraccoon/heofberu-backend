@@ -1,3 +1,5 @@
+"""Association tables linking spells to the classes and races that grant them."""
+
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from app.settings import settings

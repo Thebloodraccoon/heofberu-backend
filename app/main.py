@@ -1,3 +1,11 @@
+"""
+Application entrypoint: FastAPI app assembly, middleware, and lifespan.
+
+Builds the ``app`` instance (docs only outside prod), registers middleware
+and global error handlers, mounts the feature routers, and provides a
+``__main__`` uvicorn launcher. Schema management is left to Alembic.
+"""
+
 from contextlib import asynccontextmanager
 import logging
 

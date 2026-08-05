@@ -1,3 +1,5 @@
+"""Character proficiency service: full-replace of skills and saving throws."""
+
 from sqlalchemy.orm import Session
 
 from app.features.characters.access import get_character_for_user

@@ -1,3 +1,5 @@
+"""ORM model for registered users."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Integer, String
@@ -9,6 +11,8 @@ from app.settings import settings
 
 
 class User(settings.Base):  # type: ignore
+    """A registered user account (GM or player), owning characters."""
+
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -1,3 +1,11 @@
+"""
+Exception handlers for the feature-agnostic data-layer exceptions.
+
+Maps ``RecordAlreadyExistsError`` (400), ``RecordNotFoundError`` (404),
+``RecordIdsInvalidError`` (400), and ``RecordInUseError`` (409) to the
+standardized ``ErrorResponse`` JSON shape.
+"""
+
 import logging
 
 from fastapi import Request, status

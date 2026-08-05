@@ -1,3 +1,5 @@
+"""Request/response logging middleware."""
+
 from collections.abc import Callable
 import logging
 import time

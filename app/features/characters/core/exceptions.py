@@ -1,3 +1,5 @@
+"""Exceptions for the character core sub-domain."""
+
 from fastapi import HTTPException, status
 
 
