@@ -92,8 +92,8 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.HOST,
         port=8000,
-        reload=settings.STAGE == "local",
-        workers=1 if settings.STAGE == "local" else 4,
+        reload=settings.STAGE == "dev",
+        workers=1 if settings.STAGE == "dev" else 4,
         access_log=settings.STAGE != "prod",
         log_level="info" if settings.STAGE != "prod" else "warning",
     )

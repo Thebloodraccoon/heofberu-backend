@@ -24,6 +24,10 @@ class AppSettings(BaseSettings):
     ADMIN_LOGIN: str = Field(..., alias="ADMIN_LOGIN")
     ADMIN_PASSWORD: str = Field(..., alias="ADMIN_PASSWORD")
 
-    # DB & Redis URLs
+    # DB & Redis
     DATABASE_URL: str = Field(..., alias="DATABASE_URL")
     REDIS_URL: str = Field(..., alias="REDIS_URL")
+
+    # Test DB & Redis (только для STAGE=test)
+    TEST_DATABASE_URL: str = Field(default="", alias="TEST_DATABASE_URL")
+    TEST_REDIS_URL: str = Field(default="", alias="TEST_REDIS_URL")

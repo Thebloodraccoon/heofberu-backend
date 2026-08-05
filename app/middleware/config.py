@@ -29,7 +29,6 @@ class MiddlewareConfig:
     def get_rate_limit_config() -> dict[str, Any]:
         """Get configuration for RateLimitMiddleware."""
         config = {
-            "local": {"calls": 1000, "period": 60},
             "prod": {"calls": 50, "period": 60},
         }
         return config.get(settings.STAGE, config["prod"])
