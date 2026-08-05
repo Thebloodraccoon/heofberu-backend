@@ -1,0 +1,177 @@
+"""Tests for character spell-slot and known-spell endpoints."""
+
+import pytest
+
+
+@pytest.mark.integration
+class TestCharacterSpellSlots:
+    def test_get_spell_slots_for_caster(self, client, player, player_token, create_caster_class, create_api_character):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.get(
+            f"/characters/{character['id']}/spell-slots",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        slots = {item["spell_level"]: item for item in response.json()}
+        assert slots["LEVEL_1"]["total"] == 2
+
+    def test_spend_spell_slot(self, client, player, player_token, create_caster_class, create_api_character):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/spell-slots",
+            json={"level": "LEVEL_1", "used": 2},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["used"] == 2
+
+    def test_over_spend_spell_slot_returns_400(
+        self, client, player, player_token, create_caster_class, create_api_character
+    ):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/spell-slots",
+            json={"level": "LEVEL_1", "used": 3},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    def test_create_slot_entry_on_demand(self, client, player, player_token, create_class, create_character):
+        character_class = create_class(name="Fighter")
+        character = create_character(owner_id=player.id, class_id=character_class.id)
+
+        response = client.patch(
+            f"/characters/{character.id}/spell-slots",
+            json={"level": "LEVEL_1", "total": 1},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+
+
+@pytest.mark.integration
+class TestCharacterKnownSpells:
+    def test_add_known_spell(
+        self, client, player, player_token, create_caster_class, create_api_character, create_spell
+    ):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+        spell = create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+
+        response = client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["spell_id"] == spell.id
+
+    def test_add_duplicate_spell_returns_409(
+        self, client, player, player_token, create_caster_class, create_api_character, create_spell
+    ):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+        spell = create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+
+        client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        response = client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 409
+
+    def test_add_spell_with_no_slot_available_returns_400(
+        self, client, player, player_token, create_caster_class, create_api_character, create_spell
+    ):
+        character_class = create_caster_class(name="Wizard", slots=[{"spell_level": "LEVEL_1", "slots": 0}])
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+        spell = create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+
+        response = client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    def test_add_spell_not_available_to_character_class_returns_400(
+        self,
+        client,
+        player,
+        player_token,
+        create_caster_class,
+        create_api_character,
+        create_spell,
+        create_class,
+        gm_token,
+    ):
+        character_class = create_caster_class(name="Wizard")
+        other_class = create_class(name="Fighter", hit_dice="D10")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+        spell = create_spell(name="Divine Word", school="EVOCATION", level="LEVEL_1")
+
+        restriction_response = client.put(
+            f"/spells/{spell.id}/classes",
+            json={"class_ids": [other_class.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert restriction_response.status_code == 200
+
+        response = client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    def test_list_and_remove_known_spell(
+        self, client, player, player_token, create_caster_class, create_api_character, create_spell
+    ):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+        spell = create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+
+        client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        list_response = client.get(
+            f"/characters/{character['id']}/spells",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert list_response.status_code == 200
+        assert [item["spell_id"] for item in list_response.json()] == [spell.id]
+
+        remove_response = client.delete(
+            f"/characters/{character['id']}/spells/{spell.id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert remove_response.status_code == 204
+
+        after_response = client.get(
+            f"/characters/{character['id']}/spells",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert after_response.json() == []
