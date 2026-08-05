@@ -1,0 +1,57 @@
+services:
+  heof-db:
+    ports:
+      - "5432:5432"
+
+  heof-redis:
+    ports:
+      - "6380:6379"
+
+  heof-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: heof-app-dev
+    env_file:
+      - .env.dev
+    volumes:
+      - .:/app                         # hot-reload: код монтируется внутрь
+    depends_on:
+      heof-db:
+        condition: service_healthy
+      heof-redis:
+        condition: service_healthy
+      heof-test-db:
+        condition: service_started
+      heof-test-redis:
+        condition: service_started
+
+  heof-test-db:
+    image: postgres:15.4-alpine
+    container_name: heof-test-db
+    restart: "no"
+    environment:
+      POSTGRES_USER: heof_user
+      POSTGRES_PASSWORD: test_secret
+      POSTGRES_DB: heof_test_db
+    volumes:
+      - heof_test_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - app_network
+
+  heof-test-redis:
+    image: redis:7.2.3-alpine
+    container_name: heof-test-redis
+    restart: "no"
+    ports:
+      - "6381:6379"
+    volumes:
+      - heof_test_redis_data:/data
+    networks:
+      - app_network
+
+volumes:
+  heof_test_db_data:
+  heof_test_redis_data:

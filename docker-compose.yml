@@ -37,11 +37,11 @@ services:
       retries: 5
       start_period: 30s
 
-  heof_fastapi_app:
+  heof-app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: heof_fastapi_app
+    container_name: heof-app
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -52,8 +52,6 @@ services:
         condition: service_healthy
       heof-redis:
         condition: service_healthy
-    volumes:
-      - .:/app
     networks:
       - app_network
     healthcheck:

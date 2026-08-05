@@ -1,0 +1,32 @@
+FROM python:3.10.13-slim
+
+LABEL description="Heofberu Backend API -- DEV"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH=/usr/local/bin:$PATH
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir poetry
+
+COPY pyproject.toml poetry.lock* ./
+
+# Устанавливаем все зависимости включая dev (pytest, mypy, etc.)
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi
+
+COPY . .
+
+EXPOSE 8000
+
+# hot-reload; alembic upgrade head перед стартом
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
