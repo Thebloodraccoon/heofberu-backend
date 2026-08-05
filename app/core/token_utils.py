@@ -14,7 +14,6 @@ from jose import JWTError, jwt
 
 from app.core.exceptions import InvalidTokenException
 from app.settings import settings
-from app.settings.local import get_redis
 
 ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
 REFRESH_TOKEN_EXPIRES = timedelta(days=30)
@@ -152,11 +151,11 @@ def blacklist_token(jti: str, ttl_seconds: int, *, reason: str = "revoked") -> N
     if ttl_seconds <= 0:
         return
 
-    with get_redis() as redis:
+    with settings.get_redis() as redis:
         redis.set(_blacklist_key(jti), reason, ex=ttl_seconds)
 
 
 def is_token_blacklisted(jti: str) -> bool:
     """Return whether ``jti`` has been revoked and hasn't expired yet."""
-    with get_redis() as redis:
+    with settings.get_redis() as redis:
         return redis.exists(_blacklist_key(jti)) > 0
