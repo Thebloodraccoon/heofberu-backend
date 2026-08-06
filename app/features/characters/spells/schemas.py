@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict
 
+from app.constants import SpellLevel
 from app.features.spells.schemas import SpellResponse
 
 
@@ -16,9 +17,17 @@ class SpellSlotResponse(BaseModel):
 
 
 class SpellSlotUpdate(BaseModel):
-    """Update the used/total count for a single spell slot level."""
+    """
+    Update the used/total count for a single spell slot level.
 
-    level: str
+    ``level`` is validated against the ``SpellLevel`` enum, so a request
+    with anything other than a known level string (e.g. ``"LEVEL_3"`` or
+    ``"CANTRIP"``) is rejected with a 422 at the schema layer — the old
+    free-form ``str`` let arbitrary strings through until they hit the
+    DB's check constraint.
+    """
+
+    level: SpellLevel
     used: int | None = None
     total: int | None = None
 

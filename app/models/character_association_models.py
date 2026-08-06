@@ -3,7 +3,7 @@
 from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 
-from app.models.enums import AbilityScoreType, SpellLevelType
+from app.models.enums import AbilityScoreType, CharacterFeatSourceType, SpellLevelType
 from app.settings import settings
 
 
@@ -66,6 +66,11 @@ class CharacterFeat(settings.Base):  # type: ignore
     `ability_score_increase_id` records which of the feat's ASI choices
     (see FeatAbilityScoreIncrease) the player selected, if any; NULL if
     the feat grants no ability score increase or none was applicable.
+
+    `source_type` records where the grant came from — a plain GM grant
+    (the default, and what the manual feats endpoint writes), a level-1
+    origin feat (ORIGIN), or an Ability Score Improvement level choice
+    (ASI, written by the progression level-up endpoint).
     """
 
     __tablename__ = "character_feats"
@@ -79,6 +84,7 @@ class CharacterFeat(settings.Base):  # type: ignore
         nullable=True,
         index=True,
     )
+    source_type = Column(CharacterFeatSourceType, nullable=False, default="GM")
 
     __table_args__ = (UniqueConstraint("character_id", "feat_id", name="uq_character_feat"),)
 

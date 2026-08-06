@@ -45,6 +45,20 @@ class TestCharacterSpellSlots:
 
         assert response.status_code == 400
 
+    def test_invalid_spell_level_returns_422(
+        self, client, player, player_token, create_caster_class, create_api_character
+    ):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/spell-slots",
+            json={"level": "LEVEL_10", "used": 1},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
+
     def test_create_slot_entry_on_demand(self, client, player, player_token, create_class, create_character):
         character_class = create_class(name="Fighter")
         character = create_character(owner_id=player.id, class_id=character_class.id)

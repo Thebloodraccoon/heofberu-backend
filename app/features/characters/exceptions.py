@@ -22,17 +22,3 @@ class CharacterAccessDeniedException(HTTPException):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this character.",
         )
-
-
-class InvalidSkillIdsException(HTTPException):
-    """
-    Raised when one or more provided skill IDs do not correspond to existing
-    skills. Raised by the proficiencies sub-domain on skill_id lookups.
-    """
-
-    def __init__(self, skill_ids: list[int]):
-        self.skill_ids = skill_ids
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid skill id(s): {skill_ids}",
-        )

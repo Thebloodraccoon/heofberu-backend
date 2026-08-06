@@ -1,14 +1,11 @@
 """Pure calculation of a character's effective ability scores."""
 
-from sqlalchemy.orm import Session, selectinload
-
 from app.constants import AbilityScore
-from app.models.character_association_models import CharacterFeat
 from app.models.character_model import Character
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
 
-_BASE_FIELD_BY_ABILITY = {
+BASE_FIELD_BY_ABILITY = {
     AbilityScore.STR: "strength",
     AbilityScore.DEX: "dexterity",
     AbilityScore.CON: "constitution",
@@ -45,36 +42,33 @@ class CharacterAbilityScoreCalculator:
     has no ability-bonus association table), so they're intentionally
     not included here — add a source here if/when that changes.
 
-    This is a pure calculation helper — it does not touch the
-    ``character_ability_scores`` cache table itself. Callers (see
-    ``CharacterAbilityCacheService``) are responsible for persisting the
-    result.
+    This is a PURE calculation helper — it does not touch the database
+    or the ``character_ability_scores`` cache table. The bonus rows
+    (``race_bonuses``/``feat_increases``) are loaded by the caller and
+    passed in (see ``CharacterAbilityScoreCacheRepository.get_race_bonuses``
+    / ``get_feat_increases``, or the ``CharacterAbilityCacheService.compute``
+    convenience), which makes this class directly unit-testable with zero
+    DB setup — the old version took a ``Session`` and ran the queries
+    itself.
     """
 
-    def __init__(self, db: Session):
-        self.db = db
-
-    def compute(self, character: Character) -> dict[str, int]:
+    def compute(
+        self,
+        character: Character,
+        race_bonuses: list[RaceAbilityBonus],
+        feat_increases: list[FeatAbilityScoreIncrease],
+    ) -> dict[str, int]:
         """
         Return a dict of ``{"strength_total": int, ..., "charisma_total": int}``
         for the given character, ready to pass to
         ``CharacterAbilityScoreCacheRepository.upsert``.
         """
 
-        totals = {ability: getattr(character, _BASE_FIELD_BY_ABILITY[ability]) for ability in AbilityScore}
+        totals = {ability: getattr(character, BASE_FIELD_BY_ABILITY[ability]) for ability in AbilityScore}
 
-        if character.race_id is not None:
-            race_bonuses = self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == character.race_id).all()
-            for bonus in race_bonuses:
-                totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
+        for bonus in race_bonuses:
+            totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
 
-        feat_increases = (
-            self.db.query(FeatAbilityScoreIncrease)
-            .join(CharacterFeat, CharacterFeat.ability_score_increase_id == FeatAbilityScoreIncrease.id)
-            .filter(CharacterFeat.character_id == character.id)
-            .options(selectinload(FeatAbilityScoreIncrease.feat))
-            .all()
-        )
         for increase in feat_increases:
             totals[increase.ability] = totals.get(increase.ability, 0) + increase.amount
 

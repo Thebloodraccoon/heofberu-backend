@@ -1,5 +1,6 @@
 """Character lookup and ownership access-control helpers."""
 
+from app.constants import UserRole
 from app.features.characters.core.repository import CharacterRepository
 from app.features.characters.exceptions import CharacterAccessDeniedException, CharacterNotFoundException
 from app.features.users.schemas import UserResponse
@@ -23,7 +24,7 @@ def check_character_access(character: Character, current_user: UserResponse) -> 
     GM can access any character. Players can only access their own.
     """
 
-    if current_user.role == "gm":
+    if current_user.role == UserRole.GM:
         return
 
     if character.owner_id != current_user.id:

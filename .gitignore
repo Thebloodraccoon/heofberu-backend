@@ -229,3 +229,8 @@ yarn-error.log*
 # Uploads/Media files (uncomment if needed)
 # uploads/
 # media/
+
+# Refactoring output (working drafts)
+/output/
+.opencode/
+AGENTS.md

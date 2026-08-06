@@ -196,6 +196,21 @@ class FeatureSourceType(str, Enum):
     OTHER = "OTHER"
 
 
+class ASILevelChoice(str, Enum):
+    """What a character chose at a class level that grants an Ability Score Improvement."""
+
+    ASI = "ASI"
+    FEAT = "FEAT"
+
+
+class CharacterFeatSource(str, Enum):
+    """Where a character's feat grant came from: GM grant, level-1 origin feat, or an ASI-level choice."""
+
+    GM = "GM"
+    ORIGIN = "ORIGIN"
+    ASI = "ASI"
+
+
 class ConditionType(str, Enum):
     """The standard D&D conditions a creature can be under."""
 
@@ -230,7 +245,18 @@ HEALING_TARGETS = [target.value for target in HealingTarget]
 ITEM_TYPES = [item_type.value for item_type in ItemType]
 ITEM_RARITIES = [rarity.value for rarity in ItemRarity]
 FEATURE_SOURCE_TYPES = [source_type.value for source_type in FeatureSourceType]
+ASI_LEVEL_CHOICES = [choice.value for choice in ASILevelChoice]
+CHARACTER_FEAT_SOURCES = [source.value for source in CharacterFeatSource]
 CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
+
+# Class levels (5e standard) at which a character gains an Ability Score
+# Improvement and may instead choose a feat. Same for every class; keep as a
+# single constant so a future per-class table can swap in without touching
+# the progression service.
+ASI_LEVELS = frozenset({4, 8, 12, 16, 19})
+
+# Maximum effective (post-bonus) ability score, per the 5e rule.
+ABILITY_SCORE_CAP = 20
 
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"

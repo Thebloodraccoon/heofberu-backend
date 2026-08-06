@@ -4,7 +4,10 @@ from app.features.characters.spells.exceptions import (
     NoSpellSlotAvailableException,
     SpellNotAvailableToCharacterException,
 )
-from app.features.characters.spells.repository import CharacterSpellRepository
+from app.features.characters.spells.repository import (
+    CharacterSpellRepository,
+    CharacterSpellSlotRepository,
+)
 from app.models.character_model import Character
 from app.models.spell_model import Spell
 
@@ -17,14 +20,19 @@ class CharacterSpellEligibilityChecker:
     race restriction, and spell-slot capacity — are testable in isolation
     from the service's DB-session wiring, and reusable if more eligibility
     rules are added later (e.g. a cap on total known spells regardless of
-    level). Still takes a ``CharacterSpellRepository`` since the slot-
-    capacity check needs to query existing slots/known spells, but has no
+    level). Takes the two spell sub-repositories since the slot-capacity
+    check needs both existing slots and known-spell counts, but has no
     other service-layer responsibilities (no access control, no
     persistence of the spell itself).
     """
 
-    def __init__(self, spell_repository: CharacterSpellRepository):
-        self.spell_repository = spell_repository
+    def __init__(
+        self,
+        slot_repository: CharacterSpellSlotRepository,
+        known_spell_repository: CharacterSpellRepository,
+    ):
+        self.slot_repository = slot_repository
+        self.known_spell_repository = known_spell_repository
 
     def check(self, character: Character, spell: Spell) -> None:
         """
@@ -65,10 +73,10 @@ class CharacterSpellEligibilityChecker:
         entry for the level is treated as 0 total slots.
         """
 
-        slot = self.spell_repository.get_spell_slot(character_id, spell.level)
+        slot = self.slot_repository.get_spell_slot(character_id, spell.level)
         total_slots = slot.total if slot is not None else 0
 
-        known_at_level = self.spell_repository.count_known_spells_at_level(character_id, spell.level)
+        known_at_level = self.known_spell_repository.count_known_spells_at_level(character_id, spell.level)
 
         if known_at_level >= total_slots:
             raise NoSpellSlotAvailableException(character_id=character_id, level=spell.level)

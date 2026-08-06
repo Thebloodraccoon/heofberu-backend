@@ -94,12 +94,16 @@ class CharacterUpdate(BaseModel):
 
     Note: ``class_id``, ``race_id``, and ``background_id`` cannot be
     changed via this schema — a character's class, race, and background
-    are set at creation and are not editable here.
+    are set at creation and are not editable here. ``level`` and the base
+    ability scores (``strength``..``charisma``) are likewise not editable
+    here: level changes go through the dedicated level-up endpoint, and
+    base scores only change via that endpoint's Ability Score Improvement
+    choice. See ``CharacterProgressionService``.
     """
 
     name: str | None = None
     image_path: str | None = None
-    level: int | None = Field(default=None, ge=1, le=20)
+    subclass: str | None = None
 
     current_hp: int | None = Field(default=None, ge=0)
     max_hp: int | None = Field(default=None, ge=0)

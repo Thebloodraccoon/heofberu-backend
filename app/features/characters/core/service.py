@@ -1,12 +1,16 @@
 """Character core service: CRUD, HP management, and resting."""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
+from app.constants import UserRole
+from app.core.base_service import BaseService
 from app.features.backgrounds.exceptions import BackgroundNotFoundException
 from app.features.backgrounds.repository import BackgroundRepository
 from app.features.characters.ability_score.service import CharacterAbilityCacheService
 from app.features.characters.access import get_character_for_user, get_character_or_404
-from app.features.characters.core.exceptions import InvalidHpUpdateException, InvalidRestTypeException
+from app.features.characters.core.exceptions import InvalidHpUpdateException
 from app.features.characters.core.repository import CharacterRepository
 from app.features.characters.core.schemas import HpUpdate, RestRequest
 from app.features.characters.schemas import (
@@ -15,94 +19,102 @@ from app.features.characters.schemas import (
     CharacterResponse,
     CharacterUpdate,
 )
-from app.features.characters.spells.repository import CharacterSpellRepository
+from app.features.characters.spells.repository import CharacterSpellSlotRepository
 from app.features.classes.exceptions import ClassNotFoundException
 from app.features.classes.repository import ClassRepository
 from app.features.races.exceptions import RaceNotFoundException
 from app.features.races.repository import RaceRepository
 from app.features.users.schemas import UserResponse
+from app.models import CharacterAbilityScore
 from app.models.character_model import Character
 
-# Fields on CharacterUpdate that, if changed, invalidate the character's
-# actual spell slot totals (CharacterSpellSlot) and require re-applying
-# the class's spell slot progression — either because the class itself
-# changed (different/no progression table) or the level did (different
-# row within the same table).
-_SPELL_SLOT_AFFECTING_FIELDS = {"class_id", "level"}
+# Spell slot progression policy is documented on ``CharacterService``;
+# there is no ``_SPELL_SLOT_AFFECTING_FIELDS`` set anymore because
+# ``CharacterUpdate`` no longer contains ``level`` — a plain PATCH can
+# never invalidate spell slot totals.
 
 
-class CharacterService:
+class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, CharacterResponse]):
     """
     Core character CRUD, HP management, and resting.
 
-    Handles the character record itself, plus validating its foreign
-    keys (class/race/background). Proficiencies, spell slots, known
-    spells, attacks, and feats each live in their own subdomain package
-    since they're independent subdomains with their own
-    schemas/services.
+    Built on :class:`BaseService`, mirroring ``RaceService`` /
+    ``ClassService`` / ``BackgroundService`` / ``SpellService``:
+    ``CharacterRepository`` provides the full generic CRUD (no signature
+    overrides), ``owner_id`` is injected into the create payload the same
+    way ``created_by_id`` is for the reference features, and
+    ``_get_or_404`` / ``_atomic`` / ``resolve_ids`` come from the base.
 
-    Ability score cache policy is decided by ``CharacterAbilityCacheService``
-    (see that class), not here — this service only tells it *when* a
-    write might have touched ability scores, via
-    ``CharacterAbilityCacheService.fields_affect_ability_scores`` (the
-    ``ABILITY_AFFECTING_FIELDS`` set):
-      - ``get_character`` (single record, by ID) always calls
-        ``refresh`` before returning — this is the one read path
-        guaranteed to be fresh, and it's cheap since it's scoped to one
-        character.
-      - ``get_characters`` (listing) intentionally does NOT refresh —
-        it returns whatever ``get_or_stale`` finds, to avoid N
-        recalculations per page. A character that's never been fetched
-        individually (and therefore has no cache row yet) shows
-        ``ability_scores`` as ``None``.
-      - ``create_character`` always refreshes after writing.
-        ``update_character`` refreshes only when the PATCHed fields
-        intersect ``ABILITY_AFFECTING_FIELDS``; otherwise the existing
-        cache row is read as-is.
+    Proficiencies, spell slots, known spells, attacks, and feats each live
+    in their own subdomain package; this service owns the character record
+    itself plus validating its FK references (class/race/background).
+    Character progression (race change, class change, leveling up) lives
+    in ``characters.progression`` and reuses this service for
+    serialization and spell-slot re-application.
 
-    Spell slot progression policy (see
-    ``ClassRepository.get_spell_slot_progression`` /
-    ``CharacterSpellRepository.apply_spell_slot_progression``):
-      - ``create_character`` always applies the new character's class's
-        progression for its starting ``level``, so a level-1 caster
-        already has ``CharacterSpellSlot`` rows on creation instead of
-        needing a manual PATCH to ``/spell-slots`` first.
-      - ``update_character`` re-applies the progression whenever
-        ``level`` is part of the PATCH — a level-up grants/adjusts slot
-        totals automatically. (``class_id`` is not editable via the
-        update schema; a class change requires recreating the character.)
-        Any ``used`` already recorded on a level is preserved unless it
-        would now exceed the new ``total``, in which case it's clamped
-        down — see ``apply_spell_slot_progression`` for the exact
-        semantics.
-      - A class/level pair with no progression rows simply applies an
-        empty mapping, which zeroes out any slots the character
-        previously had — appropriate for e.g. multiclassing away from a
-        caster.
+    Ability score cache policy is decided by
+    ``CharacterAbilityCacheService`` — this service only tells it *when* a
+    write might have touched ability scores:
+      - ``get_character`` always refreshes before returning (fresh, cheap).
+      - ``get_characters`` (listing) does NOT refresh — it returns the
+        cache as-is to avoid N recalculations per page.
+      - ``create_character`` always refreshes; ``update_character`` never
+        refreshes, because ``CharacterUpdate`` holds no ability-affecting
+        fields anymore (base scores only change via the level-up ASI, and
+        race_id/class_id are not editable here).
+
+    Spell slot progression policy: applied on create for the starting
+    level, and re-applied by the progression service (via
+    :meth:`reapply_spell_slot_progression`) whenever a character levels
+    up or changes class — a plain PATCH can never touch spell slots.
     """
 
+    repository: CharacterRepository
+
     def __init__(self, db: Session):
-        self.db = db
-        self.repository = CharacterRepository(db)
-        self.character_spell_repository = CharacterSpellRepository(db)
+        super().__init__(
+            repository=CharacterRepository(db),
+            response_schema=CharacterResponse,
+        )
+        self.character_spell_slot_repository = CharacterSpellSlotRepository(db)
         self.class_repository = ClassRepository(db)
         self.race_repository = RaceRepository(db)
         self.background_repository = BackgroundRepository(db)
         self.ability_cache_service = CharacterAbilityCacheService(db)
 
-    def get_characters(self, current_user: UserResponse) -> list[CharacterResponse]:
+    def get_characters(
+        self,
+        current_user: UserResponse,
+        *,
+        search: str | None = None,
+        class_id: int | None = None,
+    ) -> list[CharacterResponse]:
         """
         Return every character for a GM, or only the caller's own for a
         player. Ability scores reflect the last-computed cache, not a
         fresh recalculation — see class docstring.
+
+        ``search`` does a case-insensitive substring match against the
+        character's ``name`` (pinned via the repository's
+        ``search_fields``); ``class_id`` filters to characters of that
+        class. Both are optional and combine with the access scoping.
         """
 
-        if current_user.role == "gm":
-            characters = self.repository.get_all()
-        else:
-            characters = self.repository.get_all_by_owner(current_user.id)
+        filters: dict[str, Any] = {}
+        if current_user.role != UserRole.GM:
+            filters["owner_id"] = current_user.id
+        if class_id is not None:
+            filters["class_id"] = class_id
 
-        return [self._to_response(character, refresh=False) for character in characters]
+        characters = self.repository.get_all(
+            filters=filters or None,
+            search=search,
+            order_by=Character.name,
+            limit=None,
+        )
+
+        cache_by_id = self.ability_cache_service.get_many_or_stale([character.id for character in characters])
+        return [self._to_response(character, cache_row=cache_by_id.get(character.id)) for character in characters]
 
     def get_character(self, character_id: int, current_user: UserResponse) -> CharacterResponse:
         """Return a single character, enforcing GM/owner access, with freshly recalculated ability scores."""
@@ -121,7 +133,9 @@ class CharacterService:
 
         After creation, the class's spell slot progression for the
         character's starting level is applied immediately — see class
-        docstring.
+        docstring. The character row and its initial slot rows are
+        written in one transaction (``_atomic()`` with ``commit=False``
+        on both writes): either both persist or neither does.
         """
 
         self._validate_references(
@@ -130,9 +144,12 @@ class CharacterService:
             background_id=character_data.background_id,
         )
 
-        character = self.repository.create(character_data.model_dump(), owner_id=current_user.id)
+        payload = character_data.model_dump()
+        payload["owner_id"] = current_user.id
 
-        self._apply_spell_slot_progression(character)
+        with self._atomic():
+            character = self.repository.create(payload, commit=False)
+            self._apply_spell_slot_progression(character, commit=False)
 
         return self._to_response(character, refresh=True)
 
@@ -144,28 +161,18 @@ class CharacterService:
 
         Only fields present in ``CharacterUpdate`` are changeable —
         ``class_id``, ``race_id``, and ``background_id`` are set at
-        creation and cannot be changed here. If ``level`` is part of the
-        update, the character's spell slot totals are re-synced to the
-        new level's progression — see class docstring.
+        creation and cannot be changed here (they aren't even fields of
+        the schema, so no reference re-validation is needed on PATCH),
+        and neither are ``level`` or the base ability scores (both only
+        change through the progression service).
         """
 
         character = get_character_for_user(self.repository, character_id, current_user)
 
         fields = update_data.model_dump(exclude_unset=True)
-
-        self._validate_references(
-            class_id=fields.get("class_id") if "class_id" in fields else "unset",
-            race_id=fields.get("race_id") if "race_id" in fields else "unset",
-            background_id=fields.get("background_id") if "background_id" in fields else "unset",
-        )
-
         updated_character = self.repository.update(character, fields)
 
-        if _SPELL_SLOT_AFFECTING_FIELDS & fields.keys():
-            self._apply_spell_slot_progression(updated_character)
-
-        refresh = self.ability_cache_service.fields_affect_ability_scores(fields.keys())
-        return self._to_response(updated_character, refresh=refresh)
+        return self._to_response(updated_character, refresh=False)
 
     def delete_character(self, character_id: int, current_user: UserResponse) -> bool:
         """Delete a character, enforcing GM/owner access."""
@@ -207,23 +214,16 @@ class CharacterService:
         """
         Apply a short or long rest.
 
-        Long rest: restore current_hp to max_hp, clear temp_hp, and reset all
-        spell slots (used -> 0).
-        Short rest: no automatic HP or spell slot recovery is applied here —
-        5e short rests recover HP via spent hit dice, which isn't modeled yet,
-        and only certain caster subclasses recover slots on a short rest. The
-        endpoint accepts "short" as a no-op placeholder so the rest-type
-        contract is already in place for when hit dice tracking is added.
+        Long rest: restore current_hp to max_hp, clear temp_hp, and reset
+        all spell slots (used -> 0). Short rest: accepted as a no-op
+        placeholder until hit dice tracking is added.
         """
 
         character = get_character_for_user(self.repository, character_id, current_user)
 
-        if data.type not in ("short", "long"):
-            raise InvalidRestTypeException(data.type)
-
         if data.type == "long":
             self.repository.update_hp(character, character.max_hp, 0)
-            self.character_spell_repository.reset_all_spell_slots(character_id)
+            self.character_spell_slot_repository.reset_all_spell_slots(character_id)
             character = get_character_or_404(self.repository, character_id)
 
         return self._to_response(character, refresh=False)
@@ -231,41 +231,38 @@ class CharacterService:
     def _validate_references(
         self,
         *,
-        class_id: int | str,
-        race_id: int | None | str,
-        background_id: int | None | str,
+        class_id: int,
+        race_id: int | None,
+        background_id: int | None,
     ) -> None:
         """
         Raise the matching not-found exception if any given ID doesn't
-        exist. All three accept the sentinel string ``"unset"`` to mean
-        "not included in this PATCH" (skip validation).
-
-        ``race_id``/``background_id`` additionally accept ``None`` to mean
-        "explicitly clearing the field" (also skip validation — there's
-        nothing to check, since those columns are nullable). ``class_id``
-        never receives ``None``: it is required on create and is not a
-        field of ``CharacterUpdate``, so it is either ``"unset"`` or a
-        concrete id to check.
+        exist. Called from :meth:`create_character` only — the old
+        ``"unset"`` sentinel for PATCH validation is gone, since
+        ``class_id``/``race_id``/``background_id`` are not fields of
+        ``CharacterUpdate`` and therefore can never appear in an update.
         """
 
-        if class_id != "unset" and not self.class_repository.exists_by_id(class_id):
+        if not self.class_repository.exists_by_id(class_id):
             raise ClassNotFoundException(class_id=class_id)
 
-        if race_id not in (None, "unset") and not self.race_repository.exists_by_id(race_id):
+        if race_id is not None and not self.race_repository.exists_by_id(race_id):
             raise RaceNotFoundException(race_id=race_id)
 
-        if background_id not in (None, "unset") and not self.background_repository.exists_by_id(background_id):
+        if background_id is not None and not self.background_repository.exists_by_id(background_id):
             raise BackgroundNotFoundException(background_id=background_id)
 
-    def _apply_spell_slot_progression(self, character: Character) -> None:
+    def _apply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """
         Look up ``character``'s class's spell slot progression for its
         current ``level`` and sync ``CharacterSpellSlot`` totals to match.
 
-        A class with no progression row for this level (or no
-        ``class_id`` at all, which shouldn't happen since it's required,
-        but guarded anyway) resolves to an empty mapping, which zeroes
-        out any previously-held slots — see class docstring.
+        A class with no progression row for this level (or no ``class_id``
+        at all) resolves to an empty mapping, which zeroes out any
+        previously-held slots.
+
+        ``commit=False`` defers the commit so the caller can wrap this in
+        a transaction with other writes — see :meth:`create_character`.
         """
 
         slots_by_level = (
@@ -273,20 +270,40 @@ class CharacterService:
             if character.class_id is not None
             else {}
         )
-        self.character_spell_repository.apply_spell_slot_progression(character.id, slots_by_level)
+        self.character_spell_slot_repository.apply_spell_slot_progression(character.id, slots_by_level, commit=commit)
 
-    def _to_response(self, character: Character, *, refresh: bool) -> CharacterResponse:
+    def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
+        """
+        Public wrapper around :meth:`_apply_spell_slot_progression` for
+        the progression service (class change / level-up), which owns the
+        character's class/level writes.
+
+        ``commit=False`` defers the commit so the caller can wrap the
+        re-application in a transaction with the rest of the change.
+        """
+
+        self._apply_spell_slot_progression(character, commit=commit)
+
+    def _to_response(
+        self,
+        character: Character,
+        *,
+        refresh: bool = False,
+        cache_row: CharacterAbilityScore | None = None,
+    ) -> CharacterResponse:
         """
         Serialize a character to ``CharacterResponse``, attaching
-        ``ability_scores`` either freshly recalculated (and persisted to
-        the cache, via ``CharacterAbilityCacheService.refresh``) or read
-        as-is from the existing cache row (via ``get_or_stale``).
+        ``ability_scores`` from a cache row.
+
+        When ``cache_row`` is given it's used as-is (the batch listing
+        path — ``get_characters`` loads all rows in one query). Otherwise
+        ``CharacterAbilityCacheService.for_response`` decides: freshly
+        recalculated+persisted when ``refresh`` is ``True``, else the
+        existing row as-is (or ``None`` if never computed).
         """
 
-        if refresh:
-            cache_row = self.ability_cache_service.refresh(character)
-        else:
-            cache_row = self.ability_cache_service.get_or_stale(character.id)
+        if cache_row is None:
+            cache_row = self.ability_cache_service.for_response(character, refresh=refresh)
 
         response = CharacterResponse.model_validate(character)
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None

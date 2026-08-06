@@ -10,21 +10,34 @@ class CharacterRepository(BaseRepository[Character]):
     """
     Repository for the ``Character`` model itself.
 
-    Owns only the character record's own CRUD/HP fields. Every other
-    sub-domain table that used to live here has its own repository:
-    ``CharacterProficiencyRepository`` (skills/saving throws),
-    ``CharacterSpellRepository`` (spell slots/known spells),
-    ``CharacterFeatRepository`` (feat grants), and
-    ``CharacterAbilityScoreCacheRepository`` (the effective-scores
-    cache). Every character sub-service still depends on this
-    repository too, since it's the one that ``get_character_for_user``
-    (access control) is checked against.
+    Inherits the full base CRUD contract unchanged (``get_all``,
+    ``get_by_id``, ``get_brief``, ``create``, ``update``, ``delete``,
+    ``count``). The previous signature-mismatched overrides are gone:
+
+      - ``get_all()``  ->  base ``get_all(order_by=Character.name,
+        limit=None)`` for the GM listing, or ``get_all(filters=
+        {"owner_id": ...}, order_by=Character.name, limit=None)`` for the
+        player listing (owner scoping via the generic ``filters``).
+      - ``get_all_by_owner(owner_id)``  ->  base ``get_all`` with the
+        ``owner_id`` filter (method deleted, single call site updated).
+      - ``create(data, owner_id)``  ->  the service injects ``owner_id``
+        into the payload before calling the base ``create``, mirroring how
+        ``created_by_id`` is injected for races/classes/backgrounds.
 
     Eager-loads every relationship ``CharacterResponse`` always
-    serializes, via ``default_load_options`` — this used to be missing
-    entirely, which meant ``GET /characters`` and ``GET /characters/{id}``
-    both N+1'd on ``skill_proficiencies``, ``saving_throw_proficiencies``,
-    ``spell_slots``, and ``attacks``.
+    serializes, via ``default_load_options`` — this prevents the N+1 the
+    previous implementation had on ``skill_proficiencies``,
+    ``saving_throw_proficiencies``, ``spell_slots``, and ``attacks``.
+
+    ``search_fields=["name"]`` pins free-text ``search`` (on the
+    inherited ``get_all``) to just ``name`` — without this, the base
+    class's auto-detection would also search ``traits``, ``backstory``,
+    ``notes`` and the other free-text columns on ``Character``, which
+    isn't the intended behavior for the listing endpoint's ``search``
+    parameter.
+
+    ``update_hp`` stays here: it's a two-column specialized write, not a
+    generic ``update`` call.
     """
 
     def __init__(self, db: Session):
@@ -37,39 +50,8 @@ class CharacterRepository(BaseRepository[Character]):
                 selectinload(Character.spell_slots),
                 selectinload(Character.attacks),
             ],
+            search_fields=["name"],
         )
-
-    def get_all(self) -> list[Character]:  # type: ignore[override]
-        """
-        Get all characters, ordered by name. GM-only use case.
-
-        Overrides base pagination-based get_all. Still applies
-        ``default_load_options`` via ``.options(...)`` since this bypasses
-        the base implementation entirely.
-        """
-
-        return self.db.query(Character).options(*self._default_load_options).order_by(Character.name).all()
-
-    def get_all_by_owner(self, owner_id: int) -> list[Character]:
-        """Get characters owned by a specific user. Player use case."""
-
-        return (
-            self.db.query(Character)
-            .options(*self._default_load_options)
-            .filter(Character.owner_id == owner_id)
-            .order_by(Character.name)
-            .all()
-        )
-
-    def create(self, character_data: dict, owner_id: int) -> Character:  # type: ignore[override]
-        """Create a character for a given owner (overrides base create signature)."""
-
-        character = Character(**character_data, owner_id=owner_id)
-        self.db.add(character)
-        self.db.commit()
-        self.db.refresh(character)
-
-        return character
 
     def update_hp(self, character: Character, current_hp: int, temp_hp: int) -> Character:
         """Set current and temp HP directly. Bounds/validation happen in the service."""

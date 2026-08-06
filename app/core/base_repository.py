@@ -132,12 +132,21 @@ class BaseRepository(Generic[ModelType]):
         limit: int = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
+        order_by: Any = None,
     ) -> list[ModelType]:
         """
-        Retrieve records with offset-based pagination, ordered by ``id``.
+        Retrieve records with offset-based pagination, ordered by ``id``
+        (or ``order_by`` if given).
 
         Applies ``default_load_options``, ``filters`` (exact-match, AND'd),
         and ``search`` (substring, OR'd across search fields).
+
+        Args:
+            skip: Records to skip.
+            limit: Max records to return. ``None`` disables the limit.
+            filters: Exact-match filters against ``self.model``.
+            search: Substring match against ``self._search_fields``.
+            order_by: Optional column(s) to order by; defaults to ``self.model.id``.
         """
 
         query = self.db.query(self.model)
@@ -147,7 +156,15 @@ class BaseRepository(Generic[ModelType]):
         query = self._apply_filters(query, filters)
         query = self._apply_search(query, search)
 
-        return query.order_by(self.model.id).offset(skip).limit(limit).all()
+        query = query.order_by(order_by if order_by is not None else self.model.id)
+
+        if skip:
+            query = query.offset(skip)
+
+        if limit is not None:
+            query = query.limit(limit)
+
+        return query.all()
 
     def get_brief(
         self,

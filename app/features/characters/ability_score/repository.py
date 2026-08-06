@@ -1,9 +1,12 @@
 """Cache-table repository for a character's effective ability scores."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import CharacterAbilityScore
+from app.models.character_association_models import CharacterFeat
+from app.models.feat_model import FeatAbilityScoreIncrease
+from app.models.race_association_models import RaceAbilityBonus
 
 
 class CharacterAbilityScoreCacheRepository(BaseRepository[CharacterAbilityScore]):
@@ -16,6 +19,10 @@ class CharacterAbilityScoreCacheRepository(BaseRepository[CharacterAbilityScore]
     ``CharacterAbilityScoreCalculator`` (which computes the values but
     never persists them itself). See ``CharacterAbilityCacheService``
     for the single point that decides *when* to recompute + persist.
+
+    Also owns the source-bonus queries the calculator needs
+    (``get_race_bonuses`` / ``get_feat_increases``) — these moved here
+    from the old calculator so it could become fully pure (no ``Session``).
     """
 
     def __init__(self, db: Session):
@@ -25,6 +32,41 @@ class CharacterAbilityScoreCacheRepository(BaseRepository[CharacterAbilityScore]
         """Fetch the cached effective-ability-score row, or None if never computed."""
 
         return self.db.query(CharacterAbilityScore).filter(CharacterAbilityScore.character_id == character_id).first()
+
+    def get_many_by_character_ids(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
+        """
+        Fetch the cache rows for many characters in a single query,
+        keyed by ``character_id``. Empty input returns ``{}``.
+
+        This is what lets ``CharacterService.get_characters`` attach
+        cached ability scores to a whole listing page in one query
+        instead of one ``get_by_character_id`` per row (the old N+1).
+        """
+
+        if not character_ids:
+            return {}
+
+        rows = self.db.query(CharacterAbilityScore).filter(CharacterAbilityScore.character_id.in_(character_ids)).all()
+        return {row.character_id: row for row in rows}
+
+    def get_race_bonuses(self, race_id: int | None) -> list[RaceAbilityBonus]:
+        """Fetch a race's ability bonuses, or ``[]`` for a character with no race."""
+
+        if race_id is None:
+            return []
+
+        return self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == race_id).all()
+
+    def get_feat_increases(self, character_id: int) -> list[FeatAbilityScoreIncrease]:
+        """Fetch the ASI choices granted to a character via their feat grants."""
+
+        return (
+            self.db.query(FeatAbilityScoreIncrease)
+            .join(CharacterFeat, CharacterFeat.ability_score_increase_id == FeatAbilityScoreIncrease.id)
+            .filter(CharacterFeat.character_id == character_id)
+            .options(selectinload(FeatAbilityScoreIncrease.feat))
+            .all()
+        )
 
     def upsert(self, character_id: int, totals: dict) -> CharacterAbilityScore:
         """

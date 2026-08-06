@@ -1,6 +1,6 @@
 """Character core endpoints: CRUD, HP updates, and resting."""
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.core.dependencies import CharacterServiceDep, CurrentUserDep
 from app.features.characters.core.schemas import HpUpdate, RestRequest
@@ -14,17 +14,30 @@ router = APIRouter(tags=["Characters Core"])
     response_model=list[CharacterResponse],
     summary="List characters",
 )
-def get_characters(character_service: CharacterServiceDep, current_user: CurrentUserDep):
+def get_characters(
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the character's name.",
+    ),
+    class_id: int | None = Query(
+        None,
+        description="Filter to characters of this class.",
+    ),
+):
     """
     Return characters visible to the caller.
 
-    GM sees every character. Players see only their own.
+    GM sees every character. Players see only their own. Optional
+    `search` (substring on name) and `class_id` filters narrow the
+    result; both combine with the access scoping.
 
     Ability scores reflect the last-computed cache, not a fresh
     recalculation — a character that has never been fetched
     individually (via `GET /{character_id}`) shows base values only.
     """
-    return character_service.get_characters(current_user)
+    return character_service.get_characters(current_user, search=search, class_id=class_id)
 
 
 @router.get(
@@ -171,7 +184,7 @@ def update_character_hp(
     response_model=CharacterResponse,
     summary="Take a short or long rest",
     responses={
-        400: {"description": "`type` is not one of `short` or `long`."},
+        422: {"description": "`type` is not one of `short` or `long` (rejected by the schema's Literal type)."},
         403: {"description": "Caller is not the owner and is not a GM."},
         404: {"description": "Character with id not found."},
     },
