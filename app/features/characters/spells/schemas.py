@@ -18,7 +18,15 @@ class SpellSlotResponse(BaseModel):
 
 class SpellSlotUpdate(BaseModel):
     """
-    Update the used/total count for a single spell slot level.
+    Update the ``used`` count for a single spell slot level.
+
+    ``total`` is deliberately NOT settable here — it is always derived
+    from the character's class/level spell-slot progression (applied on
+    create and re-applied on level-up/class-change, see
+    ``CharacterService._apply_spell_slot_progression``). Allowing a
+    client to overwrite ``total`` would let a player grant themselves
+    slots, so the field is excluded (``extra="forbid"`` rejects it with
+    a 422).
 
     ``level`` is validated against the ``SpellLevel`` enum, so a request
     with anything other than a known level string (e.g. ``"LEVEL_3"`` or
@@ -27,9 +35,10 @@ class SpellSlotUpdate(BaseModel):
     DB's check constraint.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     level: SpellLevel
     used: int | None = None
-    total: int | None = None
 
 
 class CharacterSpellAdd(BaseModel):

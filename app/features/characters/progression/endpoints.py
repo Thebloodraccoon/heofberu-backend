@@ -9,13 +9,14 @@ from app.features.characters.progression.schemas import (
     LevelUpRequest,
     RaceChange,
 )
-from app.models.character_model import Character
+from app.features.characters.schemas import CharacterResponse
 
 router = APIRouter(tags=["Characters Progression"])
 
 
 @router.patch(
     "/{character_id}/progression/race",
+    response_model=CharacterResponse,
     summary="Change a character's race",
     description="Sets ``race_id`` (null clears it) and re-derives race ability bonuses.",
 )
@@ -25,13 +26,14 @@ def change_race(
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
-) -> Character:
+) -> CharacterResponse:
     progression_service.change_race(character_id, data, current_user)
     return character_service.get_character(character_id, current_user)
 
 
 @router.patch(
     "/{character_id}/progression/class",
+    response_model=CharacterResponse,
     summary="Change a character's class",
     description="Replaces the class and re-applies spell slot progression for the current level.",
 )
@@ -41,13 +43,14 @@ def change_class(
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
-) -> Character:
+) -> CharacterResponse:
     progression_service.change_class(character_id, data, current_user)
     return character_service.get_character(character_id, current_user)
 
 
 @router.post(
     "/{character_id}/progression/level-up",
+    response_model=CharacterResponse,
     summary="Level a character up",
     description=(
         "Advances the character one level. At ASI levels (4/8/12/16/19) a ``choice`` "
@@ -60,7 +63,7 @@ def level_up(
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
-) -> Character:
+) -> CharacterResponse:
     progression_service.level_up(character_id, data, current_user)
     return character_service.get_character(character_id, current_user)
 

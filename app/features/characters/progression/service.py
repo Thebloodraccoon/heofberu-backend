@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, TOTAL_FIELD_BY_ABILITY
-from app.features.characters.ability_score.service import CharacterAbilityCacheService
+from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.core.service import CharacterService
 from app.features.characters.feats.exceptions import CharacterFeatAlreadyKnownException
@@ -60,7 +60,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         self.feat_repository = FeatRepository(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
-        self.ability_cache_service = CharacterAbilityCacheService(db)
+        self.stats_service = CharacterStatsService(db)
 
     @contextmanager
     def _atomic(self) -> Iterator[None]:
@@ -89,7 +89,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         character.race_id = data.race_id
         self.repository.db.commit()
         self.repository.db.refresh(character)
-        self.ability_cache_service.refresh(character)
+        self.stats_service.refresh(character)
 
     def change_class(self, character_id: int, data: ClassChange, current_user: UserResponse) -> None:
         """
@@ -139,7 +139,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
             self.character_service.reapply_spell_slot_progression(character, commit=False)
 
-        self.ability_cache_service.refresh(character)
+        self.stats_service.refresh(character)
 
     def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
         """Return the character's resolved ASI-level choices, for audit."""
@@ -153,7 +153,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         using the character's *effective* scores, then bump the base
         columns and record the choice.
         """
-        totals = self.ability_cache_service.compute(character)
+        totals = self.stats_service.compute(character)
         for item in increases:
             total_field = TOTAL_FIELD_BY_ABILITY[item.ability]
             current_total = totals[total_field]
@@ -192,7 +192,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         if choice.ability_score_increase_id is not None:
             validate_ability_score_increase(feat, choice.ability_score_increase_id)
-        check_feat_prerequisite(character, feat, self.ability_cache_service)
+        check_feat_prerequisite(character, feat, self.stats_service)
 
         self.feat_grant_repository.add_character_feat(
             character.id,
@@ -230,5 +230,5 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     def _constitution_modifier(self, character: Character) -> int:
         """CON modifier from the character's current *effective* CON total."""
-        totals = self.ability_cache_service.compute(character)
+        totals = self.stats_service.compute(character)
         return (totals["constitution_total"] - 10) // 2

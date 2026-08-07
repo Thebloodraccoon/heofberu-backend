@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from app.features.characters.ability_score.service import CharacterAbilityCacheService
+from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
@@ -29,7 +29,7 @@ class CharacterFeatService(CharacterSubDomainService):
     Every write here (add/update/remove) refreshes the ability-score
     cache before returning, since granting or changing a feat's ASI
     choice can change the character's effective ability scores. The
-    refresh itself is delegated to ``CharacterAbilityCacheService`` —
+    refresh itself is delegated to ``CharacterStatsService`` —
     the single point every character sub-service goes through, rather
     than each maintaining its own recalculate-and-upsert logic (see
     that class's docstring for why this was consolidated).
@@ -41,14 +41,14 @@ class CharacterFeatService(CharacterSubDomainService):
       - ``CharacterFeatRepository`` — the actual ``character_feats``
         grant rows (CRUD).
       - ``FeatRepository`` — looking up feats and their ASI choices.
-      - ``CharacterAbilityCacheService`` — decides when/how to
+      - ``CharacterStatsService`` — decides when/how to
         recompute and persist ``character_ability_scores``.
     """
 
     def __init__(self, db: Session):
         super().__init__(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
-        self.ability_cache_service = CharacterAbilityCacheService(db)
+        self.stats_service = CharacterStatsService(db)
         self.feat_repository = FeatRepository(db)
 
     def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
@@ -93,13 +93,13 @@ class CharacterFeatService(CharacterSubDomainService):
         if data.ability_score_increase_id is not None:
             validate_ability_score_increase(feat, data.ability_score_increase_id)
 
-        check_feat_prerequisite(character, feat, self.ability_cache_service)
+        check_feat_prerequisite(character, feat, self.stats_service)
 
         grant = self.feat_grant_repository.add_character_feat(
             character_id, data.feat_id, data.ability_score_increase_id
         )
 
-        self.ability_cache_service.refresh(character)
+        self.stats_service.refresh(character)
 
         return CharacterFeatResponse.model_validate(grant)
 
@@ -124,7 +124,7 @@ class CharacterFeatService(CharacterSubDomainService):
             grant, data.ability_score_increase_id
         )
 
-        self.ability_cache_service.refresh(character)
+        self.stats_service.refresh(character)
 
         return CharacterFeatResponse.model_validate(updated_grant)
 
@@ -136,7 +136,7 @@ class CharacterFeatService(CharacterSubDomainService):
         grant = self._get_grant_or_404(character_id, character_feat_id)
         result = self.feat_grant_repository.remove_character_feat(grant)
 
-        self.ability_cache_service.refresh(character)
+        self.stats_service.refresh(character)
 
         return result
 

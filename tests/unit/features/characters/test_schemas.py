@@ -28,7 +28,7 @@ class TestRestRequest:
 @pytest.mark.unit
 class TestSpellSlotUpdate:
     def test_accepts_known_level(self):
-        update = SpellSlotUpdate(level="LEVEL_3", used=1, total=2)
+        update = SpellSlotUpdate(level="LEVEL_3", used=1)
 
         assert update.level.value == "LEVEL_3"
 
@@ -43,9 +43,13 @@ class TestSpellSlotUpdate:
         with pytest.raises(ValidationError):
             SpellSlotUpdate(level="all")
 
-    def test_used_and_total_are_optional(self):
+    def test_used_is_optional(self):
         assert SpellSlotUpdate(level="LEVEL_1").used is None
-        assert SpellSlotUpdate(level="LEVEL_1").total is None
+
+    def test_rejects_total_field(self):
+        """`total` is not client-settable — it always comes from class/level progression."""
+        with pytest.raises(ValidationError):
+            SpellSlotUpdate(level="LEVEL_1", total=2)
 
 
 @pytest.mark.unit

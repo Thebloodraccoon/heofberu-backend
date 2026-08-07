@@ -1,11 +1,12 @@
-"""Unit tests for CharacterAbilityCacheService with a fake cache repository."""
+"""Unit tests for CharacterStatsService with a fake stats repository."""
 
 from types import SimpleNamespace
 
 import pytest
 
 from app.constants import AbilityScore
-from app.features.characters.ability_score.service import CharacterAbilityCacheService
+from app.features.characters.ability_score.calculator import ArmorSpec, DerivedStats
+from app.features.characters.ability_score.service import CharacterStatsService
 from app.models.character_model import Character
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
@@ -30,17 +31,23 @@ def make_character(**overrides) -> Character:
 
 
 class FakeCacheRepository:
-    """Stands in for CharacterAbilityScoreCacheRepository, recording calls."""
+    """Stands in for CharacterStatsRepository, recording calls."""
 
-    def __init__(self, cache_row=None, race_bonuses=None, feat_increases=None):
+    def __init__(self, cache_row=None, race_bonuses=None, feat_increases=None, classes=None, races=None, armor=None):
         self.cache_row = cache_row
         self.race_bonuses = race_bonuses or []
         self.feat_increases = feat_increases or []
+        self.classes = classes or {}
+        self.races = races or {}
+        self.armor = armor or {}
         self.get_by_calls = []
         self.get_many_calls = []
         self.get_race_bonus_calls = []
         self.get_feat_increase_calls = []
         self.upsert_calls = []
+        self.get_classes_calls = []
+        self.get_races_calls = []
+        self.get_armor_calls = []
 
     def get_by_character_id(self, character_id):
         self.get_by_calls.append(character_id)
@@ -62,16 +69,28 @@ class FakeCacheRepository:
         self.upsert_calls.append((character_id, totals))
         return self.cache_row
 
+    def get_classes(self, class_ids):
+        self.get_classes_calls.append(class_ids)
+        return {cid: self.classes[cid] for cid in class_ids if cid in self.classes}
 
-def make_service(**fake_kwargs) -> tuple[CharacterAbilityCacheService, FakeCacheRepository]:
+    def get_races(self, race_ids):
+        self.get_races_calls.append(race_ids)
+        return {rid: self.races[rid] for rid in race_ids if rid in self.races}
+
+    def get_armor_by_character_ids(self, character_ids):
+        self.get_armor_calls.append(character_ids)
+        return {cid: self.armor[cid] for cid in character_ids if cid in self.armor}
+
+
+def make_service(**fake_kwargs) -> tuple[CharacterStatsService, FakeCacheRepository]:
     fake = FakeCacheRepository(**fake_kwargs)
-    service = CharacterAbilityCacheService(db=None)
-    service.cache_repository = fake
+    service = CharacterStatsService(db=None)
+    service.repository = fake
     return service, fake
 
 
 @pytest.mark.unit
-class TestCharacterAbilityCacheService:
+class TestCharacterStatsService:
     def test_compute_loads_bonus_rows_and_returns_totals_without_persisting(self):
         fake_kwargs = {
             "race_bonuses": [RaceAbilityBonus(race_id=5, ability=AbilityScore.DEX, bonus=2)],
@@ -144,3 +163,35 @@ class TestCharacterAbilityCacheService:
                 },
             )
         ]
+
+    def test_get_many_derived_assembles_stats_from_references(self):
+        character = make_character(id=7, dexterity=14)
+        fighter = SimpleNamespace(hit_dice=SimpleNamespace(value="D10"))
+        elf = SimpleNamespace(speed=25)
+        armor = [ArmorSpec(base=11, dex_bonus=True, max_dex_bonus=None)]
+        service, fake = make_service(classes={1: fighter}, races={5: elf}, armor={7: armor})
+
+        result = service.get_many_derived([character], {7: None})
+
+        assert fake.get_classes_calls == [[1]]
+        assert fake.get_races_calls == [[5]]
+        assert fake.get_armor_calls == [[7]]
+        assert result == {7: DerivedStats(hit_dice="D10", speed=25, armor_class=13)}
+
+    def test_get_many_derived_uses_dex_total_from_cache(self):
+        character = make_character(id=7, dexterity=14)
+        service, fake = make_service(classes={1: SimpleNamespace(hit_dice=SimpleNamespace(value="D8"))})
+
+        result = service.get_many_derived([character], {7: 18})
+
+        assert result[7].armor_class == 14
+
+    def test_get_many_derived_falls_back_to_defaults_without_references(self):
+        character = make_character(id=7, class_id=None, race_id=None, dexterity=10)
+        service, fake = make_service()
+
+        result = service.get_many_derived([character], {7: None})
+
+        assert fake.get_classes_calls == [[]]
+        assert fake.get_races_calls == [[]]
+        assert result == {7: DerivedStats(hit_dice="", speed=30, armor_class=10)}

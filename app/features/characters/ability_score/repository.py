@@ -1,28 +1,41 @@
-"""Cache-table repository for a character's effective ability scores."""
+"""Repository for a character's effective ability scores and derived combat stats."""
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.constants import ItemType
 from app.core.base_repository import BaseRepository
-from app.models import CharacterAbilityScore
+from app.features.characters.ability_score.calculator import ArmorSpec
+from app.models import (
+    CharacterAbilityScore,
+    CharacterItem,
+    Class,
+    Item,
+    Race,
+)
 from app.models.character_association_models import CharacterFeat
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
 
 
-class CharacterAbilityScoreCacheRepository(BaseRepository[CharacterAbilityScore]):
+class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
     """
-    Repository for the ``character_ability_scores`` cache table.
+    Repository backing ``CharacterStatsService``: the ``character_ability_scores``
+    cache table plus the reference-data queries the derived combat stats need.
 
-    Split out of ``CharacterRepository`` — this is a derived/cached
-    table (effective ability scores after race/feat bonuses), distinct
-    from both the base ``Character`` row and from
+    Split out of ``CharacterRepository`` — the cache table is a
+    derived/cached table (effective ability scores after race/feat bonuses),
+    distinct from both the base ``Character`` row and from
     ``CharacterAbilityScoreCalculator`` (which computes the values but
-    never persists them itself). See ``CharacterAbilityCacheService``
-    for the single point that decides *when* to recompute + persist.
+    never persists them itself). See ``CharacterStatsService`` for the
+    single point that decides *when* to recompute + persist.
 
     Also owns the source-bonus queries the calculator needs
     (``get_race_bonuses`` / ``get_feat_increases``) — these moved here
     from the old calculator so it could become fully pure (no ``Session``).
+
+    The derived combat stats (hit dice, speed, armor class) load their
+    references (class, race, equipped armor) through the same batch
+    queries, so a listing page costs a constant number of queries.
     """
 
     def __init__(self, db: Session):
@@ -87,3 +100,57 @@ class CharacterAbilityScoreCacheRepository(BaseRepository[CharacterAbilityScore]
         self.db.commit()
         self.db.refresh(cache)
         return cache
+
+    def get_classes(self, class_ids: list[int]) -> dict[int, Class]:
+        """Return ``{id: Class}`` for the given class ids (missing ids are absent)."""
+
+        if not class_ids:
+            return {}
+        rows = self.db.query(Class).filter(Class.id.in_(class_ids)).all()
+        return {row.id: row for row in rows}
+
+    def get_races(self, race_ids: list[int]) -> dict[int, Race]:
+        """Return ``{id: Race}`` for the given race ids (missing ids are absent)."""
+
+        if not race_ids:
+            return {}
+        rows = self.db.query(Race).filter(Race.id.in_(race_ids)).all()
+        return {row.id: row for row in rows}
+
+    def get_armor_by_character_ids(self, character_ids: list[int]) -> dict[int, list[ArmorSpec]]:
+        """
+        Return ``{character_id: [ArmorSpec, ...]}`` for the characters' *equipped*
+        armor items, ordered by stack id.
+
+        Only items typed ``ARMOR`` with an ``armor_class_base`` count; a
+        character with several equipped armor stacks is a misconfiguration, so
+        callers use the first spec deterministically.
+        """
+
+        if not character_ids:
+            return {}
+
+        rows = (
+            self.db.query(CharacterItem)
+            .options(joinedload(CharacterItem.item))
+            .join(Item, CharacterItem.item_id == Item.id)
+            .filter(
+                CharacterItem.character_id.in_(character_ids),
+                CharacterItem.is_equipped.is_(True),
+                Item.item_type == ItemType.ARMOR,
+                Item.armor_class_base.is_not(None),
+            )
+            .order_by(CharacterItem.id)
+            .all()
+        )
+
+        result: dict[int, list[ArmorSpec]] = {}
+        for row in rows:
+            result.setdefault(row.character_id, []).append(
+                ArmorSpec(
+                    base=row.item.armor_class_base,
+                    dex_bonus=row.item.armor_class_dex_bonus,
+                    max_dex_bonus=row.item.armor_class_max_dex_bonus,
+                )
+            )
+        return result

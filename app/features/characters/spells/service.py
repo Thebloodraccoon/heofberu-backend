@@ -79,10 +79,15 @@ class CharacterSpellService(CharacterSubDomainService):
         self, character_id: int, data: SpellSlotUpdate, current_user: UserResponse
     ) -> SpellSlotResponse:
         """
-        Spend or restore a spell slot at a given level.
+        Spend or restore spell slots at a given level.
 
-        If no entry exists yet for this level, one is created — this also
-        covers initially granting a character's slots (e.g. total=4, used=0).
+        Only ``used`` is ever changed. ``total`` is not client-settable —
+        it always reflects the character's class/level spell-slot
+        progression (applied on create and re-applied on level-up/class
+        change). If no entry exists yet for this level, one is created
+        with ``total`` 0 (a class/level that grants no slots); spending
+        into it is rejected below, since ``used`` must stay within
+        ``total``.
         """
 
         self.get_character_for_user(character_id, current_user)
@@ -93,13 +98,12 @@ class CharacterSpellService(CharacterSubDomainService):
         current_total = existing.total if existing else 0
         current_used = existing.used if existing else 0
 
-        new_total = data.total if data.total is not None else current_total
         new_used = data.used if data.used is not None else current_used
 
-        if new_used < 0 or new_used > new_total:
+        if new_used < 0 or new_used > current_total:
             raise InvalidSpellSlotUsageException()
 
-        slot = self.character_spell_slot_repository.upsert_spell_slot(character_id, level, new_total, new_used)
+        slot = self.character_spell_slot_repository.upsert_spell_slot(character_id, level, current_total, new_used)
         return SpellSlotResponse.model_validate(slot)
 
     def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:

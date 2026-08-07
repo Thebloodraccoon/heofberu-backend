@@ -1,18 +1,23 @@
-"""Cache invalidation policy and persistence for effective ability scores."""
+"""Character stats service: the ability-score cache and derived combat stats."""
 
 from sqlalchemy.orm import Session
 
-from app.features.characters.ability_score.calculator import CharacterAbilityScoreCalculator
-from app.features.characters.ability_score.repository import CharacterAbilityScoreCacheRepository
+from app.features.characters.ability_score.calculator import (
+    DEFAULT_SPEED,
+    CharacterAbilityScoreCalculator,
+    DerivedStats,
+    compute_armor_class,
+)
+from app.features.characters.ability_score.repository import CharacterStatsRepository
 from app.models import CharacterAbilityScore
 from app.models.character_model import Character
 
 
-class CharacterAbilityCacheService:
+class CharacterStatsService:
     """
     Single point of decision for "when does the effective-ability-score
     cache need recomputing", and the only place that writes to
-    ``CharacterAbilityScoreCacheRepository``.
+    ``character_ability_scores``.
 
     Before this existed, three call sites each decided independently
     when to recalculate: ``CharacterService._to_response`` (via
@@ -40,11 +45,22 @@ class CharacterAbilityCacheService:
       - ``for_response`` — thin dispatcher used by
         ``CharacterService._to_response``: ``refresh`` when ``refresh``
         is ``True``, else ``get_or_stale``.
+
+    This service is also the home of the fully-derived combat stats that
+    a ``CharacterResponse`` exposes instead of the character's own
+    ``hit_dice`` / ``speed`` / ``armor_class`` columns:
+      - ``compute_derived`` — for a single character;
+      - ``get_many_derived`` — for a listing page, so a page costs a
+        constant number of queries regardless of page size.
+
+    Because these are derived on every read, no write path needs to keep
+    them in sync, and a GM editing a class's hit die or a race's speed
+    shows up the next time the character is fetched.
     """
 
     def __init__(self, db: Session):
         self.calculator = CharacterAbilityScoreCalculator()
-        self.cache_repository = CharacterAbilityScoreCacheRepository(db)
+        self.repository = CharacterStatsRepository(db)
 
     def compute(self, character: Character) -> dict[str, int]:
         """
@@ -58,15 +74,15 @@ class CharacterAbilityCacheService:
         based on fresh data even if the cache is stale.
         """
 
-        race_bonuses = self.cache_repository.get_race_bonuses(character.race_id)
-        feat_increases = self.cache_repository.get_feat_increases(character.id)
+        race_bonuses = self.repository.get_race_bonuses(character.race_id)
+        feat_increases = self.repository.get_feat_increases(character.id)
         return self.calculator.compute(character, race_bonuses, feat_increases)
 
     def refresh(self, character: Character) -> CharacterAbilityScore:
         """Recompute effective ability scores for ``character`` and persist them."""
 
         totals = self.compute(character)
-        return self.cache_repository.upsert(character.id, totals)
+        return self.repository.upsert(character.id, totals)
 
     def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
         """
@@ -75,7 +91,7 @@ class CharacterAbilityCacheService:
         (e.g. never fetched individually via ``GET /{character_id}``).
         """
 
-        return self.cache_repository.get_by_character_id(character_id)
+        return self.repository.get_by_character_id(character_id)
 
     def get_many_or_stale(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
         """
@@ -84,7 +100,7 @@ class CharacterAbilityCacheService:
         absent from the result — see :meth:`get_or_stale`.
         """
 
-        return self.cache_repository.get_many_by_character_ids(character_ids)
+        return self.repository.get_many_by_character_ids(character_ids)
 
     def for_response(self, character: Character, *, refresh: bool = False) -> CharacterAbilityScore | None:
         """
@@ -96,3 +112,49 @@ class CharacterAbilityCacheService:
         if refresh:
             return self.refresh(character)
         return self.get_or_stale(character.id)
+
+    def compute_derived(self, character: Character, dex_total: int | None) -> DerivedStats:
+        """Compute the derived combat stats for a single character (see :meth:`get_many_derived`)."""
+
+        return self.get_many_derived([character], {character.id: dex_total})[character.id]
+
+    def get_many_derived(
+        self,
+        characters: list[Character],
+        dex_totals_by_id: dict[int, int | None],
+    ) -> dict[int, DerivedStats]:
+        """
+        Return ``{character_id: DerivedStats}`` for the given characters.
+
+        ``dex_totals_by_id`` supplies each character's effective Dexterity
+        total (typically from the ability-score cache); a missing value
+        falls back to the character's base Dexterity, which matches the
+        listing path's "read the cache as-is" freshness policy.
+        """
+
+        class_ids = [character.class_id for character in characters if character.class_id is not None]
+        race_ids = [character.race_id for character in characters if character.race_id is not None]
+        character_ids = [character.id for character in characters]
+
+        classes = self.repository.get_classes(class_ids)
+        races = self.repository.get_races(race_ids)
+        armor_by_character = self.repository.get_armor_by_character_ids(character_ids)
+
+        result: dict[int, DerivedStats] = {}
+        for character in characters:
+            character_class = classes.get(character.class_id) if character.class_id is not None else None
+            race = races.get(character.race_id) if character.race_id is not None else None
+
+            dex_total = dex_totals_by_id.get(character.id)
+            if dex_total is None:
+                dex_total = character.dexterity
+
+            armor_specs = armor_by_character.get(character.id) or []
+            armor_spec = armor_specs[0] if armor_specs else None
+
+            result[character.id] = DerivedStats(
+                hit_dice=character_class.hit_dice.value if character_class is not None else "",
+                speed=race.speed if race is not None else DEFAULT_SPEED,
+                armor_class=compute_armor_class(dex_total, armor_spec),
+            )
+        return result

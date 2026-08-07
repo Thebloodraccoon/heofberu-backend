@@ -74,7 +74,7 @@ def get_items_brief(
 
     """
     filters = {"item_type": item_type, "rarity": rarity}
-    return item_service.get_all(page=page, size=size, filters=filters, search=search)
+    return item_service.list_brief(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(

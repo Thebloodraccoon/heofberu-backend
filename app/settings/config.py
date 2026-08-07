@@ -12,7 +12,7 @@ class AppSettings(BaseSettings):
     # App
     APP_NAME: str = "Heofberu Backend API"
     APP_VERSION: str = "1.0.0"
-    STAGE: str = Field(default="local", alias="STAGE")
+    STAGE: str = Field(default="dev", alias="STAGE")
     HOST: str = "0.0.0.0"  # nosec B104
 
     # JWT

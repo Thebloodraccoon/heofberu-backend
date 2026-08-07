@@ -104,4 +104,8 @@ class CharacterASIChoiceResponse(BaseModel):
     choice_type: ASILevelChoice
     feat_id: int | None = None
     ability_score_increase_id: int | None = None
-    increases: list[ASIIncreaseResponse] = []
+    increases: list[ASIIncreaseResponse] = Field(default_factory=list)
+
+    @field_validator("increases", mode="before")
+    def _increases_none_to_empty(cls, v):
+        return v if v is not None else []

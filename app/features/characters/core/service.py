@@ -5,10 +5,11 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.constants import UserRole
-from app.core.base_service import BaseService
+from app.core.base_service import BaseService, Page, paginate
 from app.features.backgrounds.exceptions import BackgroundNotFoundException
 from app.features.backgrounds.repository import BackgroundRepository
-from app.features.characters.ability_score.service import CharacterAbilityCacheService
+from app.features.characters.ability_score.calculator import DerivedStats
+from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.core.exceptions import InvalidHpUpdateException
 from app.features.characters.core.repository import CharacterRepository
@@ -53,7 +54,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     serialization and spell-slot re-application.
 
     Ability score cache policy is decided by
-    ``CharacterAbilityCacheService`` — this service only tells it *when* a
+    ``CharacterStatsService`` — this service only tells it *when* a
     write might have touched ability scores:
       - ``get_character`` always refreshes before returning (fresh, cheap).
       - ``get_characters`` (listing) does NOT refresh — it returns the
@@ -62,6 +63,12 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         refreshes, because ``CharacterUpdate`` holds no ability-affecting
         fields anymore (base scores only change via the level-up ASI, and
         race_id/class_id are not editable here).
+
+    Derived combat stats (hit dice, speed, armor class) are computed by
+    ``CharacterStatsService`` on every read, for both the detail
+    and the listing path. They depend on the class, race, and equipped
+    armor, so no write path here keeps them in sync — a GM editing a
+    reference table is reflected on the next fetch.
 
     Spell slot progression policy: applied on create for the starting
     level, and re-applied by the progression service (via
@@ -80,7 +87,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.class_repository = ClassRepository(db)
         self.race_repository = RaceRepository(db)
         self.background_repository = BackgroundRepository(db)
-        self.ability_cache_service = CharacterAbilityCacheService(db)
+        self.stats_service = CharacterStatsService(db)
 
     def get_characters(
         self,
@@ -88,11 +95,14 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         *,
         search: str | None = None,
         class_id: int | None = None,
-    ) -> list[CharacterResponse]:
+        page: int = 1,
+        size: int = 100,
+    ) -> Page[CharacterResponse]:
         """
         Return every character for a GM, or only the caller's own for a
-        player. Ability scores reflect the last-computed cache, not a
-        fresh recalculation — see class docstring.
+        player, as a paginated ``Page`` envelope. Ability scores reflect
+        the last-computed cache, not a fresh recalculation — see class
+        docstring.
 
         ``search`` does a case-insensitive substring match against the
         character's ``name`` (pinned via the repository's
@@ -105,16 +115,35 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             filters["owner_id"] = current_user.id
         if class_id is not None:
             filters["class_id"] = class_id
+        filters = filters or None
 
+        skip, limit = paginate(page, size)
         characters = self.repository.get_all(
-            filters=filters or None,
+            filters=filters,
             search=search,
             order_by=Character.name,
-            limit=None,
+            skip=skip,
+            limit=limit,
         )
+        total = self.repository.count(filters=filters, search=search)
 
-        cache_by_id = self.ability_cache_service.get_many_or_stale([character.id for character in characters])
-        return [self._to_response(character, cache_row=cache_by_id.get(character.id)) for character in characters]
+        cache_by_id = self.stats_service.get_many_or_stale([character.id for character in characters])
+        dex_totals_by_id = {
+            character.id: cache_by_id[character.id].dexterity_total if character.id in cache_by_id else None
+            for character in characters
+        }
+        derived_by_id = self.stats_service.get_many_derived(characters, dex_totals_by_id)
+        return Page(
+            items=[
+                self._to_response(
+                    character, cache_row=cache_by_id.get(character.id), derived=derived_by_id.get(character.id)
+                )
+                for character in characters
+            ],
+            total=total,
+            page=page,
+            size=size,
+        )
 
     def get_character(self, character_id: int, current_user: UserResponse) -> CharacterResponse:
         """Return a single character, enforcing GM/owner access, with freshly recalculated ability scores."""
@@ -290,21 +319,34 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         *,
         refresh: bool = False,
         cache_row: CharacterAbilityScore | None = None,
+        derived: DerivedStats | None = None,
     ) -> CharacterResponse:
         """
         Serialize a character to ``CharacterResponse``, attaching
-        ``ability_scores`` from a cache row.
+        ``ability_scores`` from a cache row and the derived combat stats.
 
         When ``cache_row`` is given it's used as-is (the batch listing
         path — ``get_characters`` loads all rows in one query). Otherwise
-        ``CharacterAbilityCacheService.for_response`` decides: freshly
+        ``CharacterStatsService.for_response`` decides: freshly
         recalculated+persisted when ``refresh`` is ``True``, else the
         existing row as-is (or ``None`` if never computed).
+
+        ``derived`` is the precomputed hit dice / speed / armor class
+        (``get_characters`` batch-computes it to avoid N queries per
+        page); when absent it is computed here from the character's
+        effective Dexterity total.
         """
 
         if cache_row is None:
-            cache_row = self.ability_cache_service.for_response(character, refresh=refresh)
+            cache_row = self.stats_service.for_response(character, refresh=refresh)
+
+        if derived is None:
+            dex_total = cache_row.dexterity_total if cache_row is not None else None
+            derived = self.stats_service.compute_derived(character, dex_total)
 
         response = CharacterResponse.model_validate(character)
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
+        response.hit_dice = derived.hit_dice
+        response.speed = derived.speed
+        response.armor_class = derived.armor_class
         return response

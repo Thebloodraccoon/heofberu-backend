@@ -17,7 +17,7 @@ class CharacterAbilityScore(settings.Base):  # type: ignore
 
     This is a cache, not a source of truth: the base values on
     ``Character`` remain authoritative. Rows here are recomputed and
-    persisted by ``CharacterAbilityCacheService.refresh`` whenever a
+    persisted by ``CharacterStatsService.refresh`` whenever a
     single character is fetched by ID, whenever a character is created,
     whenever a feat is granted/updated/removed, and on character updates
     that touch the base ability scores or ``race_id``. Listing endpoints

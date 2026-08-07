@@ -31,8 +31,10 @@ class FakeKnownSpellRepository:
 
     def __init__(self, known_at_level=0):
         self.known_at_level = known_at_level
+        self.count_calls = []
 
-    def count_known_spells_at_level(self):
+    def count_known_spells_at_level(self, character_id, level):
+        self.count_calls.append((character_id, level))
         return self.known_at_level
 
 
@@ -75,7 +77,7 @@ class TestCharacterSpellEligibilityChecker:
         with pytest.raises(SpellNotAvailableToCharacterException):
             checker.check(make_character(class_id=1), spell)
 
-        assert checker.slot_repository.get_spell_slot == []
+        assert checker.slot_repository.get_spell_slot_calls == []
 
     def test_available_when_class_restriction_matches(self):
         spell = make_spell(available_classes=[SimpleNamespace(id=2)])
@@ -135,3 +137,4 @@ class TestCharacterSpellEligibilityChecker:
         checker.check(make_character(class_id=1), spell)
 
         assert slot_repository.get_spell_slot_calls == [(1, SpellLevel.LEVEL_3)]
+        assert known_spell_repository.count_calls == [(1, SpellLevel.LEVEL_3)]
