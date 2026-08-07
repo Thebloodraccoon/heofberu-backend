@@ -2,15 +2,17 @@
 
 from sqlalchemy.orm import Session
 
-from app.features.characters.access import get_character_for_user
-from app.features.characters.core.repository import CharacterRepository
+from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.spells.eligibility import CharacterSpellEligibilityChecker
 from app.features.characters.spells.exceptions import (
     CharacterSpellAlreadyKnownException,
     CharacterSpellNotFoundException,
     InvalidSpellSlotUsageException,
 )
-from app.features.characters.spells.repository import CharacterSpellRepository
+from app.features.characters.spells.repository import (
+    CharacterSpellRepository,
+    CharacterSpellSlotRepository,
+)
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
@@ -23,7 +25,7 @@ from app.features.users.schemas import UserResponse
 from app.models.character_spell_model import CharacterSpell
 
 
-class CharacterSpellService:
+class CharacterSpellService(CharacterSubDomainService):
     """
     Spell slots and known spells for a character.
 
@@ -44,9 +46,11 @@ class CharacterSpellService:
     entirely to the GM.
 
     Uses three repositories:
-      - ``CharacterRepository`` — access control only (fetching the
-        owning character to check GM/owner permission).
-      - ``CharacterSpellRepository`` — the actual spell slot / known
+      - the inherited ``CharacterSubDomainService`` — access control only
+        (fetching the owning character to check GM/owner permission).
+      - ``CharacterSpellSlotRepository`` — the ``character_spell_slots``
+        rows (totals/usage per level).
+      - ``CharacterSpellRepository`` — the ``character_spells`` known-
         spell rows.
       - ``SpellRepository`` — looking up the reference spell when adding
         a known spell.
@@ -55,48 +59,57 @@ class CharacterSpellService:
     """
 
     def __init__(self, db: Session):
-        self.repository = CharacterRepository(db)
+        super().__init__(db)
+        self.character_spell_slot_repository = CharacterSpellSlotRepository(db)
         self.character_spell_repository = CharacterSpellRepository(db)
         self.spell_repository = SpellRepository(db)
-        self.eligibility_checker = CharacterSpellEligibilityChecker(self.character_spell_repository)
+        self.eligibility_checker = CharacterSpellEligibilityChecker(
+            self.character_spell_slot_repository, self.character_spell_repository
+        )
 
     def get_spell_slots(self, character_id: int, current_user: UserResponse) -> list[SpellSlotResponse]:
         """Return all spell slot entries (by level) for a character."""
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
-        slots = self.character_spell_repository.get_all_spell_slots(character_id)
+        slots = self.character_spell_slot_repository.get_all_spell_slots(character_id)
         return [SpellSlotResponse.model_validate(slot) for slot in slots]
 
     def update_spell_slot(
         self, character_id: int, data: SpellSlotUpdate, current_user: UserResponse
     ) -> SpellSlotResponse:
         """
-        Spend or restore a spell slot at a given level.
+        Spend or restore spell slots at a given level.
 
-        If no entry exists yet for this level, one is created — this also
-        covers initially granting a character's slots (e.g. total=4, used=0).
+        Only ``used`` is ever changed. ``total`` is not client-settable —
+        it always reflects the character's class/level spell-slot
+        progression (applied on create and re-applied on level-up/class
+        change). If no entry exists yet for this level, one is created
+        with ``total`` 0 (a class/level that grants no slots); spending
+        into it is rejected below, since ``used`` must stay within
+        ``total``.
         """
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
-        existing = self.character_spell_repository.get_spell_slot(character_id, data.level)
+        level = data.level.value
+
+        existing = self.character_spell_slot_repository.get_spell_slot(character_id, level)
         current_total = existing.total if existing else 0
         current_used = existing.used if existing else 0
 
-        new_total = data.total if data.total is not None else current_total
         new_used = data.used if data.used is not None else current_used
 
-        if new_used < 0 or new_used > new_total:
+        if new_used < 0 or new_used > current_total:
             raise InvalidSpellSlotUsageException()
 
-        slot = self.character_spell_repository.upsert_spell_slot(character_id, data.level, new_total, new_used)
+        slot = self.character_spell_slot_repository.upsert_spell_slot(character_id, level, current_total, new_used)
         return SpellSlotResponse.model_validate(slot)
 
     def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:
         """List all spells known by the character."""
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
         known_spells = self.character_spell_repository.get_known_spells(character_id)
         return [CharacterSpellResponse.model_validate(cs) for cs in known_spells]
@@ -117,7 +130,7 @@ class CharacterSpellService:
         ``CharacterSpellEligibilityChecker``.
         """
 
-        character = get_character_for_user(self.repository, character_id, current_user)
+        character = self.get_character_for_user(character_id, current_user)
 
         spell = self.spell_repository.get_by_id(data.spell_id)
         if not spell:
@@ -135,7 +148,7 @@ class CharacterSpellService:
     def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> bool:
         """Remove a spell from the character's known spells, freeing up its slot."""
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
         character_spell = self._get_known_spell_or_404(character_id, spell_id)
         return self.character_spell_repository.remove_known_spell(character_spell)

@@ -45,18 +45,45 @@ class TestCharacterSpellSlots:
 
         assert response.status_code == 400
 
-    def test_create_slot_entry_on_demand(self, client, player, player_token, create_class, create_character):
+    def test_invalid_spell_level_returns_422(
+        self, client, player, player_token, create_caster_class, create_api_character
+    ):
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/spell-slots",
+            json={"level": "LEVEL_10", "used": 1},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
+
+    def test_cannot_set_total_via_schema(self, client, player, player_token, create_caster_class, create_api_character):
+        """`total` is not client-settable — sending it is rejected with a 422."""
+        character_class = create_caster_class(name="Wizard")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/spell-slots",
+            json={"level": "LEVEL_1", "used": 0, "total": 4},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
+
+    def test_cannot_spend_into_level_without_slots(self, client, player, player_token, create_class, create_character):
+        """A class with no spell-slot progression grants no slots — spending is rejected."""
         character_class = create_class(name="Fighter")
         character = create_character(owner_id=player.id, class_id=character_class.id)
 
         response = client.patch(
             f"/characters/{character.id}/spell-slots",
-            json={"level": "LEVEL_1", "total": 1},
+            json={"level": "LEVEL_1", "used": 1},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        assert response.status_code == 200
-        assert response.json()["total"] == 1
+        assert response.status_code == 400
 
 
 @pytest.mark.integration

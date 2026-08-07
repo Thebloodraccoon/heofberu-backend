@@ -2,6 +2,7 @@
 
 from sqlalchemy.orm import Session
 
+from app.constants import CharacterFeatSource
 from app.core.base_repository import BaseRepository
 from app.models.character_association_models import CharacterFeat
 
@@ -47,18 +48,36 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
         )
 
     def add_character_feat(
-        self, character_id: int, feat_id: int, ability_score_increase_id: int | None
+        self,
+        character_id: int,
+        feat_id: int,
+        ability_score_increase_id: int | None,
+        *,
+        source_type: CharacterFeatSource | str = CharacterFeatSource.GM,
+        commit: bool = True,
     ) -> CharacterFeat:
-        """Grant a feat to a character, with an optional ASI choice."""
+        """
+        Grant a feat to a character, with an optional ASI choice.
+
+        ``source_type`` records where the grant came from (default ``GM`` —
+        the manual feats endpoint; the level-up endpoint passes ``ASI``).
+        ``commit=False`` defers the commit so callers that wrap the grant in
+        a transaction (``CharacterProgressionService._atomic``) can commit
+        it together with the rest of the level-up.
+        """
 
         grant = CharacterFeat(
             character_id=character_id,
             feat_id=feat_id,
             ability_score_increase_id=ability_score_increase_id,
+            source_type=source_type,
         )
         self.db.add(grant)
-        self.db.commit()
-        self.db.refresh(grant)
+        if commit:
+            self.db.commit()
+            self.db.refresh(grant)
+        else:
+            self.db.flush()
         return grant
 
     def set_character_feat_ability_score_increase(

@@ -67,7 +67,7 @@ class TestCharacterRead:
         response = client.get("/characters/", headers={"Authorization": f"Bearer {player_token}"})
 
         assert response.status_code == 200
-        names = [item["name"] for item in response.json()]
+        names = [item["name"] for item in response.json()["items"]]
         assert names == ["Mine"]
 
     def test_gm_sees_all_characters(self, client, gm_token, create_user, create_class, create_character):
@@ -80,7 +80,48 @@ class TestCharacterRead:
         response = client.get("/characters/", headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 200
-        assert len(response.json()) == 2
+        assert len(response.json()["items"]) == 2
+
+    def test_list_filters_by_search_on_name(self, client, player, player_token, create_class, create_character):
+        character_class = create_class(name="Fighter")
+        create_character(owner_id=player.id, class_id=character_class.id, name="Aragorn")
+        create_character(owner_id=player.id, class_id=character_class.id, name="Legolas")
+
+        response = client.get(
+            "/characters/?search=ara",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert [item["name"] for item in response.json()["items"]] == ["Aragorn"]
+
+    def test_list_filters_by_class_id(self, client, player, player_token, create_class, create_character):
+        fighter = create_class(name="Fighter")
+        wizard = create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
+        create_character(owner_id=player.id, class_id=fighter.id, name="Conan")
+        create_character(owner_id=player.id, class_id=wizard.id, name="Gandalf")
+
+        response = client.get(
+            f"/characters/?class_id={wizard.id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert [item["name"] for item in response.json()["items"]] == ["Gandalf"]
+
+    def test_list_search_combines_with_class_filter(self, client, player, player_token, create_class, create_character):
+        fighter = create_class(name="Fighter")
+        wizard = create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
+        create_character(owner_id=player.id, class_id=fighter.id, name="Gandalf")
+        create_character(owner_id=player.id, class_id=wizard.id, name="Gandalf the Grey")
+
+        response = client.get(
+            f"/characters/?search=gandalf&class_id={wizard.id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert [item["name"] for item in response.json()["items"]] == ["Gandalf the Grey"]
 
     def test_get_character_by_id(self, client, player, player_token, create_class, create_character):
         character_class = create_class(name="Fighter")
@@ -145,6 +186,32 @@ class TestCharacterUpdate:
         )
 
         assert response.status_code == 403
+
+    def test_owner_can_update_subclass(self, client, player, player_token, create_class, create_character):
+        character_class = create_class(name="Fighter")
+        character = create_character(owner_id=player.id, class_id=character_class.id)
+
+        response = client.patch(
+            f"/characters/{character.id}",
+            json={"subclass": "Arcane Archer"},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["subclass"] == "Arcane Archer"
+
+    def test_strength_is_not_editable_via_patch(self, client, player, player_token, create_class, create_character):
+        character_class = create_class(name="Fighter")
+        character = create_character(owner_id=player.id, class_id=character_class.id, strength=10)
+
+        response = client.patch(
+            f"/characters/{character.id}",
+            json={"strength": 12},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["strength"] == 10
 
     def test_class_id_is_not_editable(self, client, player, player_token, create_class, create_character):
         character_class = create_class(name="Fighter")
@@ -299,3 +366,15 @@ class TestCharacterRest:
         )
 
         assert rest_response.status_code == 200
+
+    def test_invalid_rest_type_returns_422(self, client, player, player_token, create_class, create_character):
+        character_class = create_class(name="Fighter")
+        character = create_character(owner_id=player.id, class_id=character_class.id)
+
+        response = client.post(
+            f"/characters/{character.id}/rest",
+            json={"type": "overnight"},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422

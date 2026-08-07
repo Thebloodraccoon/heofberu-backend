@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict
 
+from app.constants import CharacterFeatSource
+
 
 class CharacterFeatAdd(BaseModel):
     """
@@ -39,3 +41,4 @@ class CharacterFeatResponse(BaseModel):
     character_id: int
     feat_id: int
     ability_score_increase_id: int | None = None
+    source_type: CharacterFeatSource = CharacterFeatSource.GM

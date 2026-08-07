@@ -8,6 +8,7 @@ from app.models.campaign_character_model import CampaignCharacter  # noqa: F401
 # Campaign and its associations.
 from app.models.campaign_model import Campaign  # noqa: F401
 from app.models.character_ability_score_model import CharacterAbilityScore  # noqa: F401
+from app.models.character_asi_choice_model import CharacterASIChoice  # noqa: F401
 from app.models.character_association_models import (  # noqa: F401
     CharacterFeat,
     CharacterSavingThrowProficiency,

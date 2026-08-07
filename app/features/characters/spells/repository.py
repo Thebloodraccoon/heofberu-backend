@@ -1,4 +1,4 @@
-"""Character spell repository: slots and known spells."""
+"""Character spell repositories: spell slots and known spells."""
 
 from sqlalchemy.orm import Session
 
@@ -8,15 +8,14 @@ from app.models.character_spell_model import CharacterSpell
 from app.models.spell_model import Spell
 
 
-class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
+class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
     """
-    Repository for a character's spell slots and known spells.
+    Repository for a character's spell slots (``character_spell_slots``).
 
-    Split out of ``CharacterRepository`` — these are two related but
-    separate tables (``character_spell_slots``, ``character_spells``)
-    under the "what a character can cast" sub-domain, unrelated to the
-    ``Character`` row's own columns. Bound to ``CharacterSpellSlot`` as
-    its primary model.
+    Split out of the old single ``CharacterSpellRepository``, which was
+    bound to ``CharacterSpellSlot`` yet also handled known spells — this
+    class owns only slot totals/usage per level. Known spells live in the
+    sibling ``CharacterSpellRepository``.
     """
 
     def __init__(self, db: Session):
@@ -34,7 +33,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         )
 
     def upsert_spell_slot(
-        self, character_id: int, level: str, total: int | None, used: int | None
+        self, character_id: int, level: str, total: int | None, used: int | None, *, commit: bool = True
     ) -> CharacterSpellSlot:
         """
         Create or update the spell slot entry for a given level.
@@ -42,6 +41,9 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         If the entry doesn't exist yet, it's created with the given values
         (defaulting missing fields to 0). Validation of the used<=total
         invariant happens in the service before this is called.
+
+        ``commit=False`` flushes instead, leaving the transaction open
+        for callers that need atomicity across multiple writes.
         """
 
         slot = self.get_spell_slot(character_id, level)
@@ -59,8 +61,11 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
             if used is not None:
                 slot.used = used
 
-        self.db.commit()
-        self.db.refresh(slot)
+        if commit:
+            self.db.commit()
+            self.db.refresh(slot)
+        else:
+            self.db.flush()
         return slot
 
     def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
@@ -68,7 +73,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
         return self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).all()
 
     def apply_spell_slot_progression(
-        self, character_id: int, slots_by_level: dict[str, int]
+        self, character_id: int, slots_by_level: dict[str, int], *, commit: bool = True
     ) -> list[CharacterSpellSlot]:
         """
         Sync a character's actual ``CharacterSpellSlot.total`` values to
@@ -91,6 +96,10 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
 
         Levels never granted and not currently present in the character's
         rows are left alone (no zero-row is created for them).
+
+        ``commit=False`` flushes instead, leaving the transaction open —
+        ``CharacterService.create_character`` uses this so the character
+        row and its initial slot rows commit (or roll back) together.
         """
 
         existing = {slot.spell_level: slot for slot in self.get_all_spell_slots(character_id)}
@@ -116,7 +125,10 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
                 slot.total = 0
                 slot.used = 0
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         return self.get_all_spell_slots(character_id)
 
     def reset_all_spell_slots(self, character_id: int) -> None:
@@ -126,6 +138,19 @@ class CharacterSpellRepository(BaseRepository[CharacterSpellSlot]):
             {CharacterSpellSlot.used: 0}
         )
         self.db.commit()
+
+
+class CharacterSpellRepository(BaseRepository[CharacterSpell]):
+    """
+    Repository for a character's known spells (``character_spells``).
+
+    Split out of the old single ``CharacterSpellRepository`` — this
+    class owns only the known-spell rows. Spell slot totals/usage live in
+    the sibling ``CharacterSpellSlotRepository``.
+    """
+
+    def __init__(self, db: Session):
+        super().__init__(CharacterSpell, db)
 
     def get_known_spells(self, character_id: int) -> list[CharacterSpell]:
         """List all spells known by the character."""

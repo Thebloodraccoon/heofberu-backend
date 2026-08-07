@@ -1,8 +1,10 @@
 """Background CRUD service including granted-skill management."""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
-from app.core.base_service import BaseService
+from app.core.base_service import BaseService, Page, paginate
 from app.features.backgrounds.repository import BackgroundRepository
 from app.features.backgrounds.schemas import (
     BackgroundBriefResponse,
@@ -47,6 +49,34 @@ class BackgroundService(
             repository=BackgroundRepository(db),
             response_schema=BackgroundResponse,
             brief_schema=BackgroundBriefResponse,
+        )
+
+    def list_brief(
+        self,
+        page: int = 1,
+        size: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+    ) -> Page[BackgroundBriefResponse]:
+        """
+        Overridden because ``BackgroundBriefResponse.granted_skills`` is a
+        relationship, which the base column-select ``list_brief`` cannot
+        load (the base now raises ``NotImplementedError`` for such fields).
+
+        Uses ``repository.get_all`` instead — its ``default_load_options``
+        (``selectinload(Background.granted_skills)``) eager-loads the
+        skills, so every row carries ``granted_skills`` without an N+1.
+        """
+
+        skip, limit = paginate(page, size)
+        items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+        total = self.repository.count(filters=filters, search=search)
+
+        return Page(
+            items=[BackgroundBriefResponse.model_validate(item) for item in items],
+            total=total,
+            page=page,
+            size=size,
         )
 
     def create_background(

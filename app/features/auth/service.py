@@ -1,10 +1,14 @@
 """Business logic for authentication: login, registration, token refresh, logout."""
 
-from fastapi import Response
+from fastapi import HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.constants import UserRole
-from app.core.exceptions import InvalidCredentialsException, InvalidTokenException
+from app.core.exceptions import (
+    InvalidCredentialsException,
+    InvalidTokenException,
+    RecordAlreadyExistsError,
+)
 from app.core.security import get_password_hash, verify_password
 from app.core.token_utils import (
     DecodedToken,
@@ -27,6 +31,14 @@ from app.features.users.repository import UserRepository
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
+# A throwaway bcrypt hash used to equalize login timing: when no user
+# exists for a given email, we still run verify_password against this
+# dummy hash so a request for an unknown email takes roughly as long as
+# one for an existing account with a wrong password. Without this, an
+# attacker could distinguish "no such account" from "wrong password" by
+# timing alone, and use that to enumerate registered emails.
+DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"
+
 
 class AuthService:
     """Orchestrates login, registration, token refresh, and logout."""
@@ -39,7 +51,8 @@ class AuthService:
 
         user = self.user_repo.get_by_email(request.email)
 
-        if not user or not verify_password(request.password, str(user.hashed_password)):
+        password_hash = str(user.hashed_password) if user else DUMMY_PASSWORD_HASH
+        if not user or not verify_password(request.password, password_hash):
             raise InvalidCredentialsException()
 
         updated_user = self.user_repo.update_last_login(user)
@@ -60,6 +73,11 @@ class AuthService:
 
         Email/username uniqueness is checked up front so this fails with
         a clear 400 before hitting the database's own unique constraint.
+        The duplicate-account error is deliberately generic — the raw
+        ``RecordAlreadyExistsError`` echoes the offending email in its
+        message, which would let anyone confirm whether an address is
+        already registered. Re-raising with a neutral detail keeps the
+        400 without leaking account existence.
         """
 
         user_data = {
@@ -68,7 +86,13 @@ class AuthService:
             "role": UserRole.PLAYER,
             "hashed_password": get_password_hash(request.password),
         }
-        user = self.user_repo.create(user_data)
+        try:
+            user = self.user_repo.create(user_data)
+        except RecordAlreadyExistsError:
+            raise HTTPException(
+                status_code=400,
+                detail="An account with this email or username already exists.",
+            )
 
         return RegisterResponse(access_token=self._issue_tokens(user.email, response))
 

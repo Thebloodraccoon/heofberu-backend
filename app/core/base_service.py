@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from typing import Any, Generic
 
 from pydantic import BaseModel
+from sqlalchemy import inspect
 from typing_extensions import TypeVar
 
 from app.core.base_repository import BaseRepository, ModelType
@@ -35,7 +36,7 @@ class Page(BaseModel, Generic[ItemSchema]):
     size: int
 
 
-def _paginate(page: int, size: int) -> tuple[int, int]:
+def paginate(page: int, size: int) -> tuple[int, int]:
     """Convert a 1-indexed ``(page, size)`` into the repository's 0-indexed ``(skip, limit)``."""
 
     skip = (page - 1) * size
@@ -94,7 +95,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
             search: Substring match, passed to ``repository.get_all``.
         """
 
-        skip, limit = _paginate(page, size)
+        skip, limit = paginate(page, size)
         items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
         total = self.repository.count(filters=filters, search=search)
 
@@ -122,15 +123,33 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         Return a paginated, lightweight listing using ``brief_schema``'s fields as columns.
 
         Requires ``brief_schema`` to have been set in ``__init__``.
+
+        Raises ``NotImplementedError`` if ``brief_schema`` contains a
+        relationship field (e.g. ``granted_skills``) — relationship
+        attributes cannot be loaded by the column-select path
+        (``BaseRepository.get_brief``). Subclasses whose brief schema has
+        relationship fields MUST override ``list_brief`` and load them via
+        the repository's ``default_load_options`` instead.
         """
 
         if self.brief_schema is None:
             raise ValueError(f"{type(self).__name__}.list_brief() requires 'brief_schema' to be set in __init__.")
 
         model = self.repository.model
+        mapper = inspect(model)
+
+        relationship_fields = [name for name in self.brief_schema.model_fields if name in mapper.relationships]
+
+        if relationship_fields:
+            raise NotImplementedError(
+                f"{type(self).__name__}.list_brief() cannot load relationship field(s) "
+                f"{relationship_fields} via column-select. Override list_brief() in the "
+                f"subclass to load them through the repository's default_load_options."
+            )
+
         columns = [getattr(model, field_name) for field_name in self.brief_schema.model_fields]
 
-        skip, limit = _paginate(page, size)
+        skip, limit = paginate(page, size)
         rows = self.repository.get_brief(
             *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
         )

@@ -9,7 +9,9 @@ from sqlalchemy import Enum as SAEnum
 
 from app.constants import (
     AbilityScore,
+    ASILevelChoice,
     AttackType,
+    CharacterFeatSource,
     Component,
     ConditionType,
     DamageType,
@@ -47,5 +49,7 @@ HealingTargetType = SAEnum(HealingTarget, name="healing_target", create_type=Fal
 ItemTypeType = SAEnum(ItemType, name="item_type", create_type=False)
 ItemRarityType = SAEnum(ItemRarity, name="item_rarity", create_type=False)
 FeatureSourceTypeType = SAEnum(FeatureSourceType, name="feature_source_type", create_type=False)
+ASILevelChoiceType = SAEnum(ASILevelChoice, name="asi_choice", create_type=False)
+CharacterFeatSourceType = SAEnum(CharacterFeatSource, name="character_feat_source", create_type=False)
 ConditionTypeType = SAEnum(ConditionType, name="condition_type", create_type=False)
 ComponentType = SAEnum(Component, name="spell_component", create_type=False)

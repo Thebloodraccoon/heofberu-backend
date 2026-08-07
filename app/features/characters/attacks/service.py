@@ -2,32 +2,31 @@
 
 from sqlalchemy.orm import Session
 
-from app.features.characters.access import get_character_for_user
 from app.features.characters.attacks.exceptions import AttackNotFoundException
 from app.features.characters.attacks.repository import AttackRepository
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
-from app.features.characters.core.repository import CharacterRepository
+from app.features.characters.base import CharacterSubDomainService
 from app.features.users.schemas import UserResponse
 from app.models.attack_model import Attack
 
 
-class CharacterAttackService:
+class CharacterAttackService(CharacterSubDomainService):
     """
     CRUD for a character's attacks/weapons.
 
-    Access control is still enforced against the owning character (via
-    :class:`CharacterRepository`), but persistence goes through
-    :class:`AttackRepository` since attacks are their own table.
+    Access control is enforced against the owning character via the
+    inherited ``CharacterSubDomainService`` wiring, but persistence goes
+    through :class:`AttackRepository` since attacks are their own table.
     """
 
     def __init__(self, db: Session):
-        self.repository = CharacterRepository(db)
+        super().__init__(db)
         self.attack_repository = AttackRepository(db)
 
     def get_attacks(self, character_id: int, current_user: UserResponse) -> list[AttackResponse]:
         """List all attacks belonging to a character."""
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
         attacks = self.attack_repository.get_all_by_character(character_id)
         return [AttackResponse.model_validate(attack) for attack in attacks]
@@ -35,9 +34,11 @@ class CharacterAttackService:
     def create_attack(self, character_id: int, data: AttackCreate, current_user: UserResponse) -> AttackResponse:
         """Add a new attack/weapon entry to a character."""
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
-        attack = self.attack_repository.create(data.model_dump(), character_id)
+        payload = data.model_dump()
+        payload["character_id"] = character_id
+        attack = self.attack_repository.create(payload)
         return AttackResponse.model_validate(attack)
 
     def update_attack(
@@ -45,7 +46,7 @@ class CharacterAttackService:
     ) -> AttackResponse:
         """Update an existing attack/weapon entry."""
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
         attack = self._get_attack_or_404(character_id, attack_id)
         fields = data.model_dump(exclude_unset=True)
@@ -55,7 +56,7 @@ class CharacterAttackService:
     def delete_attack(self, character_id: int, attack_id: int, current_user: UserResponse) -> bool:
         """Remove an attack/weapon entry from a character."""
 
-        get_character_for_user(self.repository, character_id, current_user)
+        self.get_character_for_user(character_id, current_user)
 
         attack = self._get_attack_or_404(character_id, attack_id)
         return self.attack_repository.delete(attack)

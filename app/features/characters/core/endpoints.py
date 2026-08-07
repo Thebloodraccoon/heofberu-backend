@@ -1,7 +1,8 @@
 """Character core endpoints: CRUD, HP updates, and resting."""
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
+from app.core.base_service import Page
 from app.core.dependencies import CharacterServiceDep, CurrentUserDep
 from app.features.characters.core.schemas import HpUpdate, RestRequest
 from app.features.characters.schemas import CharacterCreate, CharacterResponse, CharacterUpdate
@@ -11,20 +12,38 @@ router = APIRouter(tags=["Characters Core"])
 
 @router.get(
     "/",
-    response_model=list[CharacterResponse],
+    response_model=Page[CharacterResponse],
     summary="List characters",
 )
-def get_characters(character_service: CharacterServiceDep, current_user: CurrentUserDep):
+def get_characters(
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the character's name.",
+    ),
+    class_id: int | None = Query(
+        None,
+        description="Filter to characters of this class.",
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+):
     """
     Return characters visible to the caller.
 
-    GM sees every character. Players see only their own.
+    GM sees every character. Players see only their own. Optional
+    `search` (substring on name) and `class_id` filters narrow the
+    result; both combine with the access scoping.
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching characters across every page, not just this one.
 
     Ability scores reflect the last-computed cache, not a fresh
     recalculation — a character that has never been fetched
     individually (via `GET /{character_id}`) shows base values only.
     """
-    return character_service.get_characters(current_user)
+    return character_service.get_characters(current_user, search=search, class_id=class_id, page=page, size=size)
 
 
 @router.get(
@@ -104,12 +123,9 @@ def update_character(
 
     Only fields included in the request body are changed; omitted fields
     are left as-is. `class_id`, `race_id`, and `background_id` are not
-    editable here — they're set at creation.
-
-    If `level` is part of the update, the character's spell slot totals
-    are re-synced to the new level's progression — used slots already
-    recorded are preserved unless they'd now exceed the new total, in
-    which case they're clamped down.
+    editable here — they're set at creation, and neither is `level` (it
+    changes through the dedicated level-up endpoint, which also
+    re-applies the class's spell slot progression).
 
     Skill proficiencies, saving throw proficiencies, known spells, and
     attacks are managed through their own dedicated endpoints, not
@@ -171,7 +187,7 @@ def update_character_hp(
     response_model=CharacterResponse,
     summary="Take a short or long rest",
     responses={
-        400: {"description": "`type` is not one of `short` or `long`."},
+        422: {"description": "`type` is not one of `short` or `long` (rejected by the schema's Literal type)."},
         403: {"description": "Caller is not the owner and is not a GM."},
         404: {"description": "Character with id not found."},
     },

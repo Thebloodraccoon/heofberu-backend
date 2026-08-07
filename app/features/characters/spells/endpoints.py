@@ -51,21 +51,16 @@ def update_character_spell_slot(
                 "summary": "Restore all slots at a level",
                 "value": {"level": "LEVEL_3", "used": 0},
             },
-            "grant": {
-                "summary": "Set the total for a level (manual override)",
-                "value": {"level": "LEVEL_3", "total": 4},
-            },
         },
     ),
 ):
     """
     Spend or restore spell slots at a given level.
 
-    Creates the slot entry if it doesn't exist yet. Slot totals are
-    normally kept in sync automatically from the character's class/level
-    progression (on create and on level-up via
-    `PATCH /characters/{character_id}`) — this endpoint is for spending
-    slots as spells are cast, restoring them, or a manual override.
+    Only ``used`` is editable. Slot ``total`` is always derived from the
+    character's class/level spell-slot progression (applied on create and
+    re-applied on level-up/class change) — it is not client-settable, so
+    a player cannot grant themselves extra slots.
     """
     return spell_service.update_spell_slot(character_id, data, current_user)
 

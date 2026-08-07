@@ -33,9 +33,6 @@ class CharacterBase(BaseModel):
     current_hp: int = Field(default=0, ge=0)
     max_hp: int = Field(default=0, ge=0)
     temp_hp: int = Field(default=0, ge=0)
-    hit_dice: str = ""
-    speed: int = 30
-    armor_class: int = 10
     shield: int = 0
     initiative_bonus: int = 0
     passive_perception_bonus: int = 0
@@ -94,22 +91,26 @@ class CharacterUpdate(BaseModel):
 
     Note: ``class_id``, ``race_id``, and ``background_id`` cannot be
     changed via this schema — a character's class, race, and background
-    are set at creation and are not editable here.
+    are set at creation and are not editable here. ``level`` and the base
+    ability scores (``strength``..``charisma``) are likewise not editable
+    here: level changes go through the dedicated level-up endpoint, and
+    base scores only change via that endpoint's Ability Score Improvement
+    choice. ``hit_dice``, ``speed``, and ``armor_class`` are not editable
+    either — they are derived from the character's class, race, and
+    equipped armor on every read (see ``CharacterStatsService``).
+    See ``CharacterProgressionService``.
     """
 
     name: str | None = None
     image_path: str | None = None
-    level: int | None = Field(default=None, ge=1, le=20)
+    subclass: str | None = None
 
     current_hp: int | None = Field(default=None, ge=0)
     max_hp: int | None = Field(default=None, ge=0)
     temp_hp: int | None = Field(default=None, ge=0)
-    hit_dice: str | None = None
-    speed: int | None = None
-    armor_class: int | None = None
-    shield: int | None = None
-    initiative_bonus: int | None = None
-    passive_perception_bonus: int | None = None
+    shield: int | None = Field(default=None, ge=0)
+    initiative_bonus: int | None = Field(default=None, ge=0)
+    passive_perception_bonus: int | None = Field(default=None, ge=0)
     has_jack_of_all_trades: bool | None = None
 
     proficiencies: str | None = None
@@ -128,8 +129,8 @@ class CharacterUpdate(BaseModel):
     money_copper: int | None = Field(default=None, ge=0)
 
     spell_ability: AbilityScore | None = None
-    spell_dc_misc_bonus: int | None = None
-    spell_attack_misc_bonus: int | None = None
+    spell_dc_misc_bonus: int | None = Field(default=None, ge=0)
+    spell_attack_misc_bonus: int | None = Field(default=None, ge=0)
 
 
 class AbilityScoresResponse(BaseModel):
@@ -163,12 +164,25 @@ class CharacterResponse(CharacterBase):
     with no cache row yet) reports ``None`` here. ``get_character``
     always refreshes before returning, and create/update recompute
     whenever the change can affect ability scores.
+
+    ``hit_dice``, ``speed``, and ``armor_class`` are likewise not read
+    from the character row — they are derived from the class, race, and
+    equipped armor by ``CharacterStatsService`` and written onto
+    the response in ``CharacterService._to_response``. They are declared
+    here (with defaults) so the response stays flat, but are never
+    accepted by ``CharacterCreate``/``CharacterUpdate``.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     owner_id: int
+
+    # Derived combat stats — populated by ``CharacterService._to_response``.
+    hit_dice: str = ""
+    speed: int = 30
+    armor_class: int = 10
+
     ability_scores: AbilityScoresResponse | None = None
     skill_proficiencies: list[SkillProficiencyResponse] = []
     saving_throw_proficiencies: list[SavingThrowProficiencyResponse] = []

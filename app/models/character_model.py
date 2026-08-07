@@ -149,6 +149,13 @@ class Character(settings.Base):  # type: ignore
         passive_deletes=True,
     )
 
+    asi_choices = relationship(
+        "CharacterASIChoice",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     ability_score_cache = relationship(
         "CharacterAbilityScore",
         back_populates="character",
