@@ -7,6 +7,7 @@ from app.core.base_service import Page
 from app.core.dependencies import FounderDep, GmUserDep, RaceServiceDep
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
+    FeaturesReplace,
     RaceBriefResponse,
     RaceCreate,
     RaceResponse,
@@ -257,3 +258,61 @@ def set_race_skills(
     is removed. Send an empty list to clear all granted skills.
     """
     return race_service.set_skills(race_id, data)
+
+
+@router.put(
+    "/{race_id}/features",
+    response_model=RaceResponse,
+    summary="Replace a race's features",
+    responses={
+        400: {"description": "An item's feature id does not belong to this race."},
+        422: {"description": "Duplicate feature ids in one request."},
+        404: {"description": "No race exists with the given ID."},
+    },
+)
+def replace_race_features(
+    race_id: int,
+    race_service: RaceServiceDep,
+    _: GmUserDep,
+    data: FeaturesReplace = Body(
+        openapi_examples={
+            "replace": {
+                "summary": "Replace the race feature list (matched by id)",
+                "value": {
+                    "features": [
+                        {
+                            "id": 3,
+                            "name": "Darkvision",
+                            "description": "See in dim light as if it were bright light.",
+                        },
+                        {
+                            "name": "Fey Ancestry",
+                            "description": "Advantage on saves vs charm.",
+                        },
+                    ]
+                },
+            },
+            "clear": {
+                "summary": "Remove all race features",
+                "value": {"features": []},
+            },
+        },
+    ),
+):
+    """
+    Replace a race's feature list. **GM only.**
+
+    Full replace, not merge, matched by feature `id`:
+
+    - items carrying an `id` update that existing feature in place — the
+      feature keeps its id, so any character grants (and notes on them)
+      survive the update;
+    - items without an `id` create new features;
+    - current features whose id is not in the request body are deleted,
+      which cascades away their character grants.
+
+    Send `{"features": []}` to delete every feature of the race. An `id`
+    that doesn't belong to this race is rejected with 400; duplicate ids
+    within one request are rejected with 422.
+    """
+    return race_service.replace_race_features(race_id, data, created_by_id=_.id)

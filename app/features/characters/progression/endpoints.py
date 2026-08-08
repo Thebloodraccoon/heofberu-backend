@@ -8,6 +8,7 @@ from app.features.characters.progression.schemas import (
     ClassChange,
     LevelUpRequest,
     RaceChange,
+    SubclassChange,
 )
 from app.features.characters.schemas import CharacterResponse
 
@@ -45,6 +46,26 @@ def change_class(
     current_user: CurrentUserDep,
 ) -> CharacterResponse:
     progression_service.change_class(character_id, data, current_user)
+    return character_service.get_character(character_id, current_user)
+
+
+@router.patch(
+    "/{character_id}/progression/subclass",
+    response_model=CharacterResponse,
+    summary="Set or clear a character's subclass",
+    description=(
+        "Sets ``subclass_id`` (must belong to the character's class; null clears it). "
+        "Grants the subclass's features at or below the character's current level."
+    ),
+)
+def change_subclass(
+    character_id: int,
+    data: SubclassChange,
+    progression_service: CharacterProgressionServiceDep,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+) -> CharacterResponse:
+    progression_service.set_subclass(character_id, data, current_user)
     return character_service.get_character(character_id, current_user)
 
 

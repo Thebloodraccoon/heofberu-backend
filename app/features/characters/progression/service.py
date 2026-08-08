@@ -20,14 +20,16 @@ from app.features.characters.progression.exceptions import (
     LevelUpChoiceNotAllowedException,
     LevelUpChoiceRequiredException,
 )
+from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.progression.schemas import (
     CharacterASIChoiceResponse,
     ClassChange,
     LevelUpRequest,
     RaceChange,
+    SubclassChange,
 )
-from app.features.classes.exceptions import ClassNotFoundException
+from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
 from app.features.classes.repository import ClassRepository
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.feats.repository import FeatRepository
@@ -39,17 +41,25 @@ from app.models.character_model import Character
 
 class CharacterProgressionService(CharacterSubDomainService):
     """
-    Character progression: race change, class change, and leveling up.
+    Character progression: race change, class change, subclass change,
+    and leveling up.
 
     Leveling up is the entry point for ability score improvements: an
     ASI level (see ``ASI_LEVELS``) *requires* a ``choice`` in the
     request, and the resolved ASI-or-feat is recorded in
     ``character_asi_choices`` for audit and future level-down support.
 
+    Source-owned feature grants are kept in sync automatically: every
+    level-up, race change, class change, and subclass change reconciles
+    ``character_features`` against the CLASS features of the character's
+    class plus the SUBCLASS features of its subclass, its RACE and
+    BACKGROUND features, and the FEAT features of every granted feat (see
+    ``sync_progression_features``).
+
     Writes are transactional: the level bump, HP gain, ASI/feat grant,
-    audit row, and spell-slot re-application all happen in one commit
-    (via :meth:`_atomic`); any validation failure rolls the whole thing
-    back.
+    audit row, feature grants, and spell-slot re-application all happen
+    in one commit (via :meth:`_atomic`); any validation failure rolls the
+    whole thing back.
     """
 
     def __init__(self, db: Session):
@@ -80,29 +90,66 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     def change_race(self, character_id: int, data: RaceChange, current_user: UserResponse) -> None:
         """
-        Update a character's ``race_id`` (``None`` clears it) and refresh
-        the ability score cache, which re-derives race bonuses.
+        Update a character's ``race_id`` (``None`` clears it).
+
+        The new race's features are granted (the old race's auto-granted
+        features revoked) in the same transaction, then the ability score
+        cache is refreshed to re-derive race bonuses.
         """
         character = self.get_character_for_user(character_id, current_user)
         if data.race_id is not None and not self.race_repository.exists_by_id(data.race_id):
             raise RaceNotFoundException(race_id=data.race_id)
-        character.race_id = data.race_id
-        self.repository.db.commit()
-        self.repository.db.refresh(character)
+
+        with self._atomic():
+            character.race_id = data.race_id
+            sync_progression_features(self.repository.db, character)
+
         self.stats_service.refresh(character)
 
     def change_class(self, character_id: int, data: ClassChange, current_user: UserResponse) -> None:
         """
-        Replace a character's class (no multiclassing) and re-apply the
-        new class's spell slot progression for the current level.
+        Replace a character's class (no multiclassing).
+
+        The current subclass is kept only if it belongs to the new class
+        (otherwise cleared), granted class/subclass features are
+        reconciled to the new class at the current level, and the new
+        class's spell slot progression is re-applied. All of it commits
+        in one transaction.
         """
         character = self.get_character_for_user(character_id, current_user)
         if not self.class_repository.exists_by_id(data.class_id):
             raise ClassNotFoundException(class_id=data.class_id)
-        character.class_id = data.class_id
-        self.repository.db.commit()
-        self.repository.db.refresh(character)
-        self.character_service.reapply_spell_slot_progression(character)
+
+        with self._atomic():
+            character.class_id = data.class_id
+
+            if character.subclass_id is not None:
+                if self.class_repository.get_subclass(data.class_id, character.subclass_id) is None:
+                    character.subclass_id = None
+
+            sync_progression_features(self.repository.db, character)
+            self.character_service.reapply_spell_slot_progression(character, commit=False)
+
+    def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
+        """
+        Set or clear a character's subclass.
+
+        ``subclass_id`` must reference a subclass of the character's
+        current class — otherwise ``SubclassNotFoundException``.
+        Setting a subclass grants its features at or below the current
+        level; clearing it revokes that subclass's auto-granted features.
+        """
+        character = self.get_character_for_user(character_id, current_user)
+
+        if (
+            data.subclass_id is not None
+            and self.class_repository.get_subclass(character.class_id, data.subclass_id) is None
+        ):
+            raise SubclassNotFoundException(class_id=character.class_id, subclass_id=data.subclass_id)
+
+        with self._atomic():
+            character.subclass_id = data.subclass_id
+            sync_progression_features(self.repository.db, character)
 
     def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
         """
@@ -112,6 +159,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         any other level it is rejected. HP defaults to the class's
         standard average (half hit die + 1 + CON modifier) unless
         ``hit_points_gained`` is given (bounded by the hit die + CON).
+        Class/subclass features unlocked by the new level are granted,
+        and spell slots are re-applied.
         """
         character = self.get_character_for_user(character_id, current_user)
         if character.level >= ABILITY_SCORE_CAP:
@@ -137,6 +186,8 @@ class CharacterProgressionService(CharacterSubDomainService):
             hp_gain = self._resolve_hp_gain(character, data.hit_points_gained)
             character.max_hp += hp_gain
 
+            # Grant any class/subclass features unlocked by the new level.
+            sync_progression_features(self.repository.db, character)
             self.character_service.reapply_spell_slot_progression(character, commit=False)
 
         self.stats_service.refresh(character)

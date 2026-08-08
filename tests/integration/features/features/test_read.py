@@ -24,6 +24,16 @@ class TestFeatureOpenRead:
         assert response.status_code == 200
         assert [item["name"] for item in response.json()["items"]] == ["Extra Attack"]
 
+    def test_list_features_filters_by_subclass_id(self, client, create_class, create_subclass, create_feature):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+        create_feature(name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3)
+
+        response = client.get(f"/features/?source_type=SUBCLASS&subclass_id={subclass.id}")
+
+        assert response.status_code == 200
+        assert [item["name"] for item in response.json()["items"]] == ["Improved Critical"]
+
     def test_get_feature_by_id(self, client, create_feature):
         feature = create_feature(name="Extra Attack", source_type="OTHER")
 

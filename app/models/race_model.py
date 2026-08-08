@@ -35,6 +35,13 @@ class Race(settings.Base):  # type: ignore
     )
     characters = relationship("Character", back_populates="race")
     created_by = relationship("User")
+    features = relationship(
+        "Feature",
+        back_populates="race",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Feature.id",
+    )
 
     def __repr__(self):
         return f"<Race(id={self.id}, name='{self.name}')>"

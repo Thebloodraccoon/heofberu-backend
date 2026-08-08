@@ -143,6 +143,85 @@ class TestClassChange:
 
 
 @pytest.mark.integration
+class TestSubclassChange:
+    def test_owner_can_set_subclass(
+        self, client, player, player_token, create_class, create_subclass, create_api_character
+    ):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/progression/subclass",
+            json={"subclass_id": subclass.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["subclass_id"] == subclass.id
+
+    def test_owner_can_clear_subclass(
+        self, client, player, player_token, create_class, create_subclass, create_api_character
+    ):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+        character, _ = create_api_character(class_id=character_class.id, owner=player, subclass_id=subclass.id)
+
+        response = client.patch(
+            f"/characters/{character['id']}/progression/subclass",
+            json={"subclass_id": None},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["subclass_id"] is None
+
+    def test_subclass_of_another_class_returns_404(
+        self, client, player, player_token, create_class, create_subclass, create_api_character
+    ):
+        fighter = create_class(name="Fighter")
+        wizard = create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
+        wizard_subclass = create_subclass(class_id=wizard.id, name="School of Evocation")
+        character, _ = create_api_character(class_id=fighter.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/progression/subclass",
+            json={"subclass_id": wizard_subclass.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 404
+
+    def test_unknown_subclass_returns_404(self, client, player, player_token, create_class, create_api_character):
+        character_class = create_class(name="Fighter")
+        character, _ = create_api_character(class_id=character_class.id, owner=player)
+
+        response = client.patch(
+            f"/characters/{character['id']}/progression/subclass",
+            json={"subclass_id": 999999},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 404
+
+    def test_player_cannot_change_other_players_character_subclass(
+        self, client, player_token, create_user, create_class, create_subclass, create_character
+    ):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+        other = create_user(username="other", email="other@example.com")
+        character = create_character(owner_id=other.id, class_id=character_class.id)
+
+        response = client.patch(
+            f"/characters/{character.id}/progression/subclass",
+            json={"subclass_id": subclass.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+
+@pytest.mark.integration
 class TestLevelUp:
     def test_non_asi_level_up_applies_default_hp_gain(
         self, client, player, player_token, create_class, create_api_character

@@ -18,8 +18,6 @@ class Background(settings.Base):  # type: ignore
     id = Column(Integer, primary_key=True)
 
     name = Column(String(100), nullable=False, unique=True, index=True)
-    feature_name = Column(String(200), nullable=False, default="")  # e.g. "Shelter of the Faithful"
-    feature_description = Column(Text, nullable=False, default="")
 
     personality_traits_suggestions = Column(Text, nullable=False, default="")
     ideals_suggestions = Column(Text, nullable=False, default="")
@@ -31,6 +29,17 @@ class Background(settings.Base):  # type: ignore
     is_homebrew = Column(Boolean, nullable=False, default=False)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # BACKGROUND-source features granted by this background (e.g. the
+    # Acolyte's "Shelter of the Faithful"). Created nested in the same
+    # request as the background and automatically granted to any character
+    # bearing it — see ``sync_progression_features``.
+    features = relationship(
+        "Feature",
+        back_populates="background",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Feature.id",
+    )
     granted_skills = relationship(
         "Skill",
         secondary=background_skills,

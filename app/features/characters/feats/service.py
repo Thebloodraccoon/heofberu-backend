@@ -15,6 +15,7 @@ from app.features.characters.feats.schemas import (
     CharacterFeatUpdate,
 )
 from app.features.characters.feats.validation import check_feat_prerequisite, validate_ability_score_increase
+from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.feats.repository import FeatRepository
 from app.features.users.schemas import UserResponse
@@ -33,6 +34,10 @@ class CharacterFeatService(CharacterSubDomainService):
     the single point every character sub-service goes through, rather
     than each maintaining its own recalculate-and-upsert logic (see
     that class's docstring for why this was consolidated).
+
+    Granting and revoking a feat also re-syncs the character's features
+    via ``sync_progression_features``: the feat's FEAT-source features
+    follow the grant in and drop off with it.
 
     Uses four collaborators:
       - the inherited ``CharacterSubDomainService`` — access control
@@ -96,8 +101,10 @@ class CharacterFeatService(CharacterSubDomainService):
         check_feat_prerequisite(character, feat, self.stats_service)
 
         grant = self.feat_grant_repository.add_character_feat(
-            character_id, data.feat_id, data.ability_score_increase_id
+            character_id, data.feat_id, data.ability_score_increase_id, commit=False
         )
+        sync_progression_features(self.repository.db, character)
+        self.repository.db.commit()
 
         self.stats_service.refresh(character)
 
@@ -129,12 +136,14 @@ class CharacterFeatService(CharacterSubDomainService):
         return CharacterFeatResponse.model_validate(updated_grant)
 
     def remove_feat(self, character_id: int, character_feat_id: int, current_user: UserResponse) -> bool:
-        """Revoke a feat from a character."""
+        """Revoke a feat from a character (its FEAT-source features drop off with it)."""
 
         character = self.get_character_for_user(character_id, current_user)
 
         grant = self._get_grant_or_404(character_id, character_feat_id)
         result = self.feat_grant_repository.remove_character_feat(grant)
+        sync_progression_features(self.repository.db, character)
+        self.repository.db.commit()
 
         self.stats_service.refresh(character)
 

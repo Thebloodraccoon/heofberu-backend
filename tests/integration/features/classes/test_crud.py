@@ -102,6 +102,33 @@ class TestClassCrud:
             {"class_level": 5, "spell_level": "LEVEL_3", "slots": 2},
         ]
 
+    def test_create_class_with_nested_subclass_and_features(self, client, gm_token):
+        response = client.post(
+            "/classes/",
+            json={
+                "name": "Fighter",
+                "hit_dice": "D10",
+                "spellcasting_ability": None,
+                "subclasses": [
+                    {
+                        "name": "Champion",
+                        "unlock_level": 3,
+                        "features": [{"name": "Improved Critical", "level": 3}],
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert [item["name"] for item in body["subclasses"]] == ["Champion"]
+
+        subclass_id = body["subclasses"][0]["id"]
+        features = client.get(f"/features/?source_type=SUBCLASS&subclass_id={subclass_id}").json()["items"]
+        assert [item["name"] for item in features] == ["Improved Critical"]
+        assert all(item["source_type"] == "SUBCLASS" and item["subclass_id"] == subclass_id for item in features)
+
     def test_create_class_spellcasting_ability_not_primary_returns_400(self, client, gm_token):
         response = client.post(
             "/classes/",
@@ -191,21 +218,292 @@ class TestClassCrud:
 
         assert response.status_code == 400
 
-    def test_gm_can_delete_class(self, client, gm_token, create_class):
+    def test_gm_cannot_delete_class(self, client, gm_token, create_class):
         character_class = create_class(name="Doomed Class")
 
         response = client.delete(f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert response.status_code == 403
+        assert client.get(f"/classes/{character_class.id}").status_code == 200
+
+    def test_founder_can_delete_class(self, client, founder_token, create_class):
+        character_class = create_class(name="Doomed Class")
+
+        response = client.delete(f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 204
         assert client.get(f"/classes/{character_class.id}").status_code == 404
 
     def test_delete_class_in_use_by_character_returns_409(
-        self, client, gm_token, create_class, create_user, create_character
+        self, client, founder_token, create_class, create_user, create_character
     ):
         character_class = create_class(name="Popular Class")
         player = create_user()
         create_character(owner_id=player.id, class_id=character_class.id)
 
-        response = client.delete(f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {gm_token}"})
+        response = client.delete(f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
+
+    def test_player_cannot_create_subclass(self, client, player_token, create_class):
+        character_class = create_class(name="Fighter")
+
+        response = client.post(
+            f"/classes/{character_class.id}/subclasses",
+            json={"name": "Champion"},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+    def test_gm_can_create_subclass_with_nested_features(self, client, gm_token, create_class):
+        character_class = create_class(name="Fighter")
+
+        response = client.post(
+            f"/classes/{character_class.id}/subclasses",
+            json={
+                "name": "Champion",
+                "unlock_level": 3,
+                "features": [
+                    {"name": "Improved Critical", "level": 3},
+                    {"name": "Remarkable Athlete", "level": 7},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        subclass_id = body["id"]
+        assert body["name"] == "Champion"
+        assert body["unlock_level"] == 3
+        assert [item["name"] for item in body["features"]] == ["Improved Critical", "Remarkable Athlete"]
+
+        features = client.get(f"/features/?source_type=SUBCLASS&subclass_id={subclass_id}").json()["items"]
+        assert all(item["source_type"] == "SUBCLASS" and item["subclass_id"] == subclass_id for item in features)
+
+    def test_gm_can_update_subclass(self, client, gm_token, create_class, create_subclass):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+
+        response = client.patch(
+            f"/classes/{character_class.id}/subclasses/{subclass.id}",
+            json={"name": "Renamed Champion"},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "Renamed Champion"
+
+    def test_gm_can_delete_subclass(self, client, gm_token, create_class, create_subclass):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Doomed")
+
+        response = client.delete(
+            f"/classes/{character_class.id}/subclasses/{subclass.id}",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 204
+        assert client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}").status_code == 404
+
+    def test_player_cannot_replace_class_features(self, client, player_token, create_class):
+        character_class = create_class(name="Fighter")
+
+        response = client.put(
+            f"/classes/{character_class.id}/features",
+            json={"features": [{"name": "Second Wind"}]},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+    def test_gm_can_replace_class_features_by_id(self, client, gm_token):
+        created = client.post(
+            "/classes/",
+            json={
+                "name": "Fighter",
+                "hit_dice": "D10",
+                "spellcasting_ability": None,
+                "features": [
+                    {"name": "Second Wind", "description": "Once per short rest.", "level": 1},
+                    {"name": "Extra Attack", "description": "Attack twice.", "level": 5},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert created.status_code == 201
+        class_id = created.json()["id"]
+        original = {feature["name"]: feature["id"] for feature in created.json()["features"]}
+
+        response = client.put(
+            f"/classes/{class_id}/features",
+            json={
+                "features": [
+                    {"id": original["Extra Attack"], "name": "Extra Attack", "level": 11},
+                    {"name": "Indomitable", "description": "Reroll a failed save.", "level": 9},
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        features = {feature["name"]: feature for feature in response.json()["features"]}
+        assert set(features) == {"Extra Attack", "Indomitable"}
+        # Kept id → updated in place (grants survive); no id → created.
+        assert features["Extra Attack"]["id"] == original["Extra Attack"]
+        assert features["Extra Attack"]["level"] == 11
+        assert features["Indomitable"]["level"] == 9
+        # Feature absent from the payload is gone.
+        assert client.get(f"/features/{original['Second Wind']}").status_code == 404
+
+    def test_replace_class_features_unknown_id_returns_400(self, client, gm_token, create_class, create_feature):
+        character_class = create_class(name="Fighter")
+        foreign = create_feature(name="Alien Feature", source_type="OTHER")
+
+        response = client.put(
+            f"/classes/{character_class.id}/features",
+            json={"features": [{"id": foreign.id, "name": "Alien Feature"}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
+
+    def test_replace_class_features_duplicate_ids_returns_422(self, client, gm_token, create_class, create_feature):
+        character_class = create_class(name="Fighter")
+        feature = create_feature(name="Second Wind", source_type="CLASS", class_id=character_class.id)
+
+        response = client.put(
+            f"/classes/{character_class.id}/features",
+            json={"features": [{"id": feature.id, "name": "A"}, {"id": feature.id, "name": "B"}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
+
+    def test_gm_can_clear_class_features(self, client, gm_token, create_class, create_feature):
+        character_class = create_class(name="Fighter")
+        create_feature(name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1)
+
+        response = client.put(
+            f"/classes/{character_class.id}/features",
+            json={"features": []},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["features"] == []
+
+    def test_replace_class_features_returns_404(self, client, gm_token):
+        response = client.put(
+            "/classes/9999/features",
+            json={"features": []},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404
+
+    def test_replace_class_features_preserves_grants_and_cascades_deletes(
+        self, client, gm_token, create_user, create_character, db_session
+    ):
+        from app.models import CharacterFeature
+
+        created = client.post(
+            "/classes/",
+            json={
+                "name": "Fighter",
+                "hit_dice": "D10",
+                "spellcasting_ability": None,
+                "features": [
+                    {"name": "Second Wind", "description": "Once per short rest.", "level": 1},
+                    {"name": "Extra Attack", "description": "Attack twice.", "level": 5},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert created.status_code == 201
+        class_id = created.json()["id"]
+        original = {feature["name"]: feature["id"] for feature in created.json()["features"]}
+
+        player = create_user()
+        character = create_character(owner_id=player.id, class_id=class_id, level=11)
+        kept_grant = CharacterFeature(character_id=character.id, feature_id=original["Extra Attack"], notes="notes")
+        removed_grant = CharacterFeature(character_id=character.id, feature_id=original["Second Wind"], notes="notes")
+        db_session.add_all([kept_grant, removed_grant])
+        db_session.commit()
+
+        response = client.put(
+            f"/classes/{class_id}/features",
+            json={"features": [{"id": original["Extra Attack"], "name": "Extra Attack", "level": 11}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 200
+
+        db_session.expire_all()
+        assert (
+            db_session.query(CharacterFeature).filter(CharacterFeature.feature_id == original["Extra Attack"]).count()
+            == 1
+        )
+        assert (
+            db_session.query(CharacterFeature).filter(CharacterFeature.feature_id == original["Second Wind"]).count()
+            == 0
+        )
+
+    def test_player_cannot_replace_subclass_features(self, client, player_token, create_class, create_subclass):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+
+        response = client.put(
+            f"/classes/{character_class.id}/subclasses/{subclass.id}/features",
+            json={"features": [{"name": "Improved Critical"}]},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+    def test_gm_can_replace_subclass_features_by_id(self, client, gm_token, create_class):
+        character_class = create_class(name="Fighter")
+
+        created = client.post(
+            f"/classes/{character_class.id}/subclasses",
+            json={
+                "name": "Champion",
+                "features": [
+                    {"name": "Improved Critical", "level": 3},
+                    {"name": "Remarkable Athlete", "level": 7},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert created.status_code == 201
+        subclass_id = created.json()["id"]
+        original = {feature["name"]: feature["id"] for feature in created.json()["features"]}
+
+        response = client.put(
+            f"/classes/{character_class.id}/subclasses/{subclass_id}/features",
+            json={
+                "features": [
+                    {"id": original["Improved Critical"], "name": "Improved Critical", "level": 3},
+                    {"name": "Survivor", "description": "Regain HP each turn.", "level": 18},
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        features = {feature["name"]: feature for feature in response.json()["features"]}
+        assert set(features) == {"Improved Critical", "Survivor"}
+        assert features["Improved Critical"]["id"] == original["Improved Critical"]
+        assert features["Survivor"]["level"] == 18
+        assert client.get(f"/features/{original['Remarkable Athlete']}").status_code == 404
+
+    def test_replace_subclass_features_returns_404(self, client, gm_token, create_class):
+        character_class = create_class(name="Fighter")
+
+        response = client.put(
+            f"/classes/{character_class.id}/subclasses/9999/features",
+            json={"features": []},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService
+from app.features.characters.progression.feature_sync import reconcile_characters_for_source
 from app.features.classes.exceptions import (
     InvalidClassLevelException,
     SpellcastingAbilityNotPrimaryException,
@@ -18,6 +19,7 @@ from app.features.classes.schemas import (
     ClassResponse,
     ClassUpdate,
     FeatureBriefResponse,
+    FeaturesReplace,
     ProgressionLevelRow,
     SavingThrowsUpdate,
     SpellSlotProgressionUpdate,
@@ -27,7 +29,7 @@ from app.features.classes.schemas import (
     SubclassUpdate,
     _proficiency_bonus,
 )
-from app.features.features.service import create_features_for_source
+from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.models.class_model import Class
 from app.models.subclass_model import Subclass
 
@@ -186,6 +188,33 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         updated = self.repository.set_spell_slots(character_class, class_level, slots_by_spell_level)
         return self.response_schema.model_validate(updated)
 
+    def replace_class_features(
+        self, class_id: int, data: FeaturesReplace, created_by_id: int | None = None
+    ) -> ClassResponse:
+        """
+        Full-replace a class's CLASS-source features, matched by feature id.
+
+        Items carrying an ``id`` update that feature in place — the id is
+        kept, so character grants and any player notes on them survive.
+        Items without an ``id`` create new features; existing features
+        whose id is absent from the payload are deleted, cascading their
+        grants away. Runs atomically, then reconciles the grants of every
+        character of this class so their builds match the new feature set.
+        """
+        character_class = self._get_or_404(class_id)
+        with self._atomic():
+            replace_features_for_source(
+                self.repository.db,
+                FeatureSourceType.CLASS,
+                character_class.id,
+                data.features,
+                created_by_id,
+                commit=False,
+            )
+            reconcile_characters_for_source(self.repository.db, FeatureSourceType.CLASS, character_class.id)
+        self.repository.refresh(character_class)
+        return self.response_schema.model_validate(character_class)
+
     def create_subclass(
         self, class_id: int, data: SubclassCreate, created_by_id: int | None = None
     ) -> SubclassResponse:
@@ -227,6 +256,32 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         fields = data.model_dump(exclude_unset=True)
         updated = self.repository.update_subclass(subclass, fields)
         return SubclassResponse.model_validate(updated)
+
+    def replace_subclass_features(
+        self, class_id: int, subclass_id: int, data: FeaturesReplace, created_by_id: int | None = None
+    ) -> SubclassResponse:
+        """
+        Full-replace a subclass's SUBCLASS-source features, matched by id.
+
+        Same semantics as :meth:`replace_class_features` — items with an
+        ``id`` keep that feature id (character grants survive), items
+        without an ``id`` are created, and features absent from the payload
+        are deleted. Grants of every character holding this subclass are
+        reconciled to the new feature set in the same transaction.
+        """
+        subclass = self._get_subclass_or_404(class_id, subclass_id)
+        with self._atomic():
+            replace_features_for_source(
+                self.repository.db,
+                FeatureSourceType.SUBCLASS,
+                subclass.id,
+                data.features,
+                created_by_id,
+                commit=False,
+            )
+            reconcile_characters_for_source(self.repository.db, FeatureSourceType.SUBCLASS, subclass.id)
+        self.repository.db.refresh(subclass)
+        return SubclassResponse.model_validate(subclass)
 
     def delete_subclass(self, class_id: int, subclass_id: int) -> None:
         subclass = self._get_subclass_or_404(class_id, subclass_id)

@@ -11,6 +11,7 @@ from app.features.classes.schemas import (
     ClassProgressionResponse,
     ClassResponse,
     ClassUpdate,
+    FeaturesReplace,
     SavingThrowsUpdate,
     SpellSlotProgressionUpdate,
     SubclassBriefResponse,
@@ -376,6 +377,66 @@ def set_class_spell_slots(
     return class_service.set_spell_slots(class_id, class_level, data)
 
 
+@router.put(
+    "/{class_id}/features",
+    response_model=ClassResponse,
+    summary="Replace a class's features",
+    responses={
+        400: {"description": "An item's feature id does not belong to this class."},
+        422: {"description": "Duplicate feature ids in one request."},
+        404: {"description": "No class exists with the given ID."},
+    },
+)
+def replace_class_features(
+    class_id: int,
+    class_service: ClassServiceDep,
+    _: GmUserDep,
+    data: FeaturesReplace = Body(
+        openapi_examples={
+            "replace": {
+                "summary": "Replace the class feature list (matched by id)",
+                "value": {
+                    "features": [
+                        {
+                            "id": 7,
+                            "name": "Second Wind",
+                            "level": 1,
+                            "description": "Regain HP as a bonus action.",
+                        },
+                        {
+                            "name": "Indomitable",
+                            "level": 9,
+                            "description": "Reroll a failed saving throw.",
+                        },
+                    ]
+                },
+            },
+            "clear": {
+                "summary": "Remove all class features",
+                "value": {"features": []},
+            },
+        },
+    ),
+):
+    """
+    Replace a class's feature list. **GM only.**
+
+    Full replace, not merge, matched by feature `id`:
+
+    - items carrying an `id` update that existing feature in place — the
+      feature keeps its id, so any character grants (and notes on them)
+      survive the update;
+    - items without an `id` create new features;
+    - current features whose id is not in the request body are deleted,
+      which cascades away their character grants.
+
+    Send `{"features": []}` to delete every feature of the class. An `id`
+    that doesn't belong to this class is rejected with 400; duplicate ids
+    within one request are rejected with 422.
+    """
+    return class_service.replace_class_features(class_id, data, created_by_id=_.id)
+
+
 @router.get(
     "/{class_id}/progression",
     response_model=ClassProgressionResponse,
@@ -478,6 +539,60 @@ def update_subclass(
     Does not touch features — manage those via the features endpoints.
     """
     return class_service.update_subclass(class_id, subclass_id, data)
+
+
+@router.put(
+    "/{class_id}/subclasses/{subclass_id}/features",
+    response_model=SubclassResponse,
+    summary="Replace a subclass's features",
+    responses={
+        400: {"description": "An item's feature id does not belong to this subclass."},
+        422: {"description": "Duplicate feature ids in one request."},
+        404: {"description": "Class or subclass not found."},
+    },
+)
+def replace_subclass_features(
+    class_id: int,
+    subclass_id: int,
+    class_service: ClassServiceDep,
+    _: GmUserDep,
+    data: FeaturesReplace = Body(
+        openapi_examples={
+            "replace": {
+                "summary": "Replace the subclass feature list (matched by id)",
+                "value": {
+                    "features": [
+                        {
+                            "id": 9,
+                            "name": "Improved Critical",
+                            "level": 3,
+                            "description": "Crit on 19-20.",
+                        },
+                        {
+                            "name": "Survivor",
+                            "level": 18,
+                            "description": "Regain HP each turn.",
+                        },
+                    ]
+                },
+            },
+            "clear": {
+                "summary": "Remove all subclass features",
+                "value": {"features": []},
+            },
+        },
+    ),
+):
+    """
+    Replace a subclass's feature list. **GM only.**
+
+    Full replace, not merge, matched by feature `id`, with the same
+    semantics as `PUT /classes/{class_id}/features` — items with an `id`
+    update that feature in place (character grants survive), items without
+    an `id` create new features, and features absent from the request are
+    deleted.
+    """
+    return class_service.replace_subclass_features(class_id, subclass_id, data, created_by_id=_.id)
 
 
 @router.delete(

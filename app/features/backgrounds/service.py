@@ -12,9 +12,11 @@ from app.features.backgrounds.schemas import (
     BackgroundCreate,
     BackgroundResponse,
     BackgroundUpdate,
+    FeaturesReplace,
     SkillsUpdate,
 )
-from app.features.features.service import create_features_for_source
+from app.features.characters.progression.feature_sync import reconcile_characters_for_source
+from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.models.background_model import Background
 
 
@@ -31,11 +33,13 @@ class BackgroundService(
         equivalent. ``create_background`` can optionally set them up
         front, in the same transaction as the background itself.
 
-    Unlike ``RaceService``, there is no in-use delete guard: a
-    background's FK on ``characters.background_id`` is ``ON DELETE SET
-    NULL``, so deleting a background in use simply detaches it from any
-    characters rather than being blocked — the inherited ``delete`` is
-    used as-is, no ``delete_background`` override needed.
+    Unlike ``RaceService``, deletion is *not* blocked by characters
+    bearing the background: its FK on ``characters.background_id`` is
+    ``ON DELETE SET NULL``, so deleting a background in use simply
+    detaches it from any characters. It IS blocked (409) once one of the
+    background's features has been granted to a character — those grants
+    live in ``character_features`` and must be revoked first, see
+    ``BackgroundRepository.is_in_use``.
 
     ``get_by_id`` and ``list_brief`` are inherited unchanged from
     ``BaseService``. Note that the inherited ``list_brief`` derives its
@@ -142,3 +146,31 @@ class BackgroundService(
 
         updated_background = self.repository.set_skills(background, skills)
         return self.response_schema.model_validate(updated_background)
+
+    def replace_background_features(
+        self, background_id: int, data: FeaturesReplace, created_by_id: int | None = None
+    ) -> BackgroundResponse:
+        """
+        Full-replace a background's BACKGROUND-source features, matched by id.
+
+        Items carrying an ``id`` update that feature in place — the id is
+        kept, so character grants and any player notes on them survive.
+        Items without an ``id`` create new features; existing features
+        whose id is absent from the payload are deleted, cascading their
+        grants away. Runs atomically, then reconciles the grants of every
+        character with this background so their builds match the new
+        feature set.
+        """
+        background = self._get_or_404(background_id)
+        with self._atomic():
+            replace_features_for_source(
+                self.repository.db,
+                FeatureSourceType.BACKGROUND,
+                background.id,
+                data.features,
+                created_by_id,
+                commit=False,
+            )
+            reconcile_characters_for_source(self.repository.db, FeatureSourceType.BACKGROUND, background.id)
+        self.repository.refresh(background)
+        return self.response_schema.model_validate(background)

@@ -32,7 +32,7 @@ class Character(settings.Base):  # type: ignore
     level = Column(Integer, nullable=False, default=1)
 
     class_id = Column(Integer, ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False, index=True)
-    subclass = Column(String(100), nullable=False, default="")
+    subclass_id = Column(Integer, ForeignKey("subclasses.id", ondelete="SET NULL"), nullable=True, index=True)
     race_id = Column(Integer, ForeignKey("races.id", ondelete="SET NULL"), index=True)
     background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="SET NULL"), index=True)
 
@@ -91,6 +91,7 @@ class Character(settings.Base):  # type: ignore
 
     owner = relationship("User", back_populates="characters")
     character_class = relationship("Class", back_populates="characters")
+    subclass = relationship("Subclass")
     race = relationship("Race", back_populates="characters")
     background = relationship("Background", back_populates="characters")
 

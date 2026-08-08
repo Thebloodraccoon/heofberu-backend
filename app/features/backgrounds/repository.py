@@ -3,6 +3,7 @@
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
+from app.models import CharacterFeature, Feature
 from app.models.background_model import Background
 from app.models.skill_model import Skill
 
@@ -14,10 +15,23 @@ class BackgroundRepository(BaseRepository[Background]):
         super().__init__(
             Background,
             db,
-            default_load_options=[selectinload(Background.granted_skills)],
+            default_load_options=[selectinload(Background.granted_skills), selectinload(Background.features)],
             search_fields=["name"],
             unique_fields=["name"],
+            check_in_use_on_delete=True,
         )
+
+    def is_in_use(self, background_id: int) -> bool:
+        """
+        Check whether any of the background's features is currently granted
+        to a character (``character_features``). Characters may keep being
+        detached via ``characters.background_id`` ``ON DELETE SET NULL`` —
+        only granting its features blocks deletion.
+        """
+        feature_ids = [row[0] for row in self.db.query(Feature.id).filter(Feature.background_id == background_id)]
+        if not feature_ids:
+            return False
+        return self.db.query(CharacterFeature).filter(CharacterFeature.feature_id.in_(feature_ids)).first() is not None
 
     def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""

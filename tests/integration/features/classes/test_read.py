@@ -36,3 +36,32 @@ class TestClassOpenRead:
 
     def test_get_class_404(self, client):
         assert client.get("/classes/999999").status_code == 404
+
+    def test_list_subclasses(self, client, create_class, create_subclass):
+        character_class = create_class(name="Fighter")
+        create_subclass(class_id=character_class.id, name="Battle Master")
+        create_subclass(class_id=character_class.id, name="Champion")
+
+        response = client.get(f"/classes/{character_class.id}/subclasses")
+
+        assert response.status_code == 200
+        assert {item["name"] for item in response.json()} == {"Battle Master", "Champion"}
+
+    def test_get_subclass_includes_features(self, client, create_class, create_subclass, create_feature):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+        create_feature(name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3)
+
+        response = client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["name"] == "Champion"
+        assert body["unlock_level"] == 3
+        assert [item["name"] for item in body["features"]] == ["Improved Critical"]
+        assert body["features"][0]["source_type"] == "SUBCLASS"
+
+    def test_get_subclass_404(self, client, create_class):
+        character_class = create_class(name="Fighter")
+
+        assert client.get(f"/classes/{character_class.id}/subclasses/999999").status_code == 404

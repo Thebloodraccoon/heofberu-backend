@@ -2,15 +2,13 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.features.features.schemas import NestedFeatureCreate
+from app.features.features.schemas import FeatureBriefResponse, NestedFeatureCreate
 
 
 class BackgroundBase(BaseModel):
     """Base background fields shared by create, update, and response schemas."""
 
     name: str
-    feature_name: str = ""
-    feature_description: str = ""
 
     personality_traits_suggestions: str = ""
     ideals_suggestions: str = ""
@@ -58,8 +56,6 @@ class BackgroundUpdate(BaseModel):
     """
 
     name: str | None = None
-    feature_name: str | None = None
-    feature_description: str | None = None
     personality_traits_suggestions: str | None = None
     ideals_suggestions: str | None = None
     bonds_suggestions: str | None = None
@@ -98,6 +94,7 @@ class BackgroundResponse(BackgroundBase):
     id: int
     created_by_id: int | None = None
     granted_skills: list[SkillResponse] = []
+    features: list[FeatureBriefResponse] = []
 
 
 class BackgroundBriefResponse(BaseModel):

@@ -4,10 +4,12 @@ from sqlalchemy.orm import Session
 
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService
-from app.features.features.service import create_features_for_source
+from app.features.characters.progression.feature_sync import reconcile_characters_for_source
+from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
+    FeaturesReplace,
     RaceBriefResponse,
     RaceCreate,
     RaceResponse,
@@ -122,3 +124,30 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         updated_race = self.repository.set_skills(race, skills)
         return self.response_schema.model_validate(updated_race)
+
+    def replace_race_features(
+        self, race_id: int, data: FeaturesReplace, created_by_id: int | None = None
+    ) -> RaceResponse:
+        """
+        Full-replace a race's RACE-source features, matched by feature id.
+
+        Items carrying an ``id`` update that feature in place — the id is
+        kept, so character grants and any player notes on them survive.
+        Items without an ``id`` create new features; existing features
+        whose id is absent from the payload are deleted, cascading their
+        grants away. Runs atomically, then reconciles the grants of every
+        character of this race so their builds match the new feature set.
+        """
+        race = self._get_or_404(race_id)
+        with self._atomic():
+            replace_features_for_source(
+                self.repository.db,
+                FeatureSourceType.RACE,
+                race.id,
+                data.features,
+                created_by_id,
+                commit=False,
+            )
+            reconcile_characters_for_source(self.repository.db, FeatureSourceType.RACE, race.id)
+        self.repository.refresh(race)
+        return self.response_schema.model_validate(race)

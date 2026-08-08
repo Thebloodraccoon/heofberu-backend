@@ -47,10 +47,18 @@ class TestItemCrud:
         assert response.status_code == 200
         assert response.json()["name"] == "New Item Name"
 
-    def test_gm_can_delete_item(self, client, gm_token, create_item):
+    def test_gm_cannot_delete_item(self, client, gm_token, create_item):
         item = create_item(name="Doomed Item")
 
         response = client.delete(f"/items/{item.id}", headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert response.status_code == 403
+        assert client.get(f"/items/{item.id}").status_code == 200
+
+    def test_founder_can_delete_item(self, client, founder_token, create_item):
+        item = create_item(name="Doomed Item")
+
+        response = client.delete(f"/items/{item.id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 204
         assert client.get(f"/items/{item.id}").status_code == 404

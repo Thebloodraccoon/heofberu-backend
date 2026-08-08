@@ -29,6 +29,14 @@ def get_character_features(
     """
     List every feature recorded on a character. GM can view any
     character's features; players only their own.
+
+    The list is the character's *full* feature set: class/subclass/race/
+    background/feat features are granted automatically by
+    ``sync_progression_features``, and OTHER (standalone) features are
+    recorded here manually. Each item embeds only a brief summary of the
+    referenced feature (id, name, source_type, level) to keep the payload
+    light — fetch the full detail through ``GET /features/{feature_id}``
+    on demand.
     """
     return character_feature_service.get_features(character_id, current_user)
 

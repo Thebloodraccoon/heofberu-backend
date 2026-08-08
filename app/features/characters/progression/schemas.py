@@ -24,6 +24,19 @@ class ClassChange(BaseModel):
     class_id: int
 
 
+class SubclassChange(BaseModel):
+    """
+    Set or clear a character's subclass.
+
+    ``subclass_id`` must reference a subclass of the character's current
+    class (validated by the service); ``subclass_id: null`` clears it.
+    Setting a subclass grants its features at or below the character's
+    current level.
+    """
+
+    subclass_id: int | None = None
+
+
 class ASIIncreaseItem(BaseModel):
     """One increment of an Ability Score Improvement, e.g. {"ability": "STR", "amount": 2}."""
 

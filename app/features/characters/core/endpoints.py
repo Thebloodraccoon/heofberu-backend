@@ -61,9 +61,10 @@ def get_character(character_id: int, character_service: CharacterServiceDep, cur
 
     GM can view any character. Players can only view their own.
 
-    Ability scores are always freshly recalculated and persisted to the
-    cache before returning — this is the one read path guaranteed to be
-    up to date with the character's current base stats and race bonuses.
+    Ability scores come from the ``character_ability_scores`` cache
+    as-is (kept fresh by the write paths that can change them — feat
+    grants, level-up ASI, race change); derived combat stats are computed
+    fresh on every read.
     """
     return character_service.get_character(character_id, current_user)
 

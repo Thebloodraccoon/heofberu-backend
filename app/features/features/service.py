@@ -4,16 +4,16 @@ from sqlalchemy.orm import Session
 
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService
-from app.features.features.exceptions import InvalidFeatureSourceException
+from app.features.features.exceptions import FeatureNotOwnedException, InvalidFeatureSourceException
 from app.features.features.repository import FeatureRepository
 from app.features.features.schemas import (
     _REQUIRED_FK_BY_SOURCE_TYPE,
     FeatureBriefResponse,
     FeatureCreate,
+    FeatureReplaceItem,
     FeatureResponse,
     FeatureUpdate,
     NestedFeatureCreate,
-    _validate_source_fk_consistency,
 )
 from app.models.feature_model import Feature
 
@@ -66,6 +66,90 @@ def create_features_for_source(
     return created
 
 
+def replace_features_for_source(
+    db: Session,
+    source_type: FeatureSourceType,
+    source_id: int,
+    items: list[FeatureReplaceItem] | None,
+    created_by_id: int | None,
+    *,
+    commit: bool = False,
+) -> None:
+    """
+    Full-replace the features owned by a source record, matched by id.
+
+    Every feature of the source is read; then:
+
+    - items carrying an ``id`` update that feature in place — the row
+      keeps its id, so ``character_features`` grants (and any player notes
+      on them) survive;
+    - items without an ``id`` create a new feature attached to the source;
+    - existing features whose id is not in the payload are deleted, which
+      cascades their ``character_features`` rows away.
+
+    Called from the parent entity's service (race/class/background/feat/
+    subclass) with ``commit=False`` inside its ``_atomic()`` block.
+
+    Args:
+        db: Active session — must already be inside the caller's
+            ``_atomic()`` block so rows share the parent transaction.
+        source_type: Which source the features belong to (CLASS, SUBCLASS,
+            RACE, BACKGROUND, FEAT).
+        source_id: ID of the owning record.
+        items: Full replacement list of feature payloads. ``None`` or
+            empty deletes all current features of the source.
+        created_by_id: Optional GM id stored on newly created features.
+        commit: Pass ``False`` when called from within ``_atomic()``.
+
+    Raises:
+        ValueError: ``source_type`` has no source FK (shouldn't happen —
+            callers only pass source-bound types).
+        FeatureNotOwnedException: an item's ``id`` does not belong to this
+            source (400).
+    """
+    fk_name = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
+    if fk_name is None:
+        raise ValueError(f"source_type='{source_type.value}' has no source FK; replacement is not supported.")
+
+    fk_attr = getattr(Feature, fk_name)
+
+    existing = {feature.id: feature for feature in db.query(Feature).filter(fk_attr == source_id).all()}
+
+    incoming = list(items or [])
+    incoming_ids = {item.id for item in incoming if item.id is not None}
+
+    # Every provided id must be owned by this source.
+    for item in incoming:
+        if item.id is not None and item.id not in existing:
+            raise FeatureNotOwnedException(source_type.value, source_id, item.id)
+
+    for item in incoming:
+        if item.id is None:
+            payload = item.model_dump(exclude={"id"})
+            payload["source_type"] = source_type
+            payload[fk_name] = source_id
+            feature = FeatureCreate(**payload)  # re-runs source_type/FK consistency validator
+            db.add(Feature(**feature.model_dump(), created_by_id=created_by_id))
+        else:
+            current = existing[item.id]
+            current.name = item.name
+            current.level = item.level
+            current.description = item.description
+            current.is_homebrew = item.is_homebrew
+
+    for feature_id, _feature in existing.items():
+        if feature_id not in incoming_ids:
+            # Bulk delete (bypasses the ORM unit of work) so loaded
+            # CharacterFeature grants are not nulled out by the session —
+            # the DB-level ON DELETE CASCADE on features.id removes them.
+            db.query(Feature).filter(Feature.id == feature_id).delete(synchronize_session=False)
+
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+
+
 class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureBriefResponse]):
     """
     Feature-specific CRUD service built on :class:`BaseService`.
@@ -73,10 +157,13 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
     Adds:
       - filtered listing by source_type/class_id/subclass_id/race_id/
         background_id/feat_id via the generic ``filters`` dict;
-      - re-validation of source_type/FK consistency on PATCH update, since
-        ``FeatureUpdate`` is partial and can't validate the combination on
-        its own — the service merges incoming fields onto the existing record
-        and re-checks via ``_validate_source_fk_consistency``.
+      - CRUD restricted to standalone (OTHER) features: class/race/
+        background/feat/subclass features are owned by their parent
+        record and are managed through that parent's nested ``features``
+        payloads and the ``PUT /{source}/{id}/features`` replace
+        endpoints, not through ``/features/``;
+      - update restrictions: ``source_type`` and its FK are immutable, and
+        ``level`` on a non-CLASS/SUBCLASS feature is rejected.
     """
 
     repository: FeatureRepository
@@ -88,39 +175,50 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
             brief_schema=FeatureBriefResponse,
         )
 
+    def _require_standalone(self, feature: Feature) -> None:
+        """Reject CRUD on a source-owned feature via ``/features/``."""
+        if feature.source_type != FeatureSourceType.OTHER:
+            raise InvalidFeatureSourceException(
+                "Only standalone (OTHER) features can be managed through /features/; "
+                "class/race/background/feat/subclass features are managed through their parent records."
+            )
+
     def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
         """
-        Update a feature, re-validating source_type/FK consistency against
-        the merged (existing + incoming) state.
+        Update a standalone (OTHER) feature.
+
+        Source-owned features (class/race/background/feat/subclass) cannot
+        be edited through ``/features/`` — use the parent's replace
+        endpoint. ``source_type`` and its FK can't change — ownership is
+        permanent. Only ``name``, ``level``, ``description`` and
+        ``is_homebrew`` are editable. Setting a non-``None`` ``level`` on
+        a feature that isn't CLASS/SUBCLASS is rejected with a 400 (level
+        is only meaningful for class/subclass features).
         """
 
         feature = self._get_or_404(feature_id)
+        self._require_standalone(feature)
         fields = update_data.model_dump(exclude_unset=True)
 
-        source_type_changing = "source_type" in fields
-
-        def merged_value(fk_name: str):
-            if fk_name in fields:
-                return fields[fk_name]
-            if source_type_changing:
-                return None
-            return getattr(feature, fk_name, None)
-
-        merged = {
-            "source_type": fields.get("source_type", feature.source_type),
-            "class_id": merged_value("class_id"),
-            "subclass_id": merged_value("subclass_id"),
-            "race_id": merged_value("race_id"),
-            "background_id": merged_value("background_id"),
-            "feat_id": merged_value("feat_id"),
-            "level": fields.get("level", feature.level),
-            "subclass_name": fields.get("subclass_name", feature.subclass_name),
-        }
-
-        try:
-            _validate_source_fk_consistency(merged["source_type"], merged)
-        except ValueError as exc:
-            raise InvalidFeatureSourceException(str(exc)) from exc
+        if (
+            "level" in fields
+            and fields["level"] is not None
+            and feature.source_type not in (FeatureSourceType.CLASS, FeatureSourceType.SUBCLASS)
+        ):
+            raise InvalidFeatureSourceException("'level' is only meaningful when source_type is CLASS or SUBCLASS.")
 
         updated_feature = self.repository.update(feature, fields)
         return self.response_schema.model_validate(updated_feature)
+
+    def delete(self, feature_id: int) -> bool:
+        """
+        Delete a standalone (OTHER) feature, cascading away any
+        ``CharacterFeature`` grants on it.
+
+        Source-owned features are deleted through their parent's replace
+        endpoint instead.
+        """
+
+        feature = self._get_or_404(feature_id)
+        self._require_standalone(feature)
+        return self.repository.delete(feature)

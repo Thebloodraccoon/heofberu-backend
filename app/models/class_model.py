@@ -1,10 +1,12 @@
 """ORM model for the reference table of playable classes."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, and_
 from sqlalchemy.orm import relationship
 
+from app.constants import FeatureSourceType
 from app.models.class_association_models import class_available_skills
 from app.models.enums import AbilityScoreType, DiceTypeColumn
+from app.models.feature_model import Feature
 from app.settings import settings
 
 
@@ -54,6 +56,18 @@ class Class(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="Subclass.name",
+    )
+    # CLASS-source features granted by this class across all levels.
+    # Subclass features are excluded from this relationship — they are
+    # exposed through ``Subclass.features``.
+    features = relationship(
+        "Feature",
+        viewonly=True,
+        primaryjoin=lambda: and_(
+            Feature.class_id == Class.id,
+            Feature.source_type == FeatureSourceType.CLASS,
+        ),
+        order_by="Feature.level",
     )
     characters = relationship("Character", back_populates="character_class")
     created_by = relationship("User")
