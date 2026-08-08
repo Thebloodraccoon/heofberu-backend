@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Query
 
 from app.constants import RaceSize
 from app.core.base_service import Page
-from app.core.dependencies import GmUserDep, RaceServiceDep
+from app.core.dependencies import FounderDep, GmUserDep, RaceServiceDep
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
     RaceBriefResponse,
@@ -127,7 +127,6 @@ def create_race(
                     "name": "Elf",
                     "size": "MEDIUM",
                     "speed": 30,
-                    "traits": "Darkvision, Fey Ancestry",
                     "is_homebrew": "false",
                     "ability_bonuses": [{"ability": "DEX", "bonus": 2}],
                     "granted_skills": [3, 7],
@@ -177,9 +176,9 @@ def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceService
         409: {"description": "Race is still in use by one or more characters."},
     },
 )
-def delete_race(race_id: int, race_service: RaceServiceDep, _: GmUserDep):
+def delete_race(race_id: int, race_service: RaceServiceDep, _: FounderDep):
     """
-    Delete a race. **GM only.**
+    Delete a race. **Found-father only.**
 
     Also removes its ability bonuses (cascade) and its links to granted
     skills. Blocked if the race is still assigned to one or more

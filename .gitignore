@@ -234,3 +234,4 @@ yarn-error.log*
 /output/
 .opencode/
 AGENTS.md
+/frontend/

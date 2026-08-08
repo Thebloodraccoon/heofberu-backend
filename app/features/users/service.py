@@ -12,7 +12,7 @@ from app.features.users.exceptions import (
     UserNotFoundException,
 )
 from app.features.users.repository import UserRepository
-from app.features.users.schemas import UserCreate, UserResponse, UserUpdate
+from app.features.users.schemas import UserCreate, UserProfileUpdate, UserResponse, UserUpdate
 from app.models.user_model import User
 from app.settings import settings
 
@@ -77,6 +77,23 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         fields = data.model_dump(exclude_unset=True)
 
         fields["updated_at"] = datetime.now(timezone.utc)
+        updated_user = self.repository.update(user, fields)
+        return self.response_schema.model_validate(updated_user)
+
+    def update_profile(self, user_id: int, data: UserProfileUpdate) -> UserResponse:
+        """
+        Update a user's own profile (username, email, bio, contact, location).
+
+        Unlike :meth:`update_user` this never touches the ``role`` and does not
+        block the seeded default admin, so the admin can edit their personal
+        cabinet too. Username/email uniqueness is still enforced by the
+        repository.
+        """
+
+        user = self._get_or_404(user_id)
+        fields = data.model_dump(exclude_unset=True)
+        fields["updated_at"] = datetime.now(timezone.utc)
+
         updated_user = self.repository.update(user, fields)
         return self.response_schema.model_validate(updated_user)
 

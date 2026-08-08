@@ -96,6 +96,12 @@ def gm(create_user):
 
 
 @pytest.fixture
+def founder(create_user):
+    """A default found-father (founder) user."""
+    return create_user(username="founder1", email="founder1@example.com", role=UserRole.FOUND_FATHER)
+
+
+@pytest.fixture
 def create_skill(db_session):
     def _create_skill(key="PERCEPTION", name="Perception", ability="WIS", description=""):
         skill = Skill(key=key, name=name, ability=ability, description=description)
@@ -109,12 +115,11 @@ def create_skill(db_session):
 
 @pytest.fixture
 def create_race(db_session):
-    def _create_race(name="Elf", size="MEDIUM", speed=30, traits="", description="", is_homebrew=False):
+    def _create_race(name="Elf", size="MEDIUM", speed=30, description="", is_homebrew=False):
         race = Race(
             name=name,
             size=size,
             speed=speed,
-            traits=traits,
             description=description,
             is_homebrew=is_homebrew,
         )
@@ -321,3 +326,8 @@ def player_token(player, login_as):
 @pytest.fixture
 def gm_token(gm, login_as):
     return login_as(gm)
+
+
+@pytest.fixture
+def founder_token(founder, login_as):
+    return login_as(founder)

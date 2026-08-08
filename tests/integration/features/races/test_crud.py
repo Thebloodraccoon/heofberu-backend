@@ -46,6 +46,28 @@ class TestRaceCrud:
         assert body["ability_bonuses"] == [{"ability": "DEX", "bonus": 2}]
         assert body["granted_skills"][0]["id"] == skill.id
 
+    def test_create_race_with_nested_features(self, client, gm_token):
+        response = client.post(
+            "/races/",
+            json={
+                "name": "Drow",
+                "size": "MEDIUM",
+                "speed": 30,
+                "features": [
+                    {"name": "Darkvision", "description": "See in dim light within 60 ft."},
+                    {"name": "Sunlight Sensitivity", "description": "Disadvantage in direct sunlight."},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        race_id = response.json()["id"]
+
+        features = client.get(f"/features/?source_type=RACE&race_id={race_id}").json()["items"]
+        assert [feature["name"] for feature in features] == ["Darkvision", "Sunlight Sensitivity"]
+        assert all(feature["source_type"] == "RACE" and feature["race_id"] == race_id for feature in features)
+
     def test_create_duplicate_race_name_returns_400(self, client, gm_token, create_race):
         create_race(name="Orc")
         response = client.post(

@@ -19,7 +19,7 @@ class RaceRepository(BaseRepository[Race]):
 
     ``search_fields=["name"]`` pins free-text ``search`` (on the inherited
     ``get_all``/``get_brief``) to just ``name`` — without this, the base
-    class's auto-detection would also search ``traits`` (also a text
+    class's auto-detection would also search ``description`` (also a text
     column on ``Race``), which isn't the intended behavior here. ``size``
     stays available as an exact-match ``filters`` key, inherited unchanged.
 

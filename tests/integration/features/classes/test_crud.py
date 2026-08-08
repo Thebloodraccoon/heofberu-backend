@@ -49,6 +49,59 @@ class TestClassCrud:
         assert body["saving_throws"] == [{"ability": "INT"}, {"ability": "WIS"}]
         assert [item["id"] for item in body["available_skills"]] == [skill.id]
 
+    def test_create_class_with_nested_features(self, client, gm_token):
+        response = client.post(
+            "/classes/",
+            json={
+                "name": "Fighter",
+                "hit_dice": "D10",
+                "spellcasting_ability": None,
+                "features": [
+                    {"name": "Second Wind", "description": "Once per short rest."},
+                    {"name": "Extra Attack", "description": "Attack twice.", "level": 5},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        class_id = response.json()["id"]
+
+        features = client.get(f"/features/?source_type=CLASS&class_id={class_id}").json()["items"]
+        assert [feature["name"] for feature in features] == ["Second Wind", "Extra Attack"]
+        assert all(feature["source_type"] == "CLASS" and feature["class_id"] == class_id for feature in features)
+        assert {feature["name"]: feature["level"] for feature in features} == {
+            "Second Wind": None,
+            "Extra Attack": 5,
+        }
+
+    def test_create_class_with_spell_slot_progression(self, client, gm_token):
+        response = client.post(
+            "/classes/",
+            json={
+                "name": "Wizard",
+                "hit_dice": "D6",
+                "spellcasting_ability": "INT",
+                "primary_abilities": ["INT"],
+                "spell_slot_progression": [
+                    {
+                        "class_level": 1,
+                        "slots": [{"spell_level": "CANTRIP", "slots": 3}, {"spell_level": "LEVEL_1", "slots": 2}],
+                    },
+                    {"class_level": 5, "slots": [{"spell_level": "LEVEL_3", "slots": 2}]},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["spell_slot_progression"] == [
+            {"class_level": 1, "spell_level": "CANTRIP", "slots": 3},
+            {"class_level": 1, "spell_level": "LEVEL_1", "slots": 2},
+            {"class_level": 5, "spell_level": "LEVEL_3", "slots": 2},
+        ]
+
     def test_create_class_spellcasting_ability_not_primary_returns_400(self, client, gm_token):
         response = client.post(
             "/classes/",

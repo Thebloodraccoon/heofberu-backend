@@ -19,9 +19,9 @@ class Class(settings.Base):  # type: ignore
     id = Column(Integer, primary_key=True)
 
     name = Column(String(100), nullable=False, unique=True, index=True)
-    hit_dice = Column(DiceTypeColumn, nullable=False)  # e.g. "1d10"
+    hit_dice = Column(DiceTypeColumn, nullable=False)
     skill_choice_count = Column(Integer, nullable=False, default=2)
-    spellcasting_ability = Column(AbilityScoreType, nullable=True)  # NULL if non-caster
+    spellcasting_ability = Column(AbilityScoreType, nullable=True)
 
     description = Column(Text, nullable=False, default="")
     is_homebrew = Column(Boolean, nullable=False, default=False)
@@ -47,6 +47,13 @@ class Class(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="ClassSpellSlotProgression.class_level, ClassSpellSlotProgression.spell_level",
+    )
+    subclasses = relationship(
+        "Subclass",
+        back_populates="character_class",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Subclass.name",
     )
     characters = relationship("Character", back_populates="character_class")
     created_by = relationship("User")

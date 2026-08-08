@@ -65,6 +65,16 @@ class GmAccessException(HTTPException):
         )
 
 
+class FoundFatherAccessException(HTTPException):
+    """Raised (403) when a non-found-father user tries an action reserved for the found father."""
+
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the found father has access",
+        )
+
+
 class InvalidCredentialsException(HTTPException):
     """Raised (401) when the provided email or password is incorrect."""
 

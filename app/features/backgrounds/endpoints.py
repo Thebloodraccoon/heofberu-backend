@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Body, Query
 
 from app.core.base_service import Page
-from app.core.dependencies import BackgroundServiceDep, GmUserDep
+from app.core.dependencies import BackgroundServiceDep, FounderDep, GmUserDep
 from app.features.backgrounds.schemas import (
     BackgroundBriefResponse,
     BackgroundCreate,
@@ -168,9 +168,9 @@ def update_background(
         404: {"description": "No background exists with the given ID."},
     },
 )
-def delete_background(background_id: int, background_service: BackgroundServiceDep, _: GmUserDep):
+def delete_background(background_id: int, background_service: BackgroundServiceDep, _: FounderDep):
     """
-    Delete a background. **GM only.**
+    Delete a background. **Found-father only.**
 
     Also removes its links to granted skills (cascade). Characters
     currently using this background have their `background_id` set to

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.constants import UserRole
@@ -21,6 +21,10 @@ class User(settings.Base):  # type: ignore
 
     hashed_password = Column(String, nullable=False)
     role = Column(UserRoleType, nullable=False, default=UserRole.PLAYER, server_default="PLAYER")
+
+    bio = Column(Text, nullable=True)
+    contact = Column(String(length=100), nullable=True)
+    location = Column(String(length=100), nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

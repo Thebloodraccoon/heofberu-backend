@@ -2,43 +2,81 @@
 
 from sqlalchemy.orm import Session
 
+from app.constants import FeatureSourceType
 from app.core.base_service import BaseService
 from app.features.features.exceptions import InvalidFeatureSourceException
 from app.features.features.repository import FeatureRepository
 from app.features.features.schemas import (
+    _REQUIRED_FK_BY_SOURCE_TYPE,
     FeatureBriefResponse,
     FeatureCreate,
     FeatureResponse,
     FeatureUpdate,
+    NestedFeatureCreate,
     _validate_source_fk_consistency,
 )
 from app.models.feature_model import Feature
+
+
+def create_features_for_source(
+    db: Session,
+    source_type: FeatureSourceType,
+    source_id: int,
+    items: list[NestedFeatureCreate] | None,
+    created_by_id: int | None,
+    *,
+    commit: bool = False,
+) -> list[Feature]:
+    """
+    Create ``Feature`` rows attached to a source record inside an open transaction.
+
+    Called by race/class/background/feat/subclass create services so a client
+    can supply features up front in the same request that creates the source.
+
+    Args:
+        db: Active session — must already be inside the caller's
+            ``_atomic()`` block so rows share the parent transaction.
+        source_type: Which source the features belong to. Determines the FK
+            column that gets set (CLASS→class_id, SUBCLASS→subclass_id, ...).
+        source_id: ID of the owning record.
+        items: Nested feature payloads. ``None`` or empty returns ``[]``.
+        created_by_id: Optional GM id stored on each created feature.
+        commit: Pass ``False`` when called from within ``_atomic()``.
+
+    Returns:
+        The created ``Feature`` model instances.
+    """
+    if not items:
+        return []
+
+    fk_name = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
+    if fk_name is None:
+        raise ValueError(f"source_type='{source_type.value}' has no source FK; nested creation is not supported.")
+
+    repository = FeatureRepository(db)
+    created: list[Feature] = []
+
+    for item in items:
+        payload = item.model_dump()
+        payload["source_type"] = source_type
+        payload[fk_name] = source_id
+        feature = FeatureCreate(**payload)  # re-runs source_type/FK consistency validator
+        created.append(repository.create(feature.model_dump(), commit=commit))
+
+    return created
 
 
 class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureBriefResponse]):
     """
     Feature-specific CRUD service built on :class:`BaseService`.
 
-    Adds behaviors the generic base class doesn't provide:
-      - filtered listing by source_type/class_id/race_id/background_id/
-        feat_id via the inherited ``get_all``/``list_brief`` generic
-        ``filters`` dict (exact-match, AND'd) — no bespoke filtered
-        methods, exact-match filtering is handled generically;
-      - re-validation of source_type/FK consistency on update. ``FeatureCreate``
-        already validates this at the schema level (a full record is
-        available), but ``FeatureUpdate`` is a partial PATCH payload and
-        can't validate the combination on its own — this service merges
-        the incoming fields onto the existing record and re-checks
-        consistency before persisting, raising ``InvalidFeatureSourceException``
-        (mapped to 400) if the result would be inconsistent.
-
-    ``create`` is inherited unchanged from ``BaseService`` — no extra
-    setup work is needed beyond what ``FeatureCreate``'s own validator
-    already enforces. No custom transaction handling is needed anywhere
-    in this service (unlike ``ClassService``/``RaceService``/etc.) since
-    ``Feature`` has no association-table relationships to set up
-    alongside the base record — every write here is a single repository
-    call, so there's no ``self._atomic()`` use site.
+    Adds:
+      - filtered listing by source_type/class_id/subclass_id/race_id/
+        background_id/feat_id via the generic ``filters`` dict;
+      - re-validation of source_type/FK consistency on PATCH update, since
+        ``FeatureUpdate`` is partial and can't validate the combination on
+        its own — the service merges incoming fields onto the existing record
+        and re-checks via ``_validate_source_fk_consistency``.
     """
 
     repository: FeatureRepository
@@ -66,13 +104,15 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
                 return fields[fk_name]
             if source_type_changing:
                 return None
-            return getattr(feature, fk_name)
+            return getattr(feature, fk_name, None)
 
         merged = {
             "source_type": fields.get("source_type", feature.source_type),
             "class_id": merged_value("class_id"),
+            "subclass_id": merged_value("subclass_id"),
             "race_id": merged_value("race_id"),
             "background_id": merged_value("background_id"),
+            "feat_id": merged_value("feat_id"),
             "level": fields.get("level", feature.level),
             "subclass_name": fields.get("subclass_name", feature.subclass_name),
         }

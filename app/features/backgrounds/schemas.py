@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.features.features.schemas import NestedFeatureCreate
+
 
 class BackgroundBase(BaseModel):
     """Base background fields shared by create, update, and response schemas."""
@@ -36,6 +38,7 @@ class BackgroundCreate(BackgroundBase):
     """
 
     granted_skills: list[int] | None = None
+    features: list[NestedFeatureCreate] | None = None
 
     @field_validator("granted_skills")
     def validate_unique_skill_ids(cls, value):

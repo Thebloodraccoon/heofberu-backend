@@ -1,11 +1,12 @@
-"""User management endpoints (GM-only)."""
+"""User management endpoints (GM-only; role changes and deletion are found-father-only)."""
 
 from fastapi import APIRouter, Query, status
 
 from app.constants import UserRole
 from app.core.base_service import Page
-from app.core.dependencies import GmUserDep, UserServiceDep
-from app.features.users.schemas import UserCreate, UserResponse, UserUpdate
+from app.core.dependencies import CurrentUserDep, FounderDep, GmUserDep, UserServiceDep
+from app.core.exceptions import FoundFatherAccessException
+from app.features.users.schemas import UserCreate, UserProfileUpdate, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -31,6 +32,24 @@ def get_all_users(
     return user_service.get_all(page=page, size=size, filters={"role": role}, search=search)
 
 
+@router.get("/me", response_model=UserResponse)
+def get_current_user(user_service: UserServiceDep, user: CurrentUserDep):
+    """Get current user."""
+    return user_service.get_by_id(user.id)
+
+
+@router.put("/me", response_model=UserResponse)
+def update_current_user(user_data: UserProfileUpdate, user_service: UserServiceDep, user: CurrentUserDep):
+    """
+    Update the current user's own profile (personal cabinet).
+
+    Allows editing ``username``, ``email``, ``bio``, ``contact`` and
+    ``location``. The ``role`` is never editable here — assign it through the
+    GM endpoints instead.
+    """
+    return user_service.update_profile(user.id, user_data)
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDep):
     """Get user by ID."""
@@ -38,19 +57,33 @@ def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDep):
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(user_data: UserCreate, user_service: UserServiceDep, _: GmUserDep):
-    """Create a new user."""
+def create_user(user_data: UserCreate, user_service: UserServiceDep, current_user: GmUserDep):
+    """
+    Create a new user. **GM only.**
+
+    Assigning a non-player role (``gm`` / ``found_father``) requires the
+    current user to be the found father.
+    """
+    if user_data.role != UserRole.PLAYER and current_user.role != UserRole.FOUND_FATHER:
+        raise FoundFatherAccessException()
     return user_service.create_user(user_data)
 
 
 @router.put("/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, user_data: UserUpdate, user_service: UserServiceDep, _: GmUserDep):
-    """Update user by ID."""
+def update_user(user_id: int, user_data: UserUpdate, user_service: UserServiceDep, current_user: GmUserDep):
+    """
+    Update user by ID. **GM only.**
+
+    Changing the ``role`` (promoting to GM or found father, or any other
+    role edit) requires the current user to be the found father.
+    """
+    if user_data.role is not None and current_user.role != UserRole.FOUND_FATHER:
+        raise FoundFatherAccessException()
     return user_service.update_user(user_id, user_data)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, user_service: UserServiceDep, current_user: GmUserDep):
-    """Delete user by ID. Cannot delete yourself or the default admin user."""
+def delete_user(user_id: int, user_service: UserServiceDep, current_user: FounderDep):
+    """Delete user by ID. Cannot delete yourself or the default admin user. **Found-father only.**"""
     user_service.delete_user(user_id, current_user_id=current_user.id)
     return None

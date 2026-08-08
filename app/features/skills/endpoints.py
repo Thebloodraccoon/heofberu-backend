@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Query
 
 from app.constants import AbilityScore
 from app.core.base_service import Page
-from app.core.dependencies import GmUserDep, SkillServiceDep
+from app.core.dependencies import FounderDep, GmUserDep, SkillServiceDep
 from app.features.skills.schemas import SkillBriefResponse, SkillCreate, SkillResponse, SkillUpdate
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
@@ -153,9 +153,9 @@ def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillSe
         409: {"description": "Skill is still in use by a race, class, background, or character."},
     },
 )
-def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: GmUserDep):
+def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: FounderDep):
     """
-    Delete a skill. **GM only.**
+    Delete a skill. **Found-father only.**
 
     Blocked if the skill is still referenced by a race, class, background,
     or a character's skill proficiencies (the service raises

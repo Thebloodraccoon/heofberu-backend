@@ -10,8 +10,9 @@ from enum import Enum
 
 
 class UserRole(str, Enum):
-    """Role of a registered user: GM or player."""
+    """Role of a registered user: found father (founder), GM, or player."""
 
+    FOUND_FATHER = "found_father"
     GM = "gm"
     PLAYER = "player"
 

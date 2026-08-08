@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.constants import FeatureSourceType
 from app.core.base_service import BaseService, Page, paginate
 from app.features.backgrounds.repository import BackgroundRepository
 from app.features.backgrounds.schemas import (
@@ -13,6 +14,7 @@ from app.features.backgrounds.schemas import (
     BackgroundUpdate,
     SkillsUpdate,
 )
+from app.features.features.service import create_features_for_source
 from app.models.background_model import Background
 
 
@@ -90,11 +92,13 @@ class BackgroundService(
         ``BackgroundCreate`` itself, since it comes from the authenticated
         user, not client input.
 
-        ``background_data.granted_skills`` is optional. If supplied, it's
-        set in the *same transaction* as the background itself — base
-        fields + skills commit together, or neither do. See
-        ``RaceService.create_race`` for the same pattern and the reasoning
-        behind every nested write passing ``commit=False``.
+        ``background_data.granted_skills`` / ``background_data.features``
+        are optional. If supplied, they're set in the *same transaction*
+        as the background itself — base fields + skills + features commit
+        together, or none do. See ``RaceService.create_race`` for the same
+        pattern and the reasoning behind every nested write passing
+        ``commit=False``. Nested features are created through
+        ``create_features_for_source`` with ``source_type=BACKGROUND``.
         """
 
         skills = (
@@ -107,7 +111,7 @@ class BackgroundService(
             else None
         )
 
-        payload = background_data.model_dump(exclude={"granted_skills"})
+        payload = background_data.model_dump(exclude={"granted_skills", "features"})
         payload["created_by_id"] = created_by_id
 
         with self._atomic():
@@ -115,6 +119,15 @@ class BackgroundService(
 
             if skills:
                 self.repository.set_skills(item, skills, commit=False)
+
+            create_features_for_source(
+                self.repository.db,
+                FeatureSourceType.BACKGROUND,
+                item.id,
+                background_data.features,
+                created_by_id,
+                commit=False,
+            )
 
         self.repository.refresh(item)
 

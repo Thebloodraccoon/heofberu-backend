@@ -19,7 +19,6 @@ class Race(settings.Base):  # type: ignore
     size = Column(RaceSizeType, nullable=False)
     speed = Column(Integer, nullable=False, default=30)
 
-    traits = Column(Text, nullable=False, default="")
     description = Column(Text, nullable=False, default="")
 
     is_homebrew = Column(Boolean, nullable=False, default=False)

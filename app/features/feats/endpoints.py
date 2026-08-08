@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Body, Query
 
 from app.core.base_service import Page
-from app.core.dependencies import FeatServiceDep, GmUserDep
+from app.core.dependencies import FeatServiceDep, FounderDep, GmUserDep
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
     FeatBriefResponse,
@@ -179,9 +179,9 @@ def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatService
         409: {"description": "Feat is still in use by one or more characters or features."},
     },
 )
-def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: GmUserDep):
+def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: FounderDep):
     """
-    Delete a feat. **GM only.**
+    Delete a feat. **Found-father only.**
 
     Also removes its ability score increase choices (cascade). Blocked if
     the feat is still granted to one or more characters, or referenced by

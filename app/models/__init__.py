@@ -28,7 +28,7 @@ from app.models.class_association_models import (  # noqa: F401
     class_available_skills,
 )
 
-# Class and its associations.
+# Class, subclasses and their associations.
 from app.models.class_model import Class  # noqa: F401
 from app.models.class_spell_slot_progression_model import ClassSpellSlotProgression  # noqa: F401
 
@@ -36,6 +36,7 @@ from app.models.class_spell_slot_progression_model import ClassSpellSlotProgress
 from app.models.feat_model import Feat  # noqa: F401
 
 # Feature (class/subclass/race/background features and feats).
+# Must come after Subclass so the subclass_id FK resolves correctly.
 from app.models.feature_model import Feature  # noqa: F401
 
 # Item and character inventory.
@@ -48,5 +49,8 @@ from app.models.skill_model import Skill  # noqa: F401
 
 # Spell.
 from app.models.spell_model import Spell  # noqa: F401
+
+# Subclass must be imported after Class (FK dependency) and before Feature (FK target).
+from app.models.subclass_model import Subclass  # noqa: F401
 from app.models.user_model import User  # noqa: F401
 from app.settings import settings  # noqa: F401

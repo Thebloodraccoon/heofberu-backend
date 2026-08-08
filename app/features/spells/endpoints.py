@@ -13,7 +13,7 @@ from app.constants import (
     SpellSchool,
 )
 from app.core.base_service import Page
-from app.core.dependencies import GmUserDep, SpellServiceDep
+from app.core.dependencies import FounderDep, GmUserDep, SpellServiceDep
 from app.features.spells.schemas import (
     ClassAvailabilityUpdate,
     RaceAvailabilityUpdate,
@@ -318,9 +318,9 @@ def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellSe
         404: {"description": "No spell exists with the given ID."},
     },
 )
-def delete_spell(spell_id: int, spell_service: SpellServiceDep, _: GmUserDep):
+def delete_spell(spell_id: int, spell_service: SpellServiceDep, _: FounderDep):
     """
-    Delete a spell. **GM only.**
+    Delete a spell. **Found-father only.**
 
     Also removes its class/race availability links (cascade).
     """
