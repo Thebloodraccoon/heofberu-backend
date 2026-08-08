@@ -5,9 +5,9 @@ from fastapi import APIRouter, Body, Query
 from app.constants import RaceSize
 from app.core.base_service import Page
 from app.core.dependencies import FounderDep, GmUserDep, RaceServiceDep
+from app.features.features.schemas import FeaturesReplace
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
-    FeaturesReplace,
     RaceBriefResponse,
     RaceCreate,
     RaceResponse,

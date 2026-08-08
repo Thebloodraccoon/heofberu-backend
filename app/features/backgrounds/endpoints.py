@@ -9,9 +9,9 @@ from app.features.backgrounds.schemas import (
     BackgroundCreate,
     BackgroundResponse,
     BackgroundUpdate,
-    FeaturesReplace,
     SkillsUpdate,
 )
+from app.features.features.schemas import FeaturesReplace
 
 router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
 

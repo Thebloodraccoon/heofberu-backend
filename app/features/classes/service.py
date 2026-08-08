@@ -19,7 +19,6 @@ from app.features.classes.schemas import (
     ClassResponse,
     ClassUpdate,
     FeatureBriefResponse,
-    FeaturesReplace,
     ProgressionLevelRow,
     SavingThrowsUpdate,
     SpellSlotProgressionUpdate,
@@ -29,6 +28,7 @@ from app.features.classes.schemas import (
     SubclassUpdate,
     _proficiency_bonus,
 )
+from app.features.features.schemas import FeaturesReplace
 from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.models.class_model import Class
 from app.models.subclass_model import Subclass

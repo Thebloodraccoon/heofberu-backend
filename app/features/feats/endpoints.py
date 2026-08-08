@@ -10,8 +10,8 @@ from app.features.feats.schemas import (
     FeatCreate,
     FeatResponse,
     FeatUpdate,
-    FeaturesReplace,
 )
+from app.features.features.schemas import FeaturesReplace
 
 router = APIRouter(prefix="/feats", tags=["Feats"])
 

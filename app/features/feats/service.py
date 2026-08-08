@@ -12,8 +12,8 @@ from app.features.feats.schemas import (
     FeatCreate,
     FeatResponse,
     FeatUpdate,
-    FeaturesReplace,
 )
+from app.features.features.schemas import FeaturesReplace
 from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.models.feat_model import Feat
 

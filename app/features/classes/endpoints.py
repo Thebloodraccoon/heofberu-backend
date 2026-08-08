@@ -11,7 +11,6 @@ from app.features.classes.schemas import (
     ClassProgressionResponse,
     ClassResponse,
     ClassUpdate,
-    FeaturesReplace,
     SavingThrowsUpdate,
     SpellSlotProgressionUpdate,
     SubclassBriefResponse,
@@ -19,6 +18,7 @@ from app.features.classes.schemas import (
     SubclassResponse,
     SubclassUpdate,
 )
+from app.features.features.schemas import FeaturesReplace
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
 

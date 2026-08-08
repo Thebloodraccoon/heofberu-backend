@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
+from app.features.features.schemas import FeaturesReplace
 from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
-    FeaturesReplace,
     RaceBriefResponse,
     RaceCreate,
     RaceResponse,
