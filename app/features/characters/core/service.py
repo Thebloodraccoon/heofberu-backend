@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
 from app.core.base_service import BaseService, Page, paginate
@@ -81,7 +81,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     repository: CharacterRepository
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=CharacterRepository(db),
             response_schema=CharacterResponse,
@@ -92,7 +92,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.background_repository = BackgroundRepository(db)
         self.stats_service = CharacterStatsService(db)
 
-    def get_characters(
+    async def get_characters(
         self,
         current_user: UserResponse,
         *,
@@ -116,29 +116,31 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         filters: dict[str, Any] = {}
         if current_user.role != UserRole.GM:
             filters["owner_id"] = current_user.id
+
         if class_id is not None:
             filters["class_id"] = class_id
+
         filters = filters or None
 
         skip, limit = paginate(page, size)
-        characters = self.repository.get_all(
+        characters = await self.repository.get_all(
             filters=filters,
             search=search,
             order_by=Character.name,
             skip=skip,
             limit=limit,
         )
-        total = self.repository.count(filters=filters, search=search)
+        total = await self.repository.count(filters=filters, search=search)
 
-        cache_by_id = self.stats_service.get_many_or_stale([character.id for character in characters])
+        cache_by_id = await self.stats_service.get_many_or_stale([character.id for character in characters])
         dex_totals_by_id = {
             character.id: cache_by_id[character.id].dexterity_total if character.id in cache_by_id else None
             for character in characters
         }
-        derived_by_id = self.stats_service.get_many_derived(characters, dex_totals_by_id)
+        derived_by_id = await self.stats_service.get_many_derived(characters, dex_totals_by_id)
         return Page(
             items=[
-                self._to_response(
+                await self._to_response(
                     character, cache_row=cache_by_id.get(character.id), derived=derived_by_id.get(character.id)
                 )
                 for character in characters
@@ -148,7 +150,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             size=size,
         )
 
-    def get_character(self, character_id: int, current_user: UserResponse) -> CharacterResponse:
+    async def get_character(self, character_id: int, current_user: UserResponse) -> CharacterResponse:
         """
         Return a single character, enforcing GM/owner access.
 
@@ -159,10 +161,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         armor class) are computed fresh on every read.
         """
 
-        character = get_character_for_user(self.repository, character_id, current_user)
-        return self._to_response(character, refresh=False)
+        character = await get_character_for_user(self.repository, character_id, current_user)
+        return await self._to_response(character, refresh=False)
 
-    def create_character(self, character_data: CharacterCreate, current_user: UserResponse) -> CharacterResponse:
+    async def create_character(self, character_data: CharacterCreate, current_user: UserResponse) -> CharacterResponse:
         """
         Create a character owned by the caller (GM or player).
 
@@ -181,7 +183,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         either all persist or none do.
         """
 
-        self._validate_references(
+        await self._validate_references(
             class_id=character_data.class_id,
             subclass_id=character_data.subclass_id,
             race_id=character_data.race_id,
@@ -191,16 +193,17 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         payload = character_data.model_dump()
         payload["owner_id"] = current_user.id
 
-        with self._atomic():
-            character = self.repository.create(payload, commit=False)
-            self._apply_spell_slot_progression(character, commit=False)
+        async with self._atomic():
+            character = await self.repository.create(payload, commit=False)
+            await self._apply_spell_slot_progression(character, commit=False)
             # Grant the class/subclass features the character is entitled to
             # at its starting level.
-            sync_progression_features(self.repository.db, character)
+            await sync_progression_features(self.repository.db, character)
 
-        return self._to_response(character, refresh=True)
+        character = await get_character_for_user(self.repository, character.id, current_user)
+        return await self._to_response(character, refresh=True)
 
-    def update_character(
+    async def update_character(
         self, character_id: int, update_data: CharacterUpdate, current_user: UserResponse
     ) -> CharacterResponse:
         """
@@ -214,20 +217,20 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         change through the progression service).
         """
 
-        character = get_character_for_user(self.repository, character_id, current_user)
+        character = await get_character_for_user(self.repository, character_id, current_user)
 
         fields = update_data.model_dump(exclude_unset=True)
-        updated_character = self.repository.update(character, fields)
+        updated_character = await self.repository.update(character, fields)
 
-        return self._to_response(updated_character, refresh=False)
+        return await self._to_response(updated_character, refresh=False)
 
-    def delete_character(self, character_id: int, current_user: UserResponse) -> bool:
+    async def delete_character(self, character_id: int, current_user: UserResponse) -> bool:
         """Delete a character, enforcing GM/owner access."""
 
-        character = get_character_for_user(self.repository, character_id, current_user)
-        return self.repository.delete(character)
+        character = await get_character_for_user(self.repository, character_id, current_user)
+        return await self.repository.delete(character)
 
-    def update_hp(self, character_id: int, data: HpUpdate, current_user: UserResponse) -> CharacterResponse:
+    async def update_hp(self, character_id: int, data: HpUpdate, current_user: UserResponse) -> CharacterResponse:
         """
         Update HP either via a relative delta, or by setting absolute values.
 
@@ -235,7 +238,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         Providing both `delta` and absolute values is rejected.
         """
 
-        character = get_character_for_user(self.repository, character_id, current_user)
+        character = await get_character_for_user(self.repository, character_id, current_user)
 
         has_delta = data.delta is not None
         has_absolute = data.current_hp is not None or data.temp_hp is not None
@@ -254,10 +257,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         new_current_hp = max(0, min(new_current_hp, character.max_hp))
         new_temp_hp = max(0, new_temp_hp)
 
-        updated_character = self.repository.update_hp(character, new_current_hp, new_temp_hp)
-        return self._to_response(updated_character, refresh=False)
+        updated_character = await self.repository.update_hp(character, new_current_hp, new_temp_hp)
+        return await self._to_response(updated_character, refresh=False)
 
-    def rest(self, character_id: int, data: RestRequest, current_user: UserResponse) -> CharacterResponse:
+    async def rest(self, character_id: int, data: RestRequest, current_user: UserResponse) -> CharacterResponse:
         """
         Apply a short or long rest.
 
@@ -266,16 +269,16 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         placeholder until hit dice tracking is added.
         """
 
-        character = get_character_for_user(self.repository, character_id, current_user)
+        character = await get_character_for_user(self.repository, character_id, current_user)
 
         if data.type == "long":
-            self.repository.update_hp(character, character.max_hp, 0)
-            self.character_spell_slot_repository.reset_all_spell_slots(character_id)
-            character = get_character_or_404(self.repository, character_id)
+            await self.repository.update_hp(character, character.max_hp, 0)
+            await self.character_spell_slot_repository.reset_all_spell_slots(character_id)
+            character = await get_character_or_404(self.repository, character_id)
 
-        return self._to_response(character, refresh=False)
+        return await self._to_response(character, refresh=False)
 
-    def _validate_references(
+    async def _validate_references(
         self,
         *,
         class_id: int,
@@ -293,19 +296,19 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         endpoint, which re-validates it).
         """
 
-        if not self.class_repository.exists_by_id(class_id):
+        if not await self.class_repository.exists_by_id(class_id):
             raise ClassNotFoundException(class_id=class_id)
 
-        if subclass_id is not None and self.class_repository.get_subclass(class_id, subclass_id) is None:
+        if subclass_id is not None and await self.class_repository.get_subclass(class_id, subclass_id) is None:
             raise SubclassNotFoundException(class_id=class_id, subclass_id=subclass_id)
 
-        if race_id is not None and not self.race_repository.exists_by_id(race_id):
+        if race_id is not None and not await self.race_repository.exists_by_id(race_id):
             raise RaceNotFoundException(race_id=race_id)
 
-        if background_id is not None and not self.background_repository.exists_by_id(background_id):
+        if background_id is not None and not await self.background_repository.exists_by_id(background_id):
             raise BackgroundNotFoundException(background_id=background_id)
 
-    def _apply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
+    async def _apply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """
         Look up ``character``'s class's spell slot progression for its
         current ``level`` and sync ``CharacterSpellSlot`` totals to match.
@@ -319,13 +322,15 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
 
         slots_by_level = (
-            self.class_repository.get_spell_slot_progression(character.class_id, character.level)
+            await self.class_repository.get_spell_slot_progression(character.class_id, character.level)
             if character.class_id is not None
             else {}
         )
-        self.character_spell_slot_repository.apply_spell_slot_progression(character.id, slots_by_level, commit=commit)
+        await self.character_spell_slot_repository.apply_spell_slot_progression(
+            character.id, slots_by_level, commit=commit
+        )
 
-    def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
+    async def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """
         Public wrapper around :meth:`_apply_spell_slot_progression` for
         the progression service (class change / level-up), which owns the
@@ -335,9 +340,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         re-application in a transaction with the rest of the change.
         """
 
-        self._apply_spell_slot_progression(character, commit=commit)
+        await self._apply_spell_slot_progression(character, commit=commit)
 
-    def _to_response(
+    async def _to_response(
         self,
         character: Character,
         *,
@@ -362,11 +367,11 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
 
         if cache_row is None:
-            cache_row = self.stats_service.for_response(character, refresh=refresh)
+            cache_row = await self.stats_service.for_response(character, refresh=refresh)
 
         if derived is None:
             dex_total = cache_row.dexterity_total if cache_row is not None else None
-            derived = self.stats_service.compute_derived(character, dex_total)
+            derived = await self.stats_service.compute_derived(character, dex_total)
 
         response = CharacterResponse.model_validate(character)
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None

@@ -1,26 +1,32 @@
-"""Dev-stage settings: engine with SQL logging, open ALLOWED_HOSTS."""
+"""Dev-stage settings: async engine with SQL logging, open ALLOWED_HOSTS."""
 
-from sqlalchemy import create_engine
-from sqlalchemy.pool import QueuePool
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.settings._common import *  # noqa: F401, F403
-from app.settings._common import DATABASE_URL, REDIS_URL, make_get_db, make_get_redis, make_session_factory
+from app.settings._common import (
+    DATABASE_URL,
+    REDIS_URL,
+    as_async_database_url,
+    make_async_session_factory,
+    make_get_db,
+    make_get_redis,
+)
 
 STAGE = "dev"
 ALLOWED_HOSTS = ["*"]
 
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=QueuePool,
+engine = create_async_engine(
+    as_async_database_url(DATABASE_URL),
+    poolclass=pool.AsyncAdaptedQueuePool,
     pool_size=10,
     max_overflow=20,
     pool_recycle=3600,
     pool_pre_ping=True,
     pool_timeout=30,
     echo=True,  # SQL-лог включён в dev
-    future=True,
 )
 
-SessionLocal = make_session_factory(engine)
+SessionLocal = make_async_session_factory(engine)
 get_db = make_get_db(SessionLocal)
 get_redis = make_get_redis(REDIS_URL)

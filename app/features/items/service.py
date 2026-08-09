@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_service import BaseService, Page
 from app.core.cache import use_cache
@@ -33,7 +33,7 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGe
 
     cache_namespaces = ("items",)
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=ItemRepository(db),
             response_schema=ItemResponse,
@@ -41,7 +41,7 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGe
         )
 
     @use_cache()
-    def get_all(
+    async def get_all(
         self,
         page: int = 1,
         size: int = 100,
@@ -50,15 +50,15 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGe
     ) -> Page[ItemGetAllResponse]:
         """Cached lightweight listing — see ``BaseService.get_all``."""
 
-        return super().get_all(page=page, size=size, filters=filters, search=search)
+        return await super().get_all(page=page, size=size, filters=filters, search=search)
 
     @use_cache()
-    def get_by_id(self, item_id: int) -> ItemResponse:
+    async def get_by_id(self, item_id: int) -> ItemResponse:
         """Cached single-record fetch — see ``BaseService.get_by_id``."""
 
-        return super().get_by_id(item_id)
+        return await super().get_by_id(item_id)
 
-    def create_item(self, item_data: ItemCreate, created_by_id: int | None = None) -> ItemResponse:
+    async def create_item(self, item_data: ItemCreate, created_by_id: int | None = None) -> ItemResponse:
         """
         Create an item after checking its name isn't already taken.
 
@@ -71,6 +71,6 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGe
         payload = item_data.model_dump()
         payload["created_by_id"] = created_by_id
 
-        item = self.repository.create(payload)
-        self._invalidate_cache()
+        item = await self.repository.create(payload)
+        await self._invalidate_cache()
         return self.response_schema.model_validate(item)

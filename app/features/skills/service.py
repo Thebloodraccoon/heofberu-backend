@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_service import BaseService, Page
 from app.core.cache import use_cache
@@ -32,7 +32,7 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, S
 
     cache_namespaces = ("skills", "classes", "races", "backgrounds")
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=SkillRepository(db),
             response_schema=SkillResponse,
@@ -40,7 +40,7 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, S
         )
 
     @use_cache()
-    def get_all(
+    async def get_all(
         self,
         page: int = 1,
         size: int = 100,
@@ -49,10 +49,10 @@ class SkillService(BaseService[Skill, SkillCreate, SkillUpdate, SkillResponse, S
     ) -> Page[SkillGetAllResponse]:
         """Cached lightweight listing — see ``BaseService.get_all``."""
 
-        return super().get_all(page=page, size=size, filters=filters, search=search)
+        return await super().get_all(page=page, size=size, filters=filters, search=search)
 
     @use_cache()
-    def get_by_id(self, item_id: int) -> SkillResponse:
+    async def get_by_id(self, item_id: int) -> SkillResponse:
         """Cached single-record fetch — see ``BaseService.get_by_id``."""
 
-        return super().get_by_id(item_id)
+        return await super().get_by_id(item_id)

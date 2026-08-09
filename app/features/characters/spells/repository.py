@@ -1,6 +1,8 @@
 """Character spell repositories: spell slots and known spells."""
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models.character_association_models import CharacterSpellSlot
@@ -18,22 +20,21 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
     sibling ``CharacterSpellRepository``.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(CharacterSpellSlot, db)
 
-    def get_spell_slot(self, character_id: int, level: str) -> CharacterSpellSlot | None:
+    async def get_spell_slot(self, character_id: int, level: str) -> CharacterSpellSlot | None:
         """Fetch a character's spell slot entry for a level, or None."""
 
-        return (
-            self.db.query(CharacterSpellSlot)
-            .filter(
+        result = await self.db.execute(
+            select(CharacterSpellSlot).where(
                 CharacterSpellSlot.character_id == character_id,
                 CharacterSpellSlot.spell_level == level,
             )
-            .first()
         )
+        return result.scalar_one_or_none()
 
-    def upsert_spell_slot(
+    async def upsert_spell_slot(
         self, character_id: int, level: str, total: int | None, used: int | None, *, commit: bool = True
     ) -> CharacterSpellSlot:
         """
@@ -47,7 +48,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
         for callers that need atomicity across multiple writes.
         """
 
-        slot = self.get_spell_slot(character_id, level)
+        slot = await self.get_spell_slot(character_id, level)
         if slot is None:
             slot = CharacterSpellSlot(
                 character_id=character_id,
@@ -63,17 +64,22 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
                 slot.used = used
 
         if commit:
-            self.db.commit()
-            self.db.refresh(slot)
+            await self.db.commit()
+            await self.db.refresh(slot)
         else:
-            self.db.flush()
+            await self.db.flush()
+
         return slot
 
-    def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
+    async def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
         """List all of a character's spell slot entries."""
-        return self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).all()
 
-    def apply_spell_slot_progression(
+        result = await self.db.execute(
+            select(CharacterSpellSlot).where(CharacterSpellSlot.character_id == character_id)
+        )
+        return list(result.scalars().unique().all())
+
+    async def apply_spell_slot_progression(
         self, character_id: int, slots_by_level: dict[str, int], *, commit: bool = True
     ) -> list[CharacterSpellSlot]:
         """
@@ -103,7 +109,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
         row and its initial slot rows commit (or roll back) together.
         """
 
-        existing = {slot.spell_level: slot for slot in self.get_all_spell_slots(character_id)}
+        existing = {slot.spell_level: slot for slot in await self.get_all_spell_slots(character_id)}
 
         for level, total in slots_by_level.items():
             slot = existing.get(level)
@@ -127,18 +133,21 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
                 slot.used = 0
 
         if commit:
-            self.db.commit()
+            await self.db.commit()
         else:
-            self.db.flush()
-        return self.get_all_spell_slots(character_id)
+            await self.db.flush()
 
-    def reset_all_spell_slots(self, character_id: int) -> None:
+        return await self.get_all_spell_slots(character_id)
+
+    async def reset_all_spell_slots(self, character_id: int) -> None:
         """Set used=0 for every spell slot entry of the character (long rest)."""
 
-        self.db.query(CharacterSpellSlot).filter(CharacterSpellSlot.character_id == character_id).update(
-            {CharacterSpellSlot.used: 0}
+        await self.db.execute(
+            update(CharacterSpellSlot)
+            .where(CharacterSpellSlot.character_id == character_id)
+            .values({CharacterSpellSlot.used: 0})
         )
-        self.db.commit()
+        await self.db.commit()
 
 
 class CharacterSpellRepository(BaseRepository[CharacterSpell]):
@@ -150,45 +159,54 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
     the sibling ``CharacterSpellSlotRepository``.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(CharacterSpell, db)
 
-    def get_known_spells(self, character_id: int) -> list[CharacterSpell]:
+    async def get_known_spells(self, character_id: int) -> list[CharacterSpell]:
         """List all spells known by the character, each with its ``Spell`` eager-loaded."""
 
-        return (
-            self.db.query(CharacterSpell)
+        result = await self.db.execute(
+            select(CharacterSpell)
             .options(selectinload(CharacterSpell.spell))
-            .filter(CharacterSpell.character_id == character_id)
-            .all()
+            .where(CharacterSpell.character_id == character_id)
         )
+        return list(result.scalars().unique().all())
 
-    def get_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell | None:
+    async def get_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell | None:
         """Fetch a single known-spell entry, or None if not present."""
-        return (
-            self.db.query(CharacterSpell)
-            .filter(
+        result = await self.db.execute(
+            select(CharacterSpell).where(
                 CharacterSpell.character_id == character_id,
                 CharacterSpell.spell_id == spell_id,
             )
-            .first()
         )
+        return result.scalar_one_or_none()
 
-    def add_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell:
+    async def add_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell:
         """Add a spell to the character's known spells."""
+
         character_spell = CharacterSpell(character_id=character_id, spell_id=spell_id)
         self.db.add(character_spell)
-        self.db.commit()
-        self.db.refresh(character_spell)
-        return character_spell
+        await self.db.commit()
 
-    def remove_known_spell(self, character_spell: CharacterSpell) -> bool:
+        result = await self.db.execute(
+            select(CharacterSpell)
+            .options(selectinload(CharacterSpell.spell))
+            .where(
+                CharacterSpell.character_id == character_id,
+                CharacterSpell.spell_id == spell_id,
+            )
+        )
+        return result.scalar_one()
+
+    async def remove_known_spell(self, character_spell: CharacterSpell) -> bool:
         """Remove a spell from the character's known spells."""
-        self.db.delete(character_spell)
-        self.db.commit()
+
+        await self.db.delete(character_spell)
+        await self.db.commit()
         return True
 
-    def count_known_spells_at_level(self, character_id: int, level: str) -> int:
+    async def count_known_spells_at_level(self, character_id: int, level: str) -> int:
         """
         Count how many spells the character already knows at a given
         ``Spell.level`` — compared against ``CharacterSpellSlot.total``
@@ -196,12 +214,13 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
         at once. See ``CharacterSpellEligibilityChecker``.
         """
 
-        return (
-            self.db.query(CharacterSpell)
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(CharacterSpell)
             .join(Spell, Spell.id == CharacterSpell.spell_id)
-            .filter(
+            .where(
                 CharacterSpell.character_id == character_id,
                 Spell.level == level,
             )
-            .count()
         )
+        return result.scalar_one()

@@ -1,6 +1,6 @@
 """Character spell service: slots and known spells management."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.spells.eligibility import CharacterSpellEligibilityChecker
@@ -58,7 +58,7 @@ class CharacterSpellService(CharacterSubDomainService):
     delegated to ``CharacterSpellEligibilityChecker``.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.character_spell_slot_repository = CharacterSpellSlotRepository(db)
         self.character_spell_repository = CharacterSpellRepository(db)
@@ -67,15 +67,15 @@ class CharacterSpellService(CharacterSubDomainService):
             self.character_spell_slot_repository, self.character_spell_repository
         )
 
-    def get_spell_slots(self, character_id: int, current_user: UserResponse) -> list[SpellSlotResponse]:
+    async def get_spell_slots(self, character_id: int, current_user: UserResponse) -> list[SpellSlotResponse]:
         """Return all spell slot entries (by level) for a character."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        slots = self.character_spell_slot_repository.get_all_spell_slots(character_id)
+        slots = await self.character_spell_slot_repository.get_all_spell_slots(character_id)
         return [SpellSlotResponse.model_validate(slot) for slot in slots]
 
-    def update_spell_slot(
+    async def update_spell_slot(
         self, character_id: int, data: SpellSlotUpdate, current_user: UserResponse
     ) -> SpellSlotResponse:
         """
@@ -90,11 +90,11 @@ class CharacterSpellService(CharacterSubDomainService):
         ``total``.
         """
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
         level = data.level.value
 
-        existing = self.character_spell_slot_repository.get_spell_slot(character_id, level)
+        existing = await self.character_spell_slot_repository.get_spell_slot(character_id, level)
         current_total = existing.total if existing else 0
         current_used = existing.used if existing else 0
 
@@ -103,18 +103,20 @@ class CharacterSpellService(CharacterSubDomainService):
         if new_used < 0 or new_used > current_total:
             raise InvalidSpellSlotUsageException()
 
-        slot = self.character_spell_slot_repository.upsert_spell_slot(character_id, level, current_total, new_used)
+        slot = await self.character_spell_slot_repository.upsert_spell_slot(
+            character_id, level, current_total, new_used
+        )
         return SpellSlotResponse.model_validate(slot)
 
-    def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:
+    async def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:
         """List all spells known by the character."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        known_spells = self.character_spell_repository.get_known_spells(character_id)
+        known_spells = await self.character_spell_repository.get_known_spells(character_id)
         return [CharacterSpellResponse.model_validate(cs) for cs in known_spells]
 
-    def add_known_spell(
+    async def add_known_spell(
         self, character_id: int, data: CharacterSpellAdd, current_user: UserResponse
     ) -> CharacterSpellResponse:
         """
@@ -130,33 +132,33 @@ class CharacterSpellService(CharacterSubDomainService):
         ``CharacterSpellEligibilityChecker``.
         """
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
 
-        spell = self.spell_repository.get_by_id(data.spell_id)
+        spell = await self.spell_repository.get_by_id(data.spell_id)
         if not spell:
             raise SpellNotFoundException(spell_id=data.spell_id)
 
-        existing = self.character_spell_repository.get_known_spell(character_id, data.spell_id)
+        existing = await self.character_spell_repository.get_known_spell(character_id, data.spell_id)
         if existing:
             raise CharacterSpellAlreadyKnownException(character_id=character_id, spell_id=data.spell_id)
 
-        self.eligibility_checker.check(character, spell)
+        await self.eligibility_checker.check(character, spell)
 
-        character_spell = self.character_spell_repository.add_known_spell(character_id, data.spell_id)
+        character_spell = await self.character_spell_repository.add_known_spell(character_id, data.spell_id)
         return CharacterSpellResponse.model_validate(character_spell)
 
-    def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> bool:
+    async def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> bool:
         """Remove a spell from the character's known spells, freeing up its slot."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        character_spell = self._get_known_spell_or_404(character_id, spell_id)
-        return self.character_spell_repository.remove_known_spell(character_spell)
+        character_spell = await self._get_known_spell_or_404(character_id, spell_id)
+        return await self.character_spell_repository.remove_known_spell(character_spell)
 
-    def _get_known_spell_or_404(self, character_id: int, spell_id: int) -> CharacterSpell:
+    async def _get_known_spell_or_404(self, character_id: int, spell_id: int) -> CharacterSpell:
         """Fetch a known-spell entry, or raise ``CharacterSpellNotFoundException``."""
 
-        character_spell = self.character_spell_repository.get_known_spell(character_id, spell_id)
+        character_spell = await self.character_spell_repository.get_known_spell(character_id, spell_id)
         if not character_spell:
             raise CharacterSpellNotFoundException(character_id=character_id, spell_id=spell_id)
 

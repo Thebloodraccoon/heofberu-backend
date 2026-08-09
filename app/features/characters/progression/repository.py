@@ -1,6 +1,7 @@
 """Repository for the character ASI-level choices audit table."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ASILevelChoice
 from app.core.base_repository import BaseRepository
@@ -10,20 +11,20 @@ from app.models.character_asi_choice_model import CharacterASIChoice
 class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
     """CRUD for ``character_asi_choices`` (one row per resolved ASI level)."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(CharacterASIChoice, db)
 
-    def get_character_choices(self, character_id: int) -> list[CharacterASIChoice]:
+    async def get_character_choices(self, character_id: int) -> list[CharacterASIChoice]:
         """List a character's resolved ASI-level choices, ordered by level."""
 
-        return (
-            self.db.query(CharacterASIChoice)
-            .filter(CharacterASIChoice.character_id == character_id)
+        result = await self.db.execute(
+            select(CharacterASIChoice)
+            .where(CharacterASIChoice.character_id == character_id)
             .order_by(CharacterASIChoice.class_level)
-            .all()
         )
+        return list(result.scalars().unique().all())
 
-    def add(
+    async def add(
         self,
         character_id: int,
         class_level: int,
@@ -55,9 +56,9 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
 
         self.db.add(row)
         if commit:
-            self.db.commit()
-            self.db.refresh(row)
+            await self.db.commit()
+            await self.db.refresh(row)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return row

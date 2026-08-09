@@ -14,7 +14,7 @@ router = APIRouter(prefix="/{character_id}/conditions", tags=["Character Conditi
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[CharacterConditionResponse],
     summary="List a character's conditions",
     responses={
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/{character_id}/conditions", tags=["Character Conditi
         404: {"description": "No character exists with the given ID."},
     },
 )
-def get_character_conditions(
+async def get_character_conditions(
     character_id: int,
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
@@ -31,11 +31,12 @@ def get_character_conditions(
     List every condition a character is currently under. GM can view any
     character's conditions; players only their own.
     """
-    return character_condition_service.get_conditions(character_id, current_user)
+
+    return await character_condition_service.get_conditions(character_id, current_user)
 
 
 @router.post(
-    "/",
+    "",
     response_model=CharacterConditionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Record a condition on a character",
@@ -45,7 +46,7 @@ def get_character_conditions(
         409: {"description": "The character is already under this condition."},
     },
 )
-def add_character_condition(
+async def add_character_condition(
     character_id: int,
     data: CharacterConditionAdd,
     character_condition_service: CharacterConditionServiceDep,
@@ -56,7 +57,8 @@ def add_character_condition(
     ``exhaustion_level`` (1-6); other conditions reject it. Rejects
     duplicates — a condition is either active or not.
     """
-    return character_condition_service.add_condition(character_id, data, current_user)
+
+    return await character_condition_service.add_condition(character_id, data, current_user)
 
 
 @router.patch(
@@ -69,7 +71,7 @@ def add_character_condition(
         404: {"description": "No character exists with the given ID, or the character is not under this condition."},
     },
 )
-def update_character_condition(
+async def update_character_condition(
     character_id: int,
     condition: ConditionType,
     data: CharacterConditionUpdate,
@@ -81,7 +83,8 @@ def update_character_condition(
     condition itself is fixed by the URL path — remove it and re-add if
     the effect changes.
     """
-    return character_condition_service.update_condition(character_id, condition, data, current_user)
+
+    return await character_condition_service.update_condition(character_id, condition, data, current_user)
 
 
 @router.delete(
@@ -93,14 +96,13 @@ def update_character_condition(
         404: {"description": "No character exists with the given ID, or the character is not under this condition."},
     },
 )
-def remove_character_condition(
+async def remove_character_condition(
     character_id: int,
     condition: ConditionType,
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):
-    """
-    Remove an active condition from a character.
-    """
-    character_condition_service.remove_condition(character_id, condition, current_user)
+    """Remove an active condition from a character."""
+
+    await character_condition_service.remove_condition(character_id, condition, current_user)
     return None

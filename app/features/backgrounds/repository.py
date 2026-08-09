@@ -1,9 +1,12 @@
 """Background repository: base CRUD plus granted-skill management."""
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import CharacterFeature, Feature
+from app.models.background_association_models import background_skills
 from app.models.background_model import Background
 from app.models.skill_model import Skill
 
@@ -11,7 +14,7 @@ from app.models.skill_model import Skill
 class BackgroundRepository(BaseRepository[Background]):
     """Background-specific repository built on :class:`BaseRepository`."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             Background,
             db,
@@ -21,41 +24,58 @@ class BackgroundRepository(BaseRepository[Background]):
             check_in_use_on_delete=True,
         )
 
-    def is_in_use(self, background_id: int) -> bool:
+    async def is_in_use(self, background_id: int) -> bool:
         """
         Check whether any of the background's features is currently granted
         to a character (``character_features``). Characters may keep being
         detached via ``characters.background_id`` ``ON DELETE SET NULL`` —
         only granting its features blocks deletion.
         """
-        feature_ids = [row[0] for row in self.db.query(Feature.id).filter(Feature.background_id == background_id)]
+
+        result = await self.db.execute(select(Feature.id).where(Feature.background_id == background_id))
+        feature_ids = [row[0] for row in result.all()]
         if not feature_ids:
             return False
-        return self.db.query(CharacterFeature).filter(CharacterFeature.feature_id.in_(feature_ids)).first() is not None
 
-    def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
+        result = await self.db.execute(select(CharacterFeature).where(CharacterFeature.feature_id.in_(feature_ids)))
+        return result.scalar_one_or_none() is not None
+
+    async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
+
         if not skill_ids:
             return []
 
-        return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()
+        result = await self.db.execute(select(Skill).where(Skill.id.in_(skill_ids)))
+        return list(result.scalars().unique().all())
 
-    def set_skills(self, background: Background, skills: list[Skill], *, commit: bool = True) -> Background:
+    async def set_skills(self, background: Background, skills: list[Skill], *, commit: bool = True) -> Background:
         """
         Replace all granted skills for a background with the given list.
 
+        Written through the association table (delete + insert) instead of
+        assigning the ORM ``granted_skills`` relationship: assigning an
+        unloaded many-to-many collection would trigger a lazy load, which
+        is not supported on the async stack. See ``RaceRepository.set_skills``
+        for the same pattern.
+
         ``commit`` lets callers that need atomicity across multiple writes
         (e.g. creating a background + its skills together) defer the
-        commit and flush instead, without duplicating this method. See
-        ``RaceRepository.set_skills`` for the same pattern.
+        commit and flush instead, without duplicating this method.
         """
 
-        background.granted_skills = skills
+        await self.db.execute(delete(background_skills).where(background_skills.c.background_id == background.id))
+
+        if skills:
+            await self.db.execute(
+                background_skills.insert(),
+                [{"background_id": background.id, "skill_id": skill.id} for skill in skills],
+            )
 
         if commit:
-            self.db.commit()
-            self.db.refresh(background)
+            await self.db.commit()
+            await self.db.refresh(background)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return background

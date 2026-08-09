@@ -17,9 +17,12 @@ router = APIRouter(tags=["Characters Attacks"])
         404: {"description": "No character exists with the given ID."},
     },
 )
-def get_character_attacks(character_id: int, attack_service: CharacterAttackServiceDep, current_user: CurrentUserDep):
+async def get_character_attacks(
+    character_id: int, attack_service: CharacterAttackServiceDep, current_user: CurrentUserDep
+):
     """List all attacks belonging to a character."""
-    return attack_service.get_attacks(character_id, current_user)
+
+    return await attack_service.get_attacks(character_id, current_user)
 
 
 @router.post(
@@ -32,14 +35,15 @@ def get_character_attacks(character_id: int, attack_service: CharacterAttackServ
         404: {"description": "No character exists with the given ID."},
     },
 )
-def create_character_attack(
+async def create_character_attack(
     character_id: int,
     data: AttackCreate,
     attack_service: CharacterAttackServiceDep,
     current_user: CurrentUserDep,
 ):
     """Add a new attack/weapon entry to a character."""
-    return attack_service.create_attack(character_id, data, current_user)
+
+    return await attack_service.create_attack(character_id, data, current_user)
 
 
 @router.patch(
@@ -51,7 +55,7 @@ def create_character_attack(
         404: {"description": "No character exists with the given ID, or no attack exists with the given `attack_id`."},
     },
 )
-def update_character_attack(
+async def update_character_attack(
     character_id: int,
     attack_id: int,
     data: AttackUpdate,
@@ -64,7 +68,8 @@ def update_character_attack(
     Only fields included in the request body are changed; omitted fields
     are left as-is.
     """
-    return attack_service.update_attack(character_id, attack_id, data, current_user)
+
+    return await attack_service.update_attack(character_id, attack_id, data, current_user)
 
 
 @router.delete(
@@ -76,12 +81,13 @@ def update_character_attack(
         404: {"description": "No character exists with the given ID, or no attack exists with the given `attack_id`."},
     },
 )
-def delete_character_attack(
+async def delete_character_attack(
     character_id: int,
     attack_id: int,
     attack_service: CharacterAttackServiceDep,
     current_user: CurrentUserDep,
 ):
     """Remove an attack/weapon entry from a character."""
-    attack_service.delete_attack(character_id, attack_id, current_user)
+
+    await attack_service.delete_attack(character_id, attack_id, current_user)
     return None

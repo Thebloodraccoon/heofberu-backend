@@ -1,6 +1,6 @@
 """Character stats service: the ability-score cache and derived combat stats."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.ability_score.calculator import (
     DEFAULT_SPEED,
@@ -58,11 +58,11 @@ class CharacterStatsService:
     shows up the next time the character is fetched.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.calculator = CharacterAbilityScoreCalculator()
         self.repository = CharacterStatsRepository(db)
 
-    def compute(self, character: Character) -> dict[str, int]:
+    async def compute(self, character: Character) -> dict[str, int]:
         """
         Recompute a character's effective ability scores WITHOUT writing
         to the cache table.
@@ -74,35 +74,35 @@ class CharacterStatsService:
         based on fresh data even if the cache is stale.
         """
 
-        race_bonuses = self.repository.get_race_bonuses(character.race_id)
-        feat_increases = self.repository.get_feat_increases(character.id)
+        race_bonuses = await self.repository.get_race_bonuses(character.race_id)
+        feat_increases = await self.repository.get_feat_increases(character.id)
         return self.calculator.compute(character, race_bonuses, feat_increases)
 
-    def refresh(self, character: Character) -> CharacterAbilityScore:
+    async def refresh(self, character: Character) -> CharacterAbilityScore:
         """Recompute effective ability scores for ``character`` and persist them."""
 
-        totals = self.compute(character)
-        return self.repository.upsert(character.id, totals)
+        totals = await self.compute(character)
+        return await self.repository.upsert(character.id, totals)
 
-    def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
+    async def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
         """
         Return the existing cache row as-is, without recomputing.
         ``None`` if the character has never had its scores computed
         (e.g. never fetched individually via ``GET /{character_id}``).
         """
 
-        return self.repository.get_by_character_id(character_id)
+        return await self.repository.get_by_character_id(character_id)
 
-    def get_many_or_stale(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
+    async def get_many_or_stale(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
         """
         Return the existing cache rows for many characters in one query,
         keyed by ``character_id``. Characters without a row are simply
         absent from the result — see :meth:`get_or_stale`.
         """
 
-        return self.repository.get_many_by_character_ids(character_ids)
+        return await self.repository.get_many_by_character_ids(character_ids)
 
-    def for_response(self, character: Character, *, refresh: bool = False) -> CharacterAbilityScore | None:
+    async def for_response(self, character: Character, *, refresh: bool = False) -> CharacterAbilityScore | None:
         """
         Return the cache row for serializing a character response:
         freshly recomputed+persisted when ``refresh`` is ``True``,
@@ -110,15 +110,16 @@ class CharacterStatsService:
         """
 
         if refresh:
-            return self.refresh(character)
-        return self.get_or_stale(character.id)
+            return await self.refresh(character)
 
-    def compute_derived(self, character: Character, dex_total: int | None) -> DerivedStats:
+        return await self.get_or_stale(character.id)
+
+    async def compute_derived(self, character: Character, dex_total: int | None) -> DerivedStats:
         """Compute the derived combat stats for a single character (see :meth:`get_many_derived`)."""
 
-        return self.get_many_derived([character], {character.id: dex_total})[character.id]
+        return (await self.get_many_derived([character], {character.id: dex_total}))[character.id]
 
-    def get_many_derived(
+    async def get_many_derived(
         self,
         characters: list[Character],
         dex_totals_by_id: dict[int, int | None],
@@ -136,9 +137,9 @@ class CharacterStatsService:
         race_ids = [character.race_id for character in characters if character.race_id is not None]
         character_ids = [character.id for character in characters]
 
-        classes = self.repository.get_classes(class_ids)
-        races = self.repository.get_races(race_ids)
-        armor_by_character = self.repository.get_armor_by_character_ids(character_ids)
+        classes = await self.repository.get_classes(class_ids)
+        races = await self.repository.get_races(race_ids)
+        armor_by_character = await self.repository.get_armor_by_character_ids(character_ids)
 
         result: dict[int, DerivedStats] = {}
         for character in characters:

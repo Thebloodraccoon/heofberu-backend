@@ -11,11 +11,11 @@ router = APIRouter(prefix="/items", tags=["Items"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[ItemGetAllResponse],
     summary="List items",
 )
-def get_items(
+async def get_items(
     item_service: ItemServiceDep,
     item_type: ItemType | None = None,
     rarity: ItemRarity | None = None,
@@ -42,7 +42,7 @@ def get_items(
     """
 
     filters = {"item_type": item_type, "rarity": rarity}
-    return item_service.get_all(page=page, size=size, filters=filters, search=search)
+    return await item_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
@@ -53,18 +53,18 @@ def get_items(
         404: {"description": "Item with id not found."},
     },
 )
-def get_item(item_id: int, item_service: ItemServiceDep):
+async def get_item(item_id: int, item_service: ItemServiceDep):
     """
     Return a single item by ID, with full detail.
 
     Open endpoint, no authentication required.
     """
 
-    return item_service.get_by_id(item_id)
+    return await item_service.get_by_id(item_id)
 
 
 @router.post(
-    "/",
+    "",
     response_model=ItemResponse,
     status_code=201,
     summary="Create an item",
@@ -72,7 +72,7 @@ def get_item(item_id: int, item_service: ItemServiceDep):
         409: {"description": "An item with this name already exists."},
     },
 )
-def create_item(
+async def create_item(
     item_service: ItemServiceDep,
     current_user: GmUserDep,
     item_data: ItemCreate = Body(
@@ -123,7 +123,7 @@ def create_item(
 ):
     """Create a new item. **GM only.**"""
 
-    return item_service.create_item(item_data, created_by_id=current_user.id)
+    return await item_service.create_item(item_data, created_by_id=current_user.id)
 
 
 @router.patch(
@@ -135,7 +135,7 @@ def create_item(
         409: {"description": "Another item already uses the requested name."},
     },
 )
-def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemServiceDep, _: GmUserDep):
+async def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemServiceDep, _: GmUserDep):
     """
     Partially update an item. **GM only.**
 
@@ -143,7 +143,7 @@ def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemService
     are left as-is.
     """
 
-    return item_service.update(item_id, update_data)
+    return await item_service.update(item_id, update_data)
 
 
 @router.delete(
@@ -155,7 +155,7 @@ def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemService
         409: {"description": "Item is still owned by one or more characters."},
     },
 )
-def delete_item(item_id: int, item_service: ItemServiceDep, _: FounderDep):
+async def delete_item(item_id: int, item_service: ItemServiceDep, _: FounderDep):
     """
     Delete an item. **Found-father only.**
 
@@ -164,5 +164,5 @@ def delete_item(item_id: int, item_service: ItemServiceDep, _: FounderDep):
     exception handler).
     """
 
-    item_service.delete(item_id)
+    await item_service.delete(item_id)
     return None

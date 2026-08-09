@@ -1,9 +1,9 @@
 """Service for character progression: race/class change and leveling up."""
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, TOTAL_FIELD_BY_ABILITY
@@ -62,7 +62,7 @@ class CharacterProgressionService(CharacterSubDomainService):
     whole thing back.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.character_service = CharacterService(db)
         self.class_repository = ClassRepository(db)
@@ -72,8 +72,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.stats_service = CharacterStatsService(db)
 
-    @contextmanager
-    def _atomic(self) -> Iterator[None]:
+    @asynccontextmanager
+    async def _atomic(self) -> AsyncGenerator[None, None]:
         """
         Wrap a set of writes in one transaction: run everything inside a
         savepoint, then commit on success or roll back (discarding the
@@ -82,14 +82,14 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         db = self.repository.db
         try:
-            with db.begin_nested():
+            async with db.begin_nested():
                 yield
-            db.commit()
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
             raise
 
-    def change_race(self, character_id: int, data: RaceChange, current_user: UserResponse) -> None:
+    async def change_race(self, character_id: int, data: RaceChange, current_user: UserResponse) -> None:
         """
         Update a character's ``race_id`` (``None`` clears it).
 
@@ -98,17 +98,17 @@ class CharacterProgressionService(CharacterSubDomainService):
         cache is refreshed to re-derive race bonuses.
         """
 
-        character = self.get_character_for_user(character_id, current_user)
-        if data.race_id is not None and not self.race_repository.exists_by_id(data.race_id):
+        character = await self.get_character_for_user(character_id, current_user)
+        if data.race_id is not None and not await self.race_repository.exists_by_id(data.race_id):
             raise RaceNotFoundException(race_id=data.race_id)
 
-        with self._atomic():
+        async with self._atomic():
             character.race_id = data.race_id
-            sync_progression_features(self.repository.db, character)
+            await sync_progression_features(self.repository.db, character)
 
-        self.stats_service.refresh(character)
+        await self.stats_service.refresh(character)
 
-    def change_class(self, character_id: int, data: ClassChange, current_user: UserResponse) -> None:
+    async def change_class(self, character_id: int, data: ClassChange, current_user: UserResponse) -> None:
         """
         Replace a character's class (no multiclassing).
 
@@ -119,21 +119,21 @@ class CharacterProgressionService(CharacterSubDomainService):
         in one transaction.
         """
 
-        character = self.get_character_for_user(character_id, current_user)
-        if not self.class_repository.exists_by_id(data.class_id):
+        character = await self.get_character_for_user(character_id, current_user)
+        if not await self.class_repository.exists_by_id(data.class_id):
             raise ClassNotFoundException(class_id=data.class_id)
 
-        with self._atomic():
+        async with self._atomic():
             character.class_id = data.class_id
 
             if character.subclass_id is not None:
-                if self.class_repository.get_subclass(data.class_id, character.subclass_id) is None:
+                if await self.class_repository.get_subclass(data.class_id, character.subclass_id) is None:
                     character.subclass_id = None
 
-            sync_progression_features(self.repository.db, character)
-            self.character_service.reapply_spell_slot_progression(character, commit=False)
+            await sync_progression_features(self.repository.db, character)
+            await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
-    def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
+    async def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
         """
         Set or clear a character's subclass.
 
@@ -143,19 +143,19 @@ class CharacterProgressionService(CharacterSubDomainService):
         level; clearing it revokes that subclass's auto-granted features.
         """
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
 
         if (
             data.subclass_id is not None
-            and self.class_repository.get_subclass(character.class_id, data.subclass_id) is None
+            and await self.class_repository.get_subclass(character.class_id, data.subclass_id) is None
         ):
             raise SubclassNotFoundException(class_id=character.class_id, subclass_id=data.subclass_id)
 
-        with self._atomic():
+        async with self._atomic():
             character.subclass_id = data.subclass_id
-            sync_progression_features(self.repository.db, character)
+            await sync_progression_features(self.repository.db, character)
 
-    def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
+    async def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
         """
         Advance a character exactly one level.
 
@@ -167,7 +167,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         and spell slots are re-applied.
         """
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
         if character.level >= ABILITY_SCORE_CAP:
             raise CharacterAlreadyAtMaxLevelException(character_id)
 
@@ -180,40 +180,40 @@ class CharacterProgressionService(CharacterSubDomainService):
         if not is_asi_level and data.choice is not None:
             raise LevelUpChoiceNotAllowedException(class_level=new_level)
 
-        with self._atomic():
+        async with self._atomic():
             character.level = new_level
 
             if data.choice is not None:
                 if data.choice.type == ASILevelChoice.ASI:
-                    self._apply_asi(character, data.choice.increases, new_level)
+                    await self._apply_asi(character, data.choice.increases, new_level)
                 else:
-                    self._apply_feat(character, data.choice, new_level)
+                    await self._apply_feat(character, data.choice, new_level)
 
-            hp_gain = self._resolve_hp_gain(character, data.hit_points_gained)
+            hp_gain = await self._resolve_hp_gain(character, data.hit_points_gained)
             character.max_hp += hp_gain
 
             # Grant any class/subclass features unlocked by the new level.
-            sync_progression_features(self.repository.db, character)
-            self.character_service.reapply_spell_slot_progression(character, commit=False)
+            await sync_progression_features(self.repository.db, character)
+            await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
-        self.stats_service.refresh(character)
+        await self.stats_service.refresh(character)
 
-    def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
+    async def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
         """Return the character's resolved ASI-level choices, for audit."""
 
-        self.get_character_for_user(character_id, current_user)
-        choices = self.asi_repository.get_character_choices(character_id)
+        await self.get_character_for_user(character_id, current_user)
+        choices = await self.asi_repository.get_character_choices(character_id)
 
         return [CharacterASIChoiceResponse.model_validate(choice) for choice in choices]
 
-    def _apply_asi(self, character: Character, increases, class_level: int) -> None:
+    async def _apply_asi(self, character: Character, increases, class_level: int) -> None:
         """
         Apply an Ability Score Improvement: validate against the 20 cap
         using the character's *effective* scores, then bump the base
         columns and record the choice.
         """
 
-        totals = self.stats_service.compute(character)
+        totals = await self.stats_service.compute(character)
         for item in increases:
             total_field = TOTAL_FIELD_BY_ABILITY[item.ability]
             current_total = totals[total_field]
@@ -229,7 +229,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             base_field = BASE_FIELD_BY_ABILITY[item.ability]
             setattr(character, base_field, getattr(character, base_field) + item.amount)
 
-        self.asi_repository.add(
+        await self.asi_repository.add(
             character.id,
             class_level,
             ASILevelChoice.ASI,
@@ -237,34 +237,34 @@ class CharacterProgressionService(CharacterSubDomainService):
             commit=False,
         )
 
-    def _apply_feat(self, character: Character, choice, class_level: int) -> None:
+    async def _apply_feat(self, character: Character, choice, class_level: int) -> None:
         """
         Apply a feat-as-ASI: validate the feat exists, isn't already
         known, has a valid ASI pick (if any) and the prerequisite is met,
         then grant it (source ``ASI``) and record the choice.
         """
 
-        feat = self.feat_repository.get_by_id(choice.feat_id)
+        feat = await self.feat_repository.get_by_id(choice.feat_id)
         if not feat:
             raise FeatNotFoundException(feat_id=choice.feat_id)
 
-        existing = self.feat_grant_repository.get_character_feat_by_feat_id(character.id, choice.feat_id)
+        existing = await self.feat_grant_repository.get_character_feat_by_feat_id(character.id, choice.feat_id)
         if existing:
             raise CharacterFeatAlreadyKnownException(character_id=character.id, feat_id=choice.feat_id)
 
         if choice.ability_score_increase_id is not None:
             validate_ability_score_increase(feat, choice.ability_score_increase_id)
 
-        check_feat_prerequisite(character, feat, self.stats_service)
+        await check_feat_prerequisite(character, feat, self.stats_service)
 
-        self.feat_grant_repository.add_character_feat(
+        await self.feat_grant_repository.add_character_feat(
             character.id,
             choice.feat_id,
             choice.ability_score_increase_id,
             source_type=CharacterFeatSource.ASI,
             commit=False,
         )
-        self.asi_repository.add(
+        await self.asi_repository.add(
             character.id,
             class_level,
             ASILevelChoice.FEAT,
@@ -273,11 +273,11 @@ class CharacterProgressionService(CharacterSubDomainService):
             commit=False,
         )
 
-    def _resolve_hp_gain(self, character: Character, requested: int | None) -> int:
+    async def _resolve_hp_gain(self, character: Character, requested: int | None) -> int:
         """Default HP gain is half hit die + 1 + CON modifier; a provided value must fit the die + CON bounds."""
 
-        die_sides = self._class_die_sides(character)
-        con_mod = self._constitution_modifier(character)
+        die_sides = await self._class_die_sides(character)
+        con_mod = await self._constitution_modifier(character)
         if requested is None:
             return die_sides // 2 + 1 + con_mod
 
@@ -287,17 +287,17 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         return requested
 
-    def _class_die_sides(self, character: Character) -> int:
+    async def _class_die_sides(self, character: Character) -> int:
         """Hit die sides of the character's class (e.g. ``"D8"`` -> 8)."""
 
-        character_class = self.class_repository.get_by_id(character.class_id)
+        character_class = await self.class_repository.get_by_id(character.class_id)
         if character_class is None:
             return 0
 
         return int(character_class.hit_dice.value[1:])
 
-    def _constitution_modifier(self, character: Character) -> int:
+    async def _constitution_modifier(self, character: Character) -> int:
         """CON modifier from the character's current *effective* CON total."""
 
-        totals = self.stats_service.compute(character)
+        totals = await self.stats_service.compute(character)
         return (totals["constitution_total"] - 10) // 2

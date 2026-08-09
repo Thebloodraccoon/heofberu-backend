@@ -13,7 +13,7 @@ router = APIRouter(tags=["Character Items"])
 
 
 @router.get(
-    "/{character_id}/items/",
+    "/{character_id}/items",
     response_model=list[CharacterItemResponse],
     summary="List a character's items",
     responses={
@@ -21,7 +21,7 @@ router = APIRouter(tags=["Character Items"])
         404: {"description": "No character exists with the given ID."},
     },
 )
-def get_character_items(
+async def get_character_items(
     character_id: int,
     character_item_service: CharacterItemServiceDep,
     current_user: CurrentUserDep,
@@ -30,11 +30,12 @@ def get_character_items(
     List every item stack owned by a character. GM can view any
     character's items; players only their own.
     """
-    return character_item_service.get_items(character_id, current_user)
+
+    return await character_item_service.get_items(character_id, current_user)
 
 
 @router.post(
-    "/{character_id}/items/",
+    "/{character_id}/items",
     response_model=CharacterItemResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Add an item to a character",
@@ -43,7 +44,7 @@ def get_character_items(
         404: {"description": "No character or item exists with the given ID."},
     },
 )
-def add_character_item(
+async def add_character_item(
     character_id: int,
     data: CharacterItemAdd,
     character_item_service: CharacterItemServiceDep,
@@ -53,7 +54,8 @@ def add_character_item(
     Add a stack of an item to a character's inventory. Each POST creates
     its own stack row, so the same item can be owned multiple times.
     """
-    return character_item_service.add_item(character_id, data, current_user)
+
+    return await character_item_service.add_item(character_id, data, current_user)
 
 
 @router.patch(
@@ -67,7 +69,7 @@ def add_character_item(
         },
     },
 )
-def update_character_item(
+async def update_character_item(
     character_id: int,
     character_item_id: int,
     data: CharacterItemUpdate,
@@ -78,7 +80,7 @@ def update_character_item(
     Change a stack's quantity, equip/attunement state, or notes. Only the
     fields sent in the body are updated.
     """
-    return character_item_service.update_item(character_id, character_item_id, data, current_user)
+    return await character_item_service.update_item(character_id, character_item_id, data, current_user)
 
 
 @router.delete(
@@ -92,14 +94,13 @@ def update_character_item(
         },
     },
 )
-def remove_character_item(
+async def remove_character_item(
     character_id: int,
     character_item_id: int,
     character_item_service: CharacterItemServiceDep,
     current_user: CurrentUserDep,
 ):
-    """
-    Remove an item stack from a character's inventory.
-    """
-    character_item_service.remove_item(character_id, character_item_id, current_user)
+    """Remove an item stack from a character's inventory."""
+
+    await character_item_service.remove_item(character_id, character_item_id, current_user)
     return None

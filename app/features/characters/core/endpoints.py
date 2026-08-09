@@ -11,11 +11,11 @@ router = APIRouter(tags=["Characters Core"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[CharacterResponse],
     summary="List characters",
 )
-def get_characters(
+async def get_characters(
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
     search: str | None = Query(
@@ -43,7 +43,8 @@ def get_characters(
     recalculation — a character that has never been fetched
     individually (via `GET /{character_id}`) shows base values only.
     """
-    return character_service.get_characters(current_user, search=search, class_id=class_id, page=page, size=size)
+
+    return await character_service.get_characters(current_user, search=search, class_id=class_id, page=page, size=size)
 
 
 @router.get(
@@ -55,7 +56,7 @@ def get_characters(
         404: {"description": "Character with id not found."},
     },
 )
-def get_character(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
+async def get_character(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
     """
     Return a single character by ID.
 
@@ -66,11 +67,12 @@ def get_character(character_id: int, character_service: CharacterServiceDep, cur
     grants, level-up ASI, race change); derived combat stats are computed
     fresh on every read.
     """
-    return character_service.get_character(character_id, current_user)
+
+    return await character_service.get_character(character_id, current_user)
 
 
 @router.post(
-    "/",
+    "",
     response_model=CharacterResponse,
     status_code=201,
     summary="Create a character",
@@ -78,7 +80,7 @@ def get_character(character_id: int, character_service: CharacterServiceDep, cur
         404: {"description": "`class_id`, `race_id`, or `background_id` does not reference an existing record."},
     },
 )
-def create_character(
+async def create_character(
     character_data: CharacterCreate, character_service: CharacterServiceDep, current_user: CurrentUserDep
 ):
     """
@@ -95,7 +97,8 @@ def create_character(
     starting `level` is applied immediately, so a level-1 caster already
     has spell slot rows without a follow-up `PATCH` to `/spell-slots`.
     """
-    return character_service.create_character(character_data, current_user)
+
+    return await character_service.create_character(character_data, current_user)
 
 
 @router.patch(
@@ -112,7 +115,7 @@ def create_character(
         },
     },
 )
-def update_character(
+async def update_character(
     character_id: int,
     update_data: CharacterUpdate,
     character_service: CharacterServiceDep,
@@ -132,7 +135,8 @@ def update_character(
     attacks are managed through their own dedicated endpoints, not
     through this one.
     """
-    return character_service.update_character(character_id, update_data, current_user)
+
+    return await character_service.update_character(character_id, update_data, current_user)
 
 
 @router.delete(
@@ -144,13 +148,14 @@ def update_character(
         404: {"description": "Character with id not found."},
     },
 )
-def delete_character(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
+async def delete_character(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
     """
     Delete a character.
 
     GM can delete any character. Players can only delete their own.
     """
-    character_service.delete_character(character_id, current_user)
+
+    await character_service.delete_character(character_id, current_user)
     return None
 
 
@@ -164,7 +169,7 @@ def delete_character(character_id: int, character_service: CharacterServiceDep, 
         404: {"description": "Character with id not found."},
     },
 )
-def update_character_hp(
+async def update_character_hp(
     character_id: int,
     data: HpUpdate,
     character_service: CharacterServiceDep,
@@ -180,7 +185,8 @@ def update_character_hp(
     `current_hp` is clamped to `[0, max_hp]`; `temp_hp` is clamped to
     `>= 0`.
     """
-    return character_service.update_hp(character_id, data, current_user)
+
+    return await character_service.update_hp(character_id, data, current_user)
 
 
 @router.post(
@@ -193,7 +199,7 @@ def update_character_hp(
         404: {"description": "Character with id not found."},
     },
 )
-def rest_character(
+async def rest_character(
     character_id: int,
     data: RestRequest,
     character_service: CharacterServiceDep,
@@ -211,4 +217,5 @@ def rest_character(
     so the rest-type contract is already in place for when hit dice
     tracking is added.
     """
-    return character_service.rest(character_id, data, current_user)
+
+    return await character_service.rest(character_id, data, current_user)

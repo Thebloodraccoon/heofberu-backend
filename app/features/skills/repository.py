@@ -1,7 +1,7 @@
 """Skill repository: base CRUD plus reference lookups and in-use guard."""
 
 from sqlalchemy import exists, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_repository import BaseRepository
 from app.models.background_association_models import background_skills
@@ -14,7 +14,7 @@ from app.models.skill_model import Skill
 class SkillRepository(BaseRepository[Skill]):
     """Skill-specific repository built on :class:`BaseRepository`."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             Skill,
             db,
@@ -23,13 +23,14 @@ class SkillRepository(BaseRepository[Skill]):
             check_in_use_on_delete=True,
         )
 
-    def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
+    async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
         if not skill_ids:
             return []
-        return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()
+        result = await self.db.execute(select(Skill).where(Skill.id.in_(skill_ids)))
+        return list(result.scalars().unique().all())
 
-    def is_in_use(self, skill_id: int) -> bool:
+    async def is_in_use(self, skill_id: int) -> bool:
         """
         Check whether the skill is currently referenced anywhere that would
         block deletion at the DB level via ON DELETE RESTRICT: granted by a
@@ -45,4 +46,5 @@ class SkillRepository(BaseRepository[Skill]):
                 exists().where(CharacterSkillProficiency.skill_id == skill_id),
             )
         )
-        return bool(self.db.execute(query).scalar())
+        result = await self.db.execute(query)
+        return result.scalar()

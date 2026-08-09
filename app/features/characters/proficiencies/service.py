@@ -1,6 +1,6 @@
 """Character proficiency service: full-replace of skills and saving throws."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_service import BaseService
 from app.features.characters.base import CharacterSubDomainService
@@ -34,12 +34,12 @@ class CharacterProficiencyService(CharacterSubDomainService):
 
     _light_character_fetch = False
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.proficiency_repository = CharacterProficiencyRepository(db)
         self.skill_repository = SkillRepository(db)
 
-    def set_skill_proficiencies(
+    async def set_skill_proficiencies(
         self, character_id: int, data: SkillProficienciesUpdate, current_user: UserResponse
     ) -> CharacterResponse:
         """
@@ -52,24 +52,28 @@ class CharacterProficiencyService(CharacterSubDomainService):
         ``InvalidSkillIdsException`` is gone.
         """
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
 
         skill_ids = [item.skill_id for item in data.skill_proficiencies]
         if skill_ids:
-            BaseService.resolve_ids(self.skill_repository.get_skills_by_ids, skill_ids, "Skill")
+            await BaseService.resolve_ids(self.skill_repository.get_skills_by_ids, skill_ids, "Skill")
 
         proficiencies = [
             {"skill_id": item.skill_id, "is_expertise": item.is_expertise} for item in data.skill_proficiencies
         ]
-        updated_character = self.proficiency_repository.set_skill_proficiencies(character, proficiencies)
+        updated_character = await self.proficiency_repository.set_skill_proficiencies(character, proficiencies)
+        updated_character = await self.get_character_for_user(character_id, current_user)
         return CharacterResponse.model_validate(updated_character)
 
-    def set_saving_throw_proficiencies(
+    async def set_saving_throw_proficiencies(
         self, character_id: int, data: SavingThrowProficienciesUpdate, current_user: UserResponse
     ) -> CharacterResponse:
         """Fully replace a character's saving throw proficiencies."""
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
 
-        updated_character = self.proficiency_repository.set_saving_throw_proficiencies(character, data.saving_throws)
+        updated_character = await self.proficiency_repository.set_saving_throw_proficiencies(
+            character, data.saving_throws
+        )
+        updated_character = await self.get_character_for_user(character_id, current_user)
         return CharacterResponse.model_validate(updated_character)

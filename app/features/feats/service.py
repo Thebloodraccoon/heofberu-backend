@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService, Page
@@ -42,7 +42,7 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
 
     cache_namespaces = ("feats", "features")
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=FeatRepository(db),
             response_schema=FeatResponse,
@@ -50,7 +50,7 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
         )
 
     @use_cache()
-    def get_all(
+    async def get_all(
         self,
         page: int = 1,
         size: int = 100,
@@ -59,15 +59,15 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
     ) -> Page[FeatGetAllResponse]:
         """Cached lightweight listing — see ``BaseService.get_all``."""
 
-        return super().get_all(page=page, size=size, filters=filters, search=search)
+        return await super().get_all(page=page, size=size, filters=filters, search=search)
 
     @use_cache()
-    def get_by_id(self, item_id: int) -> FeatResponse:
+    async def get_by_id(self, item_id: int) -> FeatResponse:
         """Cached single-record fetch — see ``BaseService.get_by_id``."""
 
-        return super().get_by_id(item_id)
+        return await super().get_by_id(item_id)
 
-    def create_feat(self, feat_data: FeatCreate, created_by_id: int | None = None) -> FeatResponse:
+    async def create_feat(self, feat_data: FeatCreate, created_by_id: int | None = None) -> FeatResponse:
         """
         Create a feat after checking its name isn't already taken.
 
@@ -81,16 +81,16 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
         payload = feat_data.model_dump(exclude={"ability_score_increases", "features"})
         payload["created_by_id"] = created_by_id
 
-        with self._atomic():
-            item = self.repository.create(payload, commit=False)
+        async with self._atomic():
+            item = await self.repository.create(payload, commit=False)
 
             if feat_data.ability_score_increases:
                 increases = [
                     {"ability": inc.ability, "amount": inc.amount} for inc in feat_data.ability_score_increases
                 ]
-                self.repository.set_ability_score_increases(item, increases, commit=False)
+                await self.repository.set_ability_score_increases(item, increases, commit=False)
 
-            create_features_for_source(
+            await create_features_for_source(
                 self.repository.db,
                 FeatureSourceType.FEAT,
                 item.id,
@@ -99,23 +99,22 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
                 commit=False,
             )
 
-        self.repository.refresh(item)
-        self._invalidate_cache()
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(item)
+        return self.response_schema.model_validate(await self._get_or_404(item.id))
 
-    def set_ability_score_increases(self, feat_id: int, data: AbilityScoreIncreasesUpdate) -> FeatResponse:
+    async def set_ability_score_increases(self, feat_id: int, data: AbilityScoreIncreasesUpdate) -> FeatResponse:
         """Fully replace a feat's ASI choices."""
 
-        feat = self._get_or_404(feat_id)
+        feat = await self._get_or_404(feat_id)
 
         increases = [{"ability": item.ability, "amount": item.amount} for item in data.ability_score_increases]
-        updated_feat = self.repository.set_ability_score_increases(feat, increases)
-        self._invalidate_cache()
+        await self.repository.set_ability_score_increases(feat, increases)
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(updated_feat)
+        return self.response_schema.model_validate(await self._get_or_404(feat_id))
 
-    def replace_feat_features(
+    async def replace_feat_features(
         self, feat_id: int, data: FeaturesReplace, created_by_id: int | None = None
     ) -> FeatResponse:
         """
@@ -130,9 +129,9 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
         set.
         """
 
-        feat = self._get_or_404(feat_id)
-        with self._atomic():
-            replace_features_for_source(
+        feat = await self._get_or_404(feat_id)
+        async with self._atomic():
+            await replace_features_for_source(
                 self.repository.db,
                 FeatureSourceType.FEAT,
                 feat.id,
@@ -140,9 +139,9 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
                 created_by_id,
                 commit=False,
             )
-            reconcile_characters_for_source(self.repository.db, FeatureSourceType.FEAT, feat.id)
+            await reconcile_characters_for_source(self.repository.db, FeatureSourceType.FEAT, feat.id)
 
-        self.repository.refresh(feat)
-        self._invalidate_cache()
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(feat)
+        self.repository.db.expire(feat)
+        return self.response_schema.model_validate(await self._get_or_404(feat_id))

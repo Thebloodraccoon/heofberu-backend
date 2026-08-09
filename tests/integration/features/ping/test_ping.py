@@ -4,8 +4,9 @@ import pytest
 
 
 @pytest.mark.integration
-def test_ping_returns_healthy(client):
-    response = client.get("/ping")
+@pytest.mark.asyncio
+async def test_ping_returns_healthy(client):
+    response = await client.get("/ping")
 
     assert response.status_code == 200
     body = response.json()

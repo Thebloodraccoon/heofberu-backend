@@ -17,11 +17,11 @@ router = APIRouter(prefix="/feats", tags=["Feats"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[FeatGetAllResponse],
     summary="List feats",
 )
-def get_feats(
+async def get_feats(
     feat_service: FeatServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -42,7 +42,7 @@ def get_feats(
     use `GET /feats/{feat_id}` for the full record.
     """
 
-    return feat_service.get_all(page=page, size=size, search=search)
+    return await feat_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(
@@ -53,7 +53,7 @@ def get_feats(
         404: {"description": "Feat with id not found."},
     },
 )
-def get_feat(feat_id: int, feat_service: FeatServiceDep):
+async def get_feat(feat_id: int, feat_service: FeatServiceDep):
     """
     Return a single feat by ID, with full detail — including
     prerequisites, ability score increase choices, and features.
@@ -61,11 +61,11 @@ def get_feat(feat_id: int, feat_service: FeatServiceDep):
     Open endpoint, no authentication required.
     """
 
-    return feat_service.get_by_id(feat_id)
+    return await feat_service.get_by_id(feat_id)
 
 
 @router.post(
-    "/",
+    "",
     response_model=FeatResponse,
     status_code=201,
     summary="Create a feat",
@@ -73,7 +73,7 @@ def get_feat(feat_id: int, feat_service: FeatServiceDep):
         409: {"description": "A feat with this name already exists."},
     },
 )
-def create_feat(
+async def create_feat(
     feat_service: FeatServiceDep,
     current_user: GmUserDep,
     feat_data: FeatCreate = Body(
@@ -142,7 +142,7 @@ def create_feat(
     character granted this feat gains automatically.
     """
 
-    return feat_service.create_feat(feat_data, created_by_id=current_user.id)
+    return await feat_service.create_feat(feat_data, created_by_id=current_user.id)
 
 
 @router.patch(
@@ -154,7 +154,7 @@ def create_feat(
         409: {"description": "Another feat already uses the requested name."},
     },
 )
-def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatServiceDep, _: GmUserDep):
+async def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatServiceDep, _: GmUserDep):
     """
     Partially update a feat's base fields. **GM only.**
 
@@ -163,7 +163,7 @@ def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatService
     `PUT /feats/{feat_id}/ability-score-increases` for those.
     """
 
-    return feat_service.update(feat_id, update_data)
+    return await feat_service.update(feat_id, update_data)
 
 
 @router.delete(
@@ -175,7 +175,7 @@ def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatService
         409: {"description": "Feat is still in use by one or more characters or features."},
     },
 )
-def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: FounderDep):
+async def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: FounderDep):
     """
     Delete a feat. **Found-father only.**
 
@@ -184,7 +184,7 @@ def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: FounderDep):
     characters, or one of its features is still granted to a character.
     """
 
-    feat_service.delete(feat_id)
+    await feat_service.delete(feat_id)
     return None
 
 
@@ -196,7 +196,7 @@ def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: FounderDep):
         404: {"description": "No feat exists with the given ID."},
     },
 )
-def set_feat_ability_score_increases(
+async def set_feat_ability_score_increases(
     feat_id: int,
     feat_service: FeatServiceDep,
     _: GmUserDep,
@@ -224,7 +224,7 @@ def set_feat_ability_score_increases(
     grants no ability score increase of its own).
     """
 
-    return feat_service.set_ability_score_increases(feat_id, data)
+    return await feat_service.set_ability_score_increases(feat_id, data)
 
 
 @router.put(
@@ -237,7 +237,7 @@ def set_feat_ability_score_increases(
         404: {"description": "No feat exists with the given ID."},
     },
 )
-def replace_feat_features(
+async def replace_feat_features(
     feat_id: int,
     feat_service: FeatServiceDep,
     _: GmUserDep,
@@ -283,4 +283,4 @@ def replace_feat_features(
     within one request are rejected with 422.
     """
 
-    return feat_service.replace_feat_features(feat_id, data, created_by_id=_.id)
+    return await feat_service.replace_feat_features(feat_id, data, created_by_id=_.id)

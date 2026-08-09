@@ -7,7 +7,7 @@ from app.features.users.schemas import UserResponse
 from app.models.character_model import Character
 
 
-def get_character_or_404(repository: CharacterRepository, character_id: int, *, light: bool = False) -> Character:
+async def get_character_or_404(repository: CharacterRepository, character_id: int, *, light: bool = False) -> Character:
     """
     Fetch a character by ID, or raise ``CharacterNotFoundException``.
 
@@ -16,7 +16,7 @@ def get_character_or_404(repository: CharacterRepository, character_id: int, *, 
     columns (sub-domain access checks and writes).
     """
 
-    character = repository.get_by_id_light(character_id) if light else repository.get_by_id(character_id)
+    character = await repository.get_by_id_light(character_id) if light else await repository.get_by_id(character_id)
     if not character:
         raise CharacterNotFoundException(character_id=character_id)
 
@@ -37,7 +37,7 @@ def check_character_access(character: Character, current_user: UserResponse) -> 
         raise CharacterAccessDeniedException()
 
 
-def get_character_for_user(
+async def get_character_for_user(
     repository: CharacterRepository,
     character_id: int,
     current_user: UserResponse,
@@ -53,6 +53,6 @@ def get_character_for_user(
     paths that only read scalar columns.
     """
 
-    character = get_character_or_404(repository, character_id, light=light)
+    character = await get_character_or_404(repository, character_id, light=light)
     check_character_access(character, current_user)
     return character

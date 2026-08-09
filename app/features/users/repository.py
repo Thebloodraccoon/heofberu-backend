@@ -1,30 +1,30 @@
 """User repository: user-specific queries on top of :class:`BaseRepository`."""
 
-from datetime import datetime, timezone
-
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_repository import BaseRepository
 from app.models import User
+from app.settings._common import utcnow
 
 
 class UserRepository(BaseRepository[User]):
     """Repository for the essence of User."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(User, db, search_fields=["username", "email"], unique_fields=["username", "email"])
 
-    def get_by_email(self, email: str) -> User | None:
+    async def get_by_email(self, email: str) -> User | None:
         """Obtaining a user by email."""
-        return self.db.query(User).filter(User.email == email).first()
+        return await self.db.scalar(select(User).where(User.email == email))
 
-    def get_by_username(self, username: str) -> User | None:
+    async def get_by_username(self, username: str) -> User | None:
         """Obtaining a user by username."""
-        return self.db.query(User).filter(User.username == username).first()
+        return await self.db.scalar(select(User).where(User.username == username))
 
-    def update_last_login(self, user: User) -> User:
+    async def update_last_login(self, user: User) -> User:
         """Update user's last login timestamp."""
-        user.last_login = datetime.now(timezone.utc)  # type: ignore
-        self.db.commit()
-        self.db.refresh(user)
+        user.last_login = utcnow()  # type: ignore
+        await self.db.commit()
+        await self.db.refresh(user)
         return user

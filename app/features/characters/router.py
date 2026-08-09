@@ -12,14 +12,14 @@ from app.features.characters.proficiencies.endpoints import router as proficienc
 from app.features.characters.progression.endpoints import router as progression_router
 from app.features.characters.spells.endpoints import router as spells_router
 
-router = APIRouter(prefix="/characters")
+router = APIRouter()
 
-router.include_router(core_router)
-router.include_router(proficiencies_router)
-router.include_router(spells_router)
-router.include_router(attacks_router)
-router.include_router(feats_router)
-router.include_router(features_router)
-router.include_router(items_router)
-router.include_router(conditions_router)
-router.include_router(progression_router)
+router.include_router(core_router, prefix="/characters")
+router.include_router(proficiencies_router, prefix="/characters")
+router.include_router(spells_router, prefix="/characters")
+router.include_router(attacks_router, prefix="/characters")
+router.include_router(feats_router, prefix="/characters")
+router.include_router(features_router, prefix="/characters")
+router.include_router(items_router, prefix="/characters")
+router.include_router(conditions_router, prefix="/characters")
+router.include_router(progression_router, prefix="/characters")

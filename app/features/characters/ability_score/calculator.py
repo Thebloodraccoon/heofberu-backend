@@ -133,4 +133,5 @@ def compute_armor_class(dex_total: int, armor: ArmorSpec | None) -> int:
             ac += min(dex_mod, armor.max_dex_bonus)
         else:
             ac += dex_mod
+
     return ac

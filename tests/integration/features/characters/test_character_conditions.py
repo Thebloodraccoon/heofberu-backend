@@ -4,12 +4,13 @@ import pytest
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 class TestCharacterConditions:
-    def test_add_and_list_condition(self, client, player, player_token, create_class, create_character):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
+    async def test_add_and_list_condition(self, client, player, player_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
 
-        add_response = client.post(
+        add_response = await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "POISONED", "source": "Giant Spider bite"},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -19,20 +20,20 @@ class TestCharacterConditions:
         assert add_response.json()["condition"] == "POISONED"
         assert add_response.json()["source"] == "Giant Spider bite"
 
-        list_response = client.get(
+        list_response = await client.get(
             f"/characters/{character.id}/conditions",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert list_response.status_code == 200
         assert [item["condition"] for item in list_response.json()] == ["POISONED"]
 
-    def test_add_exhaustion_without_level_returns_422(
+    async def test_add_exhaustion_without_level_returns_422(
         self, client, player, player_token, create_class, create_character
     ):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
 
-        response = client.post(
+        response = await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "EXHAUSTION"},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -40,11 +41,11 @@ class TestCharacterConditions:
 
         assert response.status_code == 422
 
-    def test_add_exhaustion_with_level(self, client, player, player_token, create_class, create_character):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
+    async def test_add_exhaustion_with_level(self, client, player, player_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
 
-        response = client.post(
+        response = await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "EXHAUSTION", "exhaustion_level": 2},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -53,13 +54,13 @@ class TestCharacterConditions:
         assert response.status_code == 201
         assert response.json()["exhaustion_level"] == 2
 
-    def test_add_level_to_non_exhaustion_condition_returns_422(
+    async def test_add_level_to_non_exhaustion_condition_returns_422(
         self, client, player, player_token, create_class, create_character
     ):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
 
-        response = client.post(
+        response = await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "POISONED", "exhaustion_level": 2},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -67,11 +68,13 @@ class TestCharacterConditions:
 
         assert response.status_code == 422
 
-    def test_add_unknown_condition_returns_422(self, client, player, player_token, create_class, create_character):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
+    async def test_add_unknown_condition_returns_422(
+        self, client, player, player_token, create_class, create_character
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
 
-        response = client.post(
+        response = await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "SNOOZING"},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -79,17 +82,17 @@ class TestCharacterConditions:
 
         assert response.status_code == 422
 
-    def test_duplicate_condition_returns_409(self, client, player, player_token, create_class, create_character):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
+    async def test_duplicate_condition_returns_409(self, client, player, player_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
 
-        client.post(
+        await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        response = client.post(
+        response = await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -97,16 +100,16 @@ class TestCharacterConditions:
 
         assert response.status_code == 409
 
-    def test_update_exhaustion_level(self, client, player, player_token, create_class, create_character):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
-        client.post(
+    async def test_update_exhaustion_level(self, client, player, player_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "EXHAUSTION", "exhaustion_level": 1},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        response = client.patch(
+        response = await client.patch(
             f"/characters/{character.id}/conditions/EXHAUSTION",
             json={"exhaustion_level": 4},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -115,18 +118,18 @@ class TestCharacterConditions:
         assert response.status_code == 200
         assert response.json()["exhaustion_level"] == 4
 
-    def test_update_non_exhaustion_condition_with_level_returns_400(
+    async def test_update_non_exhaustion_condition_with_level_returns_400(
         self, client, player, player_token, create_class, create_character
     ):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
-        client.post(
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        response = client.patch(
+        response = await client.patch(
             f"/characters/{character.id}/conditions/POISONED",
             json={"exhaustion_level": 2},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -134,37 +137,36 @@ class TestCharacterConditions:
 
         assert response.status_code == 400
 
-    def test_remove_condition(self, client, player, player_token, create_class, create_character):
-        character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id)
-        client.post(
+    async def test_remove_condition(self, client, player, player_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        response = client.delete(
+        response = await client.delete(
             f"/characters/{character.id}/conditions/POISONED",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 204
         assert (
-            client.get(
+            await client.get(
                 f"/characters/{character.id}/conditions",
                 headers={"Authorization": f"Bearer {player_token}"},
-            ).json()
-            == []
-        )
+            )
+        ).json() == []
 
-    def test_player_cannot_add_condition_to_other_players_character(
+    async def test_player_cannot_add_condition_to_other_players_character(
         self, client, player_token, create_user, create_class, create_character
     ):
-        character_class = create_class(name="Fighter")
-        other = create_user(username="other", email="other@example.com")
-        character = create_character(owner_id=other.id, class_id=character_class.id)
+        character_class = await create_class(name="Fighter")
+        other = await create_user(username="other", email="other@example.com")
+        character = await create_character(owner_id=other.id, class_id=character_class.id)
 
-        response = client.post(
+        response = await client.post(
             f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},

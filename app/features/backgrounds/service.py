@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService, Page
@@ -56,7 +56,7 @@ class BackgroundService(
 
     cache_namespaces = ("backgrounds", "features")
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=BackgroundRepository(db),
             response_schema=BackgroundResponse,
@@ -64,7 +64,7 @@ class BackgroundService(
         )
 
     @use_cache()
-    def get_all(
+    async def get_all(
         self,
         page: int = 1,
         size: int = 100,
@@ -73,15 +73,15 @@ class BackgroundService(
     ) -> Page[BackgroundGetAllResponse]:
         """Cached lightweight listing — see ``BaseService.get_all``."""
 
-        return super().get_all(page=page, size=size, filters=filters, search=search)
+        return await super().get_all(page=page, size=size, filters=filters, search=search)
 
     @use_cache()
-    def get_by_id(self, item_id: int) -> BackgroundResponse:
+    async def get_by_id(self, item_id: int) -> BackgroundResponse:
         """Cached single-record fetch — see ``BaseService.get_by_id``."""
 
-        return super().get_by_id(item_id)
+        return await super().get_by_id(item_id)
 
-    def create_background(
+    async def create_background(
         self, background_data: BackgroundCreate, created_by_id: int | None = None
     ) -> BackgroundResponse:
         """
@@ -102,7 +102,7 @@ class BackgroundService(
         """
 
         skills = (
-            self.resolve_ids(
+            await self.resolve_ids(
                 self.repository.get_skills_by_ids,
                 background_data.granted_skills,
                 "Skills",
@@ -114,13 +114,13 @@ class BackgroundService(
         payload = background_data.model_dump(exclude={"granted_skills", "features"})
         payload["created_by_id"] = created_by_id
 
-        with self._atomic():
-            item = self.repository.create(payload, commit=False)
+        async with self._atomic():
+            item = await self.repository.create(payload, commit=False)
 
             if skills:
-                self.repository.set_skills(item, skills, commit=False)
+                await self.repository.set_skills(item, skills, commit=False)
 
-            create_features_for_source(
+            await create_features_for_source(
                 self.repository.db,
                 FeatureSourceType.BACKGROUND,
                 item.id,
@@ -129,23 +129,22 @@ class BackgroundService(
                 commit=False,
             )
 
-        self.repository.refresh(item)
-        self._invalidate_cache()
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(item)
+        return self.response_schema.model_validate(await self._get_or_404(item.id))
 
-    def set_skills(self, background_id: int, data: SkillsUpdate) -> BackgroundResponse:
+    async def set_skills(self, background_id: int, data: SkillsUpdate) -> BackgroundResponse:
         """Fully replace the skills granted by a background."""
 
-        background = self._get_or_404(background_id)
+        background = await self._get_or_404(background_id)
 
-        skills = self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
+        skills = await self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
 
-        updated_background = self.repository.set_skills(background, skills)
-        self._invalidate_cache()
-        return self.response_schema.model_validate(updated_background)
+        await self.repository.set_skills(background, skills)
+        await self._invalidate_cache()
+        return self.response_schema.model_validate(await self._get_or_404(background_id))
 
-    def replace_background_features(
+    async def replace_background_features(
         self, background_id: int, data: FeaturesReplace, created_by_id: int | None = None
     ) -> BackgroundResponse:
         """
@@ -160,9 +159,9 @@ class BackgroundService(
         feature set.
         """
 
-        background = self._get_or_404(background_id)
-        with self._atomic():
-            replace_features_for_source(
+        background = await self._get_or_404(background_id)
+        async with self._atomic():
+            await replace_features_for_source(
                 self.repository.db,
                 FeatureSourceType.BACKGROUND,
                 background.id,
@@ -170,9 +169,9 @@ class BackgroundService(
                 created_by_id,
                 commit=False,
             )
-            reconcile_characters_for_source(self.repository.db, FeatureSourceType.BACKGROUND, background.id)
+            await reconcile_characters_for_source(self.repository.db, FeatureSourceType.BACKGROUND, background.id)
 
-        self.repository.refresh(background)
-        self._invalidate_cache()
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(background)
+        self.repository.db.expire(background)
+        return self.response_schema.model_validate(await self._get_or_404(background_id))

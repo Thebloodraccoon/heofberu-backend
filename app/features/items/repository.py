@@ -1,6 +1,7 @@
 """Item repository: base CRUD with in-use ownership guard."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_repository import BaseRepository
 from app.models.character_item_model import CharacterItem
@@ -10,7 +11,7 @@ from app.models.item_model import Item
 class ItemRepository(BaseRepository[Item]):
     """Item-specific repository built on :class:`BaseRepository`."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             Item,
             db,
@@ -19,6 +20,8 @@ class ItemRepository(BaseRepository[Item]):
             check_in_use_on_delete=True,
         )
 
-    def is_in_use(self, item_id: int) -> bool:
+    async def is_in_use(self, item_id: int) -> bool:
         """Return whether any character currently owns the item."""
-        return self.db.query(CharacterItem).filter(CharacterItem.item_id == item_id).first() is not None
+
+        result = await self.db.execute(select(CharacterItem).where(CharacterItem.item_id == item_id))
+        return result.scalar_one_or_none() is not None

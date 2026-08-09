@@ -1,4 +1,5 @@
-"""Pydantic-aware JSON (de)serialization for cached values.
+"""
+Pydantic-aware JSON (de)serialization for cached values.
 
 ``Page[...]`` and model instances are encoded with ``model_dump_json``
 and decoded back through ``model_validate_json`` (enums, UUIDs and nested
@@ -19,7 +20,7 @@ def encode(value: Any) -> str:
     if isinstance(value, BaseModel):
         return value.model_dump_json()
 
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return "[" + ",".join(encode(item) for item in value) + "]"
 
     return json.dumps(value, default=str)

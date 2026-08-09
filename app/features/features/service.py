@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService, Page
@@ -21,8 +22,8 @@ from app.features.features.schemas import (
 from app.models.feature_model import Feature
 
 
-def create_features_for_source(
-    db: Session,
+async def create_features_for_source(
+    db: AsyncSession,
     source_type: FeatureSourceType,
     source_id: int,
     items: list[NestedFeatureCreate] | None,
@@ -65,13 +66,13 @@ def create_features_for_source(
         payload["source_type"] = source_type
         payload[fk_name] = source_id
         feature = FeatureCreate(**payload)  # re-runs source_type/FK consistency validator
-        created.append(repository.create(feature.model_dump(), commit=commit))
+        created.append(await repository.create(feature.model_dump(), commit=commit))
 
     return created
 
 
-def replace_features_for_source(
-    db: Session,
+async def replace_features_for_source(
+    db: AsyncSession,
     source_type: FeatureSourceType,
     source_id: int,
     items: list[FeatureReplaceItem] | None,
@@ -118,7 +119,8 @@ def replace_features_for_source(
 
     fk_attr = getattr(Feature, fk_name)
 
-    existing = {feature.id: feature for feature in db.query(Feature).filter(fk_attr == source_id).all()}
+    result = await db.execute(select(Feature).where(fk_attr == source_id))
+    existing = {feature.id: feature for feature in result.scalars().unique().all()}
 
     incoming = list(items or [])
     incoming_ids = {item.id for item in incoming if item.id is not None}
@@ -147,12 +149,12 @@ def replace_features_for_source(
             # Bulk delete (bypasses the ORM unit of work) so loaded
             # CharacterFeature grants are not nulled out by the session —
             # the DB-level ON DELETE CASCADE on features.id removes them.
-            db.query(Feature).filter(Feature.id == feature_id).delete(synchronize_session=False)
+            await db.execute(delete(Feature).where(Feature.id == feature_id))
 
     if commit:
-        db.commit()
+        await db.commit()
     else:
-        db.flush()
+        await db.flush()
 
 
 class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureGetAllResponse]):
@@ -179,7 +181,7 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
 
     cache_namespaces = ("features",)
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=FeatureRepository(db),
             response_schema=FeatureResponse,
@@ -187,7 +189,7 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         )
 
     @use_cache()
-    def get_all(
+    async def get_all(
         self,
         page: int = 1,
         size: int = 100,
@@ -196,13 +198,13 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
     ) -> Page[FeatureGetAllResponse]:
         """Cached lightweight listing — see ``BaseService.get_all``."""
 
-        return super().get_all(page=page, size=size, filters=filters, search=search)
+        return await super().get_all(page=page, size=size, filters=filters, search=search)
 
     @use_cache()
-    def get_by_id(self, item_id: int) -> FeatureResponse:
+    async def get_by_id(self, item_id: int) -> FeatureResponse:
         """Cached single-record fetch — see ``BaseService.get_by_id``."""
 
-        return super().get_by_id(item_id)
+        return await super().get_by_id(item_id)
 
     def _require_standalone(self, feature: Feature) -> None:
         """Reject CRUD on a source-owned feature via ``/features/``."""
@@ -213,7 +215,7 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
                 "class/race/background/feat/subclass features are managed through their parent records."
             )
 
-    def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
+    async def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
         """
         Update a standalone (OTHER) feature.
 
@@ -226,7 +228,7 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         is only meaningful for class/subclass features).
         """
 
-        feature = self._get_or_404(feature_id)
+        feature = await self._get_or_404(feature_id)
         self._require_standalone(feature)
         fields = update_data.model_dump(exclude_unset=True)
 
@@ -237,12 +239,12 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         ):
             raise InvalidFeatureSourceException("'level' is only meaningful when source_type is CLASS or SUBCLASS.")
 
-        updated_feature = self.repository.update(feature, fields)
-        self._invalidate_cache()
+        updated_feature = await self.repository.update(feature, fields)
+        await self._invalidate_cache()
 
         return self.response_schema.model_validate(updated_feature)
 
-    def delete(self, feature_id: int) -> bool:
+    async def delete(self, feature_id: int) -> bool:
         """
         Delete a standalone (OTHER) feature, cascading away any
         ``CharacterFeature`` grants on it.
@@ -251,10 +253,10 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         endpoint instead.
         """
 
-        feature = self._get_or_404(feature_id)
+        feature = await self._get_or_404(feature_id)
 
         self._require_standalone(feature)
-        result = self.repository.delete(feature)
-        self._invalidate_cache()
+        result = await self.repository.delete(feature)
+        await self._invalidate_cache()
 
         return result

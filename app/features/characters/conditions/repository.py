@@ -1,6 +1,7 @@
 """Character condition repository: active-condition row CRUD."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
 from app.core.base_repository import BaseRepository
@@ -10,27 +11,29 @@ from app.models.character_condition_model import CharacterCondition
 class CharacterConditionRepository(BaseRepository[CharacterCondition]):
     """Repository for the conditions a character is currently under (``character_conditions``)."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(CharacterCondition, db)
 
-    def get_character_conditions(self, character_id: int) -> list[CharacterCondition]:
+    async def get_character_conditions(self, character_id: int) -> list[CharacterCondition]:
         """Get every active condition on a character."""
 
-        return self.db.query(CharacterCondition).filter(CharacterCondition.character_id == character_id).all()
+        result = await self.db.execute(
+            select(CharacterCondition).where(CharacterCondition.character_id == character_id)
+        )
+        return list(result.scalars().unique().all())
 
-    def get_character_condition(self, character_id: int, condition: ConditionType) -> CharacterCondition | None:
+    async def get_character_condition(self, character_id: int, condition: ConditionType) -> CharacterCondition | None:
         """Fetch a character's active condition, if any."""
 
-        return (
-            self.db.query(CharacterCondition)
-            .filter(
+        result = await self.db.execute(
+            select(CharacterCondition).where(
                 CharacterCondition.character_id == character_id,
                 CharacterCondition.condition == condition,
             )
-            .first()
         )
+        return result.scalar_one_or_none()
 
-    def add_character_condition(
+    async def add_character_condition(
         self,
         character_id: int,
         condition: ConditionType,
@@ -46,11 +49,12 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
             source=source,
         )
         self.db.add(row)
-        self.db.commit()
-        self.db.refresh(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+
         return row
 
-    def update_character_condition(
+    async def update_character_condition(
         self,
         row: CharacterCondition,
         update_data: dict[str, object],
@@ -61,13 +65,13 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
             if hasattr(row, field):
                 setattr(row, field, value)
 
-        self.db.commit()
-        self.db.refresh(row)
+        await self.db.commit()
+        await self.db.refresh(row)
         return row
 
-    def remove_character_condition(self, row: CharacterCondition) -> bool:
+    async def remove_character_condition(self, row: CharacterCondition) -> bool:
         """Remove an active condition from a character."""
 
-        self.db.delete(row)
-        self.db.commit()
+        await self.db.delete(row)
+        await self.db.commit()
         return True

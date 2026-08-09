@@ -19,11 +19,11 @@ router = APIRouter(prefix="/races", tags=["Races"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[RaceGetAllResponse],
     summary="List races",
 )
-def get_races(
+async def get_races(
     race_service: RaceServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -47,7 +47,7 @@ def get_races(
     `GET /races/{race_id}` for the full record.
     """
 
-    return race_service.get_all(page=page, size=size, filters={"size": race_size}, search=search)
+    return await race_service.get_all(page=page, size=size, filters={"size": race_size}, search=search)
 
 
 @router.get(
@@ -58,7 +58,7 @@ def get_races(
         404: {"description": "Race with id not found."},
     },
 )
-def get_race(race_id: int, race_service: RaceServiceDep):
+async def get_race(race_id: int, race_service: RaceServiceDep):
     """
     Return a single race by ID, with full detail — including ability
     bonuses and granted skills.
@@ -66,11 +66,11 @@ def get_race(race_id: int, race_service: RaceServiceDep):
     Open endpoint, no authentication required.
     """
 
-    return race_service.get_by_id(race_id)
+    return await race_service.get_by_id(race_id)
 
 
 @router.post(
-    "/",
+    "",
     response_model=RaceResponse,
     status_code=201,
     summary="Create a race",
@@ -79,7 +79,7 @@ def get_race(race_id: int, race_service: RaceServiceDep):
         400: {"description": "One or more `granted_skills` IDs don't correspond to an existing skill."},
     },
 )
-def create_race(
+async def create_race(
     race_service: RaceServiceDep,
     current_user: GmUserDep,
     race_data: RaceCreate = Body(
@@ -116,7 +116,7 @@ def create_race(
     `PUT` calls.
     """
 
-    return race_service.create_race(race_data, created_by_id=current_user.id)
+    return await race_service.create_race(race_data, created_by_id=current_user.id)
 
 
 @router.patch(
@@ -128,7 +128,7 @@ def create_race(
         409: {"description": "Another race already uses the requested name."},
     },
 )
-def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceServiceDep, _: GmUserDep):
+async def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceServiceDep, _: GmUserDep):
     """
     Partially update a race's base fields. **GM only.**
 
@@ -138,7 +138,7 @@ def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceService
     for those.
     """
 
-    return race_service.update(race_id, update_data)
+    return await race_service.update(race_id, update_data)
 
 
 @router.delete(
@@ -150,7 +150,7 @@ def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceService
         409: {"description": "Race is still in use by one or more characters."},
     },
 )
-def delete_race(race_id: int, race_service: RaceServiceDep, _: FounderDep):
+async def delete_race(race_id: int, race_service: RaceServiceDep, _: FounderDep):
     """
     Delete a race. **Found-father only.**
 
@@ -159,7 +159,7 @@ def delete_race(race_id: int, race_service: RaceServiceDep, _: FounderDep):
     characters.
     """
 
-    race_service.delete(race_id)
+    await race_service.delete(race_id)
     return None
 
 
@@ -171,7 +171,7 @@ def delete_race(race_id: int, race_service: RaceServiceDep, _: FounderDep):
         404: {"description": "No race exists with the given ID."},
     },
 )
-def set_race_ability_bonuses(
+async def set_race_ability_bonuses(
     race_id: int,
     race_service: RaceServiceDep,
     _: GmUserDep,
@@ -196,7 +196,7 @@ def set_race_ability_bonuses(
     removed. Send an empty list to clear all bonuses.
     """
 
-    return race_service.set_ability_bonuses(race_id, data)
+    return await race_service.set_ability_bonuses(race_id, data)
 
 
 @router.put(
@@ -208,7 +208,7 @@ def set_race_ability_bonuses(
         404: {"description": "No race exists with the given ID."},
     },
 )
-def set_race_skills(
+async def set_race_skills(
     race_id: int,
     race_service: RaceServiceDep,
     _: GmUserDep,
@@ -233,7 +233,7 @@ def set_race_skills(
     is removed. Send an empty list to clear all granted skills.
     """
 
-    return race_service.set_skills(race_id, data)
+    return await race_service.set_skills(race_id, data)
 
 
 @router.put(
@@ -246,7 +246,7 @@ def set_race_skills(
         404: {"description": "No race exists with the given ID."},
     },
 )
-def replace_race_features(
+async def replace_race_features(
     race_id: int,
     race_service: RaceServiceDep,
     _: GmUserDep,
@@ -292,4 +292,4 @@ def replace_race_features(
     within one request are rejected with 422.
     """
 
-    return race_service.replace_race_features(race_id, data, created_by_id=_.id)
+    return await race_service.replace_race_features(race_id, data, created_by_id=_.id)

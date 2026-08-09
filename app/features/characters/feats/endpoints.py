@@ -13,7 +13,7 @@ router = APIRouter(prefix="/{character_id}/feats", tags=["Character Feats"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[CharacterFeatResponse],
     summary="List a character's feats",
     responses={
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/{character_id}/feats", tags=["Character Feats"])
         404: {"description": "No character exists with the given ID."},
     },
 )
-def get_character_feats(
+async def get_character_feats(
     character_id: int,
     character_feat_service: CharacterFeatServiceDep,
     current_user: CurrentUserDep,
@@ -30,11 +30,12 @@ def get_character_feats(
     List every feat granted to a character. GM can view any character's
     feats; players only their own.
     """
-    return character_feat_service.get_feats(character_id, current_user)
+
+    return await character_feat_service.get_feats(character_id, current_user)
 
 
 @router.post(
-    "/",
+    "",
     response_model=CharacterFeatResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Grant a feat to a character",
@@ -50,7 +51,7 @@ def get_character_feats(
         409: {"description": "The character already has this feat."},
     },
 )
-def add_character_feat(
+async def add_character_feat(
     character_id: int,
     data: CharacterFeatAdd,
     character_feat_service: CharacterFeatServiceDep,
@@ -73,7 +74,8 @@ def add_character_feat(
     Recalculates and persists the character's effective-ability-score
     cache before returning, since a feat's ASI choice can change it.
     """
-    return character_feat_service.add_feat(character_id, data, current_user)
+
+    return await character_feat_service.add_feat(character_id, data, current_user)
 
 
 @router.patch(
@@ -88,7 +90,7 @@ def add_character_feat(
         },
     },
 )
-def update_character_feat(
+async def update_character_feat(
     character_id: int,
     character_feat_id: int,
     data: CharacterFeatUpdate,
@@ -102,7 +104,8 @@ def update_character_feat(
     Recalculates and persists the character's effective-ability-score
     cache before returning.
     """
-    return character_feat_service.update_feat(character_id, character_feat_id, data, current_user)
+
+    return await character_feat_service.update_feat(character_id, character_feat_id, data, current_user)
 
 
 @router.delete(
@@ -116,7 +119,7 @@ def update_character_feat(
         },
     },
 )
-def remove_character_feat(
+async def remove_character_feat(
     character_id: int,
     character_feat_id: int,
     character_feat_service: CharacterFeatServiceDep,
@@ -128,5 +131,6 @@ def remove_character_feat(
     Recalculates and persists the character's effective-ability-score
     cache before returning, since losing a feat's ASI can change it.
     """
-    character_feat_service.remove_feat(character_id, character_feat_id, current_user)
+
+    await character_feat_service.remove_feat(character_id, character_feat_id, current_user)
     return None

@@ -1,10 +1,12 @@
 """Race repository: base CRUD plus ability-bonus/skill management."""
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import Character
-from app.models.race_association_models import RaceAbilityBonus
+from app.models.race_association_models import RaceAbilityBonus, race_skills
 from app.models.race_model import Race
 from app.models.skill_model import Skill
 
@@ -29,7 +31,7 @@ class RaceRepository(BaseRepository[Race]):
     cover everything races need.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             Race,
             db,
@@ -43,15 +45,17 @@ class RaceRepository(BaseRepository[Race]):
             check_in_use_on_delete=True,
         )
 
-    def is_in_use(self, race_id: int) -> bool:
+    async def is_in_use(self, race_id: int) -> bool:
         """
         Check whether the race is currently assigned to any character
         (characters.race_id), which would block deletion at the DB level
         via ON DELETE RESTRICT.
         """
-        return self.db.query(Character).filter(Character.race_id == race_id).first() is not None
 
-    def set_ability_bonuses(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> Race:
+        result = await self.db.execute(select(Character).where(Character.race_id == race_id))
+        return result.scalar_one_or_none() is not None
+
+    async def set_ability_bonuses(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> Race:
         """
         Replace all ability bonuses for a race with the given list.
 
@@ -60,39 +64,51 @@ class RaceRepository(BaseRepository[Race]):
         the commit and flush instead, without duplicating this method.
         """
 
-        self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == race.id).delete()
+        await self.db.execute(delete(RaceAbilityBonus).where(RaceAbilityBonus.race_id == race.id))
 
         for item in bonuses:
             self.db.add(RaceAbilityBonus(race_id=race.id, ability=item["ability"], bonus=item["bonus"]))
 
         if commit:
-            self.db.commit()
-            self.db.refresh(race)
+            await self.db.commit()
+            await self.db.refresh(race)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return race
 
-    def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
+    async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
         if not skill_ids:
             return []
 
-        return self.db.query(Skill).filter(Skill.id.in_(skill_ids)).all()
+        result = await self.db.execute(select(Skill).where(Skill.id.in_(skill_ids)))
+        return list(result.scalars().unique().all())
 
-    def set_skills(self, race: Race, skills: list[Skill], *, commit: bool = True) -> Race:
+    async def set_skills(self, race: Race, skills: list[Skill], *, commit: bool = True) -> Race:
         """
         Replace all granted skills for a race with the given list.
+
+        Written through the association table (delete + insert) instead of
+        assigning the ORM ``granted_skills`` relationship: assigning an
+        unloaded many-to-many collection would trigger a lazy load, which
+        is not supported on the async stack.
 
         See ``set_ability_bonuses`` for the meaning of ``commit=False``.
         """
 
-        race.granted_skills = skills
+        await self.db.execute(delete(race_skills).where(race_skills.c.race_id == race.id))
+
+        if skills:
+            await self.db.execute(
+                race_skills.insert(),
+                [{"race_id": race.id, "skill_id": skill.id} for skill in skills],
+            )
 
         if commit:
-            self.db.commit()
-            self.db.refresh(race)
+            await self.db.commit()
+            await self.db.refresh(race)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return race
