@@ -5,49 +5,17 @@ from fastapi import APIRouter, Body, Query
 from app.constants import ItemRarity, ItemType
 from app.core.base_service import Page
 from app.core.dependencies import FounderDep, GmUserDep, ItemServiceDep
-from app.features.items.schemas import ItemBriefResponse, ItemCreate, ItemResponse, ItemUpdate
+from app.features.items.schemas import ItemCreate, ItemGetAllResponse, ItemResponse, ItemUpdate
 
 router = APIRouter(prefix="/items", tags=["Items"])
 
 
 @router.get(
     "/",
-    response_model=Page[ItemResponse],
-    summary="List items (full detail)",
+    response_model=Page[ItemGetAllResponse],
+    summary="List items",
 )
 def get_items(
-    item_service: ItemServiceDep,
-    item_type: ItemType | None = None,
-    rarity: ItemRarity | None = None,
-    search: str | None = None,
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-):
-    """
-    Return a paginated list of items, with full detail.
-
-    Open endpoint, no authentication required.
-
-    `item_type`/`rarity` are exact matches on
-    their enums (invalid values → `422`, and `/docs` shows them as dropdowns).
-    `search` is a case-insensitive partial match against the item name.
-    All can be combined.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching items across every page, not just this one.
-
-    For a lighter payload, use `GET /items/brief` instead.
-    """
-    filters = {"item_type": item_type, "rarity": rarity}
-    return item_service.get_all(page=page, size=size, filters=filters, search=search)
-
-
-@router.get(
-    "/brief",
-    response_model=Page[ItemBriefResponse],
-    summary="List items (minimal fields)",
-)
-def get_items_brief(
     item_service: ItemServiceDep,
     item_type: ItemType | None = None,
     rarity: ItemRarity | None = None,
@@ -66,15 +34,15 @@ def get_items_brief(
     `search` is a case-insensitive partial match against the item name.
     All can be combined.
 
-    Response is `{items, total, page, size}`, same shape as `GET /items/`.
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching items across every page, not just this one.
 
     Does not include weapon/armor detail fields or description — use
-    `GET /items/{item_id}` for the full record. Intended for dropdowns,
-    tables, and similar listing UI where the full payload is unnecessary.
-
+    `GET /items/{item_id}` for the full record.
     """
+
     filters = {"item_type": item_type, "rarity": rarity}
-    return item_service.list_brief(page=page, size=size, filters=filters, search=search)
+    return item_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
@@ -91,6 +59,7 @@ def get_item(item_id: int, item_service: ItemServiceDep):
 
     Open endpoint, no authentication required.
     """
+
     return item_service.get_by_id(item_id)
 
 
@@ -152,9 +121,8 @@ def create_item(
         },
     ),
 ):
-    """
-    Create a new item. **GM only.**
-    """
+    """Create a new item. **GM only.**"""
+
     return item_service.create_item(item_data, created_by_id=current_user.id)
 
 
@@ -174,6 +142,7 @@ def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemService
     Only fields included in the request body are changed; omitted fields
     are left as-is.
     """
+
     return item_service.update(item_id, update_data)
 
 
@@ -194,5 +163,6 @@ def delete_item(item_id: int, item_service: ItemServiceDep, _: FounderDep):
     service raises ``RecordInUseError``, mapped to a 409 by the global
     exception handler).
     """
+
     item_service.delete(item_id)
     return None

@@ -5,8 +5,8 @@ from fastapi import APIRouter, Body, Query
 from app.core.base_service import Page
 from app.core.dependencies import BackgroundServiceDep, FounderDep, GmUserDep
 from app.features.backgrounds.schemas import (
-    BackgroundBriefResponse,
     BackgroundCreate,
+    BackgroundGetAllResponse,
     BackgroundResponse,
     BackgroundUpdate,
     SkillsUpdate,
@@ -18,38 +18,10 @@ router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
 
 @router.get(
     "/",
-    response_model=Page[BackgroundResponse],
-    summary="List backgrounds (full detail)",
+    response_model=Page[BackgroundGetAllResponse],
+    summary="List backgrounds",
 )
 def get_backgrounds(
-    background_service: BackgroundServiceDep,
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-    search: str | None = None,
-):
-    """
-    Return a paginated list of backgrounds, each with full detail —
-    including granted skills and features.
-
-    Open endpoint, no authentication required.
-
-    `search` is a case-insensitive partial match against the background
-    name.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching backgrounds across every page, not just this one.
-
-    For a lighter payload, use `GET /backgrounds/brief` instead.
-    """
-    return background_service.get_all(page=page, size=size, search=search)
-
-
-@router.get(
-    "/brief",
-    response_model=Page[BackgroundBriefResponse],
-    summary="List backgrounds (minimal fields)",
-)
-def get_backgrounds_brief(
     background_service: BackgroundServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -64,14 +36,13 @@ def get_backgrounds_brief(
     `search` is a case-insensitive partial match against the background
     name.
 
-    Response is `{items, total, page, size}`, same shape as `GET /backgrounds/`.
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching backgrounds across every page, not just this one.
 
     Does not include suggestion text, description, or features — use
-    `GET /backgrounds/{background_id}` for the full record. Intended for
-    dropdowns, tables, and similar listing UI where the full payload is
-    unnecessary.
+    `GET /backgrounds/{background_id}` for the full record.
     """
-    return background_service.list_brief(page=page, size=size, search=search)
+    return background_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(

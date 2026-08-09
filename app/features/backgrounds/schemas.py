@@ -97,7 +97,7 @@ class BackgroundResponse(BackgroundBase):
     features: list[NestedFeatureResponse] = []
 
 
-class BackgroundBriefResponse(BaseModel):
+class BackgroundGetAllResponse(BaseModel):
     """
     Lightweight listing row: no suggestion text/description, but includes
     granted_skills so dropdown/listing UI can show them without a

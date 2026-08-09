@@ -35,7 +35,7 @@ class SkillResponse(SkillBase):
     id: int
 
 
-class SkillBriefResponse(BaseModel):
+class SkillGetAllResponse(BaseModel):
     """Lightweight listing row: no description."""
 
     model_config = ConfigDict(from_attributes=True)

@@ -26,6 +26,10 @@ ADMIN_PASSWORD = _settings.ADMIN_PASSWORD
 DATABASE_URL = _settings.DATABASE_URL
 REDIS_URL = _settings.REDIS_URL
 
+CACHE_ENABLED = _settings.CACHE_ENABLED
+CACHE_TTL_DEFAULT = _settings.CACHE_TTL_DEFAULT
+CACHE_PREFIX = _settings.CACHE_PREFIX
+
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)

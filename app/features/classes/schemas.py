@@ -10,24 +10,28 @@ from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResp
 
 def _proficiency_bonus(class_level: int) -> int:
     """Return the proficiency bonus for a given class level (1-20)."""
+
     return math.ceil(class_level / 4) + 1
 
 
 def _validate_unique_primary_abilities(primary_abilities: list[AbilityScore]) -> list[AbilityScore]:
     if len(primary_abilities) != len(set(primary_abilities)):
         raise ValueError("Duplicate primary abilities are not allowed.")
+
     return primary_abilities
 
 
 def _validate_unique_saving_throws(saving_throws: list[AbilityScore]) -> list[AbilityScore]:
     if len(saving_throws) != len(set(saving_throws)):
         raise ValueError("Duplicate saving throws are not allowed.")
+
     return saving_throws
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
     if len(skill_ids) != len(set(skill_ids)):
         raise ValueError("Duplicate skill IDs are not allowed.")
+
     return skill_ids
 
 
@@ -35,6 +39,7 @@ def _validate_unique_spell_levels(slots: list["SpellSlotEntry"]) -> list["SpellS
     levels = [entry.spell_level for entry in slots]
     if len(levels) != len(set(levels)):
         raise ValueError("Duplicate spell_level entries are not allowed.")
+
     return slots
 
 
@@ -180,6 +185,7 @@ class ClassCreate(ClassBase):
     def validate_unique_available_skills(cls, v):
         if v is None:
             return v
+
         return _validate_unique_skill_ids(v)
 
     @model_validator(mode="after")
@@ -190,6 +196,7 @@ class ClassCreate(ClassBase):
             raise ValueError(
                 f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
             )
+
         return self
 
     @model_validator(mode="after")
@@ -198,6 +205,7 @@ class ClassCreate(ClassBase):
             levels = [e.class_level for e in self.spell_slot_progression]
             if len(levels) != len(set(levels)):
                 raise ValueError("Duplicate class_level entries in spell_slot_progression are not allowed.")
+
         return self
 
 
@@ -224,12 +232,14 @@ class ClassUpdate(BaseModel):
     def validate_unique_primary_abilities(cls, v):
         if v is None:
             return v
+
         return _validate_unique_primary_abilities(v)
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws_update(cls, v):
         if v is None:
             return v
+
         return _validate_unique_saving_throws(v)
 
     @model_validator(mode="after")
@@ -244,6 +254,7 @@ class ClassUpdate(BaseModel):
             raise ValueError(
                 f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
             )
+
         return self
 
 
@@ -333,7 +344,7 @@ class ClassResponse(ClassBase):
     subclasses: list[SubclassBriefResponse] = []
 
 
-class ClassBriefResponse(BaseModel):
+class ClassGetAllResponse(BaseModel):
     """Lightweight listing row."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -352,11 +363,14 @@ class ProgressionLevelRow(BaseModel):
 
     level: int
     proficiency_bonus: int
+
     # spell slots: {spell_level → slots}, only levels with rows are included.
     # e.g. {"LEVEL_1": 4, "LEVEL_2": 2}  — absent means 0 slots.
     spell_slots: dict[str, int]
+
     # CLASS-source features gained at this level.
     class_features: list[NestedFeatureResponse]
+
     # SUBCLASS features grouped by subclass name, gained at this level.
     # Only populated for levels where at least one subclass grants a feature.
     subclass_features: list[NestedFeatureResponse]

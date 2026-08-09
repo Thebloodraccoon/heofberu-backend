@@ -6,8 +6,8 @@ from app.core.base_service import Page
 from app.core.dependencies import ClassServiceDep, FounderDep, GmUserDep
 from app.features.classes.schemas import (
     AvailableSkillsUpdate,
-    ClassBriefResponse,
     ClassCreate,
+    ClassGetAllResponse,
     ClassProgressionResponse,
     ClassResponse,
     ClassUpdate,
@@ -25,8 +25,8 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
 
 @router.get(
     "/",
-    response_model=Page[ClassResponse],
-    summary="List classes (full detail)",
+    response_model=Page[ClassGetAllResponse],
+    summary="List classes",
 )
 def get_classes(
     class_service: ClassServiceDep,
@@ -35,9 +35,8 @@ def get_classes(
     search: str | None = None,
 ):
     """
-    Return a paginated list of classes, ordered by id, each with full
-    detail — including primary abilities, saving throws, and available
-    skills.
+    Return a paginated list of classes with only `id`, `name`, `hit_dice`,
+    and `is_homebrew`, ordered by id.
 
     Open endpoint, no authentication required.
 
@@ -46,39 +45,11 @@ def get_classes(
     Response is `{items, total, page, size}` — `total` is the count of
     matching classes across every page, not just this one.
 
-    For a lighter payload (no abilities/throws/skills), use
-    `GET /classes/brief` instead.
-    """
-    return class_service.get_all(page=page, size=size, search=search)
-
-
-@router.get(
-    "/brief",
-    response_model=Page[ClassBriefResponse],
-    summary="List classes (minimal fields)",
-)
-def get_classes_brief(
-    class_service: ClassServiceDep,
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-    search: str | None = None,
-):
-    """
-    Return a paginated list of classes with only `id`, `name`, `hit_dice`,
-    and `is_homebrew`.
-
-    Open endpoint, no authentication required.
-
-    `search` is a case-insensitive partial match against the class name.
-
-    Response is `{items, total, page, size}`, same shape as `GET /classes/`.
-
     Does not include primary abilities, saving throws, or available
-    skills — use `GET /classes/{class_id}` for the full record. Intended
-    for dropdowns, tables, and similar listing UI where the full payload
-    is unnecessary.
+    skills — use `GET /classes/{class_id}` for the full record.
     """
-    return class_service.list_brief(page=page, size=size, search=search)
+
+    return class_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(
@@ -96,6 +67,7 @@ def get_class(class_id: int, class_service: ClassServiceDep):
 
     Open endpoint, no authentication required.
     """
+
     return class_service.get_by_id(class_id)
 
 
@@ -196,6 +168,7 @@ def create_class(
     single transaction — the class is fully set up in one call instead of
     a `POST` followed by separate `PUT` calls.
     """
+
     return class_service.create_class(class_data, created_by_id=current_user.id)
 
 
@@ -232,6 +205,7 @@ def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassSe
     the request is rejected. Pass `spellcasting_ability` explicitly in the
     same request to change it alongside `primary_abilities`.
     """
+
     return class_service.update_class(class_id, update_data)
 
 
@@ -252,6 +226,7 @@ def delete_class(class_id: int, class_service: ClassServiceDep, _: FounderDep):
     available skills. Blocked if the class is still assigned to one or
     more characters.
     """
+
     class_service.delete(class_id)
     return None
 
@@ -288,6 +263,7 @@ def set_class_saving_throws(
     complete set of saving throws for this class — any throw not included
     is removed. Send an empty list to clear all saving throws.
     """
+
     return class_service.set_saving_throws(class_id, data)
 
 
@@ -324,6 +300,7 @@ def set_class_available_skills(
     the complete set of skills this class offers — any skill not included
     is removed. Send an empty list to clear all available skills.
     """
+
     return class_service.set_available_skills(class_id, data)
 
 
@@ -374,6 +351,7 @@ def set_class_spell_slots(
     progressions can be set on any class, including to support
     multiclass-style slot tables.
     """
+
     return class_service.set_spell_slots(class_id, class_level, data)
 
 
@@ -434,6 +412,7 @@ def replace_class_features(
     that doesn't belong to this class is rejected with 400; duplicate ids
     within one request are rejected with 422.
     """
+
     return class_service.replace_class_features(class_id, data, created_by_id=_.id)
 
 
@@ -456,6 +435,7 @@ def get_class_progression(class_id: int, class_service: ClassServiceDep):
 
     Open endpoint.
     """
+
     return class_service.get_progression(class_id)
 
 
@@ -467,6 +447,7 @@ def get_class_progression(class_id: int, class_service: ClassServiceDep):
 )
 def list_subclasses(class_id: int, class_service: ClassServiceDep):
     """Return all subclasses for the given class. Open endpoint."""
+
     return class_service.list_subclasses(class_id)
 
 
@@ -478,6 +459,7 @@ def list_subclasses(class_id: int, class_service: ClassServiceDep):
 )
 def get_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep):
     """Full subclass detail including all its features. Open endpoint."""
+
     return class_service.get_subclass(class_id, subclass_id)
 
 
@@ -522,6 +504,7 @@ def create_subclass(
     ``features`` are SUBCLASS-source and are created atomically together
     with the subclass. ``unlock_level`` defaults to 3.
     """
+
     return class_service.create_subclass(class_id, data, created_by_id=_.id)
 
 
@@ -538,6 +521,7 @@ def update_subclass(
     Partially update a subclass's base fields. **GM only.**
     Does not touch features — manage those via the features endpoints.
     """
+
     return class_service.update_subclass(class_id, subclass_id, data)
 
 
@@ -592,6 +576,7 @@ def replace_subclass_features(
     an `id` create new features, and features absent from the request are
     deleted.
     """
+
     return class_service.replace_subclass_features(class_id, subclass_id, data, created_by_id=_.id)
 
 
@@ -603,5 +588,6 @@ def replace_subclass_features(
 )
 def delete_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep, _: GmUserDep):
     """Delete a subclass and all its features. **GM only.**"""
+
     class_service.delete_subclass(class_id, subclass_id)
     return None

@@ -1,27 +1,31 @@
 """Spell CRUD service with transactional class/race availability setup."""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
-from app.core.base_service import BaseService
+from app.core.base_service import BaseService, Page
+from app.core.cache import use_cache
 from app.features.spells.repository import SpellRepository
 from app.features.spells.schemas import (
     ClassAvailabilityUpdate,
     RaceAvailabilityUpdate,
-    SpellBriefResponse,
     SpellCreate,
+    SpellGetAllResponse,
     SpellResponse,
     SpellUpdate,
 )
 from app.models.spell_model import Spell
 
 
-class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellBriefResponse]):
+class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellGetAllResponse]):
     """
     Spell-specific CRUD service built on :class:`BaseService`.
 
     Adds behaviors the generic base class doesn't provide:
-      - the inherited paginated ``get_all``/``list_brief`` (ordered by
-        ``Spell.id``, searchable on ``name``);
+      - the inherited paginated ``get_all`` (ordered by ``Spell.id``,
+        searchable on ``name``), served as a lightweight ``Page`` cached
+        transparently in Redis via ``@use_cache``;
       - a uniqueness check on ``name`` before create/update;
       - management of class/race availability, which lives in its own
         association tables (``spell_classes`` / ``spell_races``) and has no
@@ -33,12 +37,32 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
 
     repository: SpellRepository
 
+    cache_namespaces = ("spells",)
+
     def __init__(self, db: Session):
         super().__init__(
             repository=SpellRepository(db),
             response_schema=SpellResponse,
-            brief_schema=SpellBriefResponse,
+            get_all_schema=SpellGetAllResponse,
         )
+
+    @use_cache()
+    def get_all(
+        self,
+        page: int = 1,
+        size: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+    ) -> Page[SpellGetAllResponse]:
+        """Cached lightweight listing — see ``BaseService.get_all``."""
+
+        return super().get_all(page=page, size=size, filters=filters, search=search)
+
+    @use_cache()
+    def get_by_id(self, item_id: int) -> SpellResponse:
+        """Cached single-record fetch — see ``BaseService.get_by_id``."""
+
+        return super().get_by_id(item_id)
 
     def create_spell(self, spell_data: SpellCreate) -> SpellResponse:
         """
@@ -76,6 +100,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
                 self.repository.set_races(item, races, commit=False)
 
         self.repository.refresh(item)
+        self._invalidate_cache()
 
         return self.response_schema.model_validate(item)
 
@@ -86,6 +111,8 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         classes = self.resolve_ids(self.repository.get_classes_by_ids, data.class_ids, "Classes")
 
         updated_spell = self.repository.set_classes(spell, classes)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_spell)
 
     def set_races(self, spell_id: int, data: RaceAvailabilityUpdate) -> SpellResponse:
@@ -95,4 +122,6 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         races = self.resolve_ids(self.repository.get_races_by_ids, data.race_ids, "Races")
 
         updated_spell = self.repository.set_races(spell, races)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_spell)

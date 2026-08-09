@@ -20,6 +20,7 @@ from app.constants import (
 def _validate_unique_components(components: list[Component]) -> list[Component]:
     if len(components) != len(set(components)):
         raise ValueError("Duplicate spell component(s) are not allowed.")
+
     return components
 
 
@@ -161,7 +162,7 @@ class SpellResponse(SpellBase):
     available_races: list[RaceBriefResponse] = []
 
 
-class SpellBriefResponse(BaseModel):
+class SpellGetAllResponse(BaseModel):
     """
     Lightweight listing row.
 

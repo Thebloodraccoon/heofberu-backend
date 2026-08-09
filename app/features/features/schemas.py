@@ -29,10 +29,12 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
       - FEAT       -> feat_id required, others must be None
       - OTHER      -> none of the five may be set
     """
+
     required_fk = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
 
     for fk_name in _ALL_SOURCE_FKS:
         fk_value = values.get(fk_name)
+
         if fk_name == required_fk:
             if fk_value is None:
                 raise ValueError(f"source_type='{source_type.value}' requires '{fk_name}' to be set.")
@@ -104,6 +106,7 @@ class StandaloneFeatureCreate(FeatureBase):
                 "Only standalone (OTHER) features can be created through /features/; "
                 "CLASS/SUBCLASS/RACE/BACKGROUND/FEAT features are created through their parent entities."
             )
+
         return value
 
 
@@ -177,6 +180,7 @@ class FeaturesReplace(BaseModel):
         ids = [item.id for item in features if item.id is not None]
         if len(ids) != len(set(ids)):
             raise ValueError("Duplicate feature ids are not allowed in a feature replacement.")
+
         return features
 
 
@@ -209,7 +213,7 @@ class FeatureResponse(FeatureBase):
     created_by_id: int | None = None
 
 
-class FeatureBriefResponse(BaseModel):
+class FeatureGetAllResponse(BaseModel):
     """Lightweight listing row: no description."""
 
     model_config = ConfigDict(from_attributes=True)

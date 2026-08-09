@@ -28,12 +28,14 @@ def _validate_unique_abilities(ability_bonuses: list[AbilityBonusItem]) -> list[
     if len(abilities) != len(set(abilities)):
         duplicates = {a for a in abilities if abilities.count(a) > 1}
         raise ValueError(f"Duplicate ability score(s): {sorted(duplicates)}")
+
     return ability_bonuses
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
     if len(skill_ids) != len(set(skill_ids)):
         raise ValueError("Duplicate skill IDs are not allowed.")
+
     return skill_ids
 
 
@@ -54,15 +56,19 @@ class RaceCreate(RaceBase):
     @field_validator("ability_bonuses")
     def validate_unique_abilities(cls, value):
         """Reject bonus lists containing duplicate ability scores."""
+
         if value is None:
             return value
+
         return _validate_unique_abilities(value)
 
     @field_validator("granted_skills")
     def validate_unique_skill_ids(cls, value):
         """Reject lists containing duplicate skill IDs."""
+
         if value is None:
             return value
+
         return _validate_unique_skill_ids(value)
 
 
@@ -90,6 +96,7 @@ class AbilityBonusesUpdate(BaseModel):
     @field_validator("ability_bonuses")
     def validate_unique_abilities(cls, ability_bonuses):
         """Reject bonus lists containing duplicate ability scores."""
+
         return _validate_unique_abilities(ability_bonuses)
 
 
@@ -110,6 +117,7 @@ class SkillsUpdate(BaseModel):
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
         """Reject lists containing duplicate skill IDs."""
+
         return _validate_unique_skill_ids(skill_ids)
 
 
@@ -137,11 +145,11 @@ class RaceResponse(RaceBase):
     features: list[NestedFeatureResponse] = []
 
 
-class RaceBriefResponse(BaseModel):
+class RaceGetAllResponse(BaseModel):
     """
     Lightweight listing row: no ability bonuses / granted skills, no description.
 
-    Served by the inherited ``BaseService.list_brief`` column-select path
+    Served by the inherited ``BaseService.get_all`` column-select path
     (``BaseRepository.get_brief``), which loads only these columns, is
     paginated, and is ordered by ``Race.id``.
     """

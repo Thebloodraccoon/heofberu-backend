@@ -6,8 +6,8 @@ from app.core.base_service import Page
 from app.core.dependencies import FeatServiceDep, FounderDep, GmUserDep
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
-    FeatBriefResponse,
     FeatCreate,
+    FeatGetAllResponse,
     FeatResponse,
     FeatUpdate,
 )
@@ -18,37 +18,10 @@ router = APIRouter(prefix="/feats", tags=["Feats"])
 
 @router.get(
     "/",
-    response_model=Page[FeatResponse],
-    summary="List feats (full detail)",
+    response_model=Page[FeatGetAllResponse],
+    summary="List feats",
 )
 def get_feats(
-    feat_service: FeatServiceDep,
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-    search: str | None = None,
-):
-    """
-    Return a paginated list of feats, each with full detail — including
-    prerequisites, ability score increase choices, and features.
-
-    Open endpoint, no authentication required.
-
-    `search` is a case-insensitive partial match against the feat name.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching feats across every page, not just this one.
-
-    For a lighter payload, use `GET /feats/brief` instead.
-    """
-    return feat_service.get_all(page=page, size=size, search=search)
-
-
-@router.get(
-    "/brief",
-    response_model=Page[FeatBriefResponse],
-    summary="List feats (minimal fields)",
-)
-def get_feats_brief(
     feat_service: FeatServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -62,14 +35,14 @@ def get_feats_brief(
 
     `search` is a case-insensitive partial match against the feat name.
 
-    Response is `{items, total, page, size}`, same shape as `GET /feats/`.
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching feats across every page, not just this one.
 
     Does not include prerequisites or ability score increase choices —
-    use `GET /feats/{feat_id}` for the full record. Intended for
-    dropdowns, tables, and similar listing UI where the full payload is
-    unnecessary.
+    use `GET /feats/{feat_id}` for the full record.
     """
-    return feat_service.list_brief(page=page, size=size, search=search)
+
+    return feat_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(
@@ -87,6 +60,7 @@ def get_feat(feat_id: int, feat_service: FeatServiceDep):
 
     Open endpoint, no authentication required.
     """
+
     return feat_service.get_by_id(feat_id)
 
 
@@ -167,6 +141,7 @@ def create_feat(
     `PUT`. Nested `features` become FEAT-source features that any
     character granted this feat gains automatically.
     """
+
     return feat_service.create_feat(feat_data, created_by_id=current_user.id)
 
 
@@ -187,6 +162,7 @@ def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatService
     are left as-is. Does not touch ability score increase choices — use
     `PUT /feats/{feat_id}/ability-score-increases` for those.
     """
+
     return feat_service.update(feat_id, update_data)
 
 
@@ -207,6 +183,7 @@ def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: FounderDep):
     (cascade). Blocked if the feat is still granted to one or more
     characters, or one of its features is still granted to a character.
     """
+
     feat_service.delete(feat_id)
     return None
 
@@ -246,6 +223,7 @@ def set_feat_ability_score_increases(
     is removed. Send an empty list to clear all choices (the feat then
     grants no ability score increase of its own).
     """
+
     return feat_service.set_ability_score_increases(feat_id, data)
 
 
@@ -304,4 +282,5 @@ def replace_feat_features(
     that doesn't belong to this feat is rejected with 400; duplicate ids
     within one request are rejected with 422.
     """
+
     return feat_service.replace_feat_features(feat_id, data, created_by_id=_.id)

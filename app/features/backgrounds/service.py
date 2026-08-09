@@ -5,11 +5,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.constants import FeatureSourceType
-from app.core.base_service import BaseService, Page, paginate
+from app.core.base_service import BaseService, Page
+from app.core.cache import use_cache
 from app.features.backgrounds.repository import BackgroundRepository
 from app.features.backgrounds.schemas import (
-    BackgroundBriefResponse,
     BackgroundCreate,
+    BackgroundGetAllResponse,
     BackgroundResponse,
     BackgroundUpdate,
     SkillsUpdate,
@@ -21,7 +22,7 @@ from app.models.background_model import Background
 
 
 class BackgroundService(
-    BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, BackgroundBriefResponse]
+    BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, BackgroundGetAllResponse]
 ):
     """
     Background-specific CRUD service built on :class:`BaseService`.
@@ -41,49 +42,44 @@ class BackgroundService(
     live in ``character_features`` and must be revoked first, see
     ``BackgroundRepository.is_in_use``.
 
-    ``get_by_id`` and ``list_brief`` are inherited unchanged from
-    ``BaseService``. Note that the inherited ``list_brief`` derives its
-    columns from ``BackgroundBriefResponse``'s field names, which include
-    the ``granted_skills`` relationship — unlike brief schemas made up of
-    plain columns only.
+    ``get_by_id`` and ``get_all`` are inherited unchanged from
+    ``BaseService``. The listing falls back to the eager-loaded
+    ``repository.get_all`` because ``BackgroundGetAllResponse`` contains
+    the ``granted_skills`` relationship, which the base column-select path
+    cannot load. Listing and detail reads are cached via ``@use_cache``;
+    because a background's writes also touch the ``features`` table
+    (BACKGROUND-source rows), the service invalidates both its own
+    namespace and ``features``.
     """
 
     repository: BackgroundRepository
+
+    cache_namespaces = ("backgrounds", "features")
 
     def __init__(self, db: Session):
         super().__init__(
             repository=BackgroundRepository(db),
             response_schema=BackgroundResponse,
-            brief_schema=BackgroundBriefResponse,
+            get_all_schema=BackgroundGetAllResponse,
         )
 
-    def list_brief(
+    @use_cache()
+    def get_all(
         self,
         page: int = 1,
         size: int = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
-    ) -> Page[BackgroundBriefResponse]:
-        """
-        Overridden because ``BackgroundBriefResponse.granted_skills`` is a
-        relationship, which the base column-select ``list_brief`` cannot
-        load (the base now raises ``NotImplementedError`` for such fields).
+    ) -> Page[BackgroundGetAllResponse]:
+        """Cached lightweight listing — see ``BaseService.get_all``."""
 
-        Uses ``repository.get_all`` instead — its ``default_load_options``
-        (``selectinload(Background.granted_skills)``) eager-loads the
-        skills, so every row carries ``granted_skills`` without an N+1.
-        """
+        return super().get_all(page=page, size=size, filters=filters, search=search)
 
-        skip, limit = paginate(page, size)
-        items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
-        total = self.repository.count(filters=filters, search=search)
+    @use_cache()
+    def get_by_id(self, item_id: int) -> BackgroundResponse:
+        """Cached single-record fetch — see ``BaseService.get_by_id``."""
 
-        return Page(
-            items=[BackgroundBriefResponse.model_validate(item) for item in items],
-            total=total,
-            page=page,
-            size=size,
-        )
+        return super().get_by_id(item_id)
 
     def create_background(
         self, background_data: BackgroundCreate, created_by_id: int | None = None
@@ -134,6 +130,7 @@ class BackgroundService(
             )
 
         self.repository.refresh(item)
+        self._invalidate_cache()
 
         return self.response_schema.model_validate(item)
 
@@ -145,6 +142,7 @@ class BackgroundService(
         skills = self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
 
         updated_background = self.repository.set_skills(background, skills)
+        self._invalidate_cache()
         return self.response_schema.model_validate(updated_background)
 
     def replace_background_features(
@@ -161,6 +159,7 @@ class BackgroundService(
         character with this background so their builds match the new
         feature set.
         """
+
         background = self._get_or_404(background_id)
         with self._atomic():
             replace_features_for_source(
@@ -172,5 +171,8 @@ class BackgroundService(
                 commit=False,
             )
             reconcile_characters_for_source(self.repository.db, FeatureSourceType.BACKGROUND, background.id)
+
         self.repository.refresh(background)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(background)
