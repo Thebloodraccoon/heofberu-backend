@@ -18,7 +18,7 @@ from app.features.classes.schemas import (
     ClassProgressionResponse,
     ClassResponse,
     ClassUpdate,
-    FeatureBriefResponse,
+    NestedFeatureCreate,
     ProgressionLevelRow,
     SavingThrowsUpdate,
     SpellSlotProgressionUpdate,
@@ -334,10 +334,10 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
                     proficiency_bonus=_proficiency_bonus(lvl),
                     spell_slots=slots_by_level.get(lvl, {}),
                     class_features=[
-                        FeatureBriefResponse.model_validate(f) for f in class_features_by_level.get(lvl, [])
+                        NestedFeatureCreate.model_validate(f) for f in class_features_by_level.get(lvl, [])
                     ],
                     subclass_features=[
-                        FeatureBriefResponse.model_validate(f) for f in subclass_features_by_level.get(lvl, [])
+                        NestedFeatureCreate.model_validate(f) for f in subclass_features_by_level.get(lvl, [])
                     ],
                 )
             )

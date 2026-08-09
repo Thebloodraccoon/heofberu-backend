@@ -123,6 +123,18 @@ class NestedFeatureCreate(BaseModel):
     level: int | None = None
 
 
+class NestedFeatureResponse(BaseModel):
+    """Compact feature row for embedding inside a parent entity response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str
+    level: int | None = None
+    is_homebrew: bool
+
+
 class FeatureReplaceItem(BaseModel):
     """
     A single feature in a replace payload, matched by id.

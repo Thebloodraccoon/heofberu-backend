@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, RaceSize
-from app.features.features.schemas import FeatureBriefResponse, NestedFeatureCreate
+from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
 
 
 class RaceBase(BaseModel):
@@ -134,7 +134,7 @@ class RaceResponse(RaceBase):
     created_by_id: int | None = None
     ability_bonuses: list[AbilityBonusResponse] = []
     granted_skills: list[SkillResponse] = []
-    features: list[FeatureBriefResponse] = []
+    features: list[NestedFeatureResponse] = []
 
 
 class RaceBriefResponse(BaseModel):

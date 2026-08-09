@@ -5,7 +5,7 @@ import math
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import AbilityScore, DiceType, SpellLevel
-from app.features.features.schemas import FeatureBriefResponse, NestedFeatureCreate
+from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
 
 
 def _proficiency_bonus(class_level: int) -> int:
@@ -121,7 +121,7 @@ class SubclassResponse(BaseModel):
     description: str
     is_homebrew: bool
     created_by_id: int | None = None
-    features: list[FeatureBriefResponse] = []
+    features: list[NestedFeatureResponse] = []
 
 
 class SubclassBriefResponse(BaseModel):
@@ -329,7 +329,7 @@ class ClassResponse(ClassBase):
     saving_throws: list[SavingThrowResponse] = []
     available_skills: list[SkillResponse] = []
     spell_slot_progression: list[SpellSlotProgressionResponse] = []
-    features: list[FeatureBriefResponse] = []
+    features: list[NestedFeatureResponse] = []
     subclasses: list[SubclassBriefResponse] = []
 
 
@@ -356,10 +356,10 @@ class ProgressionLevelRow(BaseModel):
     # e.g. {"LEVEL_1": 4, "LEVEL_2": 2}  — absent means 0 slots.
     spell_slots: dict[str, int]
     # CLASS-source features gained at this level.
-    class_features: list[FeatureBriefResponse]
+    class_features: list[NestedFeatureResponse]
     # SUBCLASS features grouped by subclass name, gained at this level.
     # Only populated for levels where at least one subclass grants a feature.
-    subclass_features: list[FeatureBriefResponse]
+    subclass_features: list[NestedFeatureResponse]
 
 
 class ClassProgressionResponse(BaseModel):

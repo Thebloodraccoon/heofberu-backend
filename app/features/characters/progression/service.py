@@ -79,6 +79,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         savepoint, then commit on success or roll back (discarding the
         savepoint) on any exception.
         """
+
         db = self.repository.db
         try:
             with db.begin_nested():
@@ -96,6 +97,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         features revoked) in the same transaction, then the ability score
         cache is refreshed to re-derive race bonuses.
         """
+
         character = self.get_character_for_user(character_id, current_user)
         if data.race_id is not None and not self.race_repository.exists_by_id(data.race_id):
             raise RaceNotFoundException(race_id=data.race_id)
@@ -116,6 +118,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         class's spell slot progression is re-applied. All of it commits
         in one transaction.
         """
+
         character = self.get_character_for_user(character_id, current_user)
         if not self.class_repository.exists_by_id(data.class_id):
             raise ClassNotFoundException(class_id=data.class_id)
@@ -139,6 +142,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         Setting a subclass grants its features at or below the current
         level; clearing it revokes that subclass's auto-granted features.
         """
+
         character = self.get_character_for_user(character_id, current_user)
 
         if (
@@ -162,6 +166,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         Class/subclass features unlocked by the new level are granted,
         and spell slots are re-applied.
         """
+
         character = self.get_character_for_user(character_id, current_user)
         if character.level >= ABILITY_SCORE_CAP:
             raise CharacterAlreadyAtMaxLevelException(character_id)
@@ -171,6 +176,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         if is_asi_level and data.choice is None:
             raise LevelUpChoiceRequiredException(class_level=new_level)
+
         if not is_asi_level and data.choice is not None:
             raise LevelUpChoiceNotAllowedException(class_level=new_level)
 
@@ -194,8 +200,10 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
         """Return the character's resolved ASI-level choices, for audit."""
+
         self.get_character_for_user(character_id, current_user)
         choices = self.asi_repository.get_character_choices(character_id)
+
         return [CharacterASIChoiceResponse.model_validate(choice) for choice in choices]
 
     def _apply_asi(self, character: Character, increases, class_level: int) -> None:
@@ -204,10 +212,12 @@ class CharacterProgressionService(CharacterSubDomainService):
         using the character's *effective* scores, then bump the base
         columns and record the choice.
         """
+
         totals = self.stats_service.compute(character)
         for item in increases:
             total_field = TOTAL_FIELD_BY_ABILITY[item.ability]
             current_total = totals[total_field]
+
             if current_total + item.amount > ABILITY_SCORE_CAP:
                 raise AbilityScoreCapExceededException(
                     ability=item.ability.value,
@@ -233,6 +243,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         known, has a valid ASI pick (if any) and the prerequisite is met,
         then grant it (source ``ASI``) and record the choice.
         """
+
         feat = self.feat_repository.get_by_id(choice.feat_id)
         if not feat:
             raise FeatNotFoundException(feat_id=choice.feat_id)
@@ -243,6 +254,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         if choice.ability_score_increase_id is not None:
             validate_ability_score_increase(feat, choice.ability_score_increase_id)
+
         check_feat_prerequisite(character, feat, self.stats_service)
 
         self.feat_grant_repository.add_character_feat(
@@ -263,23 +275,29 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     def _resolve_hp_gain(self, character: Character, requested: int | None) -> int:
         """Default HP gain is half hit die + 1 + CON modifier; a provided value must fit the die + CON bounds."""
+
         die_sides = self._class_die_sides(character)
         con_mod = self._constitution_modifier(character)
         if requested is None:
             return die_sides // 2 + 1 + con_mod
+
         max_gain = die_sides + con_mod
         if requested < 1 or requested > max_gain:
             raise InvalidHitPointGainException(minimum=1, maximum=max_gain)
+
         return requested
 
     def _class_die_sides(self, character: Character) -> int:
         """Hit die sides of the character's class (e.g. ``"D8"`` -> 8)."""
+
         character_class = self.class_repository.get_by_id(character.class_id)
         if character_class is None:
             return 0
+
         return int(character_class.hit_dice.value[1:])
 
     def _constitution_modifier(self, character: Character) -> int:
         """CON modifier from the character's current *effective* CON total."""
+
         totals = self.stats_service.compute(character)
         return (totals["constitution_total"] - 10) // 2

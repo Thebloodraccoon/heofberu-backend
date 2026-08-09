@@ -46,12 +46,15 @@ class ASIIncreaseItem(BaseModel):
 
 def _validate_asi_increases(increases: list[ASIIncreaseItem]) -> list[ASIIncreaseItem]:
     """Reject duplicate abilities and totals outside the +1..+2 ASI budget."""
+
     abilities = [item.ability for item in increases]
     if len(abilities) != len(set(abilities)):
         raise ValueError("Duplicate ability in an ASI choice is not allowed.")
+
     total = sum(item.amount for item in increases)
     if not (1 <= total <= ASI_TOTAL_BUDGET):
         raise ValueError(f"An ASI choice must grant between 1 and {ASI_TOTAL_BUDGET} total points.")
+
     return increases
 
 

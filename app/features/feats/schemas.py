@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
-from app.features.features.schemas import FeatureBriefResponse, NestedFeatureCreate
+from app.features.features.schemas import NestedFeatureResponse, NestedFeatureCreate
 
 
 class FeatBase(BaseModel):
@@ -103,7 +103,7 @@ class FeatResponse(FeatBase):
     id: int
     created_by_id: int | None = None
     ability_score_increases: list[AbilityScoreIncreaseResponse] = []
-    features: list[FeatureBriefResponse] = []
+    features: list[NestedFeatureResponse] = []
 
 
 class FeatBriefResponse(BaseModel):

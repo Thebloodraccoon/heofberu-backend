@@ -23,6 +23,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
 
     def get_spell_slot(self, character_id: int, level: str) -> CharacterSpellSlot | None:
         """Fetch a character's spell slot entry for a level, or None."""
+
         return (
             self.db.query(CharacterSpellSlot)
             .filter(

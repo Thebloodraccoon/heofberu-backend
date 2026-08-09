@@ -53,12 +53,16 @@ def _desired_features(db: Session, character: Character) -> list[Feature]:
     conditions = []
     if character.class_id is not None:
         conditions.append(Feature.class_id == character.class_id)
+
     if character.subclass_id is not None:
         conditions.append(Feature.subclass_id == character.subclass_id)
+
     if character.race_id is not None:
         conditions.append(Feature.race_id == character.race_id)
+
     if character.background_id is not None:
         conditions.append(Feature.background_id == character.background_id)
+
 
     feat_ids = [
         feat_id for (feat_id,) in db.query(CharacterFeat.feat_id).filter(CharacterFeat.character_id == character.id)
@@ -141,6 +145,7 @@ def reconcile_characters_for_source(db: Session, source_type: FeatureSourceType,
         source_filter = _SOURCE_CHARACTER_FILTER.get(source_type)
         if source_filter is None:
             return
+
         characters = db.query(Character).filter(source_filter(source_id)).all()
 
     for character in characters:
