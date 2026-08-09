@@ -5,7 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
-from app.models import Character, Class, ClassPrimaryAbility, ClassSavingThrow, ClassSpellSlotProgression, Skill
+from app.models import (
+    Character,
+    Class,
+    ClassPrimaryAbility,
+    ClassSavingThrow,
+    ClassSpellSlotProgression,
+    Skill,
+    class_available_skills,
+)
 from app.models.feature_model import Feature
 from app.models.subclass_model import Subclass
 
@@ -93,7 +101,9 @@ class ClassRepository(BaseRepository[Class]):
 
         return character_class
 
-    async def set_primary_abilities(self, character_class: Class, abilities: list[str], *, commit: bool = True) -> Class:
+    async def set_primary_abilities(
+        self, character_class: Class, abilities: list[str], *, commit: bool = True
+    ) -> Class:
         """
         Replace all primary abilities for a class with the given list.
 
@@ -149,10 +159,23 @@ class ClassRepository(BaseRepository[Class]):
         """
         Replace all skills a class may choose proficiencies from.
 
+        Written through the association table (delete + insert) instead of
+        assigning the ORM ``available_skills`` relationship: assigning an
+        unloaded many-to-many collection would trigger a lazy load, which
+        is not supported on the async stack.
+
         See ``set_primary_abilities`` for the meaning of ``commit=False``.
         """
 
-        character_class.available_skills = skills
+        await self.db.execute(
+            delete(class_available_skills).where(class_available_skills.c.class_id == character_class.id)
+        )
+
+        if skills:
+            await self.db.execute(
+                class_available_skills.insert(),
+                [{"class_id": character_class.id, "skill_id": skill.id} for skill in skills],
+            )
 
         if commit:
             await self.db.commit()
@@ -229,9 +252,7 @@ class ClassRepository(BaseRepository[Class]):
 
         result = await self.db.execute(
             select(Feature)
-            .where(
-                (Feature.class_id == class_id) | (Feature.subclass_id.in_(subclass_ids))
-            )
+            .where((Feature.class_id == class_id) | (Feature.subclass_id.in_(subclass_ids)))
             .order_by(Feature.level, Feature.id)
         )
         return list(result.scalars().unique().all())

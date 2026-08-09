@@ -47,4 +47,4 @@ class SkillRepository(BaseRepository[Skill]):
             )
         )
         result = await self.db.execute(query)
-        return bool(await result.scalar())
+        return result.scalar()

@@ -21,7 +21,7 @@ SPELL_PAYLOAD = {
 class TestSpellCrud:
     async def test_player_cannot_create_spell(self, client, player_token):
         response = await client.post(
-            "/spells/",
+            "/spells",
             json=SPELL_PAYLOAD,
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -29,7 +29,7 @@ class TestSpellCrud:
         assert response.status_code == 403
 
     async def test_gm_can_create_spell(self, client, gm_token):
-        response = await client.post("/spells/", json=SPELL_PAYLOAD, headers={"Authorization": f"Bearer {gm_token}"})
+        response = await client.post("/spells", json=SPELL_PAYLOAD, headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 201
         assert response.json()["name"] == "Magic Missile"
@@ -37,7 +37,7 @@ class TestSpellCrud:
 
     async def test_create_duplicate_spell_name_returns_400(self, client, gm_token, create_spell):
         await create_spell(name="Magic Missile")
-        response = await client.post("/spells/", json=SPELL_PAYLOAD, headers={"Authorization": f"Bearer {gm_token}"})
+        response = await client.post("/spells", json=SPELL_PAYLOAD, headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 400
 
@@ -51,7 +51,9 @@ class TestSpellCrud:
         assert response.status_code == 200
         assert response.json()["name"] == "New Spell Name"
 
-    async def test_gm_can_set_available_classes_and_races(self, client, gm_token, create_spell, create_class, create_race):
+    async def test_gm_can_set_available_classes_and_races(
+        self, client, gm_token, create_spell, create_class, create_race
+    ):
         spell = await create_spell(name="Restricted Spell")
         character_class = await create_class(name="Sorcerer", hit_dice="D6", spellcasting_ability="CHA")
         race = await create_race(name="High Elf")

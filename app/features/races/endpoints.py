@@ -19,7 +19,7 @@ router = APIRouter(prefix="/races", tags=["Races"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[RaceGetAllResponse],
     summary="List races",
 )
@@ -70,7 +70,7 @@ async def get_race(race_id: int, race_service: RaceServiceDep):
 
 
 @router.post(
-    "/",
+    "",
     response_model=RaceResponse,
     status_code=201,
     summary="Create a race",

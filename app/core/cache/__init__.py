@@ -1,4 +1,5 @@
-"""Transparent Redis-backed caching: ``@use_cache`` decorator + ``invalidate``.
+"""
+Transparent Redis-backed caching: ``@use_cache`` decorator + ``invalidate``.
 
 The cache is *failsafe*: any Redis failure (connection refused, timeout,
 bug) degrades to a cache miss / no-op, never raising into business code.

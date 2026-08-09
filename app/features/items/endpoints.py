@@ -11,7 +11,7 @@ router = APIRouter(prefix="/items", tags=["Items"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[ItemGetAllResponse],
     summary="List items",
 )
@@ -64,7 +64,7 @@ async def get_item(item_id: int, item_service: ItemServiceDep):
 
 
 @router.post(
-    "/",
+    "",
     response_model=ItemResponse,
     status_code=201,
     summary="Create an item",

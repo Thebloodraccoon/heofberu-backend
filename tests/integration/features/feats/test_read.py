@@ -10,7 +10,7 @@ class TestFeatOpenRead:
         await create_feat(name="Alert")
         await create_feat(name="Lucky")
 
-        response = await client.get("/feats/")
+        response = await client.get("/feats")
 
         assert response.status_code == 200
         names = {item["name"] for item in response.json()["items"]}

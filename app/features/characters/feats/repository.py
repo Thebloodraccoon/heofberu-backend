@@ -22,9 +22,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
     async def get_character_feats(self, character_id: int) -> list[CharacterFeat]:
         """Get every feat grant for a character."""
 
-        result = await self.db.execute(
-            select(CharacterFeat).where(CharacterFeat.character_id == character_id)
-        )
+        result = await self.db.execute(select(CharacterFeat).where(CharacterFeat.character_id == character_id))
         return list(result.scalars().unique().all())
 
     async def get_character_feat_by_id(self, character_id: int, character_feat_id: int) -> CharacterFeat | None:

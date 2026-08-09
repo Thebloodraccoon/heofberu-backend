@@ -102,7 +102,7 @@ async def remove_character_condition(
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):
-    """Remove an active condition from a character. """
+    """Remove an active condition from a character."""
 
     await character_condition_service.remove_condition(character_id, condition, current_user)
     return None

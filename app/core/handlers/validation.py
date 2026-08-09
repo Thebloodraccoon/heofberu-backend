@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 def _to_json_safe(value: Any) -> Any:
-    """Coerce a validation ``input`` value into something JSON-serializable.
+    """
+    Coerce a validation ``input`` value into something JSON-serializable.
 
     ``ValidationError.input`` can hold arbitrary objects (e.g. ORM instances
     when response-model validation fails), which ``json.dumps`` cannot
@@ -21,7 +22,7 @@ def _to_json_safe(value: Any) -> Any:
     to ``str`` so the error payload never crashes serialization.
     """
 
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None or isinstance(value, str | int | float | bool):
         return value
     return str(value)
 

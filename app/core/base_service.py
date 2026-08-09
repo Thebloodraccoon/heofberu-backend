@@ -139,18 +139,14 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         model = self.repository.model
         mapper = inspect(model)
-        relationship_fields = [
-            name for name in self.get_all_schema.model_fields if name in mapper.relationships
-        ]
+        relationship_fields = [name for name in self.get_all_schema.model_fields if name in mapper.relationships]
 
         if not relationship_fields:
             columns = [getattr(model, field_name) for field_name in self.get_all_schema.model_fields]
             rows = await self.repository.get_brief(
                 *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
             )
-            items = [
-                self.get_all_schema.model_validate(row, from_attributes=True) for row in rows
-            ]
+            items = [self.get_all_schema.model_validate(row, from_attributes=True) for row in rows]
         else:
             records = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
             items = [self.get_all_schema.model_validate(record) for record in records]

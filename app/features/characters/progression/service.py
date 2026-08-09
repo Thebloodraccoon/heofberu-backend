@@ -1,6 +1,6 @@
 """Service for character progression: race/class change and leveling up."""
 
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -24,7 +24,7 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[ClassGetAllResponse],
     summary="List classes",
 )
@@ -72,7 +72,7 @@ async def get_class(class_id: int, class_service: ClassServiceDep):
 
 
 @router.post(
-    "/",
+    "",
     response_model=ClassResponse,
     status_code=201,
     summary="Create a class",

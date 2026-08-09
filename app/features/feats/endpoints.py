@@ -17,7 +17,7 @@ router = APIRouter(prefix="/feats", tags=["Feats"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[FeatGetAllResponse],
     summary="List feats",
 )
@@ -65,7 +65,7 @@ async def get_feat(feat_id: int, feat_service: FeatServiceDep):
 
 
 @router.post(
-    "/",
+    "",
     response_model=FeatResponse,
     status_code=201,
     summary="Create a feat",

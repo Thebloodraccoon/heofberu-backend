@@ -8,7 +8,7 @@ import pytest
 class TestRaceCrud:
     async def test_player_cannot_create_race(self, client, player_token):
         response = await client.post(
-            "/races/",
+            "/races",
             json={"name": "Custom Race", "size": "MEDIUM", "speed": 30},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -17,7 +17,7 @@ class TestRaceCrud:
 
     async def test_gm_can_create_race(self, client, gm_token):
         response = await client.post(
-            "/races/",
+            "/races",
             json={"name": "Elf", "size": "MEDIUM", "speed": 30},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -31,7 +31,7 @@ class TestRaceCrud:
         skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
 
         response = await client.post(
-            "/races/",
+            "/races",
             json={
                 "name": "Wood Elf",
                 "size": "MEDIUM",
@@ -49,7 +49,7 @@ class TestRaceCrud:
 
     async def test_create_race_with_nested_features(self, client, gm_token):
         response = await client.post(
-            "/races/",
+            "/races",
             json={
                 "name": "Drow",
                 "size": "MEDIUM",
@@ -65,14 +65,14 @@ class TestRaceCrud:
         assert response.status_code == 201
         race_id = response.json()["id"]
 
-        features = (await client.get(f"/features/?source_type=RACE&race_id={race_id}")).json()["items"]
+        features = (await client.get(f"/features?source_type=RACE&race_id={race_id}")).json()["items"]
         assert [feature["name"] for feature in features] == ["Darkvision", "Sunlight Sensitivity"]
         assert all(feature["source_type"] == "RACE" and feature["race_id"] == race_id for feature in features)
 
     async def test_create_duplicate_race_name_returns_400(self, client, gm_token, create_race):
         await create_race(name="Orc")
         response = await client.post(
-            "/races/",
+            "/races",
             json={"name": "Orc", "size": "MEDIUM", "speed": 30},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -168,7 +168,7 @@ class TestRaceCrud:
 
     async def test_gm_can_replace_race_features_by_id(self, client, gm_token):
         created = await client.post(
-            "/races/",
+            "/races",
             json={
                 "name": "Elf",
                 "size": "MEDIUM",

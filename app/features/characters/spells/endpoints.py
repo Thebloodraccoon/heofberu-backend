@@ -78,7 +78,9 @@ async def update_character_spell_slot(
         404: {"description": "No character exists with the given ID."},
     },
 )
-async def get_character_spells(character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep):
+async def get_character_spells(
+    character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep
+):
     """List all spells known by the character."""
 
     return await spell_service.get_known_spells(character_id, current_user)

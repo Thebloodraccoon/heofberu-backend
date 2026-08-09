@@ -8,7 +8,7 @@ import pytest
 class TestFeatureCrud:
     async def test_player_cannot_create_feature(self, client, player_token):
         response = await client.post(
-            "/features/",
+            "/features",
             json={"name": "Custom Feature", "source_type": "OTHER"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -17,7 +17,7 @@ class TestFeatureCrud:
 
     async def test_gm_can_create_other_feature(self, client, gm_token):
         response = await client.post(
-            "/features/",
+            "/features",
             json={"name": "Custom Feature", "source_type": "OTHER"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -30,7 +30,7 @@ class TestFeatureCrud:
         character_class = await create_class(name="Fighter")
 
         response = await client.post(
-            "/features/",
+            "/features",
             json={"name": "Extra Attack", "source_type": "CLASS", "class_id": character_class.id, "level": 5},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -42,7 +42,7 @@ class TestFeatureCrud:
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
 
         response = await client.post(
-            "/features/",
+            "/features",
             json={"name": "Improved Critical", "source_type": "SUBCLASS", "subclass_id": subclass.id, "level": 3},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -68,7 +68,7 @@ class TestFeatureCrud:
         parent = parent_by_type[source_type]
 
         response = await client.post(
-            "/features/",
+            "/features",
             json={"name": "Owned Feature", "source_type": source_type, fk_name: parent.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -79,7 +79,7 @@ class TestFeatureCrud:
         character_class = await create_class(name="Fighter")
 
         response = await client.post(
-            "/features/",
+            "/features",
             json={"name": "Bad Feature", "source_type": "OTHER", "class_id": character_class.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -90,7 +90,7 @@ class TestFeatureCrud:
         race = await create_race(name="Elf")
 
         response = await client.post(
-            "/features/",
+            "/features",
             json={"name": "Bad Feature", "source_type": "CLASS", "race_id": race.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -139,7 +139,9 @@ class TestFeatureCrud:
         assert response.status_code == 204
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
 
-    async def test_cannot_update_source_owned_feature_via_features_crud(self, client, gm_token, create_class, create_feature):
+    async def test_cannot_update_source_owned_feature_via_features_crud(
+        self, client, gm_token, create_class, create_feature
+    ):
         character_class = await create_class(name="Fighter")
         feature = await create_feature(name="Extra Attack", source_type="CLASS", class_id=character_class.id, level=5)
 
@@ -152,7 +154,9 @@ class TestFeatureCrud:
         assert response.status_code == 400
         assert (await client.get(f"/features/{feature.id}")).json()["name"] == "Extra Attack"
 
-    async def test_cannot_delete_source_owned_feature_via_features_crud(self, client, gm_token, create_race, create_feature):
+    async def test_cannot_delete_source_owned_feature_via_features_crud(
+        self, client, gm_token, create_race, create_feature
+    ):
         race = await create_race(name="Elf")
         feature = await create_feature(name="Darkvision", source_type="RACE", race_id=race.id)
 

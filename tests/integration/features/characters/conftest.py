@@ -38,7 +38,7 @@ async def create_api_character(client, login_as, create_user):
             owner = await create_user()
         token = await login_as(owner)
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={
                 "name": name,
                 "level": level,

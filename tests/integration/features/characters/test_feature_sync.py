@@ -19,7 +19,9 @@ class TestAutoGrantOnCreate:
         self, client, player, player_token, create_class, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        second_wind = await create_feature(name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1)
+        second_wind = await create_feature(
+            name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1
+        )
         uncanny_dodge = await create_feature(
             name="Uncanny Dodge", source_type="CLASS", class_id=character_class.id, level=None
         )
@@ -38,7 +40,9 @@ class TestAutoGrantOnCreate:
             name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3
         )
 
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3, subclass_id=subclass.id)
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, level=3, subclass_id=subclass.id
+        )
 
         assert await get_feature_ids(client, character["id"], player_token) == {improved_critical.id}
 
@@ -61,7 +65,9 @@ class TestAutoGrantOnLevelUp:
         self, client, player, player_token, create_class, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        action_surge = await create_feature(name="Action Surge", source_type="CLASS", class_id=character_class.id, level=2)
+        action_surge = await create_feature(
+            name="Action Surge", source_type="CLASS", class_id=character_class.id, level=2
+        )
         character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1)
         assert await get_feature_ids(client, character["id"], player_token) == set()
 
@@ -90,7 +96,9 @@ class TestAutoGrantOnLevelUp:
         remarkable_athlete = await create_feature(
             name="Remarkable Athlete", source_type="SUBCLASS", subclass_id=subclass.id, level=7
         )
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=6, subclass_id=subclass.id)
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, level=6, subclass_id=subclass.id
+        )
         assert await get_feature_ids(client, character["id"], player_token) == set()
 
         response = await client.post(
@@ -106,7 +114,9 @@ class TestAutoGrantOnLevelUp:
         self, client, player, player_token, create_class, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        action_surge = await create_feature(name="Action Surge", source_type="CLASS", class_id=character_class.id, level=2)
+        action_surge = await create_feature(
+            name="Action Surge", source_type="CLASS", class_id=character_class.id, level=2
+        )
         manual = await create_feature(name="Custom Gift", source_type="OTHER")
         character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1)
 
@@ -213,7 +223,9 @@ class TestManualGrantInteractions:
         self, client, player, player_token, create_class, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        second_wind = await create_feature(name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1)
+        second_wind = await create_feature(
+            name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1
+        )
         character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1)
         assert await get_feature_ids(client, character["id"], player_token) == {second_wind.id}
 
@@ -293,7 +305,9 @@ class TestRaceBackgroundFeatAutoGrant:
         self, client, player, player_token, create_background, create_class, create_feature, create_api_character
     ):
         background = await create_background(name="Acolyte")
-        shelter = await create_feature(name="Shelter of the Faithful", source_type="BACKGROUND", background_id=background.id)
+        shelter = await create_feature(
+            name="Shelter of the Faithful", source_type="BACKGROUND", background_id=background.id
+        )
         character_class = await create_class(name="Fighter")
         character, _ = await create_api_character(
             class_id=character_class.id, owner=player, level=1, background_id=background.id
@@ -347,9 +361,13 @@ class TestRaceBackgroundFeatAutoGrant:
         race = await create_race(name="Elf")
         darkvision = await create_feature(name="Darkvision", source_type="RACE", race_id=race.id)
         background = await create_background(name="Acolyte")
-        shelter = await create_feature(name="Shelter of the Faithful", source_type="BACKGROUND", background_id=background.id)
+        shelter = await create_feature(
+            name="Shelter of the Faithful", source_type="BACKGROUND", background_id=background.id
+        )
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        action_surge = await create_feature(name="Action Surge", source_type="CLASS", class_id=character_class.id, level=2)
+        action_surge = await create_feature(
+            name="Action Surge", source_type="CLASS", class_id=character_class.id, level=2
+        )
         character, _ = await create_api_character(
             class_id=character_class.id, owner=player, level=1, race_id=race.id, background_id=background.id
         )

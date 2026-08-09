@@ -1,4 +1,5 @@
-"""Unit tests for ``BaseService.get_all`` routing.
+"""
+Unit tests for ``BaseService.get_all`` routing.
 
 Covers the three listing paths: column-select through
 ``repository.get_brief`` when ``get_all_schema`` has no relationship
@@ -10,8 +11,8 @@ recording fake; SQLAlchemy models are declared inline so
 
 from types import SimpleNamespace
 
-import pytest
 from pydantic import BaseModel, ConfigDict
+import pytest
 from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -116,8 +117,12 @@ class TestGetAllColumnSelect:
         assert repo.get_all_calls == []
 
     async def test_get_brief_respects_pagination(self):
-        rows = [SimpleNamespace(id=1, name="A"), SimpleNamespace(id=2, name="B"),
-                SimpleNamespace(id=3, name="C"), SimpleNamespace(id=4, name="D")]
+        rows = [
+            SimpleNamespace(id=1, name="A"),
+            SimpleNamespace(id=2, name="B"),
+            SimpleNamespace(id=3, name="C"),
+            SimpleNamespace(id=4, name="D"),
+        ]
         repo = FakeRepository(ItemModel, rows)
         service = make_service(ItemModel, repo, ItemOut, ItemOut)
 

@@ -7,10 +7,10 @@ import pytest
 @pytest.mark.asyncio
 class TestUserRead:
     async def test_list_users_requires_auth(self, client):
-        assert (await client.get("/users/")).status_code == 401
+        assert (await client.get("/users")).status_code == 401
 
     async def test_player_cannot_list_users(self, client, player_token):
-        response = await client.get("/users/", headers={"Authorization": f"Bearer {player_token}"})
+        response = await client.get("/users", headers={"Authorization": f"Bearer {player_token}"})
 
         assert response.status_code == 403
 
@@ -18,15 +18,15 @@ class TestUserRead:
         await create_user(username="alpha", email="alpha@example.com")
         await create_user(username="gmuser", email="gmuser@example.com", role="GM")
 
-        all_response = await client.get("/users/", headers={"Authorization": f"Bearer {gm_token}"})
+        all_response = await client.get("/users", headers={"Authorization": f"Bearer {gm_token}"})
         assert all_response.status_code == 200
         assert all_response.json()["total"] >= 2
 
-        gm_response = await client.get("/users/?role=gm", headers={"Authorization": f"Bearer {gm_token}"})
+        gm_response = await client.get("/users?role=gm", headers={"Authorization": f"Bearer {gm_token}"})
         assert gm_response.status_code == 200
         assert all(item["role"] == "gm" for item in gm_response.json()["items"])
 
-        search_response = await client.get("/users/?search=alpha", headers={"Authorization": f"Bearer {gm_token}"})
+        search_response = await client.get("/users?search=alpha", headers={"Authorization": f"Bearer {gm_token}"})
         assert search_response.status_code == 200
         assert [item["username"] for item in search_response.json()["items"]] == ["alpha"]
 
@@ -39,6 +39,4 @@ class TestUserRead:
         assert response.json()["username"] == "target"
 
     async def test_get_user_404(self, client, gm_token):
-        assert (
-            await client.get("/users/999999", headers={"Authorization": f"Bearer {gm_token}"})
-        ).status_code == 404
+        assert (await client.get("/users/999999", headers={"Authorization": f"Bearer {gm_token}"})).status_code == 404

@@ -10,7 +10,7 @@ from app.settings import settings
 class TestUserCrud:
     async def test_player_cannot_create_user(self, client, player_token):
         response = await client.post(
-            "/users/",
+            "/users",
             json={"username": "hacker", "email": "hacker@example.com", "password": "password123"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -19,7 +19,7 @@ class TestUserCrud:
 
     async def test_gm_can_create_user(self, client, gm_token):
         response = await client.post(
-            "/users/",
+            "/users",
             json={"username": "newbie", "email": "newbie@example.com", "password": "password123"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -32,7 +32,7 @@ class TestUserCrud:
 
     async def test_gm_cannot_create_gm_user(self, client, gm_token):
         response = await client.post(
-            "/users/",
+            "/users",
             json={"username": "gm2", "email": "gm2@example.com", "password": "password123", "role": "gm"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -41,7 +41,7 @@ class TestUserCrud:
 
     async def test_founder_can_create_gm_user(self, client, founder_token):
         response = await client.post(
-            "/users/",
+            "/users",
             json={"username": "gm2", "email": "gm2@example.com", "password": "password123", "role": "gm"},
             headers={"Authorization": f"Bearer {founder_token}"},
         )
@@ -52,7 +52,7 @@ class TestUserCrud:
     async def test_create_user_duplicate_email_returns_400(self, client, gm_token, create_user):
         await create_user(email="taken@example.com")
         response = await client.post(
-            "/users/",
+            "/users",
             json={"username": "other", "email": "taken@example.com", "password": "password123"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -119,7 +119,9 @@ class TestUserCrud:
     async def test_cannot_delete_default_admin(self, client, founder_token, create_user):
         default_admin = await create_user(username="tuttamus", email=settings.ADMIN_LOGIN)
 
-        response = await client.delete(f"/users/{default_admin.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        response = await client.delete(
+            f"/users/{default_admin.id}", headers={"Authorization": f"Bearer {founder_token}"}
+        )
 
         assert response.status_code == 403
 

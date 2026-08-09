@@ -110,7 +110,7 @@ async def remove_character_feature(
     character_feature_service: CharacterFeatureServiceDep,
     current_user: CurrentUserDep,
 ):
-    """ Remove a feature grant from a character."""
+    """Remove a feature grant from a character."""
 
     await character_feature_service.remove_feature(character_id, character_feature_id, current_user)
     return None

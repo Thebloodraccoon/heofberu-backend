@@ -13,7 +13,9 @@ class TestDerivedHitDice:
 
         assert character["hit_dice"] == "D10"
 
-    async def test_hit_dice_updates_on_class_change(self, client, player, player_token, create_class, create_api_character):
+    async def test_hit_dice_updates_on_class_change(
+        self, client, player, player_token, create_class, create_api_character
+    ):
         fighter = await create_class(name="Fighter", hit_dice="D10")
         wizard = await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
         character, token = await create_api_character(class_id=fighter.id, owner=player)
@@ -32,7 +34,9 @@ class TestDerivedHitDice:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestDerivedSpeed:
-    async def test_speed_comes_from_race(self, client, player, player_token, create_class, create_race, create_api_character):
+    async def test_speed_comes_from_race(
+        self, client, player, player_token, create_class, create_race, create_api_character
+    ):
         character_class = await create_class(name="Fighter")
         race = await create_race(name="Dwarf", speed=25)
 
@@ -82,6 +86,7 @@ class TestDerivedArmorClass:
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
+        print(response.text)
         assert response.status_code == 201, response.text
         return response.json()["id"]
 
@@ -129,7 +134,9 @@ class TestDerivedArmorClass:
         assert response.status_code == 200
         assert response.json()["armor_class"] == 16
 
-    async def test_heavy_armor_ignores_dex(self, client, gm_token, player, player_token, create_class, create_api_character):
+    async def test_heavy_armor_ignores_dex(
+        self, client, gm_token, player, player_token, create_class, create_api_character
+    ):
         character_class = await create_class(name="Fighter")
         character, token = await create_api_character(class_id=character_class.id, owner=player, dexterity=18)
         armor_id = await self._create_armor(client, gm_token, "Plate", base=18, dex_bonus=False)
@@ -169,7 +176,7 @@ class TestDerivedArmorClass:
             class_id=character_class.id, owner=player, race_id=race.id, dexterity=14
         )
 
-        response = await client.get("/characters/", headers={"Authorization": f"Bearer {token}"})
+        response = await client.get("/characters", headers={"Authorization": f"Bearer {token}"})
 
         assert response.status_code == 200
         row = next(item for item in response.json()["items"] if item["id"] == character["id"])

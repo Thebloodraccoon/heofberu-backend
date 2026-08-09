@@ -10,7 +10,7 @@ class TestBackgroundOpenRead:
         await create_background(name="Acolyte")
         await create_background(name="Criminal")
 
-        response = await client.get("/backgrounds/")
+        response = await client.get("/backgrounds")
 
         assert response.status_code == 200
         names = {item["name"] for item in response.json()["items"]}

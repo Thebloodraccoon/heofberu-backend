@@ -11,7 +11,7 @@ from app.features.users.schemas import UserCreate, UserProfileUpdate, UserRespon
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-@router.get("/", response_model=Page[UserResponse])
+@router.get("", response_model=Page[UserResponse])
 async def get_all_users(
     user_service: UserServiceDep,
     _: GmUserDep,
@@ -60,7 +60,7 @@ async def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDe
     return await user_service.get_by_id(user_id)
 
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(user_data: UserCreate, user_service: UserServiceDep, current_user: GmUserDep):
     """
     Create a new user. **GM only.**

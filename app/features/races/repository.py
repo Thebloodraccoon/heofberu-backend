@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import Character
-from app.models.race_association_models import RaceAbilityBonus
+from app.models.race_association_models import RaceAbilityBonus, race_skills
 from app.models.race_model import Race
 from app.models.skill_model import Skill
 
@@ -89,10 +89,21 @@ class RaceRepository(BaseRepository[Race]):
         """
         Replace all granted skills for a race with the given list.
 
+        Written through the association table (delete + insert) instead of
+        assigning the ORM ``granted_skills`` relationship: assigning an
+        unloaded many-to-many collection would trigger a lazy load, which
+        is not supported on the async stack.
+
         See ``set_ability_bonuses`` for the meaning of ``commit=False``.
         """
 
-        race.granted_skills = skills
+        await self.db.execute(delete(race_skills).where(race_skills.c.race_id == race.id))
+
+        if skills:
+            await self.db.execute(
+                race_skills.insert(),
+                [{"race_id": race.id, "skill_id": skill.id} for skill in skills],
+            )
 
         if commit:
             await self.db.commit()

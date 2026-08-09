@@ -21,9 +21,7 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
     async def get_character_items(self, character_id: int) -> list[CharacterItem]:
         """Get every item stack owned by a character."""
 
-        result = await self.db.execute(
-            select(CharacterItem).where(CharacterItem.character_id == character_id)
-        )
+        result = await self.db.execute(select(CharacterItem).where(CharacterItem.character_id == character_id))
         return list(result.scalars().unique().all())
 
     async def get_character_item_by_id(self, character_id: int, character_item_id: int) -> CharacterItem | None:

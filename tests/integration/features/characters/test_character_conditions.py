@@ -68,7 +68,9 @@ class TestCharacterConditions:
 
         assert response.status_code == 422
 
-    async def test_add_unknown_condition_returns_422(self, client, player, player_token, create_class, create_character):
+    async def test_add_unknown_condition_returns_422(
+        self, client, player, player_token, create_class, create_character
+    ):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 

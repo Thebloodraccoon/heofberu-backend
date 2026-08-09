@@ -40,9 +40,7 @@ class CharacterConditionService(CharacterSubDomainService):
         super().__init__(db)
         self.condition_repository = CharacterConditionRepository(db)
 
-    async def get_conditions(
-        self, character_id: int, current_user: UserResponse
-    ) -> list[CharacterConditionResponse]:
+    async def get_conditions(self, character_id: int, current_user: UserResponse) -> list[CharacterConditionResponse]:
         """List every condition a character is currently under."""
 
         await self.get_character_for_user(character_id, current_user)

@@ -11,7 +11,7 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[SkillGetAllResponse],
     summary="List skills",
 )
@@ -61,7 +61,7 @@ async def get_skill(skill_id: int, skill_service: SkillServiceDep):
 
 
 @router.post(
-    "/",
+    "",
     response_model=SkillResponse,
     status_code=201,
     summary="Create a skill",

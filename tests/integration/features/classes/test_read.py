@@ -10,7 +10,7 @@ class TestClassOpenRead:
         await create_class(name="Fighter", hit_dice="D10")
         await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
 
-        response = await client.get("/classes/")
+        response = await client.get("/classes")
 
         assert response.status_code == 200
         names = {item["name"] for item in response.json()["items"]}
@@ -20,7 +20,7 @@ class TestClassOpenRead:
         await create_class(name="Bard", hit_dice="D8")
         await create_class(name="Rogue", hit_dice="D8")
 
-        response = await client.get("/classes/?search=bar")
+        response = await client.get("/classes?search=bar")
 
         assert response.status_code == 200
         names = [item["name"] for item in response.json()["items"]]
@@ -64,6 +64,4 @@ class TestClassOpenRead:
     async def test_get_subclass_404(self, client, create_class):
         character_class = await create_class(name="Fighter")
 
-        assert (
-            await client.get(f"/classes/{character_class.id}/subclasses/999999")
-        ).status_code == 404
+        assert (await client.get(f"/classes/{character_class.id}/subclasses/999999")).status_code == 404

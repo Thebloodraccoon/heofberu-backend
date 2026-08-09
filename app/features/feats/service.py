@@ -144,4 +144,4 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGe
         await self._invalidate_cache()
 
         self.repository.db.expire(feat)
-        return self.response_schema.model_validate(await self._get_or_404(feat.id))
+        return self.response_schema.model_validate(await self._get_or_404(feat_id))

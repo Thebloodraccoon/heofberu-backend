@@ -21,7 +21,6 @@ os.environ.setdefault("TEST_DATABASE_URL", "postgresql://heof_user:test_secret@l
 os.environ.setdefault("TEST_REDIS_URL", "redis://localhost:6381/0")
 
 import httpx  # noqa: E402
-import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 
 from app.constants import UserRole  # noqa: E402

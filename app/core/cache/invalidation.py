@@ -1,4 +1,5 @@
-"""Cache invalidation: purge an entire namespace.
+"""
+Cache invalidation: purge an entire namespace.
 
 Services that write to a catalog call ``invalidate(namespace)`` after the
 write (via ``BaseService._invalidate_cache``), which deletes every key

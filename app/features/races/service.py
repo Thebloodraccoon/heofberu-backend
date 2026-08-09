@@ -184,4 +184,4 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         await self._invalidate_cache()
 
         self.repository.db.expire(race)
-        return self.response_schema.model_validate(await self._get_or_404(race.id))
+        return self.response_schema.model_validate(await self._get_or_404(race_id))

@@ -8,7 +8,7 @@ import pytest
 class TestItemCrud:
     async def test_player_cannot_create_item(self, client, player_token):
         response = await client.post(
-            "/items/",
+            "/items",
             json={"name": "Custom Item", "item_type": "WEAPON", "rarity": "NONE"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -17,7 +17,7 @@ class TestItemCrud:
 
     async def test_gm_can_create_item(self, client, gm_token):
         response = await client.post(
-            "/items/",
+            "/items",
             json={"name": "Longsword", "item_type": "WEAPON", "rarity": "NONE"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -29,7 +29,7 @@ class TestItemCrud:
     async def test_create_duplicate_item_name_returns_400(self, client, gm_token, create_item):
         await create_item(name="Longsword")
         response = await client.post(
-            "/items/",
+            "/items",
             json={"name": "Longsword", "item_type": "WEAPON", "rarity": "NONE"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

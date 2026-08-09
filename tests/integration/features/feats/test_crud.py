@@ -8,7 +8,7 @@ import pytest
 class TestFeatCrud:
     async def test_player_cannot_create_feat(self, client, player_token):
         response = await client.post(
-            "/feats/",
+            "/feats",
             json={"name": "Custom Feat"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -17,7 +17,7 @@ class TestFeatCrud:
 
     async def test_gm_can_create_feat(self, client, gm_token):
         response = await client.post(
-            "/feats/",
+            "/feats",
             json={"name": "Alert"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -28,7 +28,7 @@ class TestFeatCrud:
     async def test_create_duplicate_feat_name_returns_400(self, client, gm_token, create_feat):
         await create_feat(name="Lucky")
         response = await client.post(
-            "/feats/",
+            "/feats",
             json={"name": "Lucky"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -59,7 +59,7 @@ class TestFeatCrud:
 
     async def test_gm_can_create_feat_with_nested_features(self, client, gm_token):
         response = await client.post(
-            "/feats/",
+            "/feats",
             json={
                 "name": "Alert",
                 "features": [
@@ -74,7 +74,7 @@ class TestFeatCrud:
         assert [item["name"] for item in response.json()["features"]] == ["Alert Initiative", "Cannot Be Surprised"]
 
         feat_id = response.json()["id"]
-        listed = await client.get(f"/features/?source_type=FEAT&feat_id={feat_id}")
+        listed = await client.get(f"/features?source_type=FEAT&feat_id={feat_id}")
         assert listed.status_code == 200
         assert [item["name"] for item in listed.json()["items"]] == ["Alert Initiative", "Cannot Be Surprised"]
 
@@ -98,7 +98,7 @@ class TestFeatCrud:
         await create_feat(name="Doomed Feat")
 
         response = await client.post(
-            "/feats/",
+            "/feats",
             json={"name": "With Benefit", "features": [{"name": "Benefit", "description": "Something useful."}]},
             headers={"Authorization": f"Bearer {founder_token}"},
         )
@@ -144,7 +144,7 @@ class TestFeatCrud:
 
     async def test_gm_can_replace_feat_features_by_id(self, client, gm_token):
         created = await client.post(
-            "/feats/",
+            "/feats",
             json={
                 "name": "Alert",
                 "features": [

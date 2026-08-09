@@ -11,7 +11,7 @@ router = APIRouter(tags=["Characters Core"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[CharacterResponse],
     summary="List characters",
 )
@@ -44,9 +44,7 @@ async def get_characters(
     individually (via `GET /{character_id}`) shows base values only.
     """
 
-    return await character_service.get_characters(
-        current_user, search=search, class_id=class_id, page=page, size=size
-    )
+    return await character_service.get_characters(current_user, search=search, class_id=class_id, page=page, size=size)
 
 
 @router.get(
@@ -74,7 +72,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
 
 
 @router.post(
-    "/",
+    "",
     response_model=CharacterResponse,
     status_code=201,
     summary="Create a character",

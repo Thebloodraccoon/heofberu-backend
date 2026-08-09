@@ -189,7 +189,9 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
             character_class = await self.repository.update(character_class, fields)
 
         if update_data.primary_abilities is not None:
-            character_class = await self.repository.set_primary_abilities(character_class, update_data.primary_abilities)
+            character_class = await self.repository.set_primary_abilities(
+                character_class, update_data.primary_abilities
+            )
 
         if update_data.saving_throws is not None:
             character_class = await self.repository.set_saving_throws(character_class, update_data.saving_throws)
@@ -338,7 +340,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         await self._invalidate_cache()
 
         self.repository.db.expire(subclass)
-        return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass.id))
+        return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass_id))
 
     async def delete_subclass(self, class_id: int, subclass_id: int) -> None:
         subclass = await self._get_subclass_or_404(class_id, subclass_id)

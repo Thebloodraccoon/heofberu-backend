@@ -16,7 +16,7 @@ router = APIRouter(prefix="/features", tags=["Features"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[FeatureGetAllResponse],
     summary="List features (filterable)",
 )
@@ -84,7 +84,7 @@ async def get_feature(feature_id: int, feature_service: FeatureServiceDep):
 
 
 @router.post(
-    "/",
+    "",
     response_model=FeatureResponse,
     status_code=201,
     summary="Create a standalone feature",

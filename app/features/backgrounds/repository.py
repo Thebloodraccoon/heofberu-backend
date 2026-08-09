@@ -1,11 +1,12 @@
 """Background repository: base CRUD plus granted-skill management."""
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import CharacterFeature, Feature
+from app.models.background_association_models import background_skills
 from app.models.background_model import Background
 from app.models.skill_model import Skill
 
@@ -52,13 +53,24 @@ class BackgroundRepository(BaseRepository[Background]):
         """
         Replace all granted skills for a background with the given list.
 
+        Written through the association table (delete + insert) instead of
+        assigning the ORM ``granted_skills`` relationship: assigning an
+        unloaded many-to-many collection would trigger a lazy load, which
+        is not supported on the async stack. See ``RaceRepository.set_skills``
+        for the same pattern.
+
         ``commit`` lets callers that need atomicity across multiple writes
         (e.g. creating a background + its skills together) defer the
-        commit and flush instead, without duplicating this method. See
-        ``RaceRepository.set_skills`` for the same pattern.
+        commit and flush instead, without duplicating this method.
         """
 
-        background.granted_skills = skills
+        await self.db.execute(delete(background_skills).where(background_skills.c.background_id == background.id))
+
+        if skills:
+            await self.db.execute(
+                background_skills.insert(),
+                [{"background_id": background.id, "skill_id": skill.id} for skill in skills],
+            )
 
         if commit:
             await self.db.commit()

@@ -73,9 +73,7 @@ async def _desired_features(db: AsyncSession, character: Character) -> list[Feat
         return []
 
     result = await db.execute(
-        select(Feature)
-        .where(or_(*conditions))
-        .where(or_(Feature.level.is_(None), Feature.level <= character.level))
+        select(Feature).where(or_(*conditions)).where(or_(Feature.level.is_(None), Feature.level <= character.level))
     )
     return list(result.scalars().unique().all())
 

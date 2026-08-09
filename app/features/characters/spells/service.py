@@ -108,9 +108,7 @@ class CharacterSpellService(CharacterSubDomainService):
         )
         return SpellSlotResponse.model_validate(slot)
 
-    async def get_known_spells(
-        self, character_id: int, current_user: UserResponse
-    ) -> list[CharacterSpellResponse]:
+    async def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:
         """List all spells known by the character."""
 
         await self.get_character_for_user(character_id, current_user)

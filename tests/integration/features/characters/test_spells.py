@@ -6,7 +6,9 @@ import pytest
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCharacterSpellSlots:
-    async def test_get_spell_slots_for_caster(self, client, player, player_token, create_caster_class, create_api_character):
+    async def test_get_spell_slots_for_caster(
+        self, client, player, player_token, create_caster_class, create_api_character
+    ):
         character_class = await create_caster_class(name="Wizard")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
@@ -60,7 +62,9 @@ class TestCharacterSpellSlots:
 
         assert response.status_code == 422
 
-    async def test_cannot_set_total_via_schema(self, client, player, player_token, create_caster_class, create_api_character):
+    async def test_cannot_set_total_via_schema(
+        self, client, player, player_token, create_caster_class, create_api_character
+    ):
         """`total` is not client-settable — sending it is rejected with a 422."""
         character_class = await create_caster_class(name="Wizard")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
@@ -73,7 +77,9 @@ class TestCharacterSpellSlots:
 
         assert response.status_code == 422
 
-    async def test_cannot_spend_into_level_without_slots(self, client, player, player_token, create_class, create_character):
+    async def test_cannot_spend_into_level_without_slots(
+        self, client, player, player_token, create_class, create_character
+    ):
         """A class with no spell-slot progression grants no slots — spending is rejected."""
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)

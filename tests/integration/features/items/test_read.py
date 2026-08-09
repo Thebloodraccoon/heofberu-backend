@@ -10,7 +10,7 @@ class TestItemOpenRead:
         await create_item(name="Longsword", item_type="WEAPON")
         await create_item(name="Leather Armor", item_type="ARMOR")
 
-        response = await client.get("/items/")
+        response = await client.get("/items")
 
         assert response.status_code == 200
         names = {item["name"] for item in response.json()["items"]}
@@ -20,12 +20,12 @@ class TestItemOpenRead:
         await create_item(name="Longsword", item_type="WEAPON", rarity="NONE")
         await create_item(name="Cloak of Protection", item_type="WONDROUS_ITEM", rarity="UNCOMMON")
 
-        response = await client.get("/items/?item_type=WEAPON")
+        response = await client.get("/items?item_type=WEAPON")
 
         assert response.status_code == 200
         assert all(item["item_type"] == "WEAPON" for item in response.json()["items"])
 
-        rarity_response = await client.get("/items/?rarity=UNCOMMON")
+        rarity_response = await client.get("/items?rarity=UNCOMMON")
         assert [item["name"] for item in rarity_response.json()["items"]] == ["Cloak of Protection"]
 
     async def test_get_item_by_id(self, client, create_item):

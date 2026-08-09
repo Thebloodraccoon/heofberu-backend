@@ -1,4 +1,5 @@
-"""The ``@use_cache`` decorator: transparent per-call Redis caching.
+"""
+The ``@use_cache`` decorator: transparent per-call Redis caching.
 
 Usage (service methods, async stack):
 
@@ -47,13 +48,13 @@ from app.core.cache.serialization import decode, encode
 
 
 def use_cache(
-        *,
-        ttl: int | None = None,
-        namespace: str | None = None,
-        key_builder: Callable[..., str] | None = None,
-        skip_if: Callable[..., bool] | None = None,
-        schema: type | None = None,
-        cache_none: bool = True,
+    *,
+    ttl: int | None = None,
+    namespace: str | None = None,
+    key_builder: Callable[..., str] | None = None,
+    skip_if: Callable[..., bool] | None = None,
+    schema: type | None = None,
+    cache_none: bool = True,
 ) -> Callable:
     """Decorate a sync or async function so its result is cached in Redis."""
 
@@ -101,11 +102,11 @@ def _resolve_return_schema(func: Callable) -> Any:
 
 
 def _build_key(
-        namespace: str | None,
-        func: Callable,
-        args: tuple,
-        kwargs: dict,
-        key_builder: Callable[..., str] | None,
+    namespace: str | None,
+    func: Callable,
+    args: tuple,
+    kwargs: dict,
+    key_builder: Callable[..., str] | None,
 ) -> str:
     if key_builder is not None:
         return key_builder(*args, **kwargs)
@@ -133,7 +134,8 @@ def _resolve_namespace(explicit: str | None, args: tuple, func: Callable) -> str
 
 
 def _canonical(value: Any) -> str:
-    """Stable string rendering of an argument for cache keys.
+    """
+    Stable string rendering of an argument for cache keys.
 
     Dicts are key-sorted so ``filters={"name": x, "kind": y}`` and
     ``filters={"kind": y, "name": x}`` produce the same key. ``None``
@@ -141,11 +143,9 @@ def _canonical(value: Any) -> str:
     """
 
     if isinstance(value, dict):
-        return "{" + ",".join(
-            f"{k}={_canonical(v)}" for k, v in sorted(value.items()) if v is not None
-        ) + "}"
+        return "{" + ",".join(f"{k}={_canonical(v)}" for k, v in sorted(value.items()) if v is not None) + "}"
 
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return "[" + ",".join(_canonical(v) for v in value) + "]"
 
     return str(value)

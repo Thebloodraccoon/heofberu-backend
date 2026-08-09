@@ -1,4 +1,5 @@
-"""Unit tests for the ``@use_cache`` decorator against a fake Redis store.
+"""
+Unit tests for the ``@use_cache`` decorator against a fake Redis store.
 
 The cache layer is exercised with an in-memory ``FakeRedis`` that mimics the
 async ``get``/``set``/``scan_iter``/``delete`` surface, injected by patching
@@ -9,11 +10,11 @@ per-test (``app.settings.test`` keeps it off by default).
 from contextlib import asynccontextmanager
 import fnmatch
 
-import pytest
 from pydantic import BaseModel
+import pytest
 
-import app.core.cache.client as cache_client
 from app.core.cache import invalidate, use_cache
+import app.core.cache.client as cache_client
 from app.settings import settings
 
 

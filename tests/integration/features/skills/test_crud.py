@@ -8,7 +8,7 @@ import pytest
 class TestSkillCrud:
     async def test_player_cannot_create_skill(self, client, player_token):
         response = await client.post(
-            "/skills/",
+            "/skills",
             json={"key": "CUSTOM", "name": "Custom", "ability": "STR"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -17,7 +17,7 @@ class TestSkillCrud:
 
     async def test_gm_can_create_skill(self, client, gm_token):
         response = await client.post(
-            "/skills/",
+            "/skills",
             json={"key": "CUSTOM", "name": "Custom Skill", "ability": "STR"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -28,7 +28,7 @@ class TestSkillCrud:
     async def test_create_duplicate_skill_key_returns_400(self, client, gm_token, create_skill):
         await create_skill(key="STEALTH", name="Stealth", ability="DEX")
         response = await client.post(
-            "/skills/",
+            "/skills",
             json={"key": "STEALTH", "name": "Stealth", "ability": "DEX"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

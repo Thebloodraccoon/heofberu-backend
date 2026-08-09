@@ -1,7 +1,6 @@
 """Tests for the class write endpoints."""
 
 import pytest
-
 from sqlalchemy import func, select
 
 
@@ -10,7 +9,7 @@ from sqlalchemy import func, select
 class TestClassCrud:
     async def test_player_cannot_create_class(self, client, player_token):
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={"name": "Homebrew", "hit_dice": "D8", "spellcasting_ability": None},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -19,7 +18,7 @@ class TestClassCrud:
 
     async def test_gm_can_create_non_caster_class(self, client, gm_token):
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={"name": "Fighter", "hit_dice": "D10", "spellcasting_ability": None},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -33,7 +32,7 @@ class TestClassCrud:
         skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
 
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={
                 "name": "Wizard",
                 "hit_dice": "D6",
@@ -54,7 +53,7 @@ class TestClassCrud:
 
     async def test_create_class_with_nested_features(self, client, gm_token):
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={
                 "name": "Fighter",
                 "hit_dice": "D10",
@@ -70,7 +69,7 @@ class TestClassCrud:
         assert response.status_code == 201
         class_id = response.json()["id"]
 
-        features = (await client.get(f"/features/?source_type=CLASS&class_id={class_id}")).json()["items"]
+        features = (await client.get(f"/features?source_type=CLASS&class_id={class_id}")).json()["items"]
         assert [feature["name"] for feature in features] == ["Second Wind", "Extra Attack"]
         assert all(feature["source_type"] == "CLASS" and feature["class_id"] == class_id for feature in features)
         assert {feature["name"]: feature["level"] for feature in features} == {
@@ -80,7 +79,7 @@ class TestClassCrud:
 
     async def test_create_class_with_spell_slot_progression(self, client, gm_token):
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={
                 "name": "Wizard",
                 "hit_dice": "D6",
@@ -107,7 +106,7 @@ class TestClassCrud:
 
     async def test_create_class_with_nested_subclass_and_features(self, client, gm_token):
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={
                 "name": "Fighter",
                 "hit_dice": "D10",
@@ -128,13 +127,13 @@ class TestClassCrud:
         assert [item["name"] for item in body["subclasses"]] == ["Champion"]
 
         subclass_id = body["subclasses"][0]["id"]
-        features = (await client.get(f"/features/?source_type=SUBCLASS&subclass_id={subclass_id}")).json()["items"]
+        features = (await client.get(f"/features?source_type=SUBCLASS&subclass_id={subclass_id}")).json()["items"]
         assert [item["name"] for item in features] == ["Improved Critical"]
         assert all(item["source_type"] == "SUBCLASS" and item["subclass_id"] == subclass_id for item in features)
 
     async def test_create_class_spellcasting_ability_not_primary_returns_400(self, client, gm_token):
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={"name": "Bad Caster", "hit_dice": "D8", "spellcasting_ability": "CHA"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -144,7 +143,7 @@ class TestClassCrud:
     async def test_create_duplicate_class_name_returns_400(self, client, gm_token, create_class):
         await create_class(name="Fighter")
         response = await client.post(
-            "/classes/",
+            "/classes",
             json={"name": "Fighter", "hit_dice": "D10", "spellcasting_ability": None},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -163,7 +162,9 @@ class TestClassCrud:
         assert response.status_code == 200
         assert response.json()["name"] == "New Name"
 
-    async def test_update_primary_abilities_dropping_spellcasting_ability_returns_400(self, client, gm_token, create_class):
+    async def test_update_primary_abilities_dropping_spellcasting_ability_returns_400(
+        self, client, gm_token, create_class
+    ):
         character_class = await create_class(name="Wizard", spellcasting_ability="INT")
 
         response = await client.patch(
@@ -224,7 +225,9 @@ class TestClassCrud:
     async def test_gm_cannot_delete_class(self, client, gm_token, create_class):
         character_class = await create_class(name="Doomed Class")
 
-        response = await client.delete(f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {gm_token}"})
+        response = await client.delete(
+            f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {gm_token}"}
+        )
 
         assert response.status_code == 403
         assert (await client.get(f"/classes/{character_class.id}")).status_code == 200
@@ -232,7 +235,9 @@ class TestClassCrud:
     async def test_founder_can_delete_class(self, client, founder_token, create_class):
         character_class = await create_class(name="Doomed Class")
 
-        response = await client.delete(f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        response = await client.delete(
+            f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {founder_token}"}
+        )
 
         assert response.status_code == 204
         assert (await client.get(f"/classes/{character_class.id}")).status_code == 404
@@ -244,7 +249,9 @@ class TestClassCrud:
         player = await create_user()
         await create_character(owner_id=player.id, class_id=character_class.id)
 
-        response = await client.delete(f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        response = await client.delete(
+            f"/classes/{character_class.id}", headers={"Authorization": f"Bearer {founder_token}"}
+        )
 
         assert response.status_code == 409
 
@@ -282,7 +289,7 @@ class TestClassCrud:
         assert body["unlock_level"] == 3
         assert [item["name"] for item in body["features"]] == ["Improved Critical", "Remarkable Athlete"]
 
-        features = (await client.get(f"/features/?source_type=SUBCLASS&subclass_id={subclass_id}")).json()["items"]
+        features = (await client.get(f"/features?source_type=SUBCLASS&subclass_id={subclass_id}")).json()["items"]
         assert all(item["source_type"] == "SUBCLASS" and item["subclass_id"] == subclass_id for item in features)
 
     async def test_gm_can_update_subclass(self, client, gm_token, create_class, create_subclass):
@@ -308,9 +315,7 @@ class TestClassCrud:
         )
 
         assert response.status_code == 204
-        assert (
-            await client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}")
-        ).status_code == 404
+        assert (await client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}")).status_code == 404
 
     async def test_player_cannot_replace_class_features(self, client, player_token, create_class):
         character_class = await create_class(name="Fighter")
@@ -325,7 +330,7 @@ class TestClassCrud:
 
     async def test_gm_can_replace_class_features_by_id(self, client, gm_token):
         created = await client.post(
-            "/classes/",
+            "/classes",
             json={
                 "name": "Fighter",
                 "hit_dice": "D10",
@@ -374,7 +379,9 @@ class TestClassCrud:
 
         assert response.status_code == 400
 
-    async def test_replace_class_features_duplicate_ids_returns_422(self, client, gm_token, create_class, create_feature):
+    async def test_replace_class_features_duplicate_ids_returns_422(
+        self, client, gm_token, create_class, create_feature
+    ):
         character_class = await create_class(name="Fighter")
         feature = await create_feature(name="Second Wind", source_type="CLASS", class_id=character_class.id)
 
@@ -414,7 +421,7 @@ class TestClassCrud:
         from app.models import CharacterFeature
 
         created = await client.post(
-            "/classes/",
+            "/classes",
             json={
                 "name": "Fighter",
                 "hit_dice": "D10",
@@ -444,27 +451,21 @@ class TestClassCrud:
         )
         assert response.status_code == 200
 
-        await db_session.expire_all()
+        db_session.expire_all()
         assert (
-            (
-                await db_session.execute(
-                    select(func.count()).select_from(CharacterFeature).where(
-                        CharacterFeature.feature_id == original["Extra Attack"]
-                    )
-                )
-            ).scalar()
-            == 1
-        )
+            await db_session.execute(
+                select(func.count())
+                .select_from(CharacterFeature)
+                .where(CharacterFeature.feature_id == original["Extra Attack"])
+            )
+        ).scalar() == 1
         assert (
-            (
-                await db_session.execute(
-                    select(func.count()).select_from(CharacterFeature).where(
-                        CharacterFeature.feature_id == original["Second Wind"]
-                    )
-                )
-            ).scalar()
-            == 0
-        )
+            await db_session.execute(
+                select(func.count())
+                .select_from(CharacterFeature)
+                .where(CharacterFeature.feature_id == original["Second Wind"])
+            )
+        ).scalar() == 0
 
     async def test_player_cannot_replace_subclass_features(self, client, player_token, create_class, create_subclass):
         character_class = await create_class(name="Fighter")

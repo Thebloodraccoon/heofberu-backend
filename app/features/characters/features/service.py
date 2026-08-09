@@ -41,9 +41,7 @@ class CharacterFeatureService(CharacterSubDomainService):
         self.feature_grant_repository = CharacterFeatureRepository(db)
         self.feature_repository = FeatureRepository(db)
 
-    async def get_features(
-        self, character_id: int, current_user: UserResponse
-    ) -> list[CharacterFeatureResponse]:
+    async def get_features(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatureResponse]:
         """List every feature recorded on a character."""
 
         await self.get_character_for_user(character_id, current_user)

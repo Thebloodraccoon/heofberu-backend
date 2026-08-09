@@ -10,7 +10,7 @@ class TestSpellOpenRead:
         await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
         await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
-        response = await client.get("/spells/")
+        response = await client.get("/spells")
 
         assert response.status_code == 200
         names = {item["name"] for item in response.json()["items"]}
@@ -20,7 +20,7 @@ class TestSpellOpenRead:
         await create_spell(name="Cure Wounds", school="EVOCATION", level="LEVEL_1")
         await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
-        response = await client.get("/spells/?level=LEVEL_3")
+        response = await client.get("/spells?level=LEVEL_3")
 
         assert response.status_code == 200
         assert [item["name"] for item in response.json()["items"]] == ["Fireball"]

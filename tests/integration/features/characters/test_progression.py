@@ -33,7 +33,9 @@ class TestRaceChange:
     ):
         character_class = await create_class(name="Fighter")
         character, _ = await create_api_character(class_id=character_class.id, owner=player, dexterity=10)
-        race = await set_race_ability_bonuses(client, gm_token, await create_race(name="Elf"), [{"ability": "DEX", "bonus": 2}])
+        race = await set_race_ability_bonuses(
+            client, gm_token, await create_race(name="Elf"), [{"ability": "DEX", "bonus": 2}]
+        )
 
         response = await client.patch(
             f"/characters/{character['id']}/progression/race",
@@ -50,8 +52,12 @@ class TestRaceChange:
         self, client, player, player_token, gm_token, create_class, create_race, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        race = await set_race_ability_bonuses(client, gm_token, await create_race(name="Elf"), [{"ability": "DEX", "bonus": 2}])
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, race_id=race.id, dexterity=10)
+        race = await set_race_ability_bonuses(
+            client, gm_token, await create_race(name="Elf"), [{"ability": "DEX", "bonus": 2}]
+        )
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, race_id=race.id, dexterity=10
+        )
 
         response = await client.patch(
             f"/characters/{character['id']}/progression/race",
@@ -462,7 +468,9 @@ class TestLevelUp:
         slots = {item["spell_level"]: item for item in response.json()["spell_slots"]}
         assert slots["LEVEL_1"]["total"] == 3
 
-    async def test_level_up_at_max_level_returns_400(self, client, player, player_token, create_class, create_api_character):
+    async def test_level_up_at_max_level_returns_400(
+        self, client, player, player_token, create_class, create_api_character
+    ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         character, _ = await create_api_character(class_id=character_class.id, owner=player, level=20)
 

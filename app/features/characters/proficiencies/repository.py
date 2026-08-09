@@ -27,9 +27,7 @@ class CharacterProficiencyRepository(BaseRepository[CharacterSkillProficiency]):
     def __init__(self, db: AsyncSession):
         super().__init__(CharacterSkillProficiency, db)
 
-    async def get_skill_proficiency(
-        self, character_id: int, skill_id: int
-    ) -> CharacterSkillProficiency | None:
+    async def get_skill_proficiency(self, character_id: int, skill_id: int) -> CharacterSkillProficiency | None:
         """Fetch a single skill proficiency row, or None if not present."""
 
         result = await self.db.execute(
@@ -74,19 +72,19 @@ class CharacterProficiencyRepository(BaseRepository[CharacterSkillProficiency]):
             )
 
         await self.db.commit()
+        self.db.expire(character, ["skill_proficiencies"])
         return character
 
     async def set_saving_throw_proficiencies(self, character: Character, abilities: list[str]) -> Character:
         """Replace all saving throw proficiencies for a character with the given list."""
 
         await self.db.execute(
-            delete(CharacterSavingThrowProficiency).where(
-                CharacterSavingThrowProficiency.character_id == character.id
-            )
+            delete(CharacterSavingThrowProficiency).where(CharacterSavingThrowProficiency.character_id == character.id)
         )
 
         for ability in abilities:
             self.db.add(CharacterSavingThrowProficiency(character_id=character.id, ability=ability))
 
         await self.db.commit()
+        self.db.expire(character, ["saving_throw_proficiencies"])
         return character

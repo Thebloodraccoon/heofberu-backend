@@ -192,7 +192,10 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
         result = await self.db.execute(
             select(CharacterSpell)
             .options(selectinload(CharacterSpell.spell))
-            .where(CharacterSpell.id == character_spell.id)
+            .where(
+                CharacterSpell.character_id == character_id,
+                CharacterSpell.spell_id == spell_id,
+            )
         )
         return result.scalar_one()
 

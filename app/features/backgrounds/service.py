@@ -174,4 +174,4 @@ class BackgroundService(
         await self._invalidate_cache()
 
         self.repository.db.expire(background)
-        return self.response_schema.model_validate(await self._get_or_404(background.id))
+        return self.response_schema.model_validate(await self._get_or_404(background_id))

@@ -10,7 +10,7 @@ class TestSkillOpenRead:
         await create_skill(key="ACROBATICS", name="Acrobatics", ability="DEX")
         await create_skill(key="ANIMAL_HANDLING", name="Animal Handling", ability="WIS")
 
-        response = await client.get("/skills/")
+        response = await client.get("/skills")
 
         assert response.status_code == 200
         keys = {item["key"] for item in response.json()["items"]}
@@ -20,12 +20,12 @@ class TestSkillOpenRead:
         await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
         await create_skill(key="ARCANA", name="Arcana", ability="INT")
 
-        response = await client.get("/skills/?ability=STR")
+        response = await client.get("/skills?ability=STR")
 
         assert response.status_code == 200
         assert all(item["ability"] == "STR" for item in response.json()["items"])
 
-        search_response = await client.get("/skills/?search=arcana")
+        search_response = await client.get("/skills?search=arcana")
         assert [item["key"] for item in search_response.json()["items"]] == ["ARCANA"]
 
     async def test_get_skill_by_id(self, client, create_skill):

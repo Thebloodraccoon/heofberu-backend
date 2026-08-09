@@ -8,7 +8,7 @@ import pytest
 class TestBackgroundCrud:
     async def test_player_cannot_create_background(self, client, player_token):
         response = await client.post(
-            "/backgrounds/",
+            "/backgrounds",
             json={"name": "Custom"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -17,7 +17,7 @@ class TestBackgroundCrud:
 
     async def test_gm_can_create_background(self, client, gm_token):
         response = await client.post(
-            "/backgrounds/",
+            "/backgrounds",
             json={"name": "Hermit"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -28,7 +28,7 @@ class TestBackgroundCrud:
     async def test_create_duplicate_background_name_returns_400(self, client, gm_token, create_background):
         await create_background(name="Acolyte")
         response = await client.post(
-            "/backgrounds/",
+            "/backgrounds",
             json={"name": "Acolyte"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -50,7 +50,7 @@ class TestBackgroundCrud:
 
     async def test_gm_can_create_background_with_nested_features(self, client, gm_token):
         response = await client.post(
-            "/backgrounds/",
+            "/backgrounds",
             json={
                 "name": "Acolyte",
                 "features": [
@@ -64,7 +64,7 @@ class TestBackgroundCrud:
         assert [item["name"] for item in response.json()["features"]] == ["Shelter of the Faithful"]
 
         background_id = response.json()["id"]
-        listed = await client.get(f"/features/?source_type=BACKGROUND&background_id={background_id}")
+        listed = await client.get(f"/features?source_type=BACKGROUND&background_id={background_id}")
         assert listed.status_code == 200
         assert [item["name"] for item in listed.json()["items"]] == ["Shelter of the Faithful"]
 
@@ -79,7 +79,9 @@ class TestBackgroundCrud:
     async def test_founder_can_delete_background(self, client, founder_token, create_background):
         background = await create_background(name="Doomed Background")
 
-        response = await client.delete(f"/backgrounds/{background.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        response = await client.delete(
+            f"/backgrounds/{background.id}", headers={"Authorization": f"Bearer {founder_token}"}
+        )
 
         assert response.status_code == 204
         assert (await client.get(f"/backgrounds/{background.id}")).status_code == 404
@@ -96,7 +98,9 @@ class TestBackgroundCrud:
         create_feature,
     ):
         background = await create_background(name="Popular Background")
-        shelter = await create_feature(name="Shelter of the Faithful", source_type="BACKGROUND", background_id=background.id)
+        shelter = await create_feature(
+            name="Shelter of the Faithful", source_type="BACKGROUND", background_id=background.id
+        )
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
@@ -107,7 +111,9 @@ class TestBackgroundCrud:
         )
         assert add_response.status_code == 201
 
-        response = await client.delete(f"/backgrounds/{background.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        response = await client.delete(
+            f"/backgrounds/{background.id}", headers={"Authorization": f"Bearer {founder_token}"}
+        )
 
         assert response.status_code == 409
         assert (await client.get(f"/backgrounds/{background.id}")).status_code == 200
@@ -125,7 +131,7 @@ class TestBackgroundCrud:
 
     async def test_gm_can_replace_background_features_by_id(self, client, gm_token):
         created = await client.post(
-            "/backgrounds/",
+            "/backgrounds",
             json={
                 "name": "Acolyte",
                 "features": [

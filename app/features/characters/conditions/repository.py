@@ -22,9 +22,7 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
         )
         return list(result.scalars().unique().all())
 
-    async def get_character_condition(
-        self, character_id: int, condition: ConditionType
-    ) -> CharacterCondition | None:
+    async def get_character_condition(self, character_id: int, condition: ConditionType) -> CharacterCondition | None:
         """Fetch a character's active condition, if any."""
 
         result = await self.db.execute(

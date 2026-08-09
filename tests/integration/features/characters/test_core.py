@@ -10,7 +10,7 @@ class TestCharacterCreate:
         character_class = await create_class(name="Fighter", hit_dice="D10")
 
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Aragorn", "level": 1, "class_id": character_class.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -25,7 +25,7 @@ class TestCharacterCreate:
         character_class = await create_class(name="Fighter")
 
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Nobody", "class_id": character_class.id},
         )
 
@@ -33,7 +33,7 @@ class TestCharacterCreate:
 
     async def test_create_character_with_unknown_class_returns_404(self, client, player_token):
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Ghost", "class_id": 999999},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -44,7 +44,7 @@ class TestCharacterCreate:
         character_class = await create_caster_class(name="Wizard")
 
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Gandalf", "level": 1, "class_id": character_class.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -59,7 +59,7 @@ class TestCharacterCreate:
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
 
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Aragorn", "level": 1, "class_id": character_class.id, "subclass_id": subclass.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -75,7 +75,7 @@ class TestCharacterCreate:
         wizard_subclass = await create_subclass(class_id=wizard.id, name="School of Evocation")
 
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Ghost", "class_id": fighter.id, "subclass_id": wizard_subclass.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -94,7 +94,7 @@ class TestCharacterRead:
         await create_character(owner_id=player.id, class_id=character_class.id, name="Mine")
         await create_character(owner_id=other.id, class_id=character_class.id, name="Theirs")
 
-        response = await client.get("/characters/", headers={"Authorization": f"Bearer {player_token}"})
+        response = await client.get("/characters", headers={"Authorization": f"Bearer {player_token}"})
 
         assert response.status_code == 200
         names = [item["name"] for item in response.json()["items"]]
@@ -107,7 +107,7 @@ class TestCharacterRead:
         await create_character(owner_id=player1.id, class_id=character_class.id, name="Mine")
         await create_character(owner_id=player2.id, class_id=character_class.id, name="Theirs")
 
-        response = await client.get("/characters/", headers={"Authorization": f"Bearer {gm_token}"})
+        response = await client.get("/characters", headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 200
         assert len(response.json()["items"]) == 2
@@ -118,7 +118,7 @@ class TestCharacterRead:
         await create_character(owner_id=player.id, class_id=character_class.id, name="Legolas")
 
         response = await client.get(
-            "/characters/?search=ara",
+            "/characters?search=ara",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -132,21 +132,23 @@ class TestCharacterRead:
         await create_character(owner_id=player.id, class_id=wizard.id, name="Gandalf")
 
         response = await client.get(
-            f"/characters/?class_id={wizard.id}",
+            f"/characters?class_id={wizard.id}",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 200
         assert [item["name"] for item in response.json()["items"]] == ["Gandalf"]
 
-    async def test_list_search_combines_with_class_filter(self, client, player, player_token, create_class, create_character):
+    async def test_list_search_combines_with_class_filter(
+        self, client, player, player_token, create_class, create_character
+    ):
         fighter = await create_class(name="Fighter")
         wizard = await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
         await create_character(owner_id=player.id, class_id=fighter.id, name="Gandalf")
         await create_character(owner_id=player.id, class_id=wizard.id, name="Gandalf the Grey")
 
         response = await client.get(
-            f"/characters/?search=gandalf&class_id={wizard.id}",
+            f"/characters?search=gandalf&class_id={wizard.id}",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -157,7 +159,9 @@ class TestCharacterRead:
         character_class = await create_class(name="Fighter")
         character, _ = await create_api_character(class_id=character_class.id, owner=player, name="Boromir")
 
-        response = await client.get(f"/characters/{character['id']}", headers={"Authorization": f"Bearer {player_token}"})
+        response = await client.get(
+            f"/characters/{character['id']}", headers={"Authorization": f"Bearer {player_token}"}
+        )
 
         assert response.status_code == 200
         assert response.json()["name"] == "Boromir"
@@ -184,7 +188,9 @@ class TestCharacterRead:
         assert response.status_code == 200
 
     async def test_get_character_404(self, client, player_token):
-        assert (await client.get("/characters/999999", headers={"Authorization": f"Bearer {player_token}"})).status_code == 404
+        assert (
+            await client.get("/characters/999999", headers={"Authorization": f"Bearer {player_token}"})
+        ).status_code == 404
 
 
 @pytest.mark.integration
@@ -234,7 +240,9 @@ class TestCharacterUpdate:
         assert response.status_code == 200
         assert response.json()["subclass_id"] is None
 
-    async def test_strength_is_not_editable_via_patch(self, client, player, player_token, create_class, create_character):
+    async def test_strength_is_not_editable_via_patch(
+        self, client, player, player_token, create_class, create_character
+    ):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id, strength=10)
 
@@ -269,7 +277,9 @@ class TestCharacterDelete:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
-        response = await client.delete(f"/characters/{character.id}", headers={"Authorization": f"Bearer {player_token}"})
+        response = await client.delete(
+            f"/characters/{character.id}", headers={"Authorization": f"Bearer {player_token}"}
+        )
 
         assert response.status_code == 204
         assert (
@@ -283,7 +293,9 @@ class TestCharacterDelete:
         other = await create_user(username="other", email="other@example.com")
         character = await create_character(owner_id=other.id, class_id=character_class.id)
 
-        response = await client.delete(f"/characters/{character.id}", headers={"Authorization": f"Bearer {player_token}"})
+        response = await client.delete(
+            f"/characters/{character.id}", headers={"Authorization": f"Bearer {player_token}"}
+        )
 
         assert response.status_code == 403
 
@@ -351,7 +363,7 @@ class TestCharacterRest:
     async def test_long_rest_restores_hp_and_slots(self, client, player, player_token, create_caster_class):
         character_class = await create_caster_class(name="Wizard")
         character_response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Gandalf", "level": 1, "class_id": character_class.id, "max_hp": 20, "current_hp": 20},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -388,7 +400,7 @@ class TestCharacterRest:
     async def test_short_rest_is_accepted(self, client, player, player_token, create_class):
         character_class = await create_class(name="Fighter")
         response = await client.post(
-            "/characters/",
+            "/characters",
             json={"name": "Conan", "class_id": character_class.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )

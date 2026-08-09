@@ -17,7 +17,7 @@ router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[BackgroundGetAllResponse],
     summary="List backgrounds",
 )
@@ -66,7 +66,7 @@ async def get_background(background_id: int, background_service: BackgroundServi
 
 
 @router.post(
-    "/",
+    "",
     response_model=BackgroundResponse,
     status_code=201,
     summary="Create a background",

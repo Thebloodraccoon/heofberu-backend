@@ -1,4 +1,5 @@
-"""Integration tests for the Redis-backed cache against the real test Redis.
+"""
+Integration tests for the Redis-backed cache against the real test Redis.
 
 Requires the ``heof-test-redis`` container (``docker-compose.dev.yml``).
 The ``redis_client`` fixture (from ``tests/integration/conftest.py``) flushes
@@ -6,8 +7,8 @@ the database before and after every test. ``CACHE_ENABLED`` is flipped on
 per-test because the test stage keeps it off by default.
 """
 
-import pytest
 from pydantic import BaseModel
+import pytest
 
 from app.core.cache import invalidate, use_cache
 from app.core.cache.client import cache_delete_prefix, cache_get, cache_set

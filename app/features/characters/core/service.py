@@ -326,7 +326,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             if character.class_id is not None
             else {}
         )
-        await self.character_spell_slot_repository.apply_spell_slot_progression(character.id, slots_by_level, commit=commit)
+        await self.character_spell_slot_repository.apply_spell_slot_progression(
+            character.id, slots_by_level, commit=commit
+        )
 
     async def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """

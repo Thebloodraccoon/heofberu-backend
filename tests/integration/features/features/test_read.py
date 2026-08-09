@@ -10,7 +10,7 @@ class TestFeatureOpenRead:
         await create_feature(name="Extra Attack", source_type="OTHER")
         await create_feature(name="Darkvision", source_type="OTHER")
 
-        response = await client.get("/features/")
+        response = await client.get("/features")
 
         assert response.status_code == 200
         names = {item["name"] for item in response.json()["items"]}
@@ -20,7 +20,7 @@ class TestFeatureOpenRead:
         character_class = await create_class(name="Fighter")
         await create_feature(name="Extra Attack", source_type="CLASS", class_id=character_class.id, level=5)
 
-        response = await client.get(f"/features/?source_type=CLASS&class_id={character_class.id}")
+        response = await client.get(f"/features?source_type=CLASS&class_id={character_class.id}")
 
         assert response.status_code == 200
         assert [item["name"] for item in response.json()["items"]] == ["Extra Attack"]
@@ -30,7 +30,7 @@ class TestFeatureOpenRead:
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
         await create_feature(name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3)
 
-        response = await client.get(f"/features/?source_type=SUBCLASS&subclass_id={subclass.id}")
+        response = await client.get(f"/features?source_type=SUBCLASS&subclass_id={subclass.id}")
 
         assert response.status_code == 200
         assert [item["name"] for item in response.json()["items"]] == ["Improved Critical"]

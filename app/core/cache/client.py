@@ -1,4 +1,5 @@
-"""Low-level Redis cache store.
+"""
+Low-level Redis cache store.
 
 All access goes through ``settings.get_redis()`` (the same async context
 manager used by the JWT blacklist) so no connection lifecycle is managed
@@ -6,8 +7,9 @@ here. Every operation is wrapped in try/except: if Redis is down the cache
 behaves as an always-miss cache and the request proceeds to the database.
 """
 
+from collections.abc import Callable
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from app.settings import settings
 

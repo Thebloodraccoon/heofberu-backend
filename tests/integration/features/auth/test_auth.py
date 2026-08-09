@@ -37,7 +37,7 @@ class TestRegister:
         assert response.status_code == 201
         access_token = response.json()["access_token"]
 
-        gm_only_response = await client.get("/users/", headers={"Authorization": f"Bearer {access_token}"})
+        gm_only_response = await client.get("/users", headers={"Authorization": f"Bearer {access_token}"})
 
         assert gm_only_response.status_code == 403
 
@@ -136,7 +136,7 @@ class TestLogout:
         access_token = await login_as(user)
         await client.post("/auth/logout", headers={"Authorization": f"Bearer {access_token}"})
 
-        response = await client.get("/characters/", headers={"Authorization": f"Bearer {access_token}"})
+        response = await client.get("/characters", headers={"Authorization": f"Bearer {access_token}"})
 
         assert response.status_code == 401
 

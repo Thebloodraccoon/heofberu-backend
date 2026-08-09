@@ -27,7 +27,7 @@ router = APIRouter(prefix="/spells", tags=["Spells"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=Page[SpellGetAllResponse],
     summary="List spells",
 )
@@ -111,7 +111,7 @@ async def get_spell(spell_id: int, spell_service: SpellServiceDep):
 
 
 @router.post(
-    "/",
+    "",
     response_model=SpellResponse,
     status_code=201,
     summary="Create a spell",
