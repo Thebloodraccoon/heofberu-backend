@@ -6,6 +6,7 @@ Async stack: the engine/session layer is built on ``asyncpg`` +
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -42,13 +43,29 @@ def utcnow() -> datetime:
 
 
 def as_async_database_url(url: str) -> str:
-    """Convert a sync ``postgresql://`` URL to the asyncpg driver form."""
+    """Convert a sync ``postgresql://`` URL to the asyncpg driver form.
 
-    if "+asyncpg" in url:
+    Query params that asyncpg does not accept (``sslmode``, ``channel_binding``)
+    are stripped from the URL; ``sslmode`` is translated to asyncpg's ``ssl``.
+    Example: ``...?sslmode=require&channel_binding=require`` ->
+    ``...?ssl=require``.
+    """
+
+    if "+asyncpg" not in url:
+        url = url.replace("postgres://", "postgresql://")
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    parts = urlsplit(url)
+    if not parts.query:
         return url
 
-    url = url.replace("postgres://", "postgresql://")
-    return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    sslmode = query.pop("sslmode", None)
+    query.pop("channel_binding", None)
+    if sslmode:
+        query["ssl"] = sslmode
+
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 def make_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
