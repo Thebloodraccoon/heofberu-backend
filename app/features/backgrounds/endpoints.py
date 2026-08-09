@@ -21,7 +21,7 @@ router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
     response_model=Page[BackgroundGetAllResponse],
     summary="List backgrounds",
 )
-def get_backgrounds(
+async def get_backgrounds(
     background_service: BackgroundServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -42,7 +42,8 @@ def get_backgrounds(
     Does not include suggestion text, description, or features — use
     `GET /backgrounds/{background_id}` for the full record.
     """
-    return background_service.get_all(page=page, size=size, search=search)
+
+    return await background_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(
@@ -53,14 +54,15 @@ def get_backgrounds(
         404: {"description": "Background with id not found."},
     },
 )
-def get_background(background_id: int, background_service: BackgroundServiceDep):
+async def get_background(background_id: int, background_service: BackgroundServiceDep):
     """
     Return a single background by ID, with full detail — including
     granted skills and features.
 
     Open endpoint, no authentication required.
     """
-    return background_service.get_by_id(background_id)
+
+    return await background_service.get_by_id(background_id)
 
 
 @router.post(
@@ -73,7 +75,7 @@ def get_background(background_id: int, background_service: BackgroundServiceDep)
         400: {"description": "One or more `granted_skills` IDs don't correspond to an existing skill."},
     },
 )
-def create_background(
+async def create_background(
     background_service: BackgroundServiceDep,
     current_user: GmUserDep,
     background_data: BackgroundCreate = Body(
@@ -113,7 +115,8 @@ def create_background(
     by a `PUT`. Nested `features` become BACKGROUND-source features that
     every character bearing this background gains automatically.
     """
-    return background_service.create_background(background_data, created_by_id=current_user.id)
+
+    return await background_service.create_background(background_data, created_by_id=current_user.id)
 
 
 @router.patch(
@@ -125,7 +128,7 @@ def create_background(
         409: {"description": "Another background already uses the requested name."},
     },
 )
-def update_background(
+async def update_background(
     background_id: int, update_data: BackgroundUpdate, background_service: BackgroundServiceDep, _: GmUserDep
 ):
     """
@@ -135,7 +138,7 @@ def update_background(
     are left as-is. Does not touch granted skills — use
     `PUT /backgrounds/{background_id}/skills` for that.
     """
-    return background_service.update(background_id, update_data)
+    return await background_service.update(background_id, update_data)
 
 
 @router.delete(
@@ -146,7 +149,7 @@ def update_background(
         404: {"description": "No background exists with the given ID."},
     },
 )
-def delete_background(background_id: int, background_service: BackgroundServiceDep, _: FounderDep):
+async def delete_background(background_id: int, background_service: BackgroundServiceDep, _: FounderDep):
     """
     Delete a background. **Found-father only.**
 
@@ -156,7 +159,8 @@ def delete_background(background_id: int, background_service: BackgroundServiceD
     blocked (409) once one of its features has been granted to a
     character.
     """
-    background_service.delete(background_id)
+
+    await background_service.delete(background_id)
     return None
 
 
@@ -169,7 +173,7 @@ def delete_background(background_id: int, background_service: BackgroundServiceD
         404: {"description": "No background exists with the given ID."},
     },
 )
-def set_background_skills(
+async def set_background_skills(
     background_id: int,
     background_service: BackgroundServiceDep,
     _: GmUserDep,
@@ -193,7 +197,8 @@ def set_background_skills(
     the complete set of skills this background grants — any skill not
     included is removed. Send an empty list to clear all granted skills.
     """
-    return background_service.set_skills(background_id, data)
+
+    return await background_service.set_skills(background_id, data)
 
 
 @router.put(
@@ -206,7 +211,7 @@ def set_background_skills(
         404: {"description": "No background exists with the given ID."},
     },
 )
-def replace_background_features(
+async def replace_background_features(
     background_id: int,
     background_service: BackgroundServiceDep,
     _: GmUserDep,
@@ -251,4 +256,5 @@ def replace_background_features(
     `id` that doesn't belong to this background is rejected with 400;
     duplicate ids within one request are rejected with 422.
     """
-    return background_service.replace_background_features(background_id, data, created_by_id=_.id)
+
+    return await background_service.replace_background_features(background_id, data, created_by_id=_.id)

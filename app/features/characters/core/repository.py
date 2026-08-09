@@ -1,6 +1,8 @@
 """Character repository: base CRUD plus owner scoping and HP updates."""
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models.character_model import Character
@@ -40,7 +42,7 @@ class CharacterRepository(BaseRepository[Character]):
     generic ``update`` call.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             Character,
             db,
@@ -53,17 +55,16 @@ class CharacterRepository(BaseRepository[Character]):
             search_fields=["name"],
         )
 
-    def update_hp(self, character: Character, current_hp: int, temp_hp: int) -> Character:
+    async def update_hp(self, character: Character, current_hp: int, temp_hp: int) -> Character:
         """Set current and temp HP directly. Bounds/validation happen in the service."""
 
         character.current_hp = current_hp
         character.temp_hp = temp_hp
-        self.db.commit()
-        self.db.refresh(character)
+        await self.db.commit()
 
         return character
 
-    def get_by_id_light(self, model_id: int) -> Character | None:
+    async def get_by_id_light(self, model_id: int) -> Character | None:
         """
         Fetch a ``Character`` row WITHOUT the eager-loaded collections.
 
@@ -74,4 +75,5 @@ class CharacterRepository(BaseRepository[Character]):
         call for nothing.
         """
 
-        return self.db.query(Character).filter(Character.id == model_id).first()
+        result = await self.db.execute(select(Character).where(Character.id == model_id))
+        return result.scalar_one_or_none()

@@ -28,7 +28,7 @@ router = APIRouter(prefix="/classes", tags=["Classes"])
     response_model=Page[ClassGetAllResponse],
     summary="List classes",
 )
-def get_classes(
+async def get_classes(
     class_service: ClassServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -49,7 +49,7 @@ def get_classes(
     skills — use `GET /classes/{class_id}` for the full record.
     """
 
-    return class_service.get_all(page=page, size=size, search=search)
+    return await class_service.get_all(page=page, size=size, search=search)
 
 
 @router.get(
@@ -60,7 +60,7 @@ def get_classes(
         404: {"description": "Class with id not found."},
     },
 )
-def get_class(class_id: int, class_service: ClassServiceDep):
+async def get_class(class_id: int, class_service: ClassServiceDep):
     """
     Return a single class by ID, with full detail — including primary
     abilities, saving throws, and available skills.
@@ -68,7 +68,7 @@ def get_class(class_id: int, class_service: ClassServiceDep):
     Open endpoint, no authentication required.
     """
 
-    return class_service.get_by_id(class_id)
+    return await class_service.get_by_id(class_id)
 
 
 @router.post(
@@ -81,7 +81,7 @@ def get_class(class_id: int, class_service: ClassServiceDep):
         400: {"description": "Invalid payload (skill IDs, spellcasting_ability consistency, etc.)."},
     },
 )
-def create_class(
+async def create_class(
     class_service: ClassServiceDep,
     current_user: GmUserDep,
     class_data: ClassCreate = Body(
@@ -169,7 +169,7 @@ def create_class(
     a `POST` followed by separate `PUT` calls.
     """
 
-    return class_service.create_class(class_data, created_by_id=current_user.id)
+    return await class_service.create_class(class_data, created_by_id=current_user.id)
 
 
 @router.patch(
@@ -188,7 +188,7 @@ def create_class(
         },
     },
 )
-def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassServiceDep, _: GmUserDep):
+async def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassServiceDep, _: GmUserDep):
     """
     Partially update a class. **GM only.**
 
@@ -206,7 +206,7 @@ def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassSe
     same request to change it alongside `primary_abilities`.
     """
 
-    return class_service.update_class(class_id, update_data)
+    return await class_service.update_class(class_id, update_data)
 
 
 @router.delete(
@@ -218,7 +218,7 @@ def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassSe
         409: {"description": "Class is still in use by one or more characters."},
     },
 )
-def delete_class(class_id: int, class_service: ClassServiceDep, _: FounderDep):
+async def delete_class(class_id: int, class_service: ClassServiceDep, _: FounderDep):
     """
     Delete a class. **Found-father only.**
 
@@ -227,7 +227,7 @@ def delete_class(class_id: int, class_service: ClassServiceDep, _: FounderDep):
     more characters.
     """
 
-    class_service.delete(class_id)
+    await class_service.delete(class_id)
     return None
 
 
@@ -239,7 +239,7 @@ def delete_class(class_id: int, class_service: ClassServiceDep, _: FounderDep):
         404: {"description": "No class exists with the given ID."},
     },
 )
-def set_class_saving_throws(
+async def set_class_saving_throws(
     class_id: int,
     class_service: ClassServiceDep,
     _: GmUserDep,
@@ -264,7 +264,7 @@ def set_class_saving_throws(
     is removed. Send an empty list to clear all saving throws.
     """
 
-    return class_service.set_saving_throws(class_id, data)
+    return await class_service.set_saving_throws(class_id, data)
 
 
 @router.put(
@@ -276,7 +276,7 @@ def set_class_saving_throws(
         404: {"description": "No class exists with the given ID."},
     },
 )
-def set_class_available_skills(
+async def set_class_available_skills(
     class_id: int,
     class_service: ClassServiceDep,
     _: GmUserDep,
@@ -301,7 +301,7 @@ def set_class_available_skills(
     is removed. Send an empty list to clear all available skills.
     """
 
-    return class_service.set_available_skills(class_id, data)
+    return await class_service.set_available_skills(class_id, data)
 
 
 @router.put(
@@ -313,7 +313,7 @@ def set_class_available_skills(
         404: {"description": "No class exists with the given ID."},
     },
 )
-def set_class_spell_slots(
+async def set_class_spell_slots(
     class_id: int,
     class_level: int,
     class_service: ClassServiceDep,
@@ -352,7 +352,7 @@ def set_class_spell_slots(
     multiclass-style slot tables.
     """
 
-    return class_service.set_spell_slots(class_id, class_level, data)
+    return await class_service.set_spell_slots(class_id, class_level, data)
 
 
 @router.put(
@@ -365,7 +365,7 @@ def set_class_spell_slots(
         404: {"description": "No class exists with the given ID."},
     },
 )
-def replace_class_features(
+async def replace_class_features(
     class_id: int,
     class_service: ClassServiceDep,
     _: GmUserDep,
@@ -413,7 +413,7 @@ def replace_class_features(
     within one request are rejected with 422.
     """
 
-    return class_service.replace_class_features(class_id, data, created_by_id=_.id)
+    return await class_service.replace_class_features(class_id, data, created_by_id=_.id)
 
 
 @router.get(
@@ -422,7 +422,7 @@ def replace_class_features(
     summary="Get the full 1-20 progression table",
     responses={404: {"description": "No class exists with the given ID."}},
 )
-def get_class_progression(class_id: int, class_service: ClassServiceDep):
+async def get_class_progression(class_id: int, class_service: ClassServiceDep):
     """
     Return the full level 1-20 progression table for a class.
 
@@ -436,7 +436,7 @@ def get_class_progression(class_id: int, class_service: ClassServiceDep):
     Open endpoint.
     """
 
-    return class_service.get_progression(class_id)
+    return await class_service.get_progression(class_id)
 
 
 @router.get(
@@ -445,10 +445,10 @@ def get_class_progression(class_id: int, class_service: ClassServiceDep):
     summary="List subclasses for a class",
     responses={404: {"description": "No class exists with the given ID."}},
 )
-def list_subclasses(class_id: int, class_service: ClassServiceDep):
+async def list_subclasses(class_id: int, class_service: ClassServiceDep):
     """Return all subclasses for the given class. Open endpoint."""
 
-    return class_service.list_subclasses(class_id)
+    return await class_service.list_subclasses(class_id)
 
 
 @router.get(
@@ -457,10 +457,10 @@ def list_subclasses(class_id: int, class_service: ClassServiceDep):
     summary="Get a subclass by ID",
     responses={404: {"description": "Class or subclass not found."}},
 )
-def get_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep):
+async def get_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep):
     """Full subclass detail including all its features. Open endpoint."""
 
-    return class_service.get_subclass(class_id, subclass_id)
+    return await class_service.get_subclass(class_id, subclass_id)
 
 
 @router.post(
@@ -473,7 +473,7 @@ def get_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep
         409: {"description": "A subclass with this name already exists for this class."},
     },
 )
-def create_subclass(
+async def create_subclass(
     class_id: int,
     class_service: ClassServiceDep,
     _: GmUserDep,
@@ -505,7 +505,7 @@ def create_subclass(
     with the subclass. ``unlock_level`` defaults to 3.
     """
 
-    return class_service.create_subclass(class_id, data, created_by_id=_.id)
+    return await class_service.create_subclass(class_id, data, created_by_id=_.id)
 
 
 @router.patch(
@@ -514,7 +514,7 @@ def create_subclass(
     summary="Update a subclass",
     responses={404: {"description": "Class or subclass not found."}},
 )
-def update_subclass(
+async def update_subclass(
     class_id: int, subclass_id: int, data: SubclassUpdate, class_service: ClassServiceDep, _: GmUserDep
 ):
     """
@@ -522,7 +522,7 @@ def update_subclass(
     Does not touch features — manage those via the features endpoints.
     """
 
-    return class_service.update_subclass(class_id, subclass_id, data)
+    return await class_service.update_subclass(class_id, subclass_id, data)
 
 
 @router.put(
@@ -535,7 +535,7 @@ def update_subclass(
         404: {"description": "Class or subclass not found."},
     },
 )
-def replace_subclass_features(
+async def replace_subclass_features(
     class_id: int,
     subclass_id: int,
     class_service: ClassServiceDep,
@@ -577,7 +577,7 @@ def replace_subclass_features(
     deleted.
     """
 
-    return class_service.replace_subclass_features(class_id, subclass_id, data, created_by_id=_.id)
+    return await class_service.replace_subclass_features(class_id, subclass_id, data, created_by_id=_.id)
 
 
 @router.delete(
@@ -586,8 +586,8 @@ def replace_subclass_features(
     summary="Delete a subclass",
     responses={404: {"description": "Class or subclass not found."}},
 )
-def delete_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep, _: GmUserDep):
+async def delete_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep, _: GmUserDep):
     """Delete a subclass and all its features. **GM only.**"""
 
-    class_service.delete_subclass(class_id, subclass_id)
+    await class_service.delete_subclass(class_id, subclass_id)
     return None

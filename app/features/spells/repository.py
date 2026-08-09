@@ -1,6 +1,8 @@
 """Spell repository: base CRUD plus class/race availability management."""
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models.class_model import Class
@@ -11,7 +13,7 @@ from app.models.spell_model import Spell
 class SpellRepository(BaseRepository[Spell]):
     """Spell-specific repository built on :class:`BaseRepository`."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             Spell,
             db,
@@ -20,21 +22,25 @@ class SpellRepository(BaseRepository[Spell]):
             unique_fields=["name"],
         )
 
-    def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
+    async def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
         """Fetch the classes matching ``class_ids`` (order not guaranteed)."""
+
         if not class_ids:
             return []
 
-        return self.db.query(Class).filter(Class.id.in_(class_ids)).all()
+        result = await self.db.execute(select(Class).where(Class.id.in_(class_ids)))
+        return list(result.scalars().unique().all())
 
-    def get_races_by_ids(self, race_ids: list[int]) -> list[Race]:
+    async def get_races_by_ids(self, race_ids: list[int]) -> list[Race]:
         """Fetch the races matching ``race_ids`` (order not guaranteed)."""
+
         if not race_ids:
             return []
 
-        return self.db.query(Race).filter(Race.id.in_(race_ids)).all()
+        result = await self.db.execute(select(Race).where(Race.id.in_(race_ids)))
+        return list(result.scalars().unique().all())
 
-    def set_classes(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> Spell:
+    async def set_classes(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> Spell:
         """
         Replace all classes a spell is available to.
 
@@ -48,22 +54,22 @@ class SpellRepository(BaseRepository[Spell]):
         spell.available_classes = classes
 
         if commit:
-            self.db.commit()
-            self.db.refresh(spell)
+            await self.db.commit()
+            await self.db.refresh(spell)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return spell
 
-    def set_races(self, spell: Spell, races: list[Race], *, commit: bool = True) -> Spell:
+    async def set_races(self, spell: Spell, races: list[Race], *, commit: bool = True) -> Spell:
         """Replace all races a spell is available to. See ``set_classes`` for ``commit`` semantics."""
 
         spell.available_races = races
 
         if commit:
-            self.db.commit()
-            self.db.refresh(spell)
+            await self.db.commit()
+            await self.db.refresh(spell)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return spell

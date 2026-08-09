@@ -15,7 +15,7 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
     response_model=Page[SkillGetAllResponse],
     summary="List skills",
 )
-def get_skills(
+async def get_skills(
     skill_service: SkillServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -39,7 +39,7 @@ def get_skills(
     the full record.
     """
 
-    return skill_service.get_all(page=page, size=size, search=search, filters={"ability": ability})
+    return await skill_service.get_all(page=page, size=size, search=search, filters={"ability": ability})
 
 
 @router.get(
@@ -50,14 +50,14 @@ def get_skills(
         404: {"description": "Skill with id not found."},
     },
 )
-def get_skill(skill_id: int, skill_service: SkillServiceDep):
+async def get_skill(skill_id: int, skill_service: SkillServiceDep):
     """
     Return a single skill by ID, with full detail.
 
     Open endpoint, no authentication required.
     """
 
-    return skill_service.get_by_id(skill_id)
+    return await skill_service.get_by_id(skill_id)
 
 
 @router.post(
@@ -69,7 +69,7 @@ def get_skill(skill_id: int, skill_service: SkillServiceDep):
         409: {"description": "A skill with this key already exists."},
     },
 )
-def create_skill(
+async def create_skill(
     skill_service: SkillServiceDep,
     _: GmUserDep,
     skill_data: SkillCreate = Body(
@@ -96,7 +96,7 @@ def create_skill(
 ):
     """Create a new skill. **GM only.**"""
 
-    return skill_service.create(skill_data)
+    return await skill_service.create(skill_data)
 
 
 @router.patch(
@@ -108,7 +108,7 @@ def create_skill(
         409: {"description": "Another skill already uses the requested key."},
     },
 )
-def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillServiceDep, _: GmUserDep):
+async def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillServiceDep, _: GmUserDep):
     """
     Partially update a skill. **GM only.**
 
@@ -116,7 +116,7 @@ def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillSe
     are left as-is.
     """
 
-    return skill_service.update(skill_id, update_data)
+    return await skill_service.update(skill_id, update_data)
 
 
 @router.delete(
@@ -128,7 +128,7 @@ def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillSe
         409: {"description": "Skill is still in use by a race, class, background, or character."},
     },
 )
-def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: FounderDep):
+async def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: FounderDep):
     """
     Delete a skill. **Found-father only.**
 
@@ -137,5 +137,5 @@ def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: FounderDep):
     ``RecordInUseError``, mapped to a 409 by the global exception handler).
     """
 
-    skill_service.delete(skill_id)
+    await skill_service.delete(skill_id)
     return None

@@ -1,6 +1,6 @@
 """Shared base for character sub-domain services (access-control wiring)."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.access import get_character_for_user as _get_character_for_user
 from app.features.characters.core.repository import CharacterRepository
@@ -37,13 +37,13 @@ class CharacterSubDomainService:
 
     _light_character_fetch = True
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.repository = CharacterRepository(db)
 
-    def get_character_for_user(self, character_id: int, current_user: UserResponse) -> Character:
+    async def get_character_for_user(self, character_id: int, current_user: UserResponse) -> Character:
         """Fetch the character enforcing GM/owner access; raises 403/404 otherwise."""
 
-        return _get_character_for_user(
+        return await _get_character_for_user(
             self.repository,
             character_id,
             current_user,

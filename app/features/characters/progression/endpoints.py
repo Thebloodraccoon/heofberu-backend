@@ -21,15 +21,15 @@ router = APIRouter(tags=["Characters Progression"])
     summary="Change a character's race",
     description="Sets ``race_id`` (null clears it) and re-derives race ability bonuses.",
 )
-def change_race(
+async def change_race(
     character_id: int,
     data: RaceChange,
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ) -> CharacterResponse:
-    progression_service.change_race(character_id, data, current_user)
-    return character_service.get_character(character_id, current_user)
+    await progression_service.change_race(character_id, data, current_user)
+    return await character_service.get_character(character_id, current_user)
 
 
 @router.patch(
@@ -38,15 +38,15 @@ def change_race(
     summary="Change a character's class",
     description="Replaces the class and re-applies spell slot progression for the current level.",
 )
-def change_class(
+async def change_class(
     character_id: int,
     data: ClassChange,
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ) -> CharacterResponse:
-    progression_service.change_class(character_id, data, current_user)
-    return character_service.get_character(character_id, current_user)
+    await progression_service.change_class(character_id, data, current_user)
+    return await character_service.get_character(character_id, current_user)
 
 
 @router.patch(
@@ -58,15 +58,15 @@ def change_class(
         "Grants the subclass's features at or below the character's current level."
     ),
 )
-def change_subclass(
+async def change_subclass(
     character_id: int,
     data: SubclassChange,
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ) -> CharacterResponse:
-    progression_service.set_subclass(character_id, data, current_user)
-    return character_service.get_character(character_id, current_user)
+    await progression_service.set_subclass(character_id, data, current_user)
+    return await character_service.get_character(character_id, current_user)
 
 
 @router.post(
@@ -78,15 +78,15 @@ def change_subclass(
         "(ASI increments or a feat) is required and is recorded in ``character_asi_choices``."
     ),
 )
-def level_up(
+async def level_up(
     character_id: int,
     data: LevelUpRequest,
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ) -> CharacterResponse:
-    progression_service.level_up(character_id, data, current_user)
-    return character_service.get_character(character_id, current_user)
+    await progression_service.level_up(character_id, data, current_user)
+    return await character_service.get_character(character_id, current_user)
 
 
 @router.get(
@@ -95,9 +95,9 @@ def level_up(
     description="Audit trail of every Ability Score Improvement resolution, ordered by level.",
     response_model=list[CharacterASIChoiceResponse],
 )
-def get_asi_choices(
+async def get_asi_choices(
     character_id: int,
     progression_service: CharacterProgressionServiceDep,
     current_user: CurrentUserDep,
 ) -> list[CharacterASIChoiceResponse]:
-    return progression_service.get_asi_choices(character_id, current_user)
+    return await progression_service.get_asi_choices(character_id, current_user)

@@ -19,8 +19,9 @@ set (e.g. the character changes class, drops a subclass, or loses a
 feat).
 """
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.models import CharacterFeature, Feature
@@ -43,7 +44,7 @@ _SOURCE_CHARACTER_FILTER = {
 }
 
 
-def _desired_features(db: Session, character: Character) -> list[Feature]:
+async def _desired_features(db: AsyncSession, character: Character) -> list[Feature]:
     """
     The target feature set for a character: features owned by its class,
     subclass, race, background, and every currently-granted feat, all
@@ -63,24 +64,23 @@ def _desired_features(db: Session, character: Character) -> list[Feature]:
     if character.background_id is not None:
         conditions.append(Feature.background_id == character.background_id)
 
-    feat_ids = [
-        feat_id for (feat_id,) in db.query(CharacterFeat.feat_id).filter(CharacterFeat.character_id == character.id)
-    ]
+    result = await db.execute(select(CharacterFeat.feat_id).where(CharacterFeat.character_id == character.id))
+    feat_ids = [feat_id for (feat_id,) in result.all()]
     if feat_ids:
         conditions.append(Feature.feat_id.in_(feat_ids))
 
     if not conditions:
         return []
 
-    return (
-        db.query(Feature)
-        .filter(or_(*conditions))
-        .filter(or_(Feature.level.is_(None), Feature.level <= character.level))
-        .all()
+    result = await db.execute(
+        select(Feature)
+        .where(or_(*conditions))
+        .where(or_(Feature.level.is_(None), Feature.level <= character.level))
     )
+    return list(result.scalars().unique().all())
 
 
-def sync_progression_features(db: Session, character: Character) -> None:
+async def sync_progression_features(db: AsyncSession, character: Character) -> None:
     """
     Reconcile ``character_features`` to match the character's current
     class/subclass/race/background/feats/level. Adds missing grants,
@@ -88,28 +88,29 @@ def sync_progression_features(db: Session, character: Character) -> None:
     everything else alone.
     """
 
-    desired = _desired_features(db, character)
+    desired = await _desired_features(db, character)
     desired_ids = {feature.id for feature in desired}
 
-    existing = (
-        db.query(CharacterFeature)
+    result = await db.execute(
+        select(CharacterFeature)
         .options(selectinload(CharacterFeature.feature))
-        .filter(CharacterFeature.character_id == character.id)
-        .all()
+        .where(CharacterFeature.character_id == character.id)
     )
+
+    existing = list(result.scalars().unique().all())
     existing_ids = {grant.feature_id for grant in existing}
 
     for grant in existing:
         feature = grant.feature
         if feature is not None and feature.source_type in _AUTO_SOURCE_TYPES and grant.feature_id not in desired_ids:
-            db.delete(grant)
+            await db.delete(grant)
 
     for feature in desired:
         if feature.id not in existing_ids:
             db.add(CharacterFeature(character_id=character.id, feature_id=feature.id, notes=""))
 
 
-def reconcile_characters_for_source(db: Session, source_type: FeatureSourceType, source_id: int) -> None:
+async def reconcile_characters_for_source(db: AsyncSession, source_type: FeatureSourceType, source_id: int) -> None:
     """
     Re-run :func:`sync_progression_features` for every character affected
     by a change to a source's feature set.
@@ -134,18 +135,19 @@ def reconcile_characters_for_source(db: Session, source_type: FeatureSourceType,
     """
 
     if source_type == FeatureSourceType.FEAT:
-        characters = (
-            db.query(Character)
+        result = await db.execute(
+            select(Character)
             .join(CharacterFeat, CharacterFeat.character_id == Character.id)
-            .filter(CharacterFeat.feat_id == source_id)
-            .all()
+            .where(CharacterFeat.feat_id == source_id)
         )
+        characters = list(result.scalars().unique().all())
     else:
         source_filter = _SOURCE_CHARACTER_FILTER.get(source_type)
         if source_filter is None:
             return
 
-        characters = db.query(Character).filter(source_filter(source_id)).all()
+        result = await db.execute(select(Character).where(source_filter(source_id)))
+        characters = list(result.scalars().unique().all())
 
     for character in characters:
-        sync_progression_features(db, character)
+        await sync_progression_features(db, character)

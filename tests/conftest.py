@@ -1,9 +1,13 @@
 """
-Shared pytest fixtures: test-stage env, HTTP client, DB factories, and auth helpers.
+Shared pytest fixtures: test-stage env, async HTTP client, DB factories, and auth helpers.
 
 The module forces ``STAGE=test`` (and default ``TEST_*`` URLs matching the
 ``docker-compose.dev.yml`` test services) before anything else imports ``app``,
 so ``app.settings`` always resolves to ``app.settings.test``.
+
+The HTTP client is an ``httpx.AsyncClient`` (via ``ASGITransport``) since the
+app now runs on the asyncio stack; the ``get_db`` dependency is overridden
+with the per-test async session.
 
 Database/schema fixtures (``prepare_database``, ``db_session``, ``redis_client``)
 live in ``tests/integration/conftest.py`` — they need the ``heof-test-db`` /
@@ -16,8 +20,9 @@ os.environ["STAGE"] = "test"
 os.environ.setdefault("TEST_DATABASE_URL", "postgresql://heof_user:test_secret@localhost:5433/heof_test_db")
 os.environ.setdefault("TEST_REDIS_URL", "redis://localhost:6381/0")
 
-from fastapi.testclient import TestClient  # noqa: E402
+import httpx  # noqa: E402
 import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
 
 from app.constants import UserRole  # noqa: E402
 from app.core.security import get_password_hash  # noqa: E402
@@ -40,26 +45,27 @@ from app.settings import settings  # noqa: E402
 assert settings.STAGE == "test", "Tests must run against the test stage (STAGE=test)."
 
 
-@pytest.fixture
-def client(db_session):
-    """TestClient bound to the test DB via a get_db dependency override."""
+@pytest_asyncio.fixture
+async def client(db_session):
+    """Async HTTP client bound to the test DB via a get_db dependency override."""
 
-    def _override_get_db():
+    async def _override_get_db():
         yield db_session
 
     app.dependency_overrides[settings.get_db] = _override_get_db
+    transport = httpx.ASGITransport(app=app)
     try:
-        with TestClient(app, base_url="https://testserver/api") as test_client:
+        async with httpx.AsyncClient(transport=transport, base_url="https://testserver/api") as test_client:
             yield test_client
     finally:
         app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def create_user(db_session):
+@pytest_asyncio.fixture
+async def create_user(db_session):
     """Factory fixture for creating users directly in the database."""
 
-    def _create_user(
+    async def _create_user(
         username="player1",
         email="player1@example.com",
         password="password123",
@@ -72,46 +78,46 @@ def create_user(db_session):
             role=role,
         )
         db_session.add(user)
-        db_session.commit()
-        db_session.refresh(user)
+        await db_session.commit()
+        await db_session.refresh(user)
         return user
 
     return _create_user
 
 
-@pytest.fixture
-def player(create_user):
+@pytest_asyncio.fixture
+async def player(create_user):
     """A default PLAYER user."""
-    return create_user()
+    return await create_user()
 
 
-@pytest.fixture
-def gm(create_user):
+@pytest_asyncio.fixture
+async def gm(create_user):
     """A default GM user."""
-    return create_user(username="gm1", email="gm1@example.com", role=UserRole.GM)
+    return await create_user(username="gm1", email="gm1@example.com", role=UserRole.GM)
 
 
-@pytest.fixture
-def founder(create_user):
+@pytest_asyncio.fixture
+async def founder(create_user):
     """A default found-father (founder) user."""
-    return create_user(username="founder1", email="founder1@example.com", role=UserRole.FOUND_FATHER)
+    return await create_user(username="founder1", email="founder1@example.com", role=UserRole.FOUND_FATHER)
 
 
-@pytest.fixture
-def create_skill(db_session):
-    def _create_skill(key="PERCEPTION", name="Perception", ability="WIS", description=""):
+@pytest_asyncio.fixture
+async def create_skill(db_session):
+    async def _create_skill(key="PERCEPTION", name="Perception", ability="WIS", description=""):
         skill = Skill(key=key, name=name, ability=ability, description=description)
         db_session.add(skill)
-        db_session.commit()
-        db_session.refresh(skill)
+        await db_session.commit()
+        await db_session.refresh(skill)
         return skill
 
     return _create_skill
 
 
-@pytest.fixture
-def create_race(db_session):
-    def _create_race(name="Elf", size="MEDIUM", speed=30, description="", is_homebrew=False):
+@pytest_asyncio.fixture
+async def create_race(db_session):
+    async def _create_race(name="Elf", size="MEDIUM", speed=30, description="", is_homebrew=False):
         race = Race(
             name=name,
             size=size,
@@ -120,16 +126,16 @@ def create_race(db_session):
             is_homebrew=is_homebrew,
         )
         db_session.add(race)
-        db_session.commit()
-        db_session.refresh(race)
+        await db_session.commit()
+        await db_session.refresh(race)
         return race
 
     return _create_race
 
 
-@pytest.fixture
-def create_class(db_session):
-    def _create_class(
+@pytest_asyncio.fixture
+async def create_class(db_session):
+    async def _create_class(
         name="Fighter",
         hit_dice="D10",
         skill_choice_count=2,
@@ -146,16 +152,16 @@ def create_class(db_session):
             is_homebrew=is_homebrew,
         )
         db_session.add(class_model)
-        db_session.commit()
-        db_session.refresh(class_model)
+        await db_session.commit()
+        await db_session.refresh(class_model)
         return class_model
 
     return _create_class
 
 
-@pytest.fixture
-def create_subclass(db_session):
-    def _create_subclass(
+@pytest_asyncio.fixture
+async def create_subclass(db_session):
+    async def _create_subclass(
         class_id,
         name="Champion",
         unlock_level=3,
@@ -172,28 +178,28 @@ def create_subclass(db_session):
             is_homebrew=is_homebrew,
         )
         db_session.add(subclass)
-        db_session.commit()
-        db_session.refresh(subclass)
+        await db_session.commit()
+        await db_session.refresh(subclass)
         return subclass
 
     return _create_subclass
 
 
-@pytest.fixture
-def create_background(db_session):
-    def _create_background(name="Acolyte", is_homebrew=False):
+@pytest_asyncio.fixture
+async def create_background(db_session):
+    async def _create_background(name="Acolyte", is_homebrew=False):
         background = Background(name=name, is_homebrew=is_homebrew)
         db_session.add(background)
-        db_session.commit()
-        db_session.refresh(background)
+        await db_session.commit()
+        await db_session.refresh(background)
         return background
 
     return _create_background
 
 
-@pytest.fixture
-def create_feat(db_session):
-    def _create_feat(
+@pytest_asyncio.fixture
+async def create_feat(db_session):
+    async def _create_feat(
         name="Alert",
         description="",
         prerequisite_ability=None,
@@ -210,16 +216,16 @@ def create_feat(db_session):
             is_homebrew=is_homebrew,
         )
         db_session.add(feat)
-        db_session.commit()
-        db_session.refresh(feat)
+        await db_session.commit()
+        await db_session.refresh(feat)
         return feat
 
     return _create_feat
 
 
-@pytest.fixture
-def create_feature(db_session):
-    def _create_feature(
+@pytest_asyncio.fixture
+async def create_feature(db_session):
+    async def _create_feature(
         name="Extra Attack",
         source_type="CLASS",
         class_id=None,
@@ -242,16 +248,16 @@ def create_feature(db_session):
             is_homebrew=is_homebrew,
         )
         db_session.add(feature)
-        db_session.commit()
-        db_session.refresh(feature)
+        await db_session.commit()
+        await db_session.refresh(feature)
         return feature
 
     return _create_feature
 
 
-@pytest.fixture
-def create_item(db_session):
-    def _create_item(
+@pytest_asyncio.fixture
+async def create_item(db_session):
+    async def _create_item(
         name="Longsword",
         item_type="WEAPON",
         rarity="NONE",
@@ -268,16 +274,16 @@ def create_item(db_session):
             is_homebrew=is_homebrew,
         )
         db_session.add(item)
-        db_session.commit()
-        db_session.refresh(item)
+        await db_session.commit()
+        await db_session.refresh(item)
         return item
 
     return _create_item
 
 
-@pytest.fixture
-def create_spell(db_session):
-    def _create_spell(
+@pytest_asyncio.fixture
+async def create_spell(db_session):
+    async def _create_spell(
         name="Cure Wounds",
         school="EVOCATION",
         level="LEVEL_1",
@@ -300,16 +306,16 @@ def create_spell(db_session):
             is_homebrew=is_homebrew,
         )
         db_session.add(spell)
-        db_session.commit()
-        db_session.refresh(spell)
+        await db_session.commit()
+        await db_session.refresh(spell)
         return spell
 
     return _create_spell
 
 
-@pytest.fixture
-def create_character(db_session):
-    def _create_character(
+@pytest_asyncio.fixture
+async def create_character(db_session):
+    async def _create_character(
         owner_id,
         class_id,
         name="Test Character",
@@ -330,8 +336,8 @@ def create_character(db_session):
             **kwargs,
         )
         db_session.add(character)
-        db_session.commit()
-        db_session.refresh(character)
+        await db_session.commit()
+        await db_session.refresh(character)
         return character
 
     return _create_character
@@ -340,28 +346,28 @@ def create_character(db_session):
 DEFAULT_PASSWORD = "password123"
 
 
-@pytest.fixture
-def login_as(client):
+@pytest_asyncio.fixture
+async def login_as(client):
     """Log in a user via the API and return the access token."""
 
-    def _login_as(user, password=DEFAULT_PASSWORD):
-        response = client.post("/auth/login", json={"email": user.email, "password": password})
+    async def _login_as(user, password=DEFAULT_PASSWORD):
+        response = await client.post("/auth/login", json={"email": user.email, "password": password})
         assert response.status_code == 200, response.text
         return response.json()["access_token"]
 
     return _login_as
 
 
-@pytest.fixture
-def player_token(player, login_as):
-    return login_as(player)
+@pytest_asyncio.fixture
+async def player_token(player, login_as):
+    return await login_as(player)
 
 
-@pytest.fixture
-def gm_token(gm, login_as):
-    return login_as(gm)
+@pytest_asyncio.fixture
+async def gm_token(gm, login_as):
+    return await login_as(gm)
 
 
-@pytest.fixture
-def founder_token(founder, login_as):
-    return login_as(founder)
+@pytest_asyncio.fixture
+async def founder_token(founder, login_as):
+    return await login_as(founder)

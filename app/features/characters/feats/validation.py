@@ -22,7 +22,7 @@ def validate_ability_score_increase(feat: Feat, ability_score_increase_id: int) 
         raise InvalidAbilityScoreIncreaseException(feat_id=feat.id, ability_score_increase_id=ability_score_increase_id)
 
 
-def check_feat_prerequisite(character: Character, feat: Feat, stats_service: CharacterStatsService) -> None:
+async def check_feat_prerequisite(character: Character, feat: Feat, stats_service: CharacterStatsService) -> None:
     """
     Raise ``FeatPrerequisiteNotMetException`` if the feat has an
     ability-score prerequisite the character's current *effective* score
@@ -37,7 +37,7 @@ def check_feat_prerequisite(character: Character, feat: Feat, stats_service: Cha
     if feat.prerequisite_ability is None or feat.prerequisite_minimum_score is None:
         return
 
-    totals = stats_service.compute(character)
+    totals = await stats_service.compute(character)
     field = TOTAL_FIELD_BY_ABILITY[feat.prerequisite_ability]
     actual = totals[field]
 

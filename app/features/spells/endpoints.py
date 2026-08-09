@@ -31,7 +31,7 @@ router = APIRouter(prefix="/spells", tags=["Spells"])
     response_model=Page[SpellGetAllResponse],
     summary="List spells",
 )
-def get_spells(
+async def get_spells(
     spell_service: SpellServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -88,7 +88,7 @@ def get_spells(
         "is_concentration": is_concentration,
         "is_homebrew": is_homebrew,
     }
-    return spell_service.get_all(page=page, size=size, filters=filters, search=search)
+    return await spell_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
@@ -99,7 +99,7 @@ def get_spells(
         404: {"description": "Spell with id not found."},
     },
 )
-def get_spell(spell_id: int, spell_service: SpellServiceDep):
+async def get_spell(spell_id: int, spell_service: SpellServiceDep):
     """
     Return a single spell by ID, with full detail — including available
     classes and available races.
@@ -107,7 +107,7 @@ def get_spell(spell_id: int, spell_service: SpellServiceDep):
     Open endpoint, no authentication required.
     """
 
-    return spell_service.get_by_id(spell_id)
+    return await spell_service.get_by_id(spell_id)
 
 
 @router.post(
@@ -121,7 +121,7 @@ def get_spell(spell_id: int, spell_service: SpellServiceDep):
         },
     },
 )
-def create_spell(
+async def create_spell(
     spell_service: SpellServiceDep,
     _: GmUserDep,
     spell_data: SpellCreate = Body(
@@ -232,7 +232,7 @@ def create_spell(
     spell is unrestricted for that dimension.
     """
 
-    return spell_service.create_spell(spell_data)
+    return await spell_service.create_spell(spell_data)
 
 
 @router.patch(
@@ -244,7 +244,7 @@ def create_spell(
         404: {"description": "No spell exists with the given ID."},
     },
 )
-def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellServiceDep, _: GmUserDep):
+async def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellServiceDep, _: GmUserDep):
     """
     Partially update a spell. **GM only.**
 
@@ -254,7 +254,7 @@ def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellSe
     for those.
     """
 
-    return spell_service.update(spell_id, update_data)
+    return await spell_service.update(spell_id, update_data)
 
 
 @router.delete(
@@ -265,14 +265,14 @@ def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellSe
         404: {"description": "No spell exists with the given ID."},
     },
 )
-def delete_spell(spell_id: int, spell_service: SpellServiceDep, _: FounderDep):
+async def delete_spell(spell_id: int, spell_service: SpellServiceDep, _: FounderDep):
     """
     Delete a spell. **Found-father only.**
 
     Also removes its class/race availability links (cascade).
     """
 
-    spell_service.delete(spell_id)
+    await spell_service.delete(spell_id)
     return None
 
 
@@ -285,7 +285,7 @@ def delete_spell(spell_id: int, spell_service: SpellServiceDep, _: FounderDep):
         404: {"description": "No spell exists with the given ID."},
     },
 )
-def set_spell_classes(
+async def set_spell_classes(
     spell_id: int,
     spell_service: SpellServiceDep,
     _: GmUserDep,
@@ -311,7 +311,7 @@ def set_spell_classes(
     available to every class).
     """
 
-    return spell_service.set_classes(spell_id, data)
+    return await spell_service.set_classes(spell_id, data)
 
 
 @router.put(
@@ -323,7 +323,7 @@ def set_spell_classes(
         404: {"description": "No spell exists with the given ID."},
     },
 )
-def set_spell_races(
+async def set_spell_races(
     spell_id: int,
     spell_service: SpellServiceDep,
     _: GmUserDep,
@@ -349,4 +349,4 @@ def set_spell_races(
     available to every race).
     """
 
-    return spell_service.set_races(spell_id, data)
+    return await spell_service.set_races(spell_id, data)

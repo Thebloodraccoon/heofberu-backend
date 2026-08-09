@@ -22,9 +22,12 @@ router = APIRouter(tags=["Characters Spells"])
         404: {"description": "No character exists with the given ID."},
     },
 )
-def get_character_spell_slots(character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep):
+async def get_character_spell_slots(
+    character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep
+):
     """Get all spell slot entries (by level) for a character."""
-    return spell_service.get_spell_slots(character_id, current_user)
+
+    return await spell_service.get_spell_slots(character_id, current_user)
 
 
 @router.patch(
@@ -37,7 +40,7 @@ def get_character_spell_slots(character_id: int, spell_service: CharacterSpellSe
         404: {"description": "No character exists with the given ID."},
     },
 )
-def update_character_spell_slot(
+async def update_character_spell_slot(
     character_id: int,
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
@@ -62,7 +65,8 @@ def update_character_spell_slot(
     re-applied on level-up/class change) — it is not client-settable, so
     a player cannot grant themselves extra slots.
     """
-    return spell_service.update_spell_slot(character_id, data, current_user)
+
+    return await spell_service.update_spell_slot(character_id, data, current_user)
 
 
 @router.get(
@@ -74,9 +78,10 @@ def update_character_spell_slot(
         404: {"description": "No character exists with the given ID."},
     },
 )
-def get_character_spells(character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep):
+async def get_character_spells(character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep):
     """List all spells known by the character."""
-    return spell_service.get_known_spells(character_id, current_user)
+
+    return await spell_service.get_known_spells(character_id, current_user)
 
 
 @router.post(
@@ -96,7 +101,7 @@ def get_character_spells(character_id: int, spell_service: CharacterSpellService
         409: {"description": "The character already knows this spell."},
     },
 )
-def add_character_spell(
+async def add_character_spell(
     character_id: int,
     data: CharacterSpellAdd,
     spell_service: CharacterSpellServiceDep,
@@ -111,7 +116,8 @@ def add_character_spell(
     level as they have slots of that level. To swap a known spell for a
     different one, remove the old one first to free up its slot.
     """
-    return spell_service.add_known_spell(character_id, data, current_user)
+
+    return await spell_service.add_known_spell(character_id, data, current_user)
 
 
 @router.delete(
@@ -123,12 +129,13 @@ def add_character_spell(
         404: {"description": "No character exists with the given ID, or the character does not know this spell."},
     },
 )
-def remove_character_spell(
+async def remove_character_spell(
     character_id: int,
     spell_id: int,
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
 ):
     """Remove a spell from the character's known spells, freeing up its slot."""
-    spell_service.remove_known_spell(character_id, spell_id, current_user)
+
+    await spell_service.remove_known_spell(character_id, spell_id, current_user)
     return None

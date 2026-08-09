@@ -1,6 +1,8 @@
 """Feat repository: base CRUD plus ASI-choice management and in-use guard."""
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models import CharacterFeature, Feature
@@ -18,7 +20,7 @@ class FeatRepository(BaseRepository[Feat]):
     same reasoning as ``RaceRepository``.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             Feat,
             db,
@@ -31,7 +33,7 @@ class FeatRepository(BaseRepository[Feat]):
             check_in_use_on_delete=True,
         )
 
-    def is_in_use(self, feat_id: int) -> bool:
+    async def is_in_use(self, feat_id: int) -> bool:
         """
         Check whether the feat is currently granted to any character
         (``character_feats.feat_id``) or any of its features is currently
@@ -42,16 +44,20 @@ class FeatRepository(BaseRepository[Feat]):
         deletion anymore — deleting the feat cascades to its features, which
         is exactly how a feat's own benefits are meant to be removed.
         """
-        granted = self.db.query(CharacterFeat).filter(CharacterFeat.feat_id == feat_id).first() is not None
-        if granted:
+
+        granted = await self.db.execute(select(CharacterFeat).where(CharacterFeat.feat_id == feat_id))
+        if granted.scalar_one_or_none() is not None:
             return True
 
-        feature_ids = [row[0] for row in self.db.query(Feature.id).filter(Feature.feat_id == feat_id)]
+        result = await self.db.execute(select(Feature.id).where(Feature.feat_id == feat_id))
+        feature_ids = [row[0] for row in result.all()]
         if not feature_ids:
             return False
-        return self.db.query(CharacterFeature).filter(CharacterFeature.feature_id.in_(feature_ids)).first() is not None
 
-    def set_ability_score_increases(self, feat: Feat, increases: list[dict], *, commit: bool = True) -> Feat:
+        result = await self.db.execute(select(CharacterFeature).where(CharacterFeature.feature_id.in_(feature_ids)))
+        return result.scalar_one_or_none() is not None
+
+    async def set_ability_score_increases(self, feat: Feat, increases: list[dict], *, commit: bool = True) -> Feat:
         """
         Replace all ASI choices for a feat with the given list.
 
@@ -60,15 +66,15 @@ class FeatRepository(BaseRepository[Feat]):
         and flush instead, without duplicating this method.
         """
 
-        self.db.query(FeatAbilityScoreIncrease).filter(FeatAbilityScoreIncrease.feat_id == feat.id).delete()
+        await self.db.execute(delete(FeatAbilityScoreIncrease).where(FeatAbilityScoreIncrease.feat_id == feat.id))
 
         for item in increases:
             self.db.add(FeatAbilityScoreIncrease(feat_id=feat.id, ability=item["ability"], amount=item["amount"]))
 
         if commit:
-            self.db.commit()
-            self.db.refresh(feat)
+            await self.db.commit()
+            await self.db.refresh(feat)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return feat

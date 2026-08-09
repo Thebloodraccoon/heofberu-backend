@@ -1,11 +1,10 @@
 """ORM model for campaigns (GM-run groups of player characters)."""
 
-from datetime import datetime, timezone
-
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.settings import settings
+from app.settings._common import utcnow
 
 
 class Campaign(settings.Base):  # type: ignore
@@ -20,7 +19,7 @@ class Campaign(settings.Base):  # type: ignore
     description = Column(Text, nullable=False, default="")
     is_active = Column(Boolean, nullable=False, default=True)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     gm = relationship("User")
     characters = relationship(

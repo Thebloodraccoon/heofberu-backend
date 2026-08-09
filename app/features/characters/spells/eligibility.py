@@ -34,7 +34,7 @@ class CharacterSpellEligibilityChecker:
         self.slot_repository = slot_repository
         self.known_spell_repository = known_spell_repository
 
-    def check(self, character: Character, spell: Spell) -> None:
+    async def check(self, character: Character, spell: Spell) -> None:
         """
         Raise the appropriate exception if ``character`` may not learn
         ``spell``. Runs the class/race restriction check first, then the
@@ -42,7 +42,7 @@ class CharacterSpellEligibilityChecker:
         """
 
         self._check_spell_available_to_character(character, spell)
-        self._check_slot_available(character.id, spell)
+        await self._check_slot_available(character.id, spell)
 
     def _check_spell_available_to_character(self, character: Character, spell: Spell) -> None:
         """
@@ -64,7 +64,7 @@ class CharacterSpellEligibilityChecker:
         if not (class_ok and race_ok):
             raise SpellNotAvailableToCharacterException(character_id=character.id, spell_id=spell.id)
 
-    def _check_slot_available(self, character_id: int, spell: Spell) -> None:
+    async def _check_slot_available(self, character_id: int, spell: Spell) -> None:
         """
         Raise ``NoSpellSlotAvailableException`` unless the character has a
         free spell slot at ``spell.level`` to know another spell of that
@@ -73,10 +73,10 @@ class CharacterSpellEligibilityChecker:
         entry for the level is treated as 0 total slots.
         """
 
-        slot = self.slot_repository.get_spell_slot(character_id, spell.level)
+        slot = await self.slot_repository.get_spell_slot(character_id, spell.level)
         total_slots = slot.total if slot is not None else 0
 
-        known_at_level = self.known_spell_repository.count_known_spells_at_level(character_id, spell.level)
+        known_at_level = await self.known_spell_repository.count_known_spells_at_level(character_id, spell.level)
 
         if known_at_level >= total_slots:
             raise NoSpellSlotAvailableException(character_id=character_id, level=spell.level)

@@ -1,20 +1,20 @@
 """The ``@use_cache`` decorator: transparent per-call Redis caching.
 
-Usage (service methods, sync stack):
+Usage (service methods, async stack):
 
     class SpellService(BaseService[...]):
         cache_namespaces = ("spells",)
 
         @use_cache()
-        def get_all(self, page=1, size=100, filters=None, search=None):
+        async def get_all(self, page=1, size=100, filters=None, search=None):
             ...
 
         @use_cache()
-        def get_by_id(self, item_id: int) -> SpellResponse:
+        async def get_by_id(self, item_id: int) -> SpellResponse:
             ...
 
         @use_cache(skip_if=lambda self, item_id: item_id <= 0, ttl=60)
-        def get(self, item_id: int) -> SpellResponse:
+        async def get(self, item_id: int) -> SpellResponse:
             ...
 
 Behavior
@@ -31,13 +31,18 @@ Behavior
   truthy (e.g. ``skip_if=lambda self, **_: self.some_flag``).
 * ``cache_none=False`` skips storing ``None`` results (useful when a
   cache hit must never mask a missing record).
+
+The generated wrapper is always a coroutine function; a decorated
+*sync* function is called directly inside it and its plain result is
+returned. Every cached/uncached branch is awaited by the caller.
 """
 
 from collections.abc import Callable
 import functools
+import inspect
 from typing import Any, get_type_hints
 
-from app.core.cache.client import cache_get, cache_set, cache_enabled, cache_prefix
+from app.core.cache.client import cache_enabled, cache_get, cache_prefix, cache_set
 from app.core.cache.serialization import decode, encode
 
 
@@ -50,29 +55,34 @@ def use_cache(
         schema: type | None = None,
         cache_none: bool = True,
 ) -> Callable:
-    """Decorate a sync function so its result is cached in Redis."""
+    """Decorate a sync or async function so its result is cached in Redis."""
 
     def decorator(func: Callable) -> Callable:
         return_schema = schema if schema is not None else _resolve_return_schema(func)
+        is_coroutine = inspect.iscoroutinefunction(func)
+
+        async def _call(*args: Any, **kwargs: Any) -> Any:
+            result = func(*args, **kwargs)
+            return await result if is_coroutine else result
 
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             if not cache_enabled():
-                return func(*args, **kwargs)
+                return await _call(*args, **kwargs)
 
             if skip_if is not None and skip_if(*args, **kwargs):
-                return func(*args, **kwargs)
+                return await _call(*args, **kwargs)
 
             key = _build_key(namespace, func, args, kwargs, key_builder)
-            raw = cache_get(key)
+            raw = await cache_get(key)
             if raw is not None:
                 return decode(raw, return_schema)
 
-            result = func(*args, **kwargs)
+            result = await _call(*args, **kwargs)
             if result is None and not cache_none:
                 return result
 
-            cache_set(key, encode(result), ttl)
+            await cache_set(key, encode(result), ttl)
             return result
 
         return wrapper

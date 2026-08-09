@@ -1,6 +1,7 @@
 """Character item repository: character-item stack CRUD."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_repository import BaseRepository
 from app.models.character_item_model import CharacterItem
@@ -14,27 +15,29 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
     several times (e.g. an equipped sword and a spare).
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(CharacterItem, db)
 
-    def get_character_items(self, character_id: int) -> list[CharacterItem]:
+    async def get_character_items(self, character_id: int) -> list[CharacterItem]:
         """Get every item stack owned by a character."""
 
-        return self.db.query(CharacterItem).filter(CharacterItem.character_id == character_id).all()
+        result = await self.db.execute(
+            select(CharacterItem).where(CharacterItem.character_id == character_id)
+        )
+        return list(result.scalars().unique().all())
 
-    def get_character_item_by_id(self, character_id: int, character_item_id: int) -> CharacterItem | None:
+    async def get_character_item_by_id(self, character_id: int, character_item_id: int) -> CharacterItem | None:
         """Fetch a single item stack by its own id, scoped to the character."""
 
-        return (
-            self.db.query(CharacterItem)
-            .filter(
+        result = await self.db.execute(
+            select(CharacterItem).where(
                 CharacterItem.id == character_item_id,
                 CharacterItem.character_id == character_id,
             )
-            .first()
         )
+        return result.scalar_one_or_none()
 
-    def add_character_item(
+    async def add_character_item(
         self,
         character_id: int,
         item_id: int,
@@ -53,14 +56,16 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
             is_attuned=is_attuned,
             notes=notes,
         )
+
         self.db.add(stack)
-        self.db.commit()
-        self.db.refresh(stack)
+        await self.db.commit()
+        await self.db.refresh(stack)
+
         return stack
 
-    def remove_character_item(self, stack: CharacterItem) -> bool:
+    async def remove_character_item(self, stack: CharacterItem) -> bool:
         """Remove an item stack from a character."""
 
-        self.db.delete(stack)
-        self.db.commit()
+        await self.db.delete(stack)
+        await self.db.commit()
         return True

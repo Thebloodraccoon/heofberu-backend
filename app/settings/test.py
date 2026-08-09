@@ -1,10 +1,16 @@
-"""Test-stage settings: isolated DB and Redis from env, non-echo QueuePool engine."""
+"""Test-stage settings: isolated DB and Redis from env, non-echo async engine."""
 
-from sqlalchemy import create_engine
-from sqlalchemy.pool import QueuePool
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.settings._common import *  # noqa: F401, F403
-from app.settings._common import make_get_db, make_get_redis, make_session_factory
+from app.settings._common import (
+    REDIS_URL,
+    as_async_database_url,
+    make_async_session_factory,
+    make_get_db,
+    make_get_redis,
+)
 from app.settings.config import AppSettings
 
 _settings = AppSettings()
@@ -22,16 +28,15 @@ CACHE_ENABLED = False
 DATABASE_URL = _settings.TEST_DATABASE_URL
 REDIS_URL = _settings.TEST_REDIS_URL
 
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=QueuePool,
+engine = create_async_engine(
+    as_async_database_url(DATABASE_URL),
+    poolclass=pool.AsyncAdaptedQueuePool,
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,
     echo=False,
-    future=True,
 )
 
-SessionLocal = make_session_factory(engine)
+SessionLocal = make_async_session_factory(engine)
 get_db = make_get_db(SessionLocal)
 get_redis = make_get_redis(REDIS_URL)

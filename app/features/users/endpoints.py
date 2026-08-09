@@ -12,7 +12,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("/", response_model=Page[UserResponse])
-def get_all_users(
+async def get_all_users(
     user_service: UserServiceDep,
     _: GmUserDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
@@ -29,17 +29,19 @@ def get_all_users(
     Response is `{items, total, page, size}` — `total` is the count of
     matching users across every page, not just this one.
     """
-    return user_service.get_all(page=page, size=size, filters={"role": role}, search=search)
+
+    return await user_service.get_all(page=page, size=size, filters={"role": role}, search=search)
 
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user(user_service: UserServiceDep, user: CurrentUserDep):
+async def get_current_user(user_service: UserServiceDep, user: CurrentUserDep):
     """Get current user."""
-    return user_service.get_by_id(user.id)
+
+    return await user_service.get_by_id(user.id)
 
 
 @router.put("/me", response_model=UserResponse)
-def update_current_user(user_data: UserProfileUpdate, user_service: UserServiceDep, user: CurrentUserDep):
+async def update_current_user(user_data: UserProfileUpdate, user_service: UserServiceDep, user: CurrentUserDep):
     """
     Update the current user's own profile (personal cabinet).
 
@@ -47,17 +49,19 @@ def update_current_user(user_data: UserProfileUpdate, user_service: UserServiceD
     ``location``. The ``role`` is never editable here — assign it through the
     GM endpoints instead.
     """
-    return user_service.update_profile(user.id, user_data)
+
+    return await user_service.update_profile(user.id, user_data)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDep):
+async def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDep):
     """Get user by ID."""
-    return user_service.get_by_id(user_id)
+
+    return await user_service.get_by_id(user_id)
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(user_data: UserCreate, user_service: UserServiceDep, current_user: GmUserDep):
+async def create_user(user_data: UserCreate, user_service: UserServiceDep, current_user: GmUserDep):
     """
     Create a new user. **GM only.**
 
@@ -66,24 +70,28 @@ def create_user(user_data: UserCreate, user_service: UserServiceDep, current_use
     """
     if user_data.role != UserRole.PLAYER and current_user.role != UserRole.FOUND_FATHER:
         raise FoundFatherAccessException()
-    return user_service.create_user(user_data)
+
+    return await user_service.create_user(user_data)
 
 
 @router.put("/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, user_data: UserUpdate, user_service: UserServiceDep, current_user: GmUserDep):
+async def update_user(user_id: int, user_data: UserUpdate, user_service: UserServiceDep, current_user: GmUserDep):
     """
     Update user by ID. **GM only.**
 
     Changing the ``role`` (promoting to GM or found father, or any other
     role edit) requires the current user to be the found father.
     """
+
     if user_data.role is not None and current_user.role != UserRole.FOUND_FATHER:
         raise FoundFatherAccessException()
-    return user_service.update_user(user_id, user_data)
+
+    return await user_service.update_user(user_id, user_data)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, user_service: UserServiceDep, current_user: FounderDep):
+async def delete_user(user_id: int, user_service: UserServiceDep, current_user: FounderDep):
     """Delete user by ID. Cannot delete yourself or the default admin user. **Found-father only.**"""
-    user_service.delete_user(user_id, current_user_id=current_user.id)
+
+    await user_service.delete_user(user_id, current_user_id=current_user.id)
     return None

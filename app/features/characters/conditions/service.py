@@ -1,6 +1,6 @@
 """Character condition service: managing active conditions on a character."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
 from app.features.characters.base import CharacterSubDomainService
@@ -36,30 +36,32 @@ class CharacterConditionService(CharacterSubDomainService):
     it is required and must be between 1 and 6.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.condition_repository = CharacterConditionRepository(db)
 
-    def get_conditions(self, character_id: int, current_user: UserResponse) -> list[CharacterConditionResponse]:
+    async def get_conditions(
+        self, character_id: int, current_user: UserResponse
+    ) -> list[CharacterConditionResponse]:
         """List every condition a character is currently under."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        rows = self.condition_repository.get_character_conditions(character_id)
+        rows = await self.condition_repository.get_character_conditions(character_id)
         return [CharacterConditionResponse.model_validate(row) for row in rows]
 
-    def add_condition(
+    async def add_condition(
         self, character_id: int, data: CharacterConditionAdd, current_user: UserResponse
     ) -> CharacterConditionResponse:
         """Record an active condition on a character."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        existing = self.condition_repository.get_character_condition(character_id, data.condition)
+        existing = await self.condition_repository.get_character_condition(character_id, data.condition)
         if existing:
             raise CharacterConditionAlreadyExistsException(character_id=character_id, condition=data.condition)
 
-        row = self.condition_repository.add_character_condition(
+        row = await self.condition_repository.add_character_condition(
             character_id,
             data.condition,
             data.exhaustion_level,
@@ -67,7 +69,7 @@ class CharacterConditionService(CharacterSubDomainService):
         )
         return CharacterConditionResponse.model_validate(row)
 
-    def update_condition(
+    async def update_condition(
         self,
         character_id: int,
         condition: ConditionType,
@@ -76,31 +78,32 @@ class CharacterConditionService(CharacterSubDomainService):
     ) -> CharacterConditionResponse:
         """Change a condition's exhaustion_level or source."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        row = self._get_condition_or_404(character_id, condition)
+        row = await self._get_condition_or_404(character_id, condition)
 
         update_data = data.model_dump(exclude_unset=True)
         merged_level = update_data.get("exhaustion_level", row.exhaustion_level)
         self._validate_exhaustion_level(condition, merged_level)
 
-        updated_row = self.condition_repository.update_character_condition(row, update_data)
+        updated_row = await self.condition_repository.update_character_condition(row, update_data)
         return CharacterConditionResponse.model_validate(updated_row)
 
-    def remove_condition(self, character_id: int, condition: ConditionType, current_user: UserResponse) -> bool:
+    async def remove_condition(self, character_id: int, condition: ConditionType, current_user: UserResponse) -> bool:
         """Remove an active condition from a character."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        row = self._get_condition_or_404(character_id, condition)
-        return self.condition_repository.remove_character_condition(row)
+        row = await self._get_condition_or_404(character_id, condition)
+        return await self.condition_repository.remove_character_condition(row)
 
-    def _get_condition_or_404(self, character_id: int, condition: ConditionType) -> CharacterCondition:
+    async def _get_condition_or_404(self, character_id: int, condition: ConditionType) -> CharacterCondition:
         """Fetch a condition scoped to the character, or raise ``CharacterConditionNotFoundException``."""
 
-        row = self.condition_repository.get_character_condition(character_id, condition)
+        row = await self.condition_repository.get_character_condition(character_id, condition)
         if not row:
             raise CharacterConditionNotFoundException(character_id=character_id, condition=condition)
+
         return row
 
     @staticmethod
@@ -109,5 +112,6 @@ class CharacterConditionService(CharacterSubDomainService):
 
         if condition == ConditionType.EXHAUSTION and exhaustion_level is None:
             raise InvalidConditionException("exhaustion_level is required when condition is EXHAUSTION (1-6).")
+
         if condition != ConditionType.EXHAUSTION and exhaustion_level is not None:
             raise InvalidConditionException("exhaustion_level is only valid when condition is EXHAUSTION.")

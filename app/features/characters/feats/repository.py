@@ -1,6 +1,7 @@
 """Character feat repository: feat-grant row CRUD."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import CharacterFeatSource
 from app.core.base_repository import BaseRepository
@@ -15,39 +16,40 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
     association table, unrelated to the ``Character`` row's own columns.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(CharacterFeat, db)
 
-    def get_character_feats(self, character_id: int) -> list[CharacterFeat]:
+    async def get_character_feats(self, character_id: int) -> list[CharacterFeat]:
         """Get every feat grant for a character."""
 
-        return self.db.query(CharacterFeat).filter(CharacterFeat.character_id == character_id).all()
+        result = await self.db.execute(
+            select(CharacterFeat).where(CharacterFeat.character_id == character_id)
+        )
+        return list(result.scalars().unique().all())
 
-    def get_character_feat_by_id(self, character_id: int, character_feat_id: int) -> CharacterFeat | None:
+    async def get_character_feat_by_id(self, character_id: int, character_feat_id: int) -> CharacterFeat | None:
         """Fetch a single feat grant by its own id, scoped to the character."""
 
-        return (
-            self.db.query(CharacterFeat)
-            .filter(
+        result = await self.db.execute(
+            select(CharacterFeat).where(
                 CharacterFeat.id == character_feat_id,
                 CharacterFeat.character_id == character_id,
             )
-            .first()
         )
+        return result.scalar_one_or_none()
 
-    def get_character_feat_by_feat_id(self, character_id: int, feat_id: int) -> CharacterFeat | None:
+    async def get_character_feat_by_feat_id(self, character_id: int, feat_id: int) -> CharacterFeat | None:
         """Fetch a character's grant for a specific feat, if any (used for duplicate checks)."""
 
-        return (
-            self.db.query(CharacterFeat)
-            .filter(
+        result = await self.db.execute(
+            select(CharacterFeat).where(
                 CharacterFeat.character_id == character_id,
                 CharacterFeat.feat_id == feat_id,
             )
-            .first()
         )
+        return result.scalar_one_or_none()
 
-    def add_character_feat(
+    async def add_character_feat(
         self,
         character_id: int,
         feat_id: int,
@@ -72,27 +74,30 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
             ability_score_increase_id=ability_score_increase_id,
             source_type=source_type,
         )
+
         self.db.add(grant)
         if commit:
-            self.db.commit()
-            self.db.refresh(grant)
+            await self.db.commit()
+            await self.db.refresh(grant)
         else:
-            self.db.flush()
+            await self.db.flush()
+
         return grant
 
-    def set_character_feat_ability_score_increase(
+    async def set_character_feat_ability_score_increase(
         self, grant: CharacterFeat, ability_score_increase_id: int | None
     ) -> CharacterFeat:
         """Set (or clear, if ``None``) the ASI choice on an existing feat grant."""
 
         grant.ability_score_increase_id = ability_score_increase_id
-        self.db.commit()
-        self.db.refresh(grant)
+        await self.db.commit()
+        await self.db.refresh(grant)
+
         return grant
 
-    def remove_character_feat(self, grant: CharacterFeat) -> bool:
+    async def remove_character_feat(self, grant: CharacterFeat) -> bool:
         """Revoke a feat grant."""
 
-        self.db.delete(grant)
-        self.db.commit()
+        await self.db.delete(grant)
+        await self.db.commit()
         return True

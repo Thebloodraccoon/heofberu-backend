@@ -1,7 +1,5 @@
 """ORM model for the D&D 5e character sheet."""
 
-from datetime import datetime, timezone
-
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -16,6 +14,7 @@ from sqlalchemy.orm import relationship
 
 from app.models.enums import AbilityScoreType
 from app.settings import settings
+from app.settings._common import utcnow
 
 
 class Character(settings.Base):  # type: ignore
@@ -82,11 +81,11 @@ class Character(settings.Base):  # type: ignore
     spell_dc_misc_bonus = Column(Integer, nullable=False, default=0)
     spell_attack_misc_bonus = Column(Integer, nullable=False, default=0)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=utcnow,
+        onupdate=utcnow,
     )
 
     owner = relationship("User", back_populates="characters")

@@ -20,7 +20,7 @@ router = APIRouter(prefix="/features", tags=["Features"])
     response_model=Page[FeatureGetAllResponse],
     summary="List features (filterable)",
 )
-def get_features(
+async def get_features(
     feature_service: FeatureServiceDep,
     source_type: FeatureSourceType | None = None,
     class_id: int | None = None,
@@ -62,7 +62,7 @@ def get_features(
         "feat_id": feat_id,
     }
 
-    return feature_service.get_all(page=page, size=size, filters=filters, search=search)
+    return await feature_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
@@ -73,14 +73,14 @@ def get_features(
         404: {"description": "Feature with id not found."},
     },
 )
-def get_feature(feature_id: int, feature_service: FeatureServiceDep):
+async def get_feature(feature_id: int, feature_service: FeatureServiceDep):
     """
     Return a single feature by ID, with full detail.
 
     Open endpoint, no authentication required.
     """
 
-    return feature_service.get_by_id(feature_id)
+    return await feature_service.get_by_id(feature_id)
 
 
 @router.post(
@@ -97,7 +97,7 @@ def get_feature(feature_id: int, feature_service: FeatureServiceDep):
         },
     },
 )
-def create_feature(
+async def create_feature(
     feature_service: FeatureServiceDep,
     _: GmUserDep,
     feature_data: StandaloneFeatureCreate = Body(
@@ -132,7 +132,7 @@ def create_feature(
     features (it is only allowed on CLASS/SUBCLASS features).
     """
 
-    return feature_service.create(feature_data)
+    return await feature_service.create(feature_data)
 
 
 @router.patch(
@@ -150,7 +150,7 @@ def create_feature(
         404: {"description": "No feature exists with the given ID."},
     },
 )
-def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service: FeatureServiceDep, _: GmUserDep):
+async def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service: FeatureServiceDep, _: GmUserDep):
     """
     Partially update a standalone feature. **GM only.**
 
@@ -167,7 +167,7 @@ def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service:
     with a 400.
     """
 
-    return feature_service.update_feature(feature_id, update_data)
+    return await feature_service.update_feature(feature_id, update_data)
 
 
 @router.delete(
@@ -184,7 +184,7 @@ def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service:
         404: {"description": "No feature exists with the given ID."},
     },
 )
-def delete_feature(feature_id: int, feature_service: FeatureServiceDep, _: GmUserDep):
+async def delete_feature(feature_id: int, feature_service: FeatureServiceDep, _: GmUserDep):
     """
     Delete a standalone feature. **GM only.**
 
@@ -195,5 +195,5 @@ def delete_feature(feature_id: int, feature_service: FeatureServiceDep, _: GmUse
     Also removes any `CharacterFeature` rows referencing it (cascade).
     """
 
-    feature_service.delete(feature_id)
+    await feature_service.delete(feature_id)
     return None

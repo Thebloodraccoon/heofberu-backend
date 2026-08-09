@@ -11,7 +11,7 @@ because creating a class also writes features table rows that the
 from app.core.cache.client import cache_delete_prefix
 
 
-def invalidate(namespace: str) -> None:
+async def invalidate(namespace: str) -> None:
     """Delete all cached entries under the given namespace (best-effort)."""
 
-    cache_delete_prefix(namespace)
+    await cache_delete_prefix(namespace)

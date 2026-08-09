@@ -4,6 +4,9 @@ JWT creation, verification, and blacklisting utilities.
 Implements access/refresh token creation with unique ``jti`` claims,
 signature/expiry/type verification, and Redis-backed revocation of
 individual tokens.
+
+Redis access is async (``redis.asyncio`` via ``settings.get_redis``); all
+other helpers stay synchronous since they are pure JWT operations.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -132,7 +135,7 @@ def _blacklist_key(jti: str) -> str:
     return f"{_BLACKLIST_KEY_PREFIX}{jti}"
 
 
-def blacklist_token(jti: str, ttl_seconds: int, *, reason: str = "revoked") -> None:
+async def blacklist_token(jti: str, ttl_seconds: int, *, reason: str = "revoked") -> None:
     """
     Mark a token's ``jti`` as revoked for ``ttl_seconds``.
 
@@ -148,14 +151,16 @@ def blacklist_token(jti: str, ttl_seconds: int, *, reason: str = "revoked") -> N
     (e.g. inspecting a key in ``redis-cli`` mid-incident); the blacklist
     check itself only cares whether the key exists, not its value.
     """
+
     if ttl_seconds <= 0:
         return
 
-    with settings.get_redis() as redis:
-        redis.set(_blacklist_key(jti), reason, ex=ttl_seconds)
+    async with settings.get_redis() as redis:
+        await redis.set(_blacklist_key(jti), reason, ex=ttl_seconds)
 
 
-def is_token_blacklisted(jti: str) -> bool:
+async def is_token_blacklisted(jti: str) -> bool:
     """Return whether ``jti`` has been revoked and hasn't expired yet."""
-    with settings.get_redis() as redis:
-        return redis.exists(_blacklist_key(jti)) > 0
+
+    async with settings.get_redis() as redis:
+        return await redis.exists(_blacklist_key(jti)) > 0

@@ -1,10 +1,14 @@
-"""Shared settings logic: variables, session factory, and DB/Redis accessors."""
+"""Shared settings logic: variables, session factory, and DB/Redis accessors.
 
-from contextlib import contextmanager
+Async stack: the engine/session layer is built on ``asyncpg`` +
+``sqlalchemy.ext.asyncio``, and Redis access goes through ``redis.asyncio``.
+"""
 
-from redis import Redis
-from sqlalchemy import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.settings.base import Base  # noqa: F401
 from app.settings.config import AppSettings
@@ -31,32 +35,54 @@ CACHE_TTL_DEFAULT = _settings.CACHE_TTL_DEFAULT
 CACHE_PREFIX = _settings.CACHE_PREFIX
 
 
-def make_session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def utcnow() -> datetime:
+    """Naive UTC "now", matching the DB's ``TIMESTAMP WITHOUT TIME ZONE`` columns."""
+
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def make_get_db(session_factory: sessionmaker[Session]):
-    """Returns a FastAPI dependency that yields a DB session."""
+def as_async_database_url(url: str) -> str:
+    """Convert a sync ``postgresql://`` URL to the asyncpg driver form."""
 
-    def get_db():
+    if "+asyncpg" in url:
+        return url
+
+    url = url.replace("postgres://", "postgresql://")
+    return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+
+def make_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+
+def make_get_db(session_factory: async_sessionmaker[AsyncSession]):
+    """Returns a FastAPI dependency that yields an async DB session."""
+
+    async def get_db():
         db = session_factory()
         try:
             yield db
         finally:
-            db.close()
+            await db.close()
 
     return get_db
 
 
 def make_get_redis(redis_url: str):
-    """Returns a context manager that yields a connected Redis client."""
+    """Returns an async context manager that yields a connected Redis client."""
 
-    @contextmanager
-    def get_redis():
+    @asynccontextmanager
+    async def get_redis():
         client = Redis.from_url(redis_url, decode_responses=True)
         try:
             yield client
         finally:
-            client.close()
+            await client.aclose()
 
     return get_redis

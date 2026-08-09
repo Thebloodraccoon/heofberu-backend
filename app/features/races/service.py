@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base_service import BaseService, Page
@@ -54,7 +54,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
 
     cache_namespaces = ("races", "features")
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,
@@ -62,7 +62,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         )
 
     @use_cache()
-    def get_all(
+    async def get_all(
         self,
         page: int = 1,
         size: int = 100,
@@ -71,15 +71,15 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
     ) -> Page[RaceGetAllResponse]:
         """Cached lightweight listing — see ``BaseService.get_all``."""
 
-        return super().get_all(page=page, size=size, filters=filters, search=search)
+        return await super().get_all(page=page, size=size, filters=filters, search=search)
 
     @use_cache()
-    def get_by_id(self, item_id: int) -> RaceResponse:
+    async def get_by_id(self, item_id: int) -> RaceResponse:
         """Cached single-record fetch — see ``BaseService.get_by_id``."""
 
-        return super().get_by_id(item_id)
+        return await super().get_by_id(item_id)
 
-    def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
+    async def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
         """
         Create a race after checking its name isn't already taken.
 
@@ -102,7 +102,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         """
 
         skills = (
-            self.resolve_ids(self.repository.get_skills_by_ids, race_data.granted_skills, "Skills")
+            await self.resolve_ids(self.repository.get_skills_by_ids, race_data.granted_skills, "Skills")
             if race_data.granted_skills
             else None
         )
@@ -110,17 +110,17 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills", "features"})
         payload["created_by_id"] = created_by_id
 
-        with self._atomic():
-            item = self.repository.create(payload, commit=False)
+        async with self._atomic():
+            item = await self.repository.create(payload, commit=False)
 
             if race_data.ability_bonuses:
                 bonuses = [{"ability": b.ability, "bonus": b.bonus} for b in race_data.ability_bonuses]
-                self.repository.set_ability_bonuses(item, bonuses, commit=False)
+                await self.repository.set_ability_bonuses(item, bonuses, commit=False)
 
             if skills:
-                self.repository.set_skills(item, skills, commit=False)
+                await self.repository.set_skills(item, skills, commit=False)
 
-            create_features_for_source(
+            await create_features_for_source(
                 self.repository.db,
                 FeatureSourceType.RACE,
                 item.id,
@@ -129,34 +129,33 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
                 commit=False,
             )
 
-        self.repository.refresh(item)
-        self._invalidate_cache()
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(item)
+        return self.response_schema.model_validate(await self._get_or_404(item.id))
 
-    def set_ability_bonuses(self, race_id: int, data: AbilityBonusesUpdate) -> RaceResponse:
+    async def set_ability_bonuses(self, race_id: int, data: AbilityBonusesUpdate) -> RaceResponse:
         """Fully replace a race's ability score bonuses."""
 
-        race = self._get_or_404(race_id)
+        race = await self._get_or_404(race_id)
 
         bonuses = [{"ability": item.ability, "bonus": item.bonus} for item in data.ability_bonuses]
-        updated_race = self.repository.set_ability_bonuses(race, bonuses)
-        self._invalidate_cache()
+        await self.repository.set_ability_bonuses(race, bonuses)
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(updated_race)
+        return self.response_schema.model_validate(await self._get_or_404(race_id))
 
-    def set_skills(self, race_id: int, data: SkillsUpdate) -> RaceResponse:
+    async def set_skills(self, race_id: int, data: SkillsUpdate) -> RaceResponse:
         """Fully replace the skills granted by a race."""
 
-        race = self._get_or_404(race_id)
-        skills = self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
+        race = await self._get_or_404(race_id)
+        skills = await self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
 
-        updated_race = self.repository.set_skills(race, skills)
-        self._invalidate_cache()
+        await self.repository.set_skills(race, skills)
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(updated_race)
+        return self.response_schema.model_validate(await self._get_or_404(race_id))
 
-    def replace_race_features(
+    async def replace_race_features(
         self, race_id: int, data: FeaturesReplace, created_by_id: int | None = None
     ) -> RaceResponse:
         """
@@ -170,9 +169,9 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         character of this race so their builds match the new feature set.
         """
 
-        race = self._get_or_404(race_id)
-        with self._atomic():
-            replace_features_for_source(
+        race = await self._get_or_404(race_id)
+        async with self._atomic():
+            await replace_features_for_source(
                 self.repository.db,
                 FeatureSourceType.RACE,
                 race.id,
@@ -180,9 +179,9 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
                 created_by_id,
                 commit=False,
             )
-            reconcile_characters_for_source(self.repository.db, FeatureSourceType.RACE, race.id)
+            await reconcile_characters_for_source(self.repository.db, FeatureSourceType.RACE, race.id)
 
-        self.repository.refresh(race)
-        self._invalidate_cache()
+        await self._invalidate_cache()
 
-        return self.response_schema.model_validate(race)
+        self.repository.db.expire(race)
+        return self.response_schema.model_validate(await self._get_or_404(race.id))

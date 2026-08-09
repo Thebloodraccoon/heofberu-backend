@@ -1,11 +1,10 @@
 """ORM model for cached, precomputed effective ability scores."""
 
-from datetime import datetime, timezone
-
 from sqlalchemy import Column, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
 from app.settings import settings
+from app.settings._common import utcnow
 
 
 class CharacterAbilityScore(settings.Base):  # type: ignore
@@ -43,8 +42,8 @@ class CharacterAbilityScore(settings.Base):  # type: ignore
 
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=utcnow,
+        onupdate=utcnow,
     )
 
     character = relationship("Character", back_populates="ability_score_cache")

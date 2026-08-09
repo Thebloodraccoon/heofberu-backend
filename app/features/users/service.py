@@ -1,8 +1,6 @@
 """User CRUD service with password hashing and admin/self-deletion guards."""
 
-from datetime import datetime, timezone
-
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_service import BaseService
 from app.core.security import get_password_hash
@@ -15,6 +13,7 @@ from app.features.users.repository import UserRepository
 from app.features.users.schemas import UserCreate, UserProfileUpdate, UserResponse, UserUpdate
 from app.models.user_model import User
 from app.settings import settings
+from app.settings._common import utcnow
 
 
 class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
@@ -33,22 +32,22 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
     repository: UserRepository
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(
             repository=UserRepository(db),
             response_schema=UserResponse,
         )
 
-    def get_user_by_email(self, email: str) -> UserResponse:
+    async def get_user_by_email(self, email: str) -> UserResponse:
         """Return a single user by email, or raise ``UserNotFoundException``."""
 
-        user = self.repository.get_by_email(email)
+        user = await self.repository.get_by_email(email)
         if not user:
             raise UserNotFoundException(email=email)
 
         return self.response_schema.model_validate(user)
 
-    def create_user(self, data: UserCreate) -> UserResponse:
+    async def create_user(self, data: UserCreate) -> UserResponse:
         """
         Create a user after checking email/username aren't already taken.
 
@@ -61,10 +60,10 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         del user_data["password"]
         user_data["hashed_password"] = get_password_hash(data.password)
 
-        user = self.repository.create(user_data)
+        user = await self.repository.create(user_data)
         return self.response_schema.model_validate(user)
 
-    def update_user(self, user_id: int, data: UserUpdate) -> UserResponse:
+    async def update_user(self, user_id: int, data: UserUpdate) -> UserResponse:
         """
         Update a user, re-checking email/username uniqueness if changing.
 
@@ -72,15 +71,15 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         ``updated_at``, which the generic ``update`` doesn't do on its own.
         """
 
-        user = self._get_or_404(user_id)
+        user = await self._get_or_404(user_id)
         self._ensure_not_default_user(user)
         fields = data.model_dump(exclude_unset=True)
 
-        fields["updated_at"] = datetime.now(timezone.utc)
-        updated_user = self.repository.update(user, fields)
+        fields["updated_at"] = utcnow()
+        updated_user = await self.repository.update(user, fields)
         return self.response_schema.model_validate(updated_user)
 
-    def update_profile(self, user_id: int, data: UserProfileUpdate) -> UserResponse:
+    async def update_profile(self, user_id: int, data: UserProfileUpdate) -> UserResponse:
         """
         Update a user's own profile (username, email, bio, contact, location).
 
@@ -90,14 +89,14 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         repository.
         """
 
-        user = self._get_or_404(user_id)
+        user = await self._get_or_404(user_id)
         fields = data.model_dump(exclude_unset=True)
-        fields["updated_at"] = datetime.now(timezone.utc)
+        fields["updated_at"] = utcnow()
 
-        updated_user = self.repository.update(user, fields)
+        updated_user = await self.repository.update(user, fields)
         return self.response_schema.model_validate(updated_user)
 
-    def delete_user(self, user_id: int, current_user_id: int) -> bool:
+    async def delete_user(self, user_id: int, current_user_id: int) -> bool:
         """
         Delete a user by ID.
 
@@ -106,12 +105,12 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         admin user.
         """
 
-        user = self._get_or_404(user_id)
+        user = await self._get_or_404(user_id)
         if user_id == current_user_id:
             raise SelfDeletionException()
 
         self._ensure_not_default_user(user)
-        return self.repository.delete(user)
+        return await self.repository.delete(user)
 
     @staticmethod
     def _ensure_not_default_user(user: User) -> None:

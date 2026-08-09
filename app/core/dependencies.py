@@ -1,7 +1,7 @@
 """
 FastAPI dependency providers and annotated dependency aliases.
 
-Centralizes the database session, JWT bearer security, the current-user /
+Centralizes the async database session, JWT bearer security, the current-user /
 GM-guard dependencies, and the per-feature service dependencies consumed by
 the endpoint layers.
 """
@@ -11,7 +11,7 @@ from typing import Annotated
 from fastapi import Depends
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
 from app.core.exceptions import FoundFatherAccessException, GmAccessException, InvalidTokenException
@@ -38,7 +38,7 @@ from app.features.users.schemas import UserResponse
 from app.features.users.service import UserService
 from app.settings import settings
 
-DatabaseDep = Annotated[Session, Depends(settings.get_db)]
+DatabaseDep = Annotated[AsyncSession, Depends(settings.get_db)]
 
 
 def get_user_service(db: DatabaseDep) -> UserService:
@@ -66,7 +66,7 @@ security = HTTPBearer(
 TokenDep = Annotated[HTTPAuthorizationCredentials | None, Depends(security)]
 
 
-def get_current_user(
+async def get_current_user(
     user_service: UserServiceDep,
     token: TokenDep,
 ) -> UserResponse:
@@ -78,10 +78,10 @@ def get_current_user(
     """
     decoded = verify_token(token, "access")
 
-    if is_token_blacklisted(decoded.jti):
+    if await is_token_blacklisted(decoded.jti):
         raise InvalidTokenException()
 
-    return user_service.get_user_by_email(decoded.email)
+    return await user_service.get_user_by_email(decoded.email)
 
 
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]

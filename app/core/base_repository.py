@@ -4,15 +4,18 @@ Generic repository layer: common CRUD operations for SQLAlchemy models.
 Provides :class:`BaseRepository` (a reusable, model-generic CRUD base with
 filtering, search, pagination, uniqueness checks and delete-in-use guards)
 plus the model protocol and type aliases it relies on.
+
+Async stack: all public methods are ``async`` and run against an
+``AsyncSession`` using 2.0-style ``select()`` statements.
 """
 
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any, Generic, Protocol, TypeVar
 
-from sqlalchemy import String, Text, inspect, or_
+from sqlalchemy import String, Text, func, inspect, or_, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
 
@@ -35,7 +38,7 @@ class BaseRepository(Generic[ModelType]):
 
     Args:
         model: SQLAlchemy model, must expose ``id``.
-        db: Active session.
+        db: Active async session.
         default_load_options: Loader options (``selectinload``,
             ``joinedload``, ...) applied automatically on
             :meth:`get_by_id`/:meth:`get_all`, for relationships the
@@ -54,21 +57,23 @@ class BaseRepository(Generic[ModelType]):
     Example::
 
         class SpellRepository(BaseRepository[Spell]):
-            def __init__(self, db: Session):
+            def __init__(self, db: AsyncSession):
                 super().__init__(Spell, db)
 
         class FeatRepository(BaseRepository[Feat]):
-            def __init__(self, db: Session):
+            def __init__(self, db: AsyncSession):
                 super().__init__(Feat, db, unique_fields=["name"], check_in_use_on_delete=True)
 
-            def is_in_use(self, model_id: int) -> bool:
-                return self.db.query(CharacterFeat).filter(CharacterFeat.feat_id == model_id).first() is not None
+            async def is_in_use(self, model_id: int) -> bool:
+                return await self.db.scalar(
+                    select(CharacterFeat.feat_id).where(CharacterFeat.feat_id == model_id)
+                ) is not None
     """
 
     def __init__(
         self,
         model: type[ModelType],
-        db: Session,
+        db: AsyncSession,
         default_load_options: list[Any] | None = None,
         search_fields: list[str] | None = None,
         unique_fields: list[str] | None = None,
@@ -87,23 +92,23 @@ class BaseRepository(Generic[ModelType]):
         mapper = inspect(self.model)
         return [column.key for column in mapper.columns if isinstance(column.type, String | Text)]
 
-    def _apply_filters(self, query: Any, filters: dict[str, Any] | None) -> Any:
+    def _apply_filters(self, stmt: Any, filters: dict[str, Any] | None) -> Any:
         """Apply exact-match, AND'd filters for known, non-``None`` keys in ``filters``."""
 
         if not filters:
-            return query
+            return stmt
 
         for field, value in filters.items():
             if hasattr(self.model, field) and value is not None:
-                query = query.filter(getattr(self.model, field) == value)
+                stmt = stmt.where(getattr(self.model, field) == value)
 
-        return query
+        return stmt
 
-    def _apply_search(self, query: Any, search: str | None) -> Any:
+    def _apply_search(self, stmt: Any, search: str | None) -> Any:
         """Apply a case-insensitive ``ILIKE`` substring match, OR'd across ``self._search_fields``."""
 
         if not search or not self._search_fields:
-            return query
+            return stmt
 
         conditions = [
             getattr(self.model, field).ilike(f"%{search}%")
@@ -112,20 +117,21 @@ class BaseRepository(Generic[ModelType]):
         ]
 
         if not conditions:
-            return query
+            return stmt
 
-        return query.filter(or_(*conditions))
+        return stmt.where(or_(*conditions))
 
-    def get_by_id(self, model_id: int) -> ModelType | None:
+    async def get_by_id(self, model_id: int) -> ModelType | None:
         """Retrieve a single record by ID, or ``None`` if missing. Applies ``default_load_options``."""
 
-        query = self.db.query(self.model)
+        stmt = select(self.model)
         if self._default_load_options:
-            query = query.options(*self._default_load_options)
+            stmt = stmt.options(*self._default_load_options)
 
-        return query.filter(self.model.id == model_id).first()
+        stmt = stmt.where(self.model.id == model_id)
+        return await self.db.scalar(stmt)
 
-    def get_all(
+    async def get_all(
         self,
         *,
         skip: int = 0,
@@ -149,24 +155,25 @@ class BaseRepository(Generic[ModelType]):
             order_by: Optional column(s) to order by; defaults to ``self.model.id``.
         """
 
-        query = self.db.query(self.model)
+        stmt = select(self.model)
         if self._default_load_options:
-            query = query.options(*self._default_load_options)
+            stmt = stmt.options(*self._default_load_options)
 
-        query = self._apply_filters(query, filters)
-        query = self._apply_search(query, search)
+        stmt = self._apply_filters(stmt, filters)
+        stmt = self._apply_search(stmt, search)
 
-        query = query.order_by(order_by if order_by is not None else self.model.id)
+        stmt = stmt.order_by(order_by if order_by is not None else self.model.id)
 
         if skip:
-            query = query.offset(skip)
+            stmt = stmt.offset(skip)
 
         if limit is not None:
-            query = query.limit(limit)
+            stmt = stmt.limit(limit)
 
-        return query.all()
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
 
-    def get_brief(
+    async def get_brief(
         self,
         *columns: Any,
         order_by: Any = None,
@@ -190,30 +197,32 @@ class BaseRepository(Generic[ModelType]):
             A list of ``Row`` tuples in column order.
         """
 
-        query = self.db.query(*columns)
-        query = self._apply_filters(query, filters)
-        query = self._apply_search(query, search)
+        stmt = select(*columns)
+        stmt = self._apply_filters(stmt, filters)
+        stmt = self._apply_search(stmt, search)
 
         if order_by is not None:
-            query = query.order_by(order_by)
+            stmt = stmt.order_by(order_by)
 
-        return query.offset(skip).limit(limit).all()
+        result = await self.db.execute(stmt.offset(skip).limit(limit))
+        return list(result.all())
 
-    def count_all(self) -> int:
+    async def count_all(self) -> int:
         """Count all records in the table."""
 
-        return self.db.query(self.model).count()
+        stmt = select(func.count()).select_from(self.model)
+        return (await self.db.scalar(stmt)) or 0
 
-    def count(self, *, filters: dict[str, Any] | None = None, search: str | None = None) -> int:
+    async def count(self, *, filters: dict[str, Any] | None = None, search: str | None = None) -> int:
         """Count records matching ``filters``/``search`` (same conditions as :meth:`get_all`)."""
 
-        query = self.db.query(self.model)
-        query = self._apply_filters(query, filters)
-        query = self._apply_search(query, search)
+        stmt = select(func.count()).select_from(self.model)
+        stmt = self._apply_filters(stmt, filters)
+        stmt = self._apply_search(stmt, search)
 
-        return query.count()
+        return (await self.db.scalar(stmt)) or 0
 
-    def _check_uniqueness(self, data: dict[str, Any], exclude_id: int | None = None) -> None:
+    async def _check_uniqueness(self, data: dict[str, Any], exclude_id: int | None = None) -> None:
         """Raise ``RecordAlreadyExistsError`` if any ``self._unique_fields`` value already exists."""
 
         if not self._unique_fields:
@@ -222,64 +231,64 @@ class BaseRepository(Generic[ModelType]):
         for field in self._unique_fields:
             if field in data and data[field] is not None:
                 value = data[field]
-                query = self.db.query(self.model).filter(getattr(self.model, field) == value)
+                stmt = select(self.model.id).where(getattr(self.model, field) == value)
 
                 if exclude_id is not None:
-                    query = query.filter(self.model.id != exclude_id)
+                    stmt = stmt.where(self.model.id != exclude_id)
 
-                if query.first() is not None:
+                if await self.db.scalar(stmt) is not None:
                     raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
 
-    @contextmanager
-    def _commit_or_rollback(self) -> Generator[None, None, None]:
+    @asynccontextmanager
+    async def _commit_or_rollback(self) -> AsyncGenerator[None, None]:
         """Commit on success, rollback and re-raise on SQLAlchemyError."""
 
         try:
             yield
-            self.db.commit()
+            await self.db.commit()
         except SQLAlchemyError:
-            self.db.rollback()
+            await self.db.rollback()
             raise
 
-    def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
+    async def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
         """
         Create a record from ``obj_data`` and return it.
 
         ``commit=False`` flushes instead of committing, leaving the
-        transaction open for the caller (e.g. inside ``session.begin_nested()``).
+        transaction open for the caller (e.g. inside ``begin_nested()``).
         """
 
-        self._check_uniqueness(obj_data)
+        await self._check_uniqueness(obj_data)
 
         db_obj = self.model(**obj_data)
         self.db.add(db_obj)
 
         if commit:
-            with self._commit_or_rollback():
+            async with self._commit_or_rollback():
                 pass
-            self.db.refresh(db_obj)
+            await self.db.refresh(db_obj)
         else:
-            self.db.flush()
+            await self.db.flush()
 
         return db_obj
 
-    def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
+    async def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
         """Apply ``update_data`` onto ``db_obj`` and commit. Unknown keys are ignored."""
 
-        self._check_uniqueness(update_data, exclude_id=db_obj.id)
+        await self._check_uniqueness(update_data, exclude_id=db_obj.id)
 
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        with self._commit_or_rollback():
+        async with self._commit_or_rollback():
             pass
         if refresh:
-            self.db.refresh(db_obj)
+            await self.db.refresh(db_obj)
 
         return db_obj
 
-    def is_in_use(self, model_id: int) -> bool:
+    async def is_in_use(self, model_id: int) -> bool:
         """
         Return whether ``model_id`` is still referenced elsewhere and
         therefore cannot be deleted.
@@ -289,11 +298,12 @@ class BaseRepository(Generic[ModelType]):
         ``NotImplementedError`` -- subclasses opting in via that flag MUST
         override this with their own FK check (see class docstring).
         """
+
         raise NotImplementedError(
             f"{type(self).__name__} was constructed with check_in_use_on_delete=True but does not override is_in_use()."
         )
 
-    def delete(self, db_obj: ModelType) -> bool:
+    async def delete(self, db_obj: ModelType) -> bool:
         """
         Delete ``db_obj``, returning ``True`` on success.
 
@@ -303,29 +313,31 @@ class BaseRepository(Generic[ModelType]):
         delete, in case of a race between the check and the delete
         (relevant when the guarded FK is ``ON DELETE RESTRICT``).
         """
-        if self._check_in_use_on_delete and self.is_in_use(db_obj.id):
+
+        if self._check_in_use_on_delete and await self.is_in_use(db_obj.id):
             raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
 
         try:
-            with self._commit_or_rollback():
-                self.db.delete(db_obj)
+            async with self._commit_or_rollback():
+                await self.db.delete(db_obj)
         except SQLAlchemyError:
             raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
 
         return True
 
-    def refresh(self, db_obj: ModelType) -> ModelType:
+    async def refresh(self, db_obj: ModelType) -> ModelType:
         """Reload ``db_obj`` from the database and return it."""
 
-        self.db.refresh(db_obj)
+        await self.db.refresh(db_obj)
         return db_obj
 
-    def exists_by_id(self, model_id: int) -> bool:
+    async def exists_by_id(self, model_id: int) -> bool:
         """
         Return whether a record with ``model_id`` exists, as a bool.
 
-        The presence check fetches the row via ``first()`` and discards it,
-        so the record is hydrated even though only its existence is used.
+        Only the primary key is selected, so the check stays a lightweight
+        presence query.
         """
 
-        return self.db.query(self.model).filter(self.model.id == model_id).first() is not None
+        stmt = select(self.model.id).where(self.model.id == model_id).limit(1)
+        return await self.db.scalar(stmt) is not None

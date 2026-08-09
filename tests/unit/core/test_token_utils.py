@@ -86,9 +86,10 @@ class TestTokenVerification:
 
 @pytest.mark.unit
 class TestBlacklistNoop:
-    def test_blacklisting_with_nonpositive_ttl_is_noop(self):
+    @pytest.mark.asyncio
+    async def test_blacklisting_with_nonpositive_ttl_is_noop(self):
         token = decode_token(create_access_token({"sub": "a@example.com"}))
 
         # ttl <= 0 must short-circuit without touching Redis — would raise
         # a ConnectionError otherwise (no test Redis in unit scope).
-        blacklist_token(token["jti"], ttl_seconds=0)
+        await blacklist_token(token["jti"], ttl_seconds=0)

@@ -1,7 +1,7 @@
 """Business logic for authentication: login, registration, token refresh, logout."""
 
 from fastapi import HTTPException, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
 from app.core.exceptions import (
@@ -43,22 +43,22 @@ DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS
 class AuthService:
     """Orchestrates login, registration, token refresh, and logout."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.user_repo = UserRepository(db)
 
-    def login(self, request: LoginRequest, response: Response) -> LoginResponse:
+    async def login(self, request: LoginRequest, response: Response) -> LoginResponse:
         """Verify credentials, issue a fresh access/refresh token pair, and set the refresh cookie."""
 
-        user = self.user_repo.get_by_email(request.email)
+        user = await self.user_repo.get_by_email(request.email)
 
         password_hash = str(user.hashed_password) if user else DUMMY_PASSWORD_HASH
         if not user or not verify_password(request.password, password_hash):
             raise InvalidCredentialsException()
 
-        updated_user = self.user_repo.update_last_login(user)
+        updated_user = await self.user_repo.update_last_login(user)
         return LoginResponse(access_token=self._issue_tokens(updated_user.email, response))
 
-    def register(self, request: RegisterRequest, response: Response) -> RegisterResponse:
+    async def register(self, request: RegisterRequest, response: Response) -> RegisterResponse:
         """
         Create a new self-registered account and immediately log it in.
 
@@ -87,7 +87,7 @@ class AuthService:
             "hashed_password": get_password_hash(request.password),
         }
         try:
-            user = self.user_repo.create(user_data)
+            user = await self.user_repo.create(user_data)
         except RecordAlreadyExistsError:
             raise HTTPException(
                 status_code=400,
@@ -96,7 +96,7 @@ class AuthService:
 
         return RegisterResponse(access_token=self._issue_tokens(user.email, response))
 
-    def refresh_tokens(self, refresh_token: str) -> RefreshResponse:
+    async def refresh_tokens(self, refresh_token: str) -> RefreshResponse:
         """
         Issue a new access token from a valid, non-revoked refresh token.
 
@@ -106,12 +106,13 @@ class AuthService:
         logout) is rejected the same as an invalid or expired one, so a
         stolen refresh token can't outlive an explicit logout.
         """
+
         decoded = verify_refresh_token(refresh_token)
 
-        if is_token_blacklisted(decoded.jti):
+        if await is_token_blacklisted(decoded.jti):
             raise InvalidCredentialsException()
 
-        user = self.user_repo.get_by_email(decoded.email)
+        user = await self.user_repo.get_by_email(decoded.email)
         if not user:
             raise InvalidCredentialsException()
 
@@ -119,7 +120,7 @@ class AuthService:
         return RefreshResponse(access_token=new_access_token)
 
     @staticmethod
-    def logout(access_token: DecodedToken, refresh_token_str: str | None) -> LogoutResponse:
+    async def logout(access_token: DecodedToken, refresh_token_str: str | None) -> LogoutResponse:
         """
         Revoke the current access token and, if present, the refresh
         token cookie — both immediately unusable rather than left to
@@ -135,7 +136,7 @@ class AuthService:
         logging out the access token they do have).
         """
 
-        blacklist_token(access_token.jti, access_token.remaining_seconds, reason="logout")
+        await blacklist_token(access_token.jti, access_token.remaining_seconds, reason="logout")
 
         if refresh_token_str:
             try:
@@ -143,7 +144,7 @@ class AuthService:
             except InvalidTokenException:
                 pass
             else:
-                blacklist_token(decoded_refresh.jti, decoded_refresh.remaining_seconds, reason="logout")
+                await blacklist_token(decoded_refresh.jti, decoded_refresh.remaining_seconds, reason="logout")
 
         return LogoutResponse(detail="Successful logout")
 

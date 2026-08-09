@@ -22,7 +22,7 @@ router = APIRouter(tags=["Characters Proficiencies"])
         404: {"description": "No character exists with the given ID."},
     },
 )
-def set_character_skill_proficiencies(
+async def set_character_skill_proficiencies(
     character_id: int,
     proficiency_service: CharacterProficiencyServiceDep,
     current_user: CurrentUserDep,
@@ -52,7 +52,8 @@ def set_character_skill_proficiencies(
     proficiency not included is removed. Send an empty list to clear all
     skill proficiencies.
     """
-    return proficiency_service.set_skill_proficiencies(character_id, data, current_user)
+
+    return await proficiency_service.set_skill_proficiencies(character_id, data, current_user)
 
 
 @router.put(
@@ -64,7 +65,7 @@ def set_character_skill_proficiencies(
         404: {"description": "No character exists with the given ID."},
     },
 )
-def set_character_saving_throws(
+async def set_character_saving_throws(
     character_id: int,
     proficiency_service: CharacterProficiencyServiceDep,
     current_user: CurrentUserDep,
@@ -89,4 +90,5 @@ def set_character_saving_throws(
     character — any ability not included is removed. Send an empty list
     to clear all saving throw proficiencies.
     """
-    return proficiency_service.set_saving_throw_proficiencies(character_id, data, current_user)
+
+    return await proficiency_service.set_saving_throw_proficiencies(character_id, data, current_user)

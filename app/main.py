@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up Heofberu Backend API...")
     yield
     logger.info("Shutting down Heofberu Backend API...")
+    await settings.engine.dispose()
 
 
 def setup_middleware(app: FastAPI) -> None:

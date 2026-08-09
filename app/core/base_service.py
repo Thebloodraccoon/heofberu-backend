@@ -4,10 +4,13 @@ Generic service layer: fetch -> validate -> persist -> serialize orchestration.
 Provides :class:`BaseService` (a model-generic CRUD orchestrator sitting on
 top of :class:`BaseRepository`), the paginated :class:`Page` envelope, and
 the schema type variables services bind to.
+
+Async stack: every orchestration method is ``async`` (repository calls are
+awaited); ``_atomic`` wraps multistep writes in a savepoint transaction.
 """
 
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
 from typing import Any, Generic
 
 from pydantic import BaseModel
@@ -72,7 +75,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         ):
             cache_namespaces = ("spells",)
 
-            def __init__(self, db: Session):
+            def __init__(self, db: AsyncSession):
                 super().__init__(
                     repository=SpellRepository(db),
                     response_schema=SpellResponse,
@@ -92,7 +95,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         self.response_schema = response_schema
         self.get_all_schema = get_all_schema
 
-    def get_all(
+    async def get_all(
         self,
         page: int = 1,
         size: int = 100,
@@ -123,10 +126,10 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         """
 
         skip, limit = paginate(page, size)
-        total = self.repository.count(filters=filters, search=search)
+        total = await self.repository.count(filters=filters, search=search)
 
         if self.get_all_schema is None:
-            items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+            items = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
             return Page(
                 items=[self.response_schema.model_validate(item) for item in items],
                 total=total,
@@ -142,32 +145,32 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         if not relationship_fields:
             columns = [getattr(model, field_name) for field_name in self.get_all_schema.model_fields]
-            rows = self.repository.get_brief(
+            rows = await self.repository.get_brief(
                 *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
             )
             items = [
                 self.get_all_schema.model_validate(row, from_attributes=True) for row in rows
             ]
         else:
-            records = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+            records = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
             items = [self.get_all_schema.model_validate(record) for record in records]
 
         return Page(items=items, total=total, page=page, size=size)
 
-    def get_by_id(self, item_id: int) -> ResponseSchema:
+    async def get_by_id(self, item_id: int) -> ResponseSchema:
         """Return a single record by ID, or raise ``RecordNotFoundError``."""
 
-        item = self._get_or_404(item_id)
+        item = await self._get_or_404(item_id)
         return self.response_schema.model_validate(item)
 
-    def create(self, create_data: CreateSchema) -> ResponseSchema:
+    async def create(self, create_data: CreateSchema) -> ResponseSchema:
         """Persist a new record and return it serialized. No business-rule validation is done here."""
 
-        item = self.repository.create(create_data.model_dump())
-        self._invalidate_cache()
+        item = await self.repository.create(create_data.model_dump())
+        await self._invalidate_cache()
         return self.response_schema.model_validate(item)
 
-    def update(
+    async def update(
         self,
         item_id: int,
         update_data: UpdateSchema,
@@ -184,17 +187,17 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
                 before persisting; may mutate ``fields`` or raise to abort.
         """
 
-        item = self._get_or_404(item_id)
+        item = await self._get_or_404(item_id)
         fields = update_data.model_dump(exclude_unset=True)
 
         if before_update:
             before_update(item, fields)
 
-        updated_item = self.repository.update(item, fields)
-        self._invalidate_cache()
+        updated_item = await self.repository.update(item, fields)
+        await self._invalidate_cache()
         return self.response_schema.model_validate(updated_item)
 
-    def delete(self, item_id: int) -> bool:
+    async def delete(self, item_id: int) -> bool:
         """
         Delete a record by ID, returning ``True`` on success.
 
@@ -203,28 +206,28 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         the record is still referenced elsewhere -- no extra handling
         needed here; see ``BaseRepository.delete``/``is_in_use``.
         """
-        item = self._get_or_404(item_id)
-        result = self.repository.delete(item)
-        self._invalidate_cache()
+        item = await self._get_or_404(item_id)
+        result = await self.repository.delete(item)
+        await self._invalidate_cache()
         return result
 
-    def _invalidate_cache(self) -> None:
+    async def _invalidate_cache(self) -> None:
         """Purge all cached entries for this service's namespaces after a write."""
 
         for namespace in self.cache_namespaces:
-            invalidate(namespace)
+            await invalidate(namespace)
 
-    def _get_or_404(self, item_id: int) -> ModelType:
+    async def _get_or_404(self, item_id: int) -> ModelType:
         """Fetch the raw model instance or raise ``RecordNotFoundError``."""
 
-        item = self.repository.get_by_id(item_id)
+        item = await self.repository.get_by_id(item_id)
         if not item:
             raise RecordNotFoundError(model_name=self.repository.model.__name__, model_id=str(item_id))
 
         return item
 
     @staticmethod
-    def resolve_ids(
+    async def resolve_ids(
         lookup_fn: Callable[[list[int]], list[ResolvedItem]], ids: list[int], model_name: str
     ) -> list[ResolvedItem]:
         """Resolve ``ids`` via ``lookup_fn``, raising ``RecordIdsInvalidError`` if any don't resolve."""
@@ -232,7 +235,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         if not ids:
             return []
 
-        founds = lookup_fn(ids)
+        founds = await lookup_fn(ids)
         found_ids = {found.id for found in founds}
         missing_ids = [item_id for item_id in ids if item_id not in found_ids]
 
@@ -241,12 +244,12 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         return founds
 
-    @contextmanager
-    def _atomic(self) -> Generator[None, None, None]:
+    @asynccontextmanager
+    async def _atomic(self) -> AsyncGenerator[None, None]:
         """
         Wrap a multistep write in a single all-or-nothing transaction.
 
-        Every repository write inside the ``with`` block MUST pass
+        Every repository write inside the ``async with`` block MUST pass
         ``commit=False``. Commits once on success; rolls back and
         re-raises on any exception.
 
@@ -256,16 +259,17 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         Example::
 
-            with self._atomic():
-                item = self.repository.create(payload, commit=False)
+            async with self._atomic():
+                item = await self.repository.create(payload, commit=False)
                 ...
-            self.repository.db.refresh(item)
+            await self.repository.db.refresh(item)
         """
+
         db = self.repository.db
         try:
-            with db.begin_nested():
+            async with db.begin_nested():
                 yield
-            db.commit()
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
             raise

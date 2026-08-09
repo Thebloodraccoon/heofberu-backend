@@ -1,6 +1,8 @@
 """Repository for a character's effective ability scores and derived combat stats."""
 
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.constants import ItemType
 from app.core.base_repository import BaseRepository
@@ -38,15 +40,18 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
     queries, so a listing page costs a constant number of queries.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(CharacterAbilityScore, db)
 
-    def get_by_character_id(self, character_id: int) -> CharacterAbilityScore | None:
+    async def get_by_character_id(self, character_id: int) -> CharacterAbilityScore | None:
         """Fetch the cached effective-ability-score row, or None if never computed."""
 
-        return self.db.query(CharacterAbilityScore).filter(CharacterAbilityScore.character_id == character_id).first()
+        result = await self.db.execute(
+            select(CharacterAbilityScore).where(CharacterAbilityScore.character_id == character_id)
+        )
+        return result.scalar_one_or_none()
 
-    def get_many_by_character_ids(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
+    async def get_many_by_character_ids(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
         """
         Fetch the cache rows for many characters in a single query,
         keyed by ``character_id``. Empty input returns ``{}``.
@@ -59,29 +64,32 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         if not character_ids:
             return {}
 
-        rows = self.db.query(CharacterAbilityScore).filter(CharacterAbilityScore.character_id.in_(character_ids)).all()
-        return {row.character_id: row for row in rows}
+        result = await self.db.execute(
+            select(CharacterAbilityScore).where(CharacterAbilityScore.character_id.in_(character_ids))
+        )
+        return {row.character_id: row for row in result.scalars().unique().all()}
 
-    def get_race_bonuses(self, race_id: int | None) -> list[RaceAbilityBonus]:
+    async def get_race_bonuses(self, race_id: int | None) -> list[RaceAbilityBonus]:
         """Fetch a race's ability bonuses, or ``[]`` for a character with no race."""
 
         if race_id is None:
             return []
 
-        return self.db.query(RaceAbilityBonus).filter(RaceAbilityBonus.race_id == race_id).all()
+        result = await self.db.execute(select(RaceAbilityBonus).where(RaceAbilityBonus.race_id == race_id))
+        return list(result.scalars().unique().all())
 
-    def get_feat_increases(self, character_id: int) -> list[FeatAbilityScoreIncrease]:
+    async def get_feat_increases(self, character_id: int) -> list[FeatAbilityScoreIncrease]:
         """Fetch the ASI choices granted to a character via their feat grants."""
 
-        return (
-            self.db.query(FeatAbilityScoreIncrease)
+        result = await self.db.execute(
+            select(FeatAbilityScoreIncrease)
             .join(CharacterFeat, CharacterFeat.ability_score_increase_id == FeatAbilityScoreIncrease.id)
-            .filter(CharacterFeat.character_id == character_id)
+            .where(CharacterFeat.character_id == character_id)
             .options(selectinload(FeatAbilityScoreIncrease.feat))
-            .all()
         )
+        return list(result.scalars().unique().all())
 
-    def upsert(self, character_id: int, totals: dict) -> CharacterAbilityScore:
+    async def upsert(self, character_id: int, totals: dict) -> CharacterAbilityScore:
         """
         Create or update the cached effective ability scores for a
         character. ``totals`` keys are ``strength_total``,
@@ -89,7 +97,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         ``intelligence_total``, ``wisdom_total``, ``charisma_total``.
         """
 
-        cache = self.get_by_character_id(character_id)
+        cache = await self.get_by_character_id(character_id)
         if cache is None:
             cache = CharacterAbilityScore(character_id=character_id, **totals)
             self.db.add(cache)
@@ -97,27 +105,30 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             for field, value in totals.items():
                 setattr(cache, field, value)
 
-        self.db.commit()
-        self.db.refresh(cache)
+        await self.db.commit()
+        await self.db.refresh(cache)
+
         return cache
 
-    def get_classes(self, class_ids: list[int]) -> dict[int, Class]:
+    async def get_classes(self, class_ids: list[int]) -> dict[int, Class]:
         """Return ``{id: Class}`` for the given class ids (missing ids are absent)."""
 
         if not class_ids:
             return {}
-        rows = self.db.query(Class).filter(Class.id.in_(class_ids)).all()
-        return {row.id: row for row in rows}
 
-    def get_races(self, race_ids: list[int]) -> dict[int, Race]:
+        result = await self.db.execute(select(Class).where(Class.id.in_(class_ids)))
+        return {row.id: row for row in result.scalars().unique().all()}
+
+    async def get_races(self, race_ids: list[int]) -> dict[int, Race]:
         """Return ``{id: Race}`` for the given race ids (missing ids are absent)."""
 
         if not race_ids:
             return {}
-        rows = self.db.query(Race).filter(Race.id.in_(race_ids)).all()
-        return {row.id: row for row in rows}
 
-    def get_armor_by_character_ids(self, character_ids: list[int]) -> dict[int, list[ArmorSpec]]:
+        result = await self.db.execute(select(Race).where(Race.id.in_(race_ids)))
+        return {row.id: row for row in result.scalars().unique().all()}
+
+    async def get_armor_by_character_ids(self, character_ids: list[int]) -> dict[int, list[ArmorSpec]]:
         """
         Return ``{character_id: [ArmorSpec, ...]}`` for the characters' *equipped*
         armor items, ordered by stack id.
@@ -130,27 +141,28 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         if not character_ids:
             return {}
 
-        rows = (
-            self.db.query(CharacterItem)
+        result = await self.db.execute(
+            select(CharacterItem)
             .options(joinedload(CharacterItem.item))
             .join(Item, CharacterItem.item_id == Item.id)
-            .filter(
+            .where(
                 CharacterItem.character_id.in_(character_ids),
                 CharacterItem.is_equipped.is_(True),
                 Item.item_type == ItemType.ARMOR,
                 Item.armor_class_base.is_not(None),
             )
             .order_by(CharacterItem.id)
-            .all()
         )
+        rows = list(result.scalars().unique().all())
 
-        result: dict[int, list[ArmorSpec]] = {}
+        result_dict: dict[int, list[ArmorSpec]] = {}
         for row in rows:
-            result.setdefault(row.character_id, []).append(
+            result_dict.setdefault(row.character_id, []).append(
                 ArmorSpec(
                     base=row.item.armor_class_base,
                     dex_bonus=row.item.armor_class_dex_bonus,
                     max_dex_bonus=row.item.armor_class_max_dex_bonus,
                 )
             )
-        return result
+
+        return result_dict

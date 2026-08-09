@@ -1,13 +1,12 @@
 """ORM model for registered users."""
 
-from datetime import datetime, timezone
-
 from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.constants import UserRole
 from app.models.enums import UserRoleType
 from app.settings import settings
+from app.settings._common import utcnow
 
 
 class User(settings.Base):  # type: ignore
@@ -26,11 +25,11 @@ class User(settings.Base):  # type: ignore
     contact = Column(String(length=100), nullable=True)
     location = Column(String(length=100), nullable=True)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=utcnow,
+        onupdate=utcnow,
     )
     last_login = Column(DateTime)
 

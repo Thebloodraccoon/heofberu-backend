@@ -1,6 +1,6 @@
 """Low-level Redis cache store.
 
-All access goes through ``settings.get_redis()`` (the same sync context
+All access goes through ``settings.get_redis()`` (the same async context
 manager used by the JWT blacklist) so no connection lifecycle is managed
 here. Every operation is wrapped in try/except: if Redis is down the cache
 behaves as an always-miss cache and the request proceeds to the database.
@@ -40,21 +40,21 @@ def cache_ttl_default() -> int:
     return getattr(settings, "CACHE_TTL_DEFAULT", 86400)
 
 
-def cache_get(key: str) -> Any:
+async def cache_get(key: str) -> Any:
     """Fetch a raw cached value; returns ``None`` on miss or Redis failure."""
 
     if not cache_enabled():
         return None
     try:
-        with _redis_provider()() as redis:
-            return redis.get(key)
+        async with _redis_provider()() as redis:
+            return await redis.get(key)
 
     except Exception:
         logger.warning("Cache GET failed for %s", key, exc_info=True)
         return None
 
 
-def cache_set(key: str, value: Any, ttl: int | None = None) -> None:
+async def cache_set(key: str, value: Any, ttl: int | None = None) -> None:
     """Store a raw value with an optional TTL; no-op when caching is disabled."""
 
     if not cache_enabled():
@@ -64,13 +64,13 @@ def cache_set(key: str, value: Any, ttl: int | None = None) -> None:
         ttl = cache_ttl_default()
 
     try:
-        with _redis_provider()() as redis:
-            redis.set(key, value, ex=ttl)
+        async with _redis_provider()() as redis:
+            await redis.set(key, value, ex=ttl)
     except Exception:
         logger.warning("Cache SET failed for %s", key, exc_info=True)
 
 
-def cache_delete_prefix(namespace: str) -> None:
+async def cache_delete_prefix(namespace: str) -> None:
     """Delete every key under ``<prefix>:<namespace>:*`` (best-effort)."""
 
     if not cache_enabled():
@@ -78,10 +78,10 @@ def cache_delete_prefix(namespace: str) -> None:
 
     pattern = f"{cache_prefix()}:{namespace}:*"
     try:
-        with _redis_provider()() as redis:
-            keys = list(redis.scan_iter(match=pattern, count=500))
+        async with _redis_provider()() as redis:
+            keys = [key async for key in redis.scan_iter(match=pattern, count=500)]
             if keys:
-                redis.delete(*keys)
+                await redis.delete(*keys)
 
     except Exception:
         logger.warning("Cache invalidation failed for %s", namespace, exc_info=True)

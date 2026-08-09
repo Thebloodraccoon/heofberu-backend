@@ -1,6 +1,6 @@
 """Character feat service: granting, updating, and revoking feats."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
@@ -50,21 +50,23 @@ class CharacterFeatService(CharacterSubDomainService):
         recompute and persist ``character_ability_scores``.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.stats_service = CharacterStatsService(db)
         self.feat_repository = FeatRepository(db)
 
-    def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
+    async def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
         """List every feat granted to a character."""
 
-        self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_user(character_id, current_user)
 
-        grants = self.feat_grant_repository.get_character_feats(character_id)
+        grants = await self.feat_grant_repository.get_character_feats(character_id)
         return [CharacterFeatResponse.model_validate(grant) for grant in grants]
 
-    def add_feat(self, character_id: int, data: CharacterFeatAdd, current_user: UserResponse) -> CharacterFeatResponse:
+    async def add_feat(
+        self, character_id: int, data: CharacterFeatAdd, current_user: UserResponse
+    ) -> CharacterFeatResponse:
         """
         Grant a feat to a character.
 
@@ -85,32 +87,32 @@ class CharacterFeatService(CharacterSubDomainService):
         for now.
         """
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
 
-        feat = self.feat_repository.get_by_id(data.feat_id)
+        feat = await self.feat_repository.get_by_id(data.feat_id)
         if not feat:
             raise FeatNotFoundException(feat_id=data.feat_id)
 
-        existing = self.feat_grant_repository.get_character_feat_by_feat_id(character_id, data.feat_id)
+        existing = await self.feat_grant_repository.get_character_feat_by_feat_id(character_id, data.feat_id)
         if existing:
             raise CharacterFeatAlreadyKnownException(character_id=character_id, feat_id=data.feat_id)
 
         if data.ability_score_increase_id is not None:
             validate_ability_score_increase(feat, data.ability_score_increase_id)
 
-        check_feat_prerequisite(character, feat, self.stats_service)
+        await check_feat_prerequisite(character, feat, self.stats_service)
 
-        grant = self.feat_grant_repository.add_character_feat(
+        grant = await self.feat_grant_repository.add_character_feat(
             character_id, data.feat_id, data.ability_score_increase_id, commit=False
         )
-        sync_progression_features(self.repository.db, character)
-        self.repository.db.commit()
+        await sync_progression_features(self.repository.db, character)
+        await self.repository.db.commit()
 
-        self.stats_service.refresh(character)
+        await self.stats_service.refresh(character)
 
         return CharacterFeatResponse.model_validate(grant)
 
-    def update_feat(
+    async def update_feat(
         self,
         character_id: int,
         character_feat_id: int,
@@ -119,39 +121,40 @@ class CharacterFeatService(CharacterSubDomainService):
     ) -> CharacterFeatResponse:
         """Change (or clear) the ASI choice for an already-granted feat."""
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
 
-        grant = self._get_grant_or_404(character_id, character_feat_id)
+        grant = await self._get_grant_or_404(character_id, character_feat_id)
 
         if data.ability_score_increase_id is not None:
-            feat = self.feat_repository.get_by_id(grant.feat_id)
+            feat = await self.feat_repository.get_by_id(grant.feat_id)
             validate_ability_score_increase(feat, data.ability_score_increase_id)
 
-        updated_grant = self.feat_grant_repository.set_character_feat_ability_score_increase(
+        updated_grant = await self.feat_grant_repository.set_character_feat_ability_score_increase(
             grant, data.ability_score_increase_id
         )
 
-        self.stats_service.refresh(character)
-
+        await self.stats_service.refresh(character)
         return CharacterFeatResponse.model_validate(updated_grant)
 
-    def remove_feat(self, character_id: int, character_feat_id: int, current_user: UserResponse) -> bool:
+    async def remove_feat(self, character_id: int, character_feat_id: int, current_user: UserResponse) -> bool:
         """Revoke a feat from a character (its FEAT-source features drop off with it)."""
 
-        character = self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_user(character_id, current_user)
 
-        grant = self._get_grant_or_404(character_id, character_feat_id)
-        result = self.feat_grant_repository.remove_character_feat(grant)
-        sync_progression_features(self.repository.db, character)
-        self.repository.db.commit()
+        grant = await self._get_grant_or_404(character_id, character_feat_id)
+        result = await self.feat_grant_repository.remove_character_feat(grant)
+        await sync_progression_features(self.repository.db, character)
+        await self.repository.db.commit()
 
-        self.stats_service.refresh(character)
+        await self.stats_service.refresh(character)
 
         return result
 
-    def _get_grant_or_404(self, character_id: int, character_feat_id: int) -> CharacterFeat:
+    async def _get_grant_or_404(self, character_id: int, character_feat_id: int) -> CharacterFeat:
         """Fetch a feat grant scoped to the character, or raise ``CharacterFeatNotFoundException``."""
-        grant = self.feat_grant_repository.get_character_feat_by_id(character_id, character_feat_id)
+
+        grant = await self.feat_grant_repository.get_character_feat_by_id(character_id, character_feat_id)
         if not grant:
             raise CharacterFeatNotFoundException(character_id=character_id, character_feat_id=character_feat_id)
+
         return grant

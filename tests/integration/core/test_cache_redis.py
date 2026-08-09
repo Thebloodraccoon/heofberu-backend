@@ -40,54 +40,55 @@ class Quotes:
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 class TestCacheStore:
-    def test_set_get_roundtrip(self, redis_client, caching_on):
-        cache_set(KEY, "value", ttl=60)
+    async def test_set_get_roundtrip(self, redis_client, caching_on):
+        await cache_set(KEY, "value", ttl=60)
 
-        assert cache_get(KEY) == "value"
-        assert redis_client.ttl(KEY) > 0
+        assert await cache_get(KEY) == "value"
+        assert await redis_client.ttl(KEY) > 0
 
-    def test_set_without_ttl_uses_default(self, redis_client, caching_on):
-        cache_set(KEY, "value")
+    async def test_set_without_ttl_uses_default(self, redis_client, caching_on):
+        await cache_set(KEY, "value")
 
-        assert cache_get(KEY) == "value"
-        assert redis_client.ttl(KEY) == settings.CACHE_TTL_DEFAULT
+        assert await cache_get(KEY) == "value"
+        assert await redis_client.ttl(KEY) == settings.CACHE_TTL_DEFAULT
 
-    def test_missing_key_is_none(self, redis_client, caching_on):
-        assert cache_get("cache:missing:*") is None
+    async def test_missing_key_is_none(self, redis_client, caching_on):
+        assert await cache_get("cache:missing:*") is None
 
-    def test_delete_prefix_removes_only_namespace(self, redis_client, caching_on):
-        cache_set("cache:spells:get_all:1=1", "a")
-        cache_set("cache:spells:get_by_id:1", "b")
-        cache_set("cache:other:get:1=1", "c")
+    async def test_delete_prefix_removes_only_namespace(self, redis_client, caching_on):
+        await cache_set("cache:spells:get_all:1=1", "a")
+        await cache_set("cache:spells:get_by_id:1", "b")
+        await cache_set("cache:other:get:1=1", "c")
 
-        cache_delete_prefix("spells")
+        await cache_delete_prefix("spells")
 
-        assert cache_get("cache:spells:get_all:1=1") is None
-        assert cache_get("cache:spells:get_by_id:1") is None
-        assert cache_get("cache:other:get:1=1") == "c"
+        assert await cache_get("cache:spells:get_all:1=1") is None
+        assert await cache_get("cache:spells:get_by_id:1") is None
+        assert await cache_get("cache:other:get:1=1") == "c"
 
-    def test_invalidate_shortcut(self, redis_client, caching_on):
-        cache_set("cache:items:get_all:1=1", "a")
+    async def test_invalidate_shortcut(self, redis_client, caching_on):
+        await cache_set("cache:items:get_all:1=1", "a")
 
-        invalidate("items")
+        await invalidate("items")
 
-        assert cache_get("cache:items:get_all:1=1") is None
+        assert await cache_get("cache:items:get_all:1=1") is None
 
-    def test_decorator_shares_cache_across_instances(self, redis_client, caching_on):
+    async def test_decorator_shares_cache_across_instances(self, redis_client, caching_on):
         first = Quotes()
         second = Quotes()
 
-        assert first.get("top") == second.get("top")
+        assert await first.get("top") == await second.get("top")
 
         assert first.calls == 1
         assert second.calls == 0
 
-    def test_decorator_honours_disabled_cache(self, redis_client, caching_on, monkeypatch):
+    async def test_decorator_honours_disabled_cache(self, redis_client, caching_on, monkeypatch):
         monkeypatch.setattr(settings, "CACHE_ENABLED", False)
         first = Quotes()
 
-        first.get("top")
-        first.get("top")
+        await first.get("top")
+        await first.get("top")
 
         assert first.calls == 2
