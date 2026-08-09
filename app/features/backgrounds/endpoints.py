@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Body, Query
 
 from app.core.base_service import Page
-from app.core.dependencies import BackgroundServiceDep, GmUserDep
+from app.core.dependencies import BackgroundServiceDep, FounderDep, GmUserDep
 from app.features.backgrounds.schemas import (
     BackgroundBriefResponse,
     BackgroundCreate,
@@ -11,6 +11,7 @@ from app.features.backgrounds.schemas import (
     BackgroundUpdate,
     SkillsUpdate,
 )
+from app.features.features.schemas import FeaturesReplace
 
 router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
 
@@ -28,7 +29,7 @@ def get_backgrounds(
 ):
     """
     Return a paginated list of backgrounds, each with full detail —
-    including granted skills.
+    including granted skills and features.
 
     Open endpoint, no authentication required.
 
@@ -65,10 +66,10 @@ def get_backgrounds_brief(
 
     Response is `{items, total, page, size}`, same shape as `GET /backgrounds/`.
 
-    Does not include feature text, personality suggestions, or
-    description — use `GET /backgrounds/{background_id}` for the full
-    record. Intended for dropdowns, tables, and similar listing UI where
-    the full payload is unnecessary.
+    Does not include suggestion text, description, or features — use
+    `GET /backgrounds/{background_id}` for the full record. Intended for
+    dropdowns, tables, and similar listing UI where the full payload is
+    unnecessary.
     """
     return background_service.list_brief(page=page, size=size, search=search)
 
@@ -84,7 +85,7 @@ def get_backgrounds_brief(
 def get_background(background_id: int, background_service: BackgroundServiceDep):
     """
     Return a single background by ID, with full detail — including
-    granted skills.
+    granted skills and features.
 
     Open endpoint, no authentication required.
     """
@@ -110,12 +111,10 @@ def create_background(
                 "summary": "Minimal — base fields only",
                 "value": {"name": "Acolyte", "is_homebrew": "false"},
             },
-            "with_skills": {
-                "summary": "With feature and granted skills",
+            "with_skills_and_features": {
+                "summary": "With granted skills and nested features",
                 "value": {
                     "name": "Acolyte",
-                    "feature_name": "Shelter of the Faithful",
-                    "feature_description": "You can perform religious ceremonies of your faith, and you and your companions can expect free healing and care at a temple, shrine, or other established presence of your faith.",
                     "personality_traits_suggestions": "I idolize a particular hero of my faith.\nI can find common ground between the fiercest enemies.",
                     "ideals_suggestions": "Tradition. The ancient traditions of worship and sacrifice must be preserved.",
                     "bonds_suggestions": "I would die to recover an ancient relic of my faith.",
@@ -123,6 +122,12 @@ def create_background(
                     "description": "You have spent your life in the service of a temple.",
                     "is_homebrew": "false",
                     "granted_skills": [4, 9],
+                    "features": [
+                        {
+                            "name": "Shelter of the Faithful",
+                            "description": "You can perform religious ceremonies of your faith, and you and your companions can expect free healing and care at a temple, shrine, or other established presence of your faith.",
+                        }
+                    ],
                 },
             },
         },
@@ -131,9 +136,11 @@ def create_background(
     """
     Create a new background. **GM only.**
 
-    `granted_skills` is optional. If provided, it's saved together with
-    the background in a single transaction — the background is fully set
-    up in one call instead of a `POST` followed by a `PUT`.
+    `granted_skills` and `features` are optional. If provided, they're
+    saved together with the background in a single transaction — the
+    background is fully set up in one call instead of a `POST` followed
+    by a `PUT`. Nested `features` become BACKGROUND-source features that
+    every character bearing this background gains automatically.
     """
     return background_service.create_background(background_data, created_by_id=current_user.id)
 
@@ -168,13 +175,15 @@ def update_background(
         404: {"description": "No background exists with the given ID."},
     },
 )
-def delete_background(background_id: int, background_service: BackgroundServiceDep, _: GmUserDep):
+def delete_background(background_id: int, background_service: BackgroundServiceDep, _: FounderDep):
     """
-    Delete a background. **GM only.**
+    Delete a background. **Found-father only.**
 
-    Also removes its links to granted skills (cascade). Characters
-    currently using this background have their `background_id` set to
-    NULL rather than being blocked or deleted.
+    Also removes its links to granted skills and its features (cascade).
+    Characters currently using this background have their `background_id`
+    set to NULL rather than being blocked or deleted — deletion is only
+    blocked (409) once one of its features has been granted to a
+    character.
     """
     background_service.delete(background_id)
     return None
@@ -214,3 +223,61 @@ def set_background_skills(
     included is removed. Send an empty list to clear all granted skills.
     """
     return background_service.set_skills(background_id, data)
+
+
+@router.put(
+    "/{background_id}/features",
+    response_model=BackgroundResponse,
+    summary="Replace a background's features",
+    responses={
+        400: {"description": "An item's feature id does not belong to this background."},
+        422: {"description": "Duplicate feature ids in one request."},
+        404: {"description": "No background exists with the given ID."},
+    },
+)
+def replace_background_features(
+    background_id: int,
+    background_service: BackgroundServiceDep,
+    _: GmUserDep,
+    data: FeaturesReplace = Body(
+        openapi_examples={
+            "replace": {
+                "summary": "Replace the background feature list (matched by id)",
+                "value": {
+                    "features": [
+                        {
+                            "id": 5,
+                            "name": "Shelter of the Faithful",
+                            "description": "You can perform religious ceremonies of your faith.",
+                        },
+                        {
+                            "name": "Devotion",
+                            "description": "You have a personal devotional practice.",
+                        },
+                    ]
+                },
+            },
+            "clear": {
+                "summary": "Remove all background features",
+                "value": {"features": []},
+            },
+        },
+    ),
+):
+    """
+    Replace a background's feature list. **GM only.**
+
+    Full replace, not merge, matched by feature `id`:
+
+    - items carrying an `id` update that existing feature in place — the
+      feature keeps its id, so any character grants (and notes on them)
+      survive the update;
+    - items without an `id` create new features;
+    - current features whose id is not in the request body are deleted,
+      which cascades away their character grants.
+
+    Send `{"features": []}` to delete every feature of the background. An
+    `id` that doesn't belong to this background is rejected with 400;
+    duplicate ids within one request are rejected with 422.
+    """
+    return background_service.replace_background_features(background_id, data, created_by_id=_.id)

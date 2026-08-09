@@ -46,6 +46,28 @@ class TestRaceCrud:
         assert body["ability_bonuses"] == [{"ability": "DEX", "bonus": 2}]
         assert body["granted_skills"][0]["id"] == skill.id
 
+    def test_create_race_with_nested_features(self, client, gm_token):
+        response = client.post(
+            "/races/",
+            json={
+                "name": "Drow",
+                "size": "MEDIUM",
+                "speed": 30,
+                "features": [
+                    {"name": "Darkvision", "description": "See in dim light within 60 ft."},
+                    {"name": "Sunlight Sensitivity", "description": "Disadvantage in direct sunlight."},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        race_id = response.json()["id"]
+
+        features = client.get(f"/features/?source_type=RACE&race_id={race_id}").json()["items"]
+        assert [feature["name"] for feature in features] == ["Darkvision", "Sunlight Sensitivity"]
+        assert all(feature["source_type"] == "RACE" and feature["race_id"] == race_id for feature in features)
+
     def test_create_duplicate_race_name_returns_400(self, client, gm_token, create_race):
         create_race(name="Orc")
         response = client.post(
@@ -104,22 +126,113 @@ class TestRaceCrud:
         assert response.status_code == 200
         assert [item["id"] for item in response.json()["granted_skills"]] == [skill.id]
 
-    def test_gm_can_delete_race(self, client, gm_token, create_race):
+    def test_gm_cannot_delete_race(self, client, gm_token, create_race):
         race = create_race(name="Doomed Race")
 
         response = client.delete(f"/races/{race.id}", headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert response.status_code == 403
+        assert client.get(f"/races/{race.id}").status_code == 200
+
+    def test_founder_can_delete_race(self, client, founder_token, create_race):
+        race = create_race(name="Doomed Race")
+
+        response = client.delete(f"/races/{race.id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 204
         assert client.get(f"/races/{race.id}").status_code == 404
 
     def test_delete_race_in_use_by_character_returns_409(
-        self, client, gm_token, create_race, create_class, create_user, create_character
+        self, client, founder_token, create_race, create_class, create_user, create_character
     ):
         race = create_race(name="Popular Race")
         player = create_user()
         char_class = create_class(name="Some Class")
         create_character(owner_id=player.id, class_id=char_class.id, race_id=race.id)
 
-        response = client.delete(f"/races/{race.id}", headers={"Authorization": f"Bearer {gm_token}"})
+        response = client.delete(f"/races/{race.id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
+
+    def test_player_cannot_replace_race_features(self, client, player_token, create_race):
+        race = create_race(name="Elf")
+
+        response = client.put(
+            f"/races/{race.id}/features",
+            json={"features": [{"name": "Darkvision"}]},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+    def test_gm_can_replace_race_features_by_id(self, client, gm_token):
+        created = client.post(
+            "/races/",
+            json={
+                "name": "Elf",
+                "size": "MEDIUM",
+                "speed": 30,
+                "features": [
+                    {"name": "Darkvision", "description": "See in dim light within 60 ft."},
+                    {"name": "Fey Ancestry", "description": "Advantage on saves vs charm."},
+                ],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert created.status_code == 201
+        race_id = created.json()["id"]
+        original = {feature["name"]: feature["id"] for feature in created.json()["features"]}
+
+        response = client.put(
+            f"/races/{race_id}/features",
+            json={
+                "features": [
+                    {"id": original["Darkvision"], "name": "Darkvision", "description": "See in the dark."},
+                    {"name": "Trance", "description": "Meditate for 4 hours instead of sleeping."},
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        features = {feature["name"]: feature for feature in response.json()["features"]}
+        assert set(features) == {"Darkvision", "Trance"}
+        # Kept id → updated in place (grants survive); no id → created.
+        assert features["Darkvision"]["id"] == original["Darkvision"]
+        assert features["Trance"]["source_type"] == "RACE"
+        # Feature absent from the payload is gone.
+        assert client.get(f"/features/{original['Fey Ancestry']}").status_code == 404
+
+    def test_replace_race_features_unknown_id_returns_400(self, client, gm_token, create_race, create_feature):
+        race = create_race(name="Elf")
+        foreign = create_feature(name="Alien Feature", source_type="OTHER")
+
+        response = client.put(
+            f"/races/{race.id}/features",
+            json={"features": [{"id": foreign.id, "name": "Alien Feature"}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
+
+    def test_gm_can_clear_race_features(self, client, gm_token, create_race, create_feature):
+        race = create_race(name="Elf")
+        create_feature(name="Darkvision", source_type="RACE", race_id=race.id)
+
+        response = client.put(
+            f"/races/{race.id}/features",
+            json={"features": []},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["features"] == []
+
+    def test_replace_race_features_returns_404(self, client, gm_token):
+        response = client.put(
+            "/races/9999/features",
+            json={"features": []},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404

@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, RaceSize
+from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
 
 
 class RaceBase(BaseModel):
@@ -11,7 +12,6 @@ class RaceBase(BaseModel):
     name: str
     size: RaceSize = RaceSize.MEDIUM
     speed: int = 30
-    traits: str = ""
     description: str = ""
     is_homebrew: bool = False
 
@@ -49,6 +49,7 @@ class RaceCreate(RaceBase):
 
     ability_bonuses: list[AbilityBonusItem] | None = None
     granted_skills: list[int] | None = None
+    features: list[NestedFeatureCreate] | None = None
 
     @field_validator("ability_bonuses")
     def validate_unique_abilities(cls, value):
@@ -77,7 +78,6 @@ class RaceUpdate(BaseModel):
     name: str | None = None
     size: RaceSize | None = None
     speed: int | None = None
-    traits: str | None = None
     description: str | None = None
     is_homebrew: bool | None = None
 
@@ -134,11 +134,12 @@ class RaceResponse(RaceBase):
     created_by_id: int | None = None
     ability_bonuses: list[AbilityBonusResponse] = []
     granted_skills: list[SkillResponse] = []
+    features: list[NestedFeatureResponse] = []
 
 
 class RaceBriefResponse(BaseModel):
     """
-    Lightweight listing row: no ability bonuses / granted skills, no traits/description.
+    Lightweight listing row: no ability bonuses / granted skills, no description.
 
     Served by the inherited ``BaseService.list_brief`` column-select path
     (``BaseRepository.get_brief``), which loads only these columns, is

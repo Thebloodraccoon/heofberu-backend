@@ -14,6 +14,14 @@ class ClassNotFoundException(HTTPException):
         )
 
 
+class SubclassNotFoundException(HTTPException):
+    def __init__(self, class_id: int, subclass_id: int):
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Subclass with id {subclass_id} not found for class {class_id}.",
+        )
+
+
 class InvalidClassLevelException(HTTPException):
     """Raised when a spell slot progression is set for a class_level outside 1-20."""
 

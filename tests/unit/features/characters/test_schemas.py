@@ -54,8 +54,12 @@ class TestSpellSlotUpdate:
 
 @pytest.mark.unit
 class TestCharacterUpdate:
-    def test_accepts_subclass(self):
-        assert CharacterUpdate(subclass="Arcane Trickster").subclass == "Arcane Trickster"
+    def test_subclass_is_not_a_patchable_field(self):
+        """subclass is fixed at creation and changed via the progression endpoint, not PATCH."""
+        assert "subclass" not in CharacterUpdate.model_fields
+        assert "subclass_id" not in CharacterUpdate.model_fields
 
-    def test_subclass_defaults_to_none(self):
-        assert CharacterUpdate().subclass is None
+    def test_extra_subclass_fields_are_ignored(self):
+        update = CharacterUpdate(name="Renamed", subclass_id=999, subclass="Arcane Trickster")
+
+        assert update.name == "Renamed"

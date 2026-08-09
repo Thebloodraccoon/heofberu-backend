@@ -32,6 +32,7 @@ from app.models import (  # noqa: E402
     Race,
     Skill,
     Spell,
+    Subclass,
     User,
 )
 from app.settings import settings  # noqa: E402
@@ -52,11 +53,6 @@ def client(db_session):
             yield test_client
     finally:
         app.dependency_overrides.clear()
-
-
-# --------------------------------------------------------------------------
-# Factories
-# --------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -96,6 +92,12 @@ def gm(create_user):
 
 
 @pytest.fixture
+def founder(create_user):
+    """A default found-father (founder) user."""
+    return create_user(username="founder1", email="founder1@example.com", role=UserRole.FOUND_FATHER)
+
+
+@pytest.fixture
 def create_skill(db_session):
     def _create_skill(key="PERCEPTION", name="Perception", ability="WIS", description=""):
         skill = Skill(key=key, name=name, ability=ability, description=description)
@@ -109,12 +111,11 @@ def create_skill(db_session):
 
 @pytest.fixture
 def create_race(db_session):
-    def _create_race(name="Elf", size="MEDIUM", speed=30, traits="", description="", is_homebrew=False):
+    def _create_race(name="Elf", size="MEDIUM", speed=30, description="", is_homebrew=False):
         race = Race(
             name=name,
             size=size,
             speed=speed,
-            traits=traits,
             description=description,
             is_homebrew=is_homebrew,
         )
@@ -150,6 +151,32 @@ def create_class(db_session):
         return class_model
 
     return _create_class
+
+
+@pytest.fixture
+def create_subclass(db_session):
+    def _create_subclass(
+        class_id,
+        name="Champion",
+        unlock_level=3,
+        archetype_group_name=None,
+        description="",
+        is_homebrew=False,
+    ):
+        subclass = Subclass(
+            class_id=class_id,
+            name=name,
+            unlock_level=unlock_level,
+            archetype_group_name=archetype_group_name,
+            description=description,
+            is_homebrew=is_homebrew,
+        )
+        db_session.add(subclass)
+        db_session.commit()
+        db_session.refresh(subclass)
+        return subclass
+
+    return _create_subclass
 
 
 @pytest.fixture
@@ -192,11 +219,25 @@ def create_feat(db_session):
 
 @pytest.fixture
 def create_feature(db_session):
-    def _create_feature(name="Extra Attack", source_type="CLASS", class_id=None, level=None, is_homebrew=False):
+    def _create_feature(
+        name="Extra Attack",
+        source_type="CLASS",
+        class_id=None,
+        subclass_id=None,
+        race_id=None,
+        background_id=None,
+        feat_id=None,
+        level=None,
+        is_homebrew=False,
+    ):
         feature = Feature(
             name=name,
             source_type=source_type,
             class_id=class_id,
+            subclass_id=subclass_id,
+            race_id=race_id,
+            background_id=background_id,
+            feat_id=feat_id,
             level=level,
             is_homebrew=is_homebrew,
         )
@@ -275,6 +316,7 @@ def create_character(db_session):
         level=1,
         race_id=None,
         background_id=None,
+        subclass_id=None,
         **kwargs,
     ):
         character = Character(
@@ -284,6 +326,7 @@ def create_character(db_session):
             level=level,
             race_id=race_id,
             background_id=background_id,
+            subclass_id=subclass_id,
             **kwargs,
         )
         db_session.add(character)
@@ -293,10 +336,6 @@ def create_character(db_session):
 
     return _create_character
 
-
-# --------------------------------------------------------------------------
-# Authentication helpers
-# --------------------------------------------------------------------------
 
 DEFAULT_PASSWORD = "password123"
 
@@ -321,3 +360,8 @@ def player_token(player, login_as):
 @pytest.fixture
 def gm_token(gm, login_as):
     return login_as(gm)
+
+
+@pytest.fixture
+def founder_token(founder, login_as):
+    return login_as(founder)

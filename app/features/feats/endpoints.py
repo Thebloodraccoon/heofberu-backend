@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Body, Query
 
 from app.core.base_service import Page
-from app.core.dependencies import FeatServiceDep, GmUserDep
+from app.core.dependencies import FeatServiceDep, FounderDep, GmUserDep
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
     FeatBriefResponse,
@@ -11,6 +11,7 @@ from app.features.feats.schemas import (
     FeatResponse,
     FeatUpdate,
 )
+from app.features.features.schemas import FeaturesReplace
 
 router = APIRouter(prefix="/feats", tags=["Feats"])
 
@@ -28,7 +29,7 @@ def get_feats(
 ):
     """
     Return a paginated list of feats, each with full detail — including
-    prerequisites and ability score increase choices.
+    prerequisites, ability score increase choices, and features.
 
     Open endpoint, no authentication required.
 
@@ -82,7 +83,7 @@ def get_feats_brief(
 def get_feat(feat_id: int, feat_service: FeatServiceDep):
     """
     Return a single feat by ID, with full detail — including
-    prerequisites and ability score increase choices.
+    prerequisites, ability score increase choices, and features.
 
     Open endpoint, no authentication required.
     """
@@ -137,15 +138,34 @@ def create_feat(
                     ],
                 },
             },
+            "with_features": {
+                "summary": "With nested features (e.g. Alert)",
+                "value": {
+                    "name": "Alert",
+                    "description": "You gain a +5 bonus to initiative and can't be surprised while conscious.",
+                    "features": [
+                        {
+                            "name": "Alert Initiative",
+                            "description": "You gain a +5 bonus to initiative.",
+                        },
+                        {
+                            "name": "Cannot Be Surprised",
+                            "description": "You can't be surprised while conscious.",
+                        },
+                    ],
+                },
+            },
         },
     ),
 ):
     """
     Create a new feat. **GM only.**
 
-    `ability_score_increases` is optional. If provided, the choices are
-    saved together with the feat in a single transaction — the feat is
-    fully set up in one call instead of a `POST` followed by a `PUT`.
+    `ability_score_increases` and `features` are optional. If provided,
+    they're saved together with the feat in a single transaction — the
+    feat is fully set up in one call instead of a `POST` followed by a
+    `PUT`. Nested `features` become FEAT-source features that any
+    character granted this feat gains automatically.
     """
     return feat_service.create_feat(feat_data, created_by_id=current_user.id)
 
@@ -179,13 +199,13 @@ def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatService
         409: {"description": "Feat is still in use by one or more characters or features."},
     },
 )
-def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: GmUserDep):
+def delete_feat(feat_id: int, feat_service: FeatServiceDep, _: FounderDep):
     """
-    Delete a feat. **GM only.**
+    Delete a feat. **Found-father only.**
 
-    Also removes its ability score increase choices (cascade). Blocked if
-    the feat is still granted to one or more characters, or referenced by
-    a Feature.
+    Also removes its ability score increase choices and its features
+    (cascade). Blocked if the feat is still granted to one or more
+    characters, or one of its features is still granted to a character.
     """
     feat_service.delete(feat_id)
     return None
@@ -227,3 +247,61 @@ def set_feat_ability_score_increases(
     grants no ability score increase of its own).
     """
     return feat_service.set_ability_score_increases(feat_id, data)
+
+
+@router.put(
+    "/{feat_id}/features",
+    response_model=FeatResponse,
+    summary="Replace a feat's features",
+    responses={
+        400: {"description": "An item's feature id does not belong to this feat."},
+        422: {"description": "Duplicate feature ids in one request."},
+        404: {"description": "No feat exists with the given ID."},
+    },
+)
+def replace_feat_features(
+    feat_id: int,
+    feat_service: FeatServiceDep,
+    _: GmUserDep,
+    data: FeaturesReplace = Body(
+        openapi_examples={
+            "replace": {
+                "summary": "Replace the feat feature list (matched by id)",
+                "value": {
+                    "features": [
+                        {
+                            "id": 8,
+                            "name": "Alert Initiative",
+                            "description": "You gain a +5 bonus to initiative.",
+                        },
+                        {
+                            "name": "Never Startled",
+                            "description": "You always act in the surprise round.",
+                        },
+                    ]
+                },
+            },
+            "clear": {
+                "summary": "Remove all feat features",
+                "value": {"features": []},
+            },
+        },
+    ),
+):
+    """
+    Replace a feat's feature list. **GM only.**
+
+    Full replace, not merge, matched by feature `id`:
+
+    - items carrying an `id` update that existing feature in place — the
+      feature keeps its id, so any character grants (and notes on them)
+      survive the update;
+    - items without an `id` create new features;
+    - current features whose id is not in the request body are deleted,
+      which cascades away their character grants.
+
+    Send `{"features": []}` to delete every feature of the feat. An `id`
+    that doesn't belong to this feat is rejected with 400; duplicate ids
+    within one request are rejected with 422.
+    """
+    return feat_service.replace_feat_features(feat_id, data, created_by_id=_.id)

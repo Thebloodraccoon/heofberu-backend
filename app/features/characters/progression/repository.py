@@ -15,6 +15,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
 
     def get_character_choices(self, character_id: int) -> list[CharacterASIChoice]:
         """List a character's resolved ASI-level choices, ordered by level."""
+
         return (
             self.db.query(CharacterASIChoice)
             .filter(CharacterASIChoice.character_id == character_id)
@@ -42,6 +43,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         ``commit=False`` defers the commit for callers wrapping the write
         in a transaction.
         """
+
         row = CharacterASIChoice(
             character_id=character_id,
             class_level=class_level,
@@ -50,10 +52,12 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
             ability_score_increase_id=ability_score_increase_id,
             increases=increases,
         )
+
         self.db.add(row)
         if commit:
             self.db.commit()
             self.db.refresh(row)
         else:
             self.db.flush()
+
         return row

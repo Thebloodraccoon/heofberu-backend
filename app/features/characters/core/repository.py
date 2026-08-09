@@ -62,3 +62,16 @@ class CharacterRepository(BaseRepository[Character]):
         self.db.refresh(character)
 
         return character
+
+    def get_by_id_light(self, model_id: int) -> Character | None:
+        """
+        Fetch a ``Character`` row WITHOUT the eager-loaded collections.
+
+        Used by the sub-domain services (features, feats, spells, items,
+        conditions, attacks, progression), which only need the scalar
+        columns for the access check and their own writes — loading all
+        four relationship collections here would cost four queries per
+        call for nothing.
+        """
+
+        return self.db.query(Character).filter(Character.id == model_id).first()

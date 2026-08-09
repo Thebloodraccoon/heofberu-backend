@@ -3,7 +3,7 @@
 from pydantic import ValidationError
 import pytest
 
-from app.features.features.schemas import FeatureCreate
+from app.features.features.schemas import FeatureCreate, StandaloneFeatureCreate
 
 
 @pytest.mark.unit
@@ -19,3 +19,18 @@ class TestFeatureValidators:
     def test_level_only_for_class_or_subclass(self):
         with pytest.raises(ValidationError, match="only meaningful when source_type is CLASS or SUBCLASS"):
             FeatureCreate(name="Bad", source_type="RACE", race_id=1, level=5)
+
+
+@pytest.mark.unit
+class TestStandaloneFeatureValidators:
+    def test_standalone_create_defaults_to_other(self):
+        feature = StandaloneFeatureCreate(name="Custom Gift")
+        assert feature.source_type == "OTHER"
+
+    def test_standalone_create_rejects_non_other_source(self):
+        with pytest.raises(ValidationError, match="created through their parent entities"):
+            StandaloneFeatureCreate(name="Extra Attack", source_type="CLASS")
+
+    def test_standalone_create_rejects_source_fk(self):
+        with pytest.raises(ValidationError, match="must not set 'feat_id'"):
+            StandaloneFeatureCreate(name="Bad", source_type="OTHER", feat_id=1)

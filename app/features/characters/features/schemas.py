@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict
 
+from app.features.features.schemas import FeatureBriefResponse
+
 
 class CharacterFeatureAdd(BaseModel):
     """
@@ -28,7 +30,16 @@ class CharacterFeatureUpdate(BaseModel):
 
 
 class CharacterFeatureResponse(BaseModel):
-    """Aggregates a character's feature grant with its per-character notes."""
+    """
+    Aggregates a character's feature grant with its per-character notes
+    and a *brief* summary of the referenced feature (id, name, source_type,
+    level, is_homebrew).
+
+    Deliberately does not embed the full feature body (description): a
+    character can hold many features, and listing them should stay light.
+    Full detail is fetched on demand through the open
+    ``GET /features/{feature_id}`` endpoint.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,3 +47,4 @@ class CharacterFeatureResponse(BaseModel):
     character_id: int
     feature_id: int
     notes: str = ""
+    feature: FeatureBriefResponse

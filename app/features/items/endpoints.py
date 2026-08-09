@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Query
 
 from app.constants import ItemRarity, ItemType
 from app.core.base_service import Page
-from app.core.dependencies import GmUserDep, ItemServiceDep
+from app.core.dependencies import FounderDep, GmUserDep, ItemServiceDep
 from app.features.items.schemas import ItemBriefResponse, ItemCreate, ItemResponse, ItemUpdate
 
 router = APIRouter(prefix="/items", tags=["Items"])
@@ -186,9 +186,9 @@ def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemService
         409: {"description": "Item is still owned by one or more characters."},
     },
 )
-def delete_item(item_id: int, item_service: ItemServiceDep, _: GmUserDep):
+def delete_item(item_id: int, item_service: ItemServiceDep, _: FounderDep):
     """
-    Delete an item. **GM only.**
+    Delete an item. **Found-father only.**
 
     Blocked if the item is still owned by one or more characters (the
     service raises ``RecordInUseError``, mapped to a 409 by the global

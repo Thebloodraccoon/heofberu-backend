@@ -26,7 +26,7 @@ class CharacterBase(BaseModel):
     level: int = Field(default=1, ge=1, le=20)
 
     class_id: int
-    subclass: str = ""
+    subclass_id: int | None = None
     race_id: int | None = None
     background_id: int | None = None
 
@@ -73,11 +73,13 @@ class CharacterCreate(CharacterBase):
     Create payload for a character.
 
     ``class_id`` is required and must reference an existing class;
-    ``race_id``/``background_id`` are optional but, if provided, must
-    also reference existing records. Existence checks happen in
+    ``subclass_id``/``race_id``/``background_id`` are optional but, if
+    provided, must also reference existing records (``subclass_id`` must
+    belong to ``class_id``). Existence checks happen in
     ``CharacterService.create_character`` (needs DB access, not doable
-    at the schema layer) — see ``ClassNotFoundException`` /
-    ``RaceNotFoundException`` / ``BackgroundNotFoundException``.
+    at the schema layer) — see ``SubclassNotFoundException`` /
+    ``ClassNotFoundException`` / ``RaceNotFoundException`` /
+    ``BackgroundNotFoundException``.
     """
 
 
@@ -89,21 +91,23 @@ class CharacterUpdate(BaseModel):
     spells, and attacks are managed through their own dedicated endpoints,
     not through this schema.
 
-    Note: ``class_id``, ``race_id``, and ``background_id`` cannot be
-    changed via this schema — a character's class, race, and background
-    are set at creation and are not editable here. ``level`` and the base
-    ability scores (``strength``..``charisma``) are likewise not editable
-    here: level changes go through the dedicated level-up endpoint, and
-    base scores only change via that endpoint's Ability Score Improvement
-    choice. ``hit_dice``, ``speed``, and ``armor_class`` are not editable
-    either — they are derived from the character's class, race, and
-    equipped armor on every read (see ``CharacterStatsService``).
-    See ``CharacterProgressionService``.
+    Note: ``class_id``, ``subclass_id``, ``race_id``, and ``background_id``
+    cannot be changed via this schema — a character's class, subclass,
+    race, and background are set at creation and only the subclass can be
+    changed afterwards, through the dedicated
+    ``PATCH /characters/{id}/progression/subclass`` endpoint (which also
+    keeps the character's granted class/subclass features in sync).
+    ``level`` and the base ability scores (``strength``..``charisma``) are
+    likewise not editable here: level changes go through the dedicated
+    level-up endpoint, and base scores only change via that endpoint's
+    Ability Score Improvement choice. ``hit_dice``, ``speed``, and
+    ``armor_class`` are not editable either — they are derived from the
+    character's class, race, and equipped armor on every read (see
+    ``CharacterStatsService``). See ``CharacterProgressionService``.
     """
 
     name: str | None = None
     image_path: str | None = None
-    subclass: str | None = None
 
     current_hp: int | None = Field(default=None, ge=0)
     max_hp: int | None = Field(default=None, ge=0)
@@ -138,7 +142,9 @@ class AbilityScoresResponse(BaseModel):
     Effective (post-bonus) ability score totals — base value plus race
     and feat bonuses. Backed by the ``character_ability_scores`` cache
     table; see ``CharacterAbilityScoreCalculator`` for how it's computed
-    and ``CharacterService.get_character`` for when it's refreshed.
+    and ``CharacterStatsService`` for the write paths that refresh it
+    (character create, feat grant/update/remove, level-up ASI, race
+    change). Reads never recompute the cache.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -158,12 +164,12 @@ class CharacterResponse(CharacterBase):
     ``ability_scores`` holds the effective (post-bonus) totals, kept
     distinct from the base ``strength``..``charisma`` fields inherited
     from ``CharacterBase`` so callers can always see both the raw input
-    and the computed result. It is optional only on the listing path
-    (``CharacterService.get_characters``), which reads the cache as-is
-    without recomputing — a character never fetched individually (and so
-    with no cache row yet) reports ``None`` here. ``get_character``
-    always refreshes before returning, and create/update recompute
-    whenever the change can affect ability scores.
+    and the computed result. It is read from the
+    ``character_ability_scores`` cache as-is and never recomputed on a
+    read — a character that has never gone through a write path that
+    refreshes it (create always does) reports ``None`` here. The cache is
+    refreshed by the write paths that can affect ability scores: create,
+    feat grant/update/remove, level-up ASI, and race change.
 
     ``hit_dice``, ``speed``, and ``armor_class`` are likewise not read
     from the character row — they are derived from the class, race, and

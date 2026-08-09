@@ -2,7 +2,11 @@
 
 from sqlalchemy.orm import Session
 
+from app.constants import FeatureSourceType
 from app.core.base_service import BaseService
+from app.features.characters.progression.feature_sync import reconcile_characters_for_source
+from app.features.features.schemas import FeaturesReplace
+from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
@@ -57,12 +61,14 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
         for homebrew races) and is not part of ``RaceCreate`` itself, since
         it comes from the authenticated user, not client input.
 
-        ``race_data.ability_bonuses`` / ``race_data.granted_skills`` are
-        optional. If supplied, they're set in the *same transaction* as the
-        race itself (base fields + bonuses + skills all commit together, or
-        none do) via ``BaseService._atomic()`` — this is what lets a client
-        create a fully-formed race in one request instead of one POST plus
-        two PUTs.
+        ``race_data.ability_bonuses`` / ``race_data.granted_skills`` /
+        ``race_data.features`` are optional. If supplied, they're set in
+        the *same transaction* as the race itself (base fields + bonuses +
+        skills + features all commit together, or none do) via
+        ``BaseService._atomic()`` — this is what lets a client create a
+        fully-formed race in one request instead of one POST plus extra
+        PUTs. Nested features are created through
+        ``create_features_for_source`` with ``source_type=RACE``.
 
         Every write inside ``_atomic()`` passes ``commit=False`` —
         including ``repository.create`` itself — per the hazard documented
@@ -75,7 +81,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
             else None
         )
 
-        payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills"})
+        payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills", "features"})
         payload["created_by_id"] = created_by_id
 
         with self._atomic():
@@ -87,6 +93,15 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
             if skills:
                 self.repository.set_skills(item, skills, commit=False)
+
+            create_features_for_source(
+                self.repository.db,
+                FeatureSourceType.RACE,
+                item.id,
+                race_data.features,
+                created_by_id,
+                commit=False,
+            )
 
         self.repository.refresh(item)
         return self.response_schema.model_validate(item)
@@ -109,3 +124,30 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         updated_race = self.repository.set_skills(race, skills)
         return self.response_schema.model_validate(updated_race)
+
+    def replace_race_features(
+        self, race_id: int, data: FeaturesReplace, created_by_id: int | None = None
+    ) -> RaceResponse:
+        """
+        Full-replace a race's RACE-source features, matched by feature id.
+
+        Items carrying an ``id`` update that feature in place — the id is
+        kept, so character grants and any player notes on them survive.
+        Items without an ``id`` create new features; existing features
+        whose id is absent from the payload are deleted, cascading their
+        grants away. Runs atomically, then reconciles the grants of every
+        character of this race so their builds match the new feature set.
+        """
+        race = self._get_or_404(race_id)
+        with self._atomic():
+            replace_features_for_source(
+                self.repository.db,
+                FeatureSourceType.RACE,
+                race.id,
+                data.features,
+                created_by_id,
+                commit=False,
+            )
+            reconcile_characters_for_source(self.repository.db, FeatureSourceType.RACE, race.id)
+        self.repository.refresh(race)
+        return self.response_schema.model_validate(race)

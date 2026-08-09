@@ -53,6 +53,34 @@ class TestCharacterCreate:
         assert slots["LEVEL_1"]["total"] == 2
         assert slots["LEVEL_1"]["used"] == 0
 
+    def test_create_character_with_subclass(self, client, player, player_token, create_class, create_subclass):
+        character_class = create_class(name="Fighter")
+        subclass = create_subclass(class_id=character_class.id, name="Champion")
+
+        response = client.post(
+            "/characters/",
+            json={"name": "Aragorn", "level": 1, "class_id": character_class.id, "subclass_id": subclass.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["subclass_id"] == subclass.id
+
+    def test_create_character_with_subclass_of_another_class_returns_404(
+        self, client, player, player_token, create_class, create_subclass
+    ):
+        fighter = create_class(name="Fighter")
+        wizard = create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
+        wizard_subclass = create_subclass(class_id=wizard.id, name="School of Evocation")
+
+        response = client.post(
+            "/characters/",
+            json={"name": "Ghost", "class_id": fighter.id, "subclass_id": wizard_subclass.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 404
+
 
 @pytest.mark.integration
 class TestCharacterRead:
@@ -123,11 +151,11 @@ class TestCharacterRead:
         assert response.status_code == 200
         assert [item["name"] for item in response.json()["items"]] == ["Gandalf the Grey"]
 
-    def test_get_character_by_id(self, client, player, player_token, create_class, create_character):
+    def test_get_character_by_id(self, client, player, player_token, create_class, create_api_character):
         character_class = create_class(name="Fighter")
-        character = create_character(owner_id=player.id, class_id=character_class.id, name="Boromir")
+        character, _ = create_api_character(class_id=character_class.id, owner=player, name="Boromir")
 
-        response = client.get(f"/characters/{character.id}", headers={"Authorization": f"Bearer {player_token}"})
+        response = client.get(f"/characters/{character['id']}", headers={"Authorization": f"Bearer {player_token}"})
 
         assert response.status_code == 200
         assert response.json()["name"] == "Boromir"
@@ -187,18 +215,21 @@ class TestCharacterUpdate:
 
         assert response.status_code == 403
 
-    def test_owner_can_update_subclass(self, client, player, player_token, create_class, create_character):
+    def test_subclass_is_not_editable_via_plain_patch(
+        self, client, player, player_token, create_class, create_character
+    ):
+        """Subclass changes go through the progression endpoint, not a plain PATCH."""
         character_class = create_class(name="Fighter")
         character = create_character(owner_id=player.id, class_id=character_class.id)
 
         response = client.patch(
             f"/characters/{character.id}",
-            json={"subclass": "Arcane Archer"},
+            json={"subclass_id": 999999, "subclass": "Arcane Archer"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 200
-        assert response.json()["subclass"] == "Arcane Archer"
+        assert response.json()["subclass_id"] is None
 
     def test_strength_is_not_editable_via_patch(self, client, player, player_token, create_class, create_character):
         character_class = create_class(name="Fighter")

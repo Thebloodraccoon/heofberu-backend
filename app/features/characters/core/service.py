@@ -14,6 +14,7 @@ from app.features.characters.access import get_character_for_user, get_character
 from app.features.characters.core.exceptions import InvalidHpUpdateException
 from app.features.characters.core.repository import CharacterRepository
 from app.features.characters.core.schemas import HpUpdate, RestRequest
+from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.schemas import (
     AbilityScoresResponse,
     CharacterCreate,
@@ -21,7 +22,7 @@ from app.features.characters.schemas import (
     CharacterUpdate,
 )
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
-from app.features.classes.exceptions import ClassNotFoundException
+from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
 from app.features.classes.repository import ClassRepository
 from app.features.races.exceptions import RaceNotFoundException
 from app.features.races.repository import RaceRepository
@@ -55,10 +56,12 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     Ability score cache policy is decided by
     ``CharacterStatsService`` — this service only tells it *when* a
-    write might have touched ability scores:
-      - ``get_character`` always refreshes before returning (fresh, cheap).
-      - ``get_characters`` (listing) does NOT refresh — it returns the
-        cache as-is to avoid N recalculations per page.
+    write might have touched ability scores. Reads never write:
+      - ``get_character`` reads the cache as-is — the cache is kept
+        fresh by the write paths themselves, so no read recomputes or
+        commits (a plain GET is now fully read-only).
+      - ``get_characters`` (listing) likewise returns the cache as-is to
+        avoid N recalculations per page.
       - ``create_character`` always refreshes; ``update_character`` never
         refreshes, because ``CharacterUpdate`` holds no ability-affecting
         fields anymore (base scores only change via the level-up ASI, and
@@ -146,29 +149,41 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         )
 
     def get_character(self, character_id: int, current_user: UserResponse) -> CharacterResponse:
-        """Return a single character, enforcing GM/owner access, with freshly recalculated ability scores."""
+        """
+        Return a single character, enforcing GM/owner access.
+
+        Ability scores are read from the ``character_ability_scores``
+        cache as-is (same freshness policy as the listing path) — every
+        write that can affect them refreshes the cache, so a read never
+        recomputes or writes. Derived combat stats (hit dice, speed,
+        armor class) are computed fresh on every read.
+        """
 
         character = get_character_for_user(self.repository, character_id, current_user)
-        return self._to_response(character, refresh=True)
+        return self._to_response(character, refresh=False)
 
     def create_character(self, character_data: CharacterCreate, current_user: UserResponse) -> CharacterResponse:
         """
         Create a character owned by the caller (GM or player).
 
         Validates that ``class_id`` (required) and, if provided,
+        ``subclass_id`` (must belong to ``class_id``) /
         ``race_id``/``background_id`` reference existing records before
         writing anything — a bad reference is rejected with a clear 404
         rather than surfacing as a raw FK IntegrityError.
 
         After creation, the class's spell slot progression for the
         character's starting level is applied immediately — see class
-        docstring. The character row and its initial slot rows are
-        written in one transaction (``_atomic()`` with ``commit=False``
-        on both writes): either both persist or neither does.
+        docstring — and the class/subclass/race/background features the
+        character is entitled to are granted. The character row, its
+        initial slot rows, and its feature grants are written in one
+        transaction (``_atomic()`` with ``commit=False`` on all writes):
+        either all persist or none do.
         """
 
         self._validate_references(
             class_id=character_data.class_id,
+            subclass_id=character_data.subclass_id,
             race_id=character_data.race_id,
             background_id=character_data.background_id,
         )
@@ -179,6 +194,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         with self._atomic():
             character = self.repository.create(payload, commit=False)
             self._apply_spell_slot_progression(character, commit=False)
+            # Grant the class/subclass features the character is entitled to
+            # at its starting level.
+            sync_progression_features(self.repository.db, character)
 
         return self._to_response(character, refresh=True)
 
@@ -261,6 +279,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self,
         *,
         class_id: int,
+        subclass_id: int | None,
         race_id: int | None,
         background_id: int | None,
     ) -> None:
@@ -268,12 +287,17 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         Raise the matching not-found exception if any given ID doesn't
         exist. Called from :meth:`create_character` only — the old
         ``"unset"`` sentinel for PATCH validation is gone, since
-        ``class_id``/``race_id``/``background_id`` are not fields of
-        ``CharacterUpdate`` and therefore can never appear in an update.
+        ``class_id``/``subclass_id``/``race_id``/``background_id`` are
+        not fields of ``CharacterUpdate`` and therefore can never appear
+        in an update (the subclass is changed through the progression
+        endpoint, which re-validates it).
         """
 
         if not self.class_repository.exists_by_id(class_id):
             raise ClassNotFoundException(class_id=class_id)
+
+        if subclass_id is not None and self.class_repository.get_subclass(class_id, subclass_id) is None:
+            raise SubclassNotFoundException(class_id=class_id, subclass_id=subclass_id)
 
         if race_id is not None and not self.race_repository.exists_by_id(race_id):
             raise RaceNotFoundException(race_id=race_id)

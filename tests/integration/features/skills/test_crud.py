@@ -46,24 +46,32 @@ class TestSkillCrud:
         assert response.status_code == 200
         assert response.json()["name"] == "New Name"
 
-    def test_gm_can_delete_skill(self, client, gm_token, create_skill):
+    def test_gm_cannot_delete_skill(self, client, gm_token, create_skill):
         skill = create_skill(key="UNUSED", name="Unused", ability="DEX")
 
         response = client.delete(f"/skills/{skill.id}", headers={"Authorization": f"Bearer {gm_token}"})
 
+        assert response.status_code == 403
+        assert client.get(f"/skills/{skill.id}").status_code == 200
+
+    def test_founder_can_delete_skill(self, client, founder_token, create_skill):
+        skill = create_skill(key="UNUSED", name="Unused", ability="DEX")
+
+        response = client.delete(f"/skills/{skill.id}", headers={"Authorization": f"Bearer {founder_token}"})
+
         assert response.status_code == 204
         assert client.get(f"/skills/{skill.id}").status_code == 404
 
-    def test_delete_skill_in_use_by_race_returns_409(self, client, gm_token, create_skill, create_race):
+    def test_delete_skill_in_use_by_race_returns_409(self, client, founder_token, create_skill, create_race):
         skill = create_skill(key="SURVIVAL", name="Survival", ability="WIS")
         race = create_race(name="Tracker")
         link_response = client.put(
             f"/races/{race.id}/skills",
             json={"skill_ids": [skill.id]},
-            headers={"Authorization": f"Bearer {gm_token}"},
+            headers={"Authorization": f"Bearer {founder_token}"},
         )
         assert link_response.status_code == 200
 
-        response = client.delete(f"/skills/{skill.id}", headers={"Authorization": f"Bearer {gm_token}"})
+        response = client.delete(f"/skills/{skill.id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409

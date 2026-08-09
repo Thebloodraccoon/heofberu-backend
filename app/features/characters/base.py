@@ -26,7 +26,16 @@ class CharacterSubDomainService:
     ``character_repository``) so existing sub-service code that stored
     the same repository under ``self.repository`` keeps working
     unchanged.
+
+    Sub-domain services only ever need the character's scalar columns
+    (access check, ``level``/``class_id``/``race_id`` and so on), so the
+    shared fetch uses the light lookup — no eager-loading the four
+    collection relationships, which cost four queries per call. A
+    subclass that serializes a full ``CharacterResponse`` overrides
+    ``_light_character_fetch`` to ``False``.
     """
+
+    _light_character_fetch = True
 
     def __init__(self, db: Session):
         self.repository = CharacterRepository(db)
@@ -34,4 +43,9 @@ class CharacterSubDomainService:
     def get_character_for_user(self, character_id: int, current_user: UserResponse) -> Character:
         """Fetch the character enforcing GM/owner access; raises 403/404 otherwise."""
 
-        return _get_character_for_user(self.repository, character_id, current_user)
+        return _get_character_for_user(
+            self.repository,
+            character_id,
+            current_user,
+            light=self._light_character_fetch,
+        )

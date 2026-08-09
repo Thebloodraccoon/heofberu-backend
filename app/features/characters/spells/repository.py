@@ -1,6 +1,6 @@
 """Character spell repositories: spell slots and known spells."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models.character_association_models import CharacterSpellSlot
@@ -23,6 +23,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
 
     def get_spell_slot(self, character_id: int, level: str) -> CharacterSpellSlot | None:
         """Fetch a character's spell slot entry for a level, or None."""
+
         return (
             self.db.query(CharacterSpellSlot)
             .filter(
@@ -153,8 +154,14 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
         super().__init__(CharacterSpell, db)
 
     def get_known_spells(self, character_id: int) -> list[CharacterSpell]:
-        """List all spells known by the character."""
-        return self.db.query(CharacterSpell).filter(CharacterSpell.character_id == character_id).all()
+        """List all spells known by the character, each with its ``Spell`` eager-loaded."""
+
+        return (
+            self.db.query(CharacterSpell)
+            .options(selectinload(CharacterSpell.spell))
+            .filter(CharacterSpell.character_id == character_id)
+            .all()
+        )
 
     def get_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell | None:
         """Fetch a single known-spell entry, or None if not present."""

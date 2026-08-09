@@ -24,6 +24,19 @@ class ClassChange(BaseModel):
     class_id: int
 
 
+class SubclassChange(BaseModel):
+    """
+    Set or clear a character's subclass.
+
+    ``subclass_id`` must reference a subclass of the character's current
+    class (validated by the service); ``subclass_id: null`` clears it.
+    Setting a subclass grants its features at or below the character's
+    current level.
+    """
+
+    subclass_id: int | None = None
+
+
 class ASIIncreaseItem(BaseModel):
     """One increment of an Ability Score Improvement, e.g. {"ability": "STR", "amount": 2}."""
 
@@ -33,12 +46,15 @@ class ASIIncreaseItem(BaseModel):
 
 def _validate_asi_increases(increases: list[ASIIncreaseItem]) -> list[ASIIncreaseItem]:
     """Reject duplicate abilities and totals outside the +1..+2 ASI budget."""
+
     abilities = [item.ability for item in increases]
     if len(abilities) != len(set(abilities)):
         raise ValueError("Duplicate ability in an ASI choice is not allowed.")
+
     total = sum(item.amount for item in increases)
     if not (1 <= total <= ASI_TOTAL_BUDGET):
         raise ValueError(f"An ASI choice must grant between 1 and {ASI_TOTAL_BUDGET} total points.")
+
     return increases
 
 

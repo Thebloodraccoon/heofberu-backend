@@ -26,7 +26,13 @@ class CharacterProficiencyService(CharacterSubDomainService):
     association tables (``character_skill_proficiencies``,
     ``character_saving_throw_proficiencies``), separate from the core
     character record handled by ``core.CharacterService``.
+
+    Unlike the other sub-domains, these methods serialize a full
+    ``CharacterResponse``, so the shared access-check fetch must eager-
+    load the character's collections (``_light_character_fetch = False``).
     """
+
+    _light_character_fetch = False
 
     def __init__(self, db: Session):
         super().__init__(db)

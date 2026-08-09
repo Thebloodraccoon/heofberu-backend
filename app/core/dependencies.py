@@ -14,7 +14,7 @@ from fastapi.security.http import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.constants import UserRole
-from app.core.exceptions import GmAccessException, InvalidTokenException
+from app.core.exceptions import FoundFatherAccessException, GmAccessException, InvalidTokenException
 from app.core.token_utils import is_token_blacklisted, verify_token
 from app.features.auth.service import AuthService
 from app.features.backgrounds.service import BackgroundService
@@ -88,15 +88,27 @@ CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]
 
 
 def require_gm(current_user: CurrentUserDep) -> UserResponse:
-    """Require the current user to have the GM (game master) role."""
+    """Require the current user to have the GM role (or the higher found-father role)."""
 
-    if current_user.role != UserRole.GM:
+    if current_user.role not in (UserRole.GM, UserRole.FOUND_FATHER):
         raise GmAccessException()
 
     return current_user
 
 
 GmUserDep = Annotated[UserResponse, Depends(require_gm)]
+
+
+def require_found_father(current_user: CurrentUserDep) -> UserResponse:
+    """Require the current user to have the found-father (founder) role."""
+
+    if current_user.role != UserRole.FOUND_FATHER:
+        raise FoundFatherAccessException()
+
+    return current_user
+
+
+FounderDep = Annotated[UserResponse, Depends(require_found_father)]
 
 
 def get_race_service(db: DatabaseDep) -> RaceService:

@@ -71,10 +71,18 @@ class TestSpellCrud:
         assert races_response.status_code == 200
         assert [item["id"] for item in races_response.json()["available_races"]] == [race.id]
 
-    def test_gm_can_delete_spell(self, client, gm_token, create_spell):
+    def test_gm_cannot_delete_spell(self, client, gm_token, create_spell):
         spell = create_spell(name="Doomed Spell")
 
         response = client.delete(f"/spells/{spell.id}", headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert response.status_code == 403
+        assert client.get(f"/spells/{spell.id}").status_code == 200
+
+    def test_founder_can_delete_spell(self, client, founder_token, create_spell):
+        spell = create_spell(name="Doomed Spell")
+
+        response = client.delete(f"/spells/{spell.id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 204
         assert client.get(f"/spells/{spell.id}").status_code == 404

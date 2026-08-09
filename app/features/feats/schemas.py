@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
+from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
 
 
 class FeatBase(BaseModel):
@@ -46,6 +47,7 @@ class FeatCreate(FeatBase):
     """
 
     ability_score_increases: list[AbilityScoreIncreaseItem] | None = None
+    features: list[NestedFeatureCreate] | None = None
 
     @field_validator("ability_score_increases")
     def validate_unique_asi_abilities(cls, value):
@@ -101,6 +103,7 @@ class FeatResponse(FeatBase):
     id: int
     created_by_id: int | None = None
     ability_score_increases: list[AbilityScoreIncreaseResponse] = []
+    features: list[NestedFeatureResponse] = []
 
 
 class FeatBriefResponse(BaseModel):

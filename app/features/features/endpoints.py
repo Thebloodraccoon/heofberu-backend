@@ -5,7 +5,12 @@ from fastapi import APIRouter, Body, Query
 from app.constants import FeatureSourceType
 from app.core.base_service import Page
 from app.core.dependencies import FeatureServiceDep, GmUserDep
-from app.features.features.schemas import FeatureBriefResponse, FeatureCreate, FeatureResponse, FeatureUpdate
+from app.features.features.schemas import (
+    FeatureBriefResponse,
+    FeatureResponse,
+    FeatureUpdate,
+    StandaloneFeatureCreate,
+)
 
 router = APIRouter(prefix="/features", tags=["Features"])
 
@@ -19,6 +24,7 @@ def get_features(
     feature_service: FeatureServiceDep,
     source_type: FeatureSourceType | None = None,
     class_id: int | None = None,
+    subclass_id: int | None = None,
     race_id: int | None = None,
     background_id: int | None = None,
     feat_id: int | None = None,
@@ -34,10 +40,8 @@ def get_features(
 
     All filters are optional and ANDed together when combined, e.g.
     `?source_type=CLASS&class_id=5` returns only class features for
-    class 5. Omitting a filter means "don't restrict on this field" — use
-    `class_id=5` alone to get every feature tied to that class regardless
-    of source_type (relevant since CLASS and SUBCLASS features both key
-    off `class_id`).
+    class 5. Omitting a filter means "don't restrict on this field". A
+    `source_type=SUBCLASS` filter pairs with `subclass_id`.
 
     `search` is a case-insensitive partial match against the features name.
 
@@ -50,6 +54,7 @@ def get_features(
     filters = {
         "source_type": source_type,
         "class_id": class_id,
+        "subclass_id": subclass_id,
         "race_id": race_id,
         "background_id": background_id,
         "feat_id": feat_id,
@@ -66,6 +71,7 @@ def get_features_brief(
     feature_service: FeatureServiceDep,
     source_type: FeatureSourceType | None = None,
     class_id: int | None = None,
+    subclass_id: int | None = None,
     race_id: int | None = None,
     background_id: int | None = None,
     feat_id: int | None = None,
@@ -75,8 +81,8 @@ def get_features_brief(
 ):
     """
     Return a paginated list of features with only `id`, `name`,
-    `source_type`, `class_id`, `race_id`, `background_id`, `feat_id`,
-    `level`, and `is_homebrew`.
+    `source_type`, `class_id`, `subclass_id`, `race_id`,
+    `background_id`, `feat_id`, `level`, and `is_homebrew`.
 
     Open endpoint, no authentication required.
 
@@ -93,6 +99,7 @@ def get_features_brief(
     filters = {
         "source_type": source_type,
         "class_id": class_id,
+        "subclass_id": subclass_id,
         "race_id": race_id,
         "background_id": background_id,
         "feat_id": feat_id,
@@ -121,11 +128,11 @@ def get_feature(feature_id: int, feature_service: FeatureServiceDep):
     "/",
     response_model=FeatureResponse,
     status_code=201,
-    summary="Create a feature",
+    summary="Create a standalone feature",
     responses={
         400: {
             "description": (
-                "source_type/class_id/race_id/background_id/feat_id/level/subclass_name "
+                "source_type/class_id/subclass_id/race_id/background_id/feat_id/level "
                 "combination is inconsistent — see FeatureBase's validator."
             )
         },
@@ -134,64 +141,36 @@ def get_feature(feature_id: int, feature_service: FeatureServiceDep):
 def create_feature(
     feature_service: FeatureServiceDep,
     _: GmUserDep,
-    feature_data: FeatureCreate = Body(
+    feature_data: StandaloneFeatureCreate = Body(
         openapi_examples={
-            "class_feature": {
-                "summary": "Class feature (e.g. Extra Attack)",
+            "custom_feature": {
+                "summary": "Standalone homebrew feature",
                 "value": {
-                    "name": "Extra Attack",
-                    "source_type": "CLASS",
-                    "class_id": 3,
-                    "level": 5,
-                    "description": "You can attack twice, instead of once, whenever you take the Attack action on your turn.",
-                },
-            },
-            "subclass_feature": {
-                "summary": "Subclass feature",
-                "value": {
-                    "name": "Improved Critical",
-                    "source_type": "SUBCLASS",
-                    "class_id": 3,
-                    "level": 3,
-                    "subclass_name": "Champion",
-                    "description": "Your weapon attacks score a critical hit on a roll of 19 or 20.",
-                },
-            },
-            "racial_trait": {
-                "summary": "Racial trait",
-                "value": {
-                    "name": "Darkvision",
-                    "source_type": "RACE",
-                    "race_id": 2,
-                    "description": "You can see in dim light within 60 feet of you as if it were bright light.",
-                },
-            },
-            "feat": {
-                "summary": "Feat benefit (references a Feat record)",
-                "value": {
-                    "name": "Alert",
-                    "source_type": "FEAT",
-                    "feat_id": 1,
-                    "description": "You gain a +5 bonus to initiative and can't be surprised while conscious.",
+                    "name": "Bond of the Ancient Oath",
+                    "source_type": "OTHER",
+                    "description": "A GM-crafted feature granted to a character at the table.",
+                    "is_homebrew": True,
                 },
             },
         },
     ),
 ):
     """
-    Create a new feature. **GM only.**
+    Create a standalone feature. **GM only.**
 
-    `source_type` determines which FK is required:
-    - `CLASS` / `SUBCLASS` -> `class_id` required (`SUBCLASS` also expects
-      `subclass_name`); `level` is meaningful for both.
-    - `RACE` -> `race_id` required.
-    - `BACKGROUND` -> `background_id` required.
-    - `FEAT` -> `feat_id` required, referencing the granting `Feat`.
-    - `OTHER` -> none of `class_id`/`race_id`/`background_id`/`feat_id`
-      may be set.
+    Only ``source_type: OTHER`` is accepted here — a standalone feature
+    owned by no parent record, which the GM can then grant to any
+    character.
 
-    Setting a FK that doesn't match `source_type` (or omitting the one
-    that does) is rejected with a 422 validation error at the schema layer.
+    Class, subclass, race, background and feat features are owned by
+    their parent records: they are created through that parent's nested
+    ``features`` payload (``POST /races/``, ``POST /classes/``,
+    ``POST /backgrounds/``, ``POST /feats/``, ...) and must NOT be posted
+    here — doing so is rejected with a 422.
+
+    None of ``class_id``/``subclass_id``/``race_id``/``background_id``/
+    ``feat_id`` may be set, and ``level`` is not meaningful for OTHER
+    features (it is only allowed on CLASS/SUBCLASS features).
     """
     return feature_service.create(feature_data)
 
@@ -199,22 +178,33 @@ def create_feature(
 @router.patch(
     "/{feature_id}",
     response_model=FeatureResponse,
-    summary="Update a feature",
+    summary="Update a standalone feature",
     responses={
-        400: {"description": "Resulting source_type/FK combination would be inconsistent."},
+        400: {
+            "description": (
+                "The feature is not standalone (OTHER) — source-owned features are "
+                "managed through their parent's replace endpoint; or the resulting "
+                "source_type/FK combination would be inconsistent."
+            )
+        },
         404: {"description": "No feature exists with the given ID."},
     },
 )
 def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service: FeatureServiceDep, _: GmUserDep):
     """
-    Partially update a feature. **GM only.**
+    Partially update a standalone feature. **GM only.**
+
+    Only ``source_type: OTHER`` (standalone) features are editable here —
+    class/subclass/race/background/feat features are owned by their parent
+    record and are managed through the parent's replace endpoint.
 
     Only fields included in the request body are changed; omitted fields
-    are left as-is. If `source_type` is changed, the matching FK
-    (`class_id`/`race_id`/`background_id`/`feat_id`) must be included
-    explicitly in the same request — the previous FK is not carried over
-    automatically, to avoid leaving a stale reference from the old
-    source_type.
+    are left as-is.
+
+    `source_type` and its FK are immutable — ownership never moves. Only
+    `name`, `level`, `description` and `is_homebrew` are editable. Setting
+    a non-`None` `level` on a feature that isn't CLASS/SUBCLASS is rejected
+    with a 400.
     """
     return feature_service.update_feature(feature_id, update_data)
 
@@ -222,14 +212,24 @@ def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service:
 @router.delete(
     "/{feature_id}",
     status_code=204,
-    summary="Delete a feature",
+    summary="Delete a standalone feature",
     responses={
+        400: {
+            "description": (
+                "The feature is not standalone (OTHER) — source-owned features are "
+                "managed through their parent's replace endpoint."
+            )
+        },
         404: {"description": "No feature exists with the given ID."},
     },
 )
 def delete_feature(feature_id: int, feature_service: FeatureServiceDep, _: GmUserDep):
     """
-    Delete a feature. **GM only.**
+    Delete a standalone feature. **GM only.**
+
+    Only ``source_type: OTHER`` (standalone) features can be deleted
+    here — class/subclass/race/background/feat features are deleted
+    through their parent's replace endpoint.
 
     Also removes any `CharacterFeature` rows referencing it (cascade).
     """

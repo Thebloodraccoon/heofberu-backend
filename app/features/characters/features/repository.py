@@ -1,6 +1,6 @@
 """Character feature repository: character-feature grant row CRUD."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.base_repository import BaseRepository
 from app.models.character_feature_model import CharacterFeature
@@ -16,18 +16,28 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
     """
 
     def __init__(self, db: Session):
-        super().__init__(CharacterFeature, db)
+        super().__init__(
+            CharacterFeature,
+            db,
+            default_load_options=[selectinload(CharacterFeature.feature)],
+        )
 
     def get_character_features(self, character_id: int) -> list[CharacterFeature]:
         """Get every feature grant for a character."""
 
-        return self.db.query(CharacterFeature).filter(CharacterFeature.character_id == character_id).all()
+        return (
+            self.db.query(CharacterFeature)
+            .options(selectinload(CharacterFeature.feature))
+            .filter(CharacterFeature.character_id == character_id)
+            .all()
+        )
 
     def get_character_feature_by_id(self, character_id: int, character_feature_id: int) -> CharacterFeature | None:
         """Fetch a single feature grant by its own id, scoped to the character."""
 
         return (
             self.db.query(CharacterFeature)
+            .options(selectinload(CharacterFeature.feature))
             .filter(
                 CharacterFeature.id == character_feature_id,
                 CharacterFeature.character_id == character_id,

@@ -19,7 +19,6 @@ class Race(settings.Base):  # type: ignore
     size = Column(RaceSizeType, nullable=False)
     speed = Column(Integer, nullable=False, default=30)
 
-    traits = Column(Text, nullable=False, default="")
     description = Column(Text, nullable=False, default="")
 
     is_homebrew = Column(Boolean, nullable=False, default=False)
@@ -36,6 +35,13 @@ class Race(settings.Base):  # type: ignore
     )
     characters = relationship("Character", back_populates="race")
     created_by = relationship("User")
+    features = relationship(
+        "Feature",
+        back_populates="race",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Feature.id",
+    )
 
     def __repr__(self):
         return f"<Race(id={self.id}, name='{self.name}')>"

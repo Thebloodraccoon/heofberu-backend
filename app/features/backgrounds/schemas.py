@@ -2,13 +2,13 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
+
 
 class BackgroundBase(BaseModel):
     """Base background fields shared by create, update, and response schemas."""
 
     name: str
-    feature_name: str = ""
-    feature_description: str = ""
 
     personality_traits_suggestions: str = ""
     ideals_suggestions: str = ""
@@ -36,6 +36,7 @@ class BackgroundCreate(BackgroundBase):
     """
 
     granted_skills: list[int] | None = None
+    features: list[NestedFeatureCreate] | None = None
 
     @field_validator("granted_skills")
     def validate_unique_skill_ids(cls, value):
@@ -55,8 +56,6 @@ class BackgroundUpdate(BaseModel):
     """
 
     name: str | None = None
-    feature_name: str | None = None
-    feature_description: str | None = None
     personality_traits_suggestions: str | None = None
     ideals_suggestions: str | None = None
     bonds_suggestions: str | None = None
@@ -95,6 +94,7 @@ class BackgroundResponse(BackgroundBase):
     id: int
     created_by_id: int | None = None
     granted_skills: list[SkillResponse] = []
+    features: list[NestedFeatureResponse] = []
 
 
 class BackgroundBriefResponse(BaseModel):

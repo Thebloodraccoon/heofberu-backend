@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "slavbor-core-backend"
+name = "heofberu-backend"
 version = "0.1.0"
 description = "Heofberu Backend API is a web application with a RESTful API backend"
 authors = ["The Coon vsafirko@gmail.com"]
