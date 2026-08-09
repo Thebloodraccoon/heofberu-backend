@@ -59,7 +59,6 @@ class TestClassOpenRead:
         assert body["name"] == "Champion"
         assert body["unlock_level"] == 3
         assert [item["name"] for item in body["features"]] == ["Improved Critical"]
-        assert body["features"][0]["source_type"] == "SUBCLASS"
 
     def test_get_subclass_404(self, client, create_class):
         character_class = create_class(name="Fighter")

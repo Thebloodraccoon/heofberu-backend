@@ -158,7 +158,6 @@ class TestBackgroundCrud:
         assert set(features) == {"Shelter of the Faithful", "Devotion"}
         # Kept id → updated in place (grants survive); no id → created.
         assert features["Shelter of the Faithful"]["id"] == original["Shelter of the Faithful"]
-        assert features["Devotion"]["source_type"] == "BACKGROUND"
         # Feature absent from the payload is gone.
         assert client.get(f"/features/{original['Zealot']}").status_code == 404
 

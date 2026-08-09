@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.features.features.schemas import NestedFeatureResponse, NestedFeatureCreate
+from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
 
 
 class BackgroundBase(BaseModel):

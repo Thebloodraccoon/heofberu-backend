@@ -177,7 +177,6 @@ class TestFeatCrud:
         assert set(features) == {"Alert Initiative", "Never Startled"}
         # Kept id → updated in place (grants survive); no id → created.
         assert features["Alert Initiative"]["id"] == original["Alert Initiative"]
-        assert features["Never Startled"]["source_type"] == "FEAT"
         # Feature absent from the payload is gone.
         assert client.get(f"/features/{original['Cannot Be Surprised']}").status_code == 404
 

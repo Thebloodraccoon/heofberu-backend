@@ -63,7 +63,6 @@ def _desired_features(db: Session, character: Character) -> list[Feature]:
     if character.background_id is not None:
         conditions.append(Feature.background_id == character.background_id)
 
-
     feat_ids = [
         feat_id for (feat_id,) in db.query(CharacterFeat.feat_id).filter(CharacterFeat.character_id == character.id)
     ]
