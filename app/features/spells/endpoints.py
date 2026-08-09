@@ -17,8 +17,8 @@ from app.core.dependencies import FounderDep, GmUserDep, SpellServiceDep
 from app.features.spells.schemas import (
     ClassAvailabilityUpdate,
     RaceAvailabilityUpdate,
-    SpellBriefResponse,
     SpellCreate,
+    SpellGetAllResponse,
     SpellResponse,
     SpellUpdate,
 )
@@ -28,73 +28,10 @@ router = APIRouter(prefix="/spells", tags=["Spells"])
 
 @router.get(
     "/",
-    response_model=Page[SpellResponse],
-    summary="List spells (full detail)",
+    response_model=Page[SpellGetAllResponse],
+    summary="List spells",
 )
 def get_spells(
-    spell_service: SpellServiceDep,
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-    school: SpellSchool | None = None,
-    level: SpellLevel | None = None,
-    cast_time: SpellCastTime | None = None,
-    range_type: SpellRangeType | None = None,
-    duration: SpellDuration | None = None,
-    attack_type: AttackType | None = None,
-    damage_type: DamageType | None = None,
-    healing_target: HealingTarget | None = None,
-    is_ritual: bool | None = None,
-    is_concentration: bool | None = None,
-    is_homebrew: bool | None = None,
-    search: str | None = None,
-):
-    """
-    Return a paginated list of spell, with full detail — including
-    available classes and available races.
-
-    Open endpoint, no authentication required.
-
-    All filters below are exact matches and can be freely combined
-    (AND'd together); `search` is a case-insensitive partial match
-    against the spell name, combined with any filters.
-
-    - `school` — e.g. `EVOCATION`
-    - `level` — e.g. `LEVEL_1`, `CANTRIP`
-    - `cast_time` — e.g. `ACTION`, `BONUS_ACTION`, `REACTION`
-    - `range_type` — e.g. `RANGED`, `TOUCH`, `SELF`
-    - `duration` — e.g. `INSTANTANEOUS`, `ONE_MINUTE`
-    - `attack_type` — e.g. `RANGED_ATTACK`, `MELEE_ATTACK`
-    - `damage_type` — e.g. `FIRE`, `RADIANT`
-    - `healing_target` — e.g. `HP`, `TEMP_HP`
-    - `is_ritual` / `is_concentration` / `is_homebrew` — boolean flags
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching spells across every page, not just this one.
-
-    For a lighter payload, use `GET /spells/brief` instead.
-    """
-    filters = {
-        "school": school,
-        "level": level,
-        "cast_time": cast_time,
-        "range_type": range_type,
-        "duration": duration,
-        "attack_type": attack_type,
-        "damage_type": damage_type,
-        "healing_target": healing_target,
-        "is_ritual": is_ritual,
-        "is_concentration": is_concentration,
-        "is_homebrew": is_homebrew,
-    }
-    return spell_service.get_all(page=page, size=size, filters=filters, search=search)
-
-
-@router.get(
-    "/brief",
-    response_model=Page[SpellBriefResponse],
-    summary="List spells (minimal fields)",
-)
-def get_spells_brief(
     spell_service: SpellServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -117,20 +54,27 @@ def get_spells_brief(
 
     Open endpoint, no authentication required.
 
-    Supports the same filters as `GET /spells/` — `school`, `level`,
-    `cast_time`, `range_type`, `duration`, `attack_type`, `damage_type`,
-    `healing_target`, `is_ritual`, `is_concentration`, `is_homebrew` — all
-    exact matches, freely combinable, plus `search` as a case-insensitive
-    partial match against the spell name.
+    All filters below are exact matches and can be freely combined
+    (AND'd together); `search` is a case-insensitive partial match
+    against the spell name, combined with any filters.
 
-    Response is `{items, total, page, size}`, same shape as `GET /spells/`.
+    - `school` — e.g. `EVOCATION`
+    - `level` — e.g. `LEVEL_1`, `CANTRIP`
+    - `cast_time` — e.g. `ACTION`, `BONUS_ACTION`, `REACTION`
+    - `range_type` — e.g. `RANGED`, `TOUCH`, `SELF`
+    - `duration` — e.g. `INSTANTANEOUS`, `ONE_MINUTE`
+    - `attack_type` — e.g. `RANGED_ATTACK`, `MELEE_ATTACK`
+    - `damage_type` — e.g. `FIRE`, `RADIANT`
+    - `healing_target` — e.g. `HP`, `TEMP_HP`
+    - `is_ritual` / `is_concentration` / `is_homebrew` — boolean flags
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching spells across every page, not just this one.
 
     Does not include components, description, dice, or other heavier
     detail fields — use `GET /spells/{spell_id}` for the full record.
-    Intended for dropdowns, tables, and similar listing UI where the full
-    payload is unnecessary but availability still needs to be shown or
-    filtered on.
     """
+
     filters = {
         "school": school,
         "level": level,
@@ -144,7 +88,7 @@ def get_spells_brief(
         "is_concentration": is_concentration,
         "is_homebrew": is_homebrew,
     }
-    return spell_service.list_brief(page=page, size=size, filters=filters, search=search)
+    return spell_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
 @router.get(
@@ -162,6 +106,7 @@ def get_spell(spell_id: int, spell_service: SpellServiceDep):
 
     Open endpoint, no authentication required.
     """
+
     return spell_service.get_by_id(spell_id)
 
 
@@ -286,6 +231,7 @@ def create_spell(
     `PUT` calls. An empty (or omitted) list on either side means the
     spell is unrestricted for that dimension.
     """
+
     return spell_service.create_spell(spell_data)
 
 
@@ -307,6 +253,7 @@ def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: SpellSe
     use `PUT /spells/{spell_id}/classes` and `PUT /spells/{spell_id}/races`
     for those.
     """
+
     return spell_service.update(spell_id, update_data)
 
 
@@ -324,6 +271,7 @@ def delete_spell(spell_id: int, spell_service: SpellServiceDep, _: FounderDep):
 
     Also removes its class/race availability links (cascade).
     """
+
     spell_service.delete(spell_id)
     return None
 
@@ -362,6 +310,7 @@ def set_spell_classes(
     removed. Send an empty list to clear the restriction (spell becomes
     available to every class).
     """
+
     return spell_service.set_classes(spell_id, data)
 
 
@@ -399,4 +348,5 @@ def set_spell_races(
     removed. Send an empty list to clear the restriction (spell becomes
     available to every race).
     """
+
     return spell_service.set_races(spell_id, data)

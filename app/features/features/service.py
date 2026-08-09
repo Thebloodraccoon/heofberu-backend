@@ -1,15 +1,18 @@
 """Feature CRUD service with source_type/FK consistency re-validation."""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.constants import FeatureSourceType
-from app.core.base_service import BaseService
+from app.core.base_service import BaseService, Page
+from app.core.cache import use_cache
 from app.features.features.exceptions import FeatureNotOwnedException, InvalidFeatureSourceException
 from app.features.features.repository import FeatureRepository
 from app.features.features.schemas import (
     _REQUIRED_FK_BY_SOURCE_TYPE,
-    FeatureBriefResponse,
     FeatureCreate,
+    FeatureGetAllResponse,
     FeatureReplaceItem,
     FeatureResponse,
     FeatureUpdate,
@@ -46,6 +49,7 @@ def create_features_for_source(
     Returns:
         The created ``Feature`` model instances.
     """
+
     if not items:
         return []
 
@@ -107,6 +111,7 @@ def replace_features_for_source(
         FeatureNotOwnedException: an item's ``id`` does not belong to this
             source (400).
     """
+
     fk_name = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
     if fk_name is None:
         raise ValueError(f"source_type='{source_type.value}' has no source FK; replacement is not supported.")
@@ -150,7 +155,7 @@ def replace_features_for_source(
         db.flush()
 
 
-class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureBriefResponse]):
+class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureGetAllResponse]):
     """
     Feature-specific CRUD service built on :class:`BaseService`.
 
@@ -164,19 +169,44 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         endpoints, not through ``/features/``;
       - update restrictions: ``source_type`` and its FK are immutable, and
         ``level`` on a non-CLASS/SUBCLASS feature is rejected.
+
+    Listing and detail reads are cached via ``@use_cache`` under the
+    ``features`` namespace. The parent services (race/class/background/
+    feat) invalidate this namespace too when their feature lists change.
     """
 
     repository: FeatureRepository
+
+    cache_namespaces = ("features",)
 
     def __init__(self, db: Session):
         super().__init__(
             repository=FeatureRepository(db),
             response_schema=FeatureResponse,
-            brief_schema=FeatureBriefResponse,
+            get_all_schema=FeatureGetAllResponse,
         )
+
+    @use_cache()
+    def get_all(
+        self,
+        page: int = 1,
+        size: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+    ) -> Page[FeatureGetAllResponse]:
+        """Cached lightweight listing — see ``BaseService.get_all``."""
+
+        return super().get_all(page=page, size=size, filters=filters, search=search)
+
+    @use_cache()
+    def get_by_id(self, item_id: int) -> FeatureResponse:
+        """Cached single-record fetch — see ``BaseService.get_by_id``."""
+
+        return super().get_by_id(item_id)
 
     def _require_standalone(self, feature: Feature) -> None:
         """Reject CRUD on a source-owned feature via ``/features/``."""
+
         if feature.source_type != FeatureSourceType.OTHER:
             raise InvalidFeatureSourceException(
                 "Only standalone (OTHER) features can be managed through /features/; "
@@ -208,6 +238,8 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
             raise InvalidFeatureSourceException("'level' is only meaningful when source_type is CLASS or SUBCLASS.")
 
         updated_feature = self.repository.update(feature, fields)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_feature)
 
     def delete(self, feature_id: int) -> bool:
@@ -220,5 +252,9 @@ class FeatureService(BaseService[Feature, FeatureCreate, FeatureUpdate, FeatureR
         """
 
         feature = self._get_or_404(feature_id)
+
         self._require_standalone(feature)
-        return self.repository.delete(feature)
+        result = self.repository.delete(feature)
+        self._invalidate_cache()
+
+        return result

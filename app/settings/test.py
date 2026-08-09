@@ -12,6 +12,11 @@ _settings = AppSettings()
 STAGE = "test"
 ALLOWED_HOSTS = ["*"]
 
+# Cache is off in tests by default so existing HTTP tests keep seeing
+# fresh rows; enable it per-test with ``settings.CACHE_ENABLED = True``
+# (the cache reads the flag at call time).
+CACHE_ENABLED = False
+
 # Test stage always targets the isolated TEST_* services, never the
 # plain DATABASE_URL/REDIS_URL (which point at dev/prod).
 DATABASE_URL = _settings.TEST_DATABASE_URL

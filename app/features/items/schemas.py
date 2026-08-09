@@ -70,7 +70,7 @@ class ItemResponse(ItemBase):
     created_by_id: int | None = None
 
 
-class ItemBriefResponse(BaseModel):
+class ItemGetAllResponse(BaseModel):
     """Lightweight listing row: no description, weapon/armor detail fields."""
 
     model_config = ConfigDict(from_attributes=True)

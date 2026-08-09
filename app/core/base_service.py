@@ -15,12 +15,13 @@ from sqlalchemy import inspect
 from typing_extensions import TypeVar
 
 from app.core.base_repository import BaseRepository, ModelType
+from app.core.cache.invalidation import invalidate
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 
 CreateSchema = TypeVar("CreateSchema", bound=BaseModel)
 UpdateSchema = TypeVar("UpdateSchema", bound=BaseModel)
 ResponseSchema = TypeVar("ResponseSchema", bound=BaseModel)
-BriefSchema = TypeVar("BriefSchema", bound=BaseModel, default=BaseModel)
+GetAllSchema = TypeVar("GetAllSchema", bound=BaseModel, default=BaseModel)
 BeforeUpdateHook = Callable[[ModelType, dict], None]
 
 ItemSchema = TypeVar("ItemSchema", bound=BaseModel)
@@ -43,7 +44,7 @@ def paginate(page: int, size: int) -> tuple[int, int]:
     return skip, size
 
 
-class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, BriefSchema]):
+class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):
     """
     Generic "fetch → validate → persist → serialize" CRUD orchestration on
     top of a :class:`BaseRepository`.
@@ -53,30 +54,43 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         CreateSchema: Schema accepted by :meth:`create`.
         UpdateSchema: Schema accepted by :meth:`update` (partial update).
         ResponseSchema: Schema used to serialize results.
-        BriefSchema: Optional schema for :meth:`list_brief`.
+        GetAllSchema: Optional lightweight schema for :meth:`get_all`
+            (listings of reference catalogs). ``None`` means full records
+            are serialized to ``ResponseSchema`` instead.
+
+    Caching: services that should be cached transparently declare
+    ``cache_namespaces`` and decorate read methods with
+    ``app.core.cache.use_cache``. Every write here
+    (:meth:`create`/:meth:`update`/:meth:`delete`) purges those namespaces
+    automatically via :meth:`_invalidate_cache`; subclasses with compound
+    write methods must call ``self._invalidate_cache()`` themselves.
 
     Example::
 
         class SpellService(
-            BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellBriefResponse]
+            BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellGetAllResponse]
         ):
+            cache_namespaces = ("spells",)
+
             def __init__(self, db: Session):
                 super().__init__(
                     repository=SpellRepository(db),
                     response_schema=SpellResponse,
-                    brief_schema=SpellBriefResponse,
+                    get_all_schema=SpellGetAllResponse,
                 )
     """
+
+    cache_namespaces: tuple[str, ...] = ()
 
     def __init__(
         self,
         repository: BaseRepository[ModelType],
         response_schema: type[ResponseSchema],
-        brief_schema: type[BriefSchema] | None = None,
+        get_all_schema: type[GetAllSchema] | None = None,
     ):
         self.repository = repository
         self.response_schema = response_schema
-        self.brief_schema = brief_schema
+        self.get_all_schema = get_all_schema
 
     def get_all(
         self,
@@ -86,7 +100,20 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         search: str | None = None,
     ) -> Page[ResponseSchema]:
         """
-        Return a page of records serialized to ``ResponseSchema``.
+        Return a page of records.
+
+        When ``get_all_schema`` is set (reference catalogs), this is a
+        lightweight listing: rows are fetched through the column-select path
+        (``BaseRepository.get_brief``) using the schema's field names as
+        columns, so heavy full records with eager-loaded relationships are
+        never materialized. If the schema contains relationship fields
+        (which the column-select path cannot load, e.g. a spell's
+        ``available_classes``), the listing falls back to the eager-loaded
+        ``repository.get_all`` (via the repository's ``default_load_options``)
+        instead. ``total`` always comes from ``repository.count``.
+
+        When ``get_all_schema`` is ``None`` (e.g. users/characters), full
+        records are fetched and serialized to ``ResponseSchema``.
 
         Args:
             page: 1-indexed page number.
@@ -96,15 +123,36 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         """
 
         skip, limit = paginate(page, size)
-        items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
         total = self.repository.count(filters=filters, search=search)
 
-        return Page(
-            items=[self.response_schema.model_validate(item) for item in items],
-            total=total,
-            page=page,
-            size=size,
-        )
+        if self.get_all_schema is None:
+            items = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+            return Page(
+                items=[self.response_schema.model_validate(item) for item in items],
+                total=total,
+                page=page,
+                size=size,
+            )
+
+        model = self.repository.model
+        mapper = inspect(model)
+        relationship_fields = [
+            name for name in self.get_all_schema.model_fields if name in mapper.relationships
+        ]
+
+        if not relationship_fields:
+            columns = [getattr(model, field_name) for field_name in self.get_all_schema.model_fields]
+            rows = self.repository.get_brief(
+                *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
+            )
+            items = [
+                self.get_all_schema.model_validate(row, from_attributes=True) for row in rows
+            ]
+        else:
+            records = self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+            items = [self.get_all_schema.model_validate(record) for record in records]
+
+        return Page(items=items, total=total, page=page, size=size)
 
     def get_by_id(self, item_id: int) -> ResponseSchema:
         """Return a single record by ID, or raise ``RecordNotFoundError``."""
@@ -112,60 +160,11 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         item = self._get_or_404(item_id)
         return self.response_schema.model_validate(item)
 
-    def list_brief(
-        self,
-        page: int = 1,
-        size: int = 100,
-        filters: dict[str, Any] | None = None,
-        search: str | None = None,
-    ) -> Page[BriefSchema]:
-        """
-        Return a paginated, lightweight listing using ``brief_schema``'s fields as columns.
-
-        Requires ``brief_schema`` to have been set in ``__init__``.
-
-        Raises ``NotImplementedError`` if ``brief_schema`` contains a
-        relationship field (e.g. ``granted_skills``) — relationship
-        attributes cannot be loaded by the column-select path
-        (``BaseRepository.get_brief``). Subclasses whose brief schema has
-        relationship fields MUST override ``list_brief`` and load them via
-        the repository's ``default_load_options`` instead.
-        """
-
-        if self.brief_schema is None:
-            raise ValueError(f"{type(self).__name__}.list_brief() requires 'brief_schema' to be set in __init__.")
-
-        model = self.repository.model
-        mapper = inspect(model)
-
-        relationship_fields = [name for name in self.brief_schema.model_fields if name in mapper.relationships]
-
-        if relationship_fields:
-            raise NotImplementedError(
-                f"{type(self).__name__}.list_brief() cannot load relationship field(s) "
-                f"{relationship_fields} via column-select. Override list_brief() in the "
-                f"subclass to load them through the repository's default_load_options."
-            )
-
-        columns = [getattr(model, field_name) for field_name in self.brief_schema.model_fields]
-
-        skip, limit = paginate(page, size)
-        rows = self.repository.get_brief(
-            *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
-        )
-        total = self.repository.count(filters=filters, search=search)
-
-        return Page(
-            items=[self.brief_schema.model_validate(row, from_attributes=True) for row in rows],
-            total=total,
-            page=page,
-            size=size,
-        )
-
     def create(self, create_data: CreateSchema) -> ResponseSchema:
         """Persist a new record and return it serialized. No business-rule validation is done here."""
 
         item = self.repository.create(create_data.model_dump())
+        self._invalidate_cache()
         return self.response_schema.model_validate(item)
 
     def update(
@@ -192,6 +191,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
             before_update(item, fields)
 
         updated_item = self.repository.update(item, fields)
+        self._invalidate_cache()
         return self.response_schema.model_validate(updated_item)
 
     def delete(self, item_id: int) -> bool:
@@ -204,7 +204,15 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         needed here; see ``BaseRepository.delete``/``is_in_use``.
         """
         item = self._get_or_404(item_id)
-        return self.repository.delete(item)
+        result = self.repository.delete(item)
+        self._invalidate_cache()
+        return result
+
+    def _invalidate_cache(self) -> None:
+        """Purge all cached entries for this service's namespaces after a write."""
+
+        for namespace in self.cache_namespaces:
+            invalidate(namespace)
 
     def _get_or_404(self, item_id: int) -> ModelType:
         """Fetch the raw model instance or raise ``RecordNotFoundError``."""

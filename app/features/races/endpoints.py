@@ -8,8 +8,8 @@ from app.core.dependencies import FounderDep, GmUserDep, RaceServiceDep
 from app.features.features.schemas import FeaturesReplace
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
-    RaceBriefResponse,
     RaceCreate,
+    RaceGetAllResponse,
     RaceResponse,
     RaceUpdate,
     SkillsUpdate,
@@ -20,45 +20,14 @@ router = APIRouter(prefix="/races", tags=["Races"])
 
 @router.get(
     "/",
-    response_model=Page[RaceResponse],
-    summary="List races (full detail)",
+    response_model=Page[RaceGetAllResponse],
+    summary="List races",
 )
 def get_races(
     race_service: RaceServiceDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
     race_size: RaceSize | None = None,
-    search: str | None = None,
-):
-    """
-    Return a paginated list of races, each with full detail — including
-    ability bonuses and granted skills.
-
-    Open endpoint, no authentication required.
-
-    `race_size` is an exact match (e.g. `race_size=MEDIUM`). `search` is a
-    case-insensitive partial match against the race name; both can be
-    combined.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching races across every page, not just this one.
-
-    For a lighter payload (no bonuses/skills), use `GET /races/brief`
-    instead.
-    """
-    return race_service.get_all(page=page, size=size, filters={"size": race_size}, search=search)
-
-
-@router.get(
-    "/brief",
-    response_model=Page[RaceBriefResponse],
-    summary="List races (minimal fields)",
-)
-def get_races_brief(
-    race_service: RaceServiceDep,
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-    race_size: str | None = None,
     search: str | None = None,
 ):
     """
@@ -71,13 +40,14 @@ def get_races_brief(
     case-insensitive partial match against the race name; both can be
     combined.
 
-    Response is `{items, total, page, size}`, same shape as `GET /races/`.
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching races across every page, not just this one.
 
     Does not include ability bonuses or granted skills — use
-    `GET /races/{race_id}` for the full record. Intended for dropdowns,
-    tables, and similar listing UI where the full payload is unnecessary.
+    `GET /races/{race_id}` for the full record.
     """
-    return race_service.list_brief(page=page, size=size, filters={"size": race_size}, search=search)
+
+    return race_service.get_all(page=page, size=size, filters={"size": race_size}, search=search)
 
 
 @router.get(
@@ -95,6 +65,7 @@ def get_race(race_id: int, race_service: RaceServiceDep):
 
     Open endpoint, no authentication required.
     """
+
     return race_service.get_by_id(race_id)
 
 
@@ -144,6 +115,7 @@ def create_race(
     race is fully set up in one call instead of a `POST` followed by two
     `PUT` calls.
     """
+
     return race_service.create_race(race_data, created_by_id=current_user.id)
 
 
@@ -165,6 +137,7 @@ def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceService
     `PUT /races/{race_id}/ability-bonuses` and `PUT /races/{race_id}/skills`
     for those.
     """
+
     return race_service.update(race_id, update_data)
 
 
@@ -185,6 +158,7 @@ def delete_race(race_id: int, race_service: RaceServiceDep, _: FounderDep):
     skills. Blocked if the race is still assigned to one or more
     characters.
     """
+
     race_service.delete(race_id)
     return None
 
@@ -221,6 +195,7 @@ def set_race_ability_bonuses(
     complete set of bonuses for this race — any bonus not included is
     removed. Send an empty list to clear all bonuses.
     """
+
     return race_service.set_ability_bonuses(race_id, data)
 
 
@@ -257,6 +232,7 @@ def set_race_skills(
     the complete set of skills this race grants — any skill not included
     is removed. Send an empty list to clear all granted skills.
     """
+
     return race_service.set_skills(race_id, data)
 
 
@@ -315,4 +291,5 @@ def replace_race_features(
     that doesn't belong to this race is rejected with 400; duplicate ids
     within one request are rejected with 422.
     """
+
     return race_service.replace_race_features(race_id, data, created_by_id=_.id)

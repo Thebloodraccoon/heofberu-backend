@@ -30,9 +30,11 @@ def _validate_unique_asi_abilities(
     ability_score_increases: list[AbilityScoreIncreaseItem],
 ) -> list[AbilityScoreIncreaseItem]:
     abilities = [item.ability for item in ability_score_increases]
+
     if len(abilities) != len(set(abilities)):
         duplicates = {a for a in abilities if abilities.count(a) > 1}
         raise ValueError(f"Duplicate ability score(s): {sorted(duplicates)}")
+
     return ability_score_increases
 
 
@@ -54,6 +56,7 @@ class FeatCreate(FeatBase):
         """Reject ASI lists containing duplicate abilities."""
         if value is None:
             return value
+
         return _validate_unique_asi_abilities(value)
 
 
@@ -82,6 +85,7 @@ class AbilityScoreIncreasesUpdate(BaseModel):
     @field_validator("ability_score_increases")
     def validate_unique_asi_abilities(cls, ability_score_increases):
         """Reject ASI lists containing duplicate abilities."""
+
         return _validate_unique_asi_abilities(ability_score_increases)
 
 
@@ -106,7 +110,7 @@ class FeatResponse(FeatBase):
     features: list[NestedFeatureResponse] = []
 
 
-class FeatBriefResponse(BaseModel):
+class FeatGetAllResponse(BaseModel):
     """Lightweight listing row: no description, no ASI choices."""
 
     model_config = ConfigDict(from_attributes=True)

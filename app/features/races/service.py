@@ -1,17 +1,20 @@
 """Race CRUD service including ability-bonus and skill management."""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.constants import FeatureSourceType
-from app.core.base_service import BaseService
+from app.core.base_service import BaseService, Page
+from app.core.cache import use_cache
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
 from app.features.features.schemas import FeaturesReplace
 from app.features.features.service import create_features_for_source, replace_features_for_source
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
-    RaceBriefResponse,
     RaceCreate,
+    RaceGetAllResponse,
     RaceResponse,
     RaceUpdate,
     SkillsUpdate,
@@ -19,7 +22,7 @@ from app.features.races.schemas import (
 from app.models.race_model import Race
 
 
-class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBriefResponse]):
+class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGetAllResponse]):
     """
     Race-specific CRUD service built on :class:`BaseService`.
 
@@ -36,22 +39,45 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
         character (``characters.race_id`` is ``ON DELETE SET NULL`` at the
         DB level, so the guard is what prevents detachment).
 
-    ``get_by_id``, ``get_all``, ``list_brief``, and ``delete`` are all
-    inherited unchanged from ``BaseService`` — the in-use delete guard
-    lives in ``BaseRepository.delete`` (via ``check_in_use_on_delete=True``
-    + ``RaceRepository.is_in_use``). ``list_brief`` derives its columns
-    from ``RaceBriefResponse``'s field names (id, name, size, is_homebrew)
-    and is ordered by ``Race.id``.
+    ``get_by_id``, ``get_all``, and ``delete`` are all inherited unchanged
+    from ``BaseService`` — the in-use delete guard lives in
+    ``BaseRepository.delete`` (via ``check_in_use_on_delete=True`` +
+    ``RaceRepository.is_in_use``). Listing and detail reads are cached via
+    ``@use_cache``; the lightweight listing derives its columns from
+    ``RaceGetAllResponse``'s field names (id, name, size, is_homebrew) and
+    is ordered by ``Race.id``. Because a race's writes also touch the
+    ``features`` table (RACE-source rows), the service invalidates both its
+    own namespace and ``features``.
     """
 
     repository: RaceRepository
+
+    cache_namespaces = ("races", "features")
 
     def __init__(self, db: Session):
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,
-            brief_schema=RaceBriefResponse,
+            get_all_schema=RaceGetAllResponse,
         )
+
+    @use_cache()
+    def get_all(
+        self,
+        page: int = 1,
+        size: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+    ) -> Page[RaceGetAllResponse]:
+        """Cached lightweight listing — see ``BaseService.get_all``."""
+
+        return super().get_all(page=page, size=size, filters=filters, search=search)
+
+    @use_cache()
+    def get_by_id(self, item_id: int) -> RaceResponse:
+        """Cached single-record fetch — see ``BaseService.get_by_id``."""
+
+        return super().get_by_id(item_id)
 
     def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
         """
@@ -104,6 +130,8 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
             )
 
         self.repository.refresh(item)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(item)
 
     def set_ability_bonuses(self, race_id: int, data: AbilityBonusesUpdate) -> RaceResponse:
@@ -113,16 +141,19 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
 
         bonuses = [{"ability": item.ability, "bonus": item.bonus} for item in data.ability_bonuses]
         updated_race = self.repository.set_ability_bonuses(race, bonuses)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_race)
 
     def set_skills(self, race_id: int, data: SkillsUpdate) -> RaceResponse:
         """Fully replace the skills granted by a race."""
 
         race = self._get_or_404(race_id)
-
         skills = self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
 
         updated_race = self.repository.set_skills(race, skills)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_race)
 
     def replace_race_features(
@@ -138,6 +169,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
         grants away. Runs atomically, then reconciles the grants of every
         character of this race so their builds match the new feature set.
         """
+
         race = self._get_or_404(race_id)
         with self._atomic():
             replace_features_for_source(
@@ -149,5 +181,8 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceBr
                 commit=False,
             )
             reconcile_characters_for_source(self.repository.db, FeatureSourceType.RACE, race.id)
+
         self.repository.refresh(race)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(race)

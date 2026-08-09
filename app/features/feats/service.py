@@ -1,15 +1,18 @@
 """Feat CRUD service including ASI-choice management."""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.constants import FeatureSourceType
-from app.core.base_service import BaseService
+from app.core.base_service import BaseService, Page
+from app.core.cache import use_cache
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
 from app.features.feats.repository import FeatRepository
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
-    FeatBriefResponse,
     FeatCreate,
+    FeatGetAllResponse,
     FeatResponse,
     FeatUpdate,
 )
@@ -18,7 +21,7 @@ from app.features.features.service import create_features_for_source, replace_fe
 from app.models.feat_model import Feat
 
 
-class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBriefResponse]):
+class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGetAllResponse]):
     """
     Feat-specific CRUD service built on :class:`BaseService`.
 
@@ -29,16 +32,40 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
     guard blocking removal of a feat still granted to any character or
     whose features are still granted to a character (its own
     ``features`` rows cascade away with the feat).
+
+    Listing and detail reads are cached via ``@use_cache``. Because a
+    feat's writes also touch the ``features`` table (FEAT-source rows),
+    the service invalidates both its own namespace and ``features``.
     """
 
     repository: FeatRepository
+
+    cache_namespaces = ("feats", "features")
 
     def __init__(self, db: Session):
         super().__init__(
             repository=FeatRepository(db),
             response_schema=FeatResponse,
-            brief_schema=FeatBriefResponse,
+            get_all_schema=FeatGetAllResponse,
         )
+
+    @use_cache()
+    def get_all(
+        self,
+        page: int = 1,
+        size: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+    ) -> Page[FeatGetAllResponse]:
+        """Cached lightweight listing — see ``BaseService.get_all``."""
+
+        return super().get_all(page=page, size=size, filters=filters, search=search)
+
+    @use_cache()
+    def get_by_id(self, item_id: int) -> FeatResponse:
+        """Cached single-record fetch — see ``BaseService.get_by_id``."""
+
+        return super().get_by_id(item_id)
 
     def create_feat(self, feat_data: FeatCreate, created_by_id: int | None = None) -> FeatResponse:
         """
@@ -73,6 +100,8 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
             )
 
         self.repository.refresh(item)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(item)
 
     def set_ability_score_increases(self, feat_id: int, data: AbilityScoreIncreasesUpdate) -> FeatResponse:
@@ -82,6 +111,8 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
 
         increases = [{"ability": item.ability, "amount": item.amount} for item in data.ability_score_increases]
         updated_feat = self.repository.set_ability_score_increases(feat, increases)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_feat)
 
     def replace_feat_features(
@@ -98,6 +129,7 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
         character holding this feat so their builds match the new feature
         set.
         """
+
         feat = self._get_or_404(feat_id)
         with self._atomic():
             replace_features_for_source(
@@ -109,5 +141,8 @@ class FeatService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatBr
                 commit=False,
             )
             reconcile_characters_for_source(self.repository.db, FeatureSourceType.FEAT, feat.id)
+
         self.repository.refresh(feat)
+        self._invalidate_cache()
+
         return self.response_schema.model_validate(feat)

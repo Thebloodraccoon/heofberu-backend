@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from app.features.features.schemas import FeatureBriefResponse
+from app.features.features.schemas import FeatureGetAllResponse
 
 
 class CharacterFeatureAdd(BaseModel):
@@ -47,4 +47,4 @@ class CharacterFeatureResponse(BaseModel):
     character_id: int
     feature_id: int
     notes: str = ""
-    feature: FeatureBriefResponse
+    feature: FeatureGetAllResponse

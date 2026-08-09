@@ -5,15 +5,15 @@ from fastapi import APIRouter, Body, Query
 from app.constants import AbilityScore
 from app.core.base_service import Page
 from app.core.dependencies import FounderDep, GmUserDep, SkillServiceDep
-from app.features.skills.schemas import SkillBriefResponse, SkillCreate, SkillResponse, SkillUpdate
+from app.features.skills.schemas import SkillCreate, SkillGetAllResponse, SkillResponse, SkillUpdate
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
 
 
 @router.get(
     "/",
-    response_model=Page[SkillResponse],
-    summary="List skills (full detail)",
+    response_model=Page[SkillGetAllResponse],
+    summary="List skills",
 )
 def get_skills(
     skill_service: SkillServiceDep,
@@ -23,7 +23,8 @@ def get_skills(
     ability: AbilityScore | None = None,
 ):
     """
-    Return a paginated list of skills, with full detail.
+    Return a paginated list of skills with `id`, `key`, `name`, and
+    `ability`.
 
     Open endpoint, no authentication required.
 
@@ -34,40 +35,11 @@ def get_skills(
     Response is `{items, total, page, size}` — `total` is the count of
     matching skills across every page, not just this one.
 
-    For a lighter payload, use `GET /skills/brief` instead.
-    """
-    return skill_service.get_all(page=page, size=size, search=search, filters={"ability": ability})
-
-
-@router.get(
-    "/brief",
-    response_model=Page[SkillBriefResponse],
-    summary="List skills (minimal fields)",
-)
-def get_skills_brief(
-    skill_service: SkillServiceDep,
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-    search: str | None = None,
-    ability: AbilityScore | None = None,
-):
-    """
-    Return a paginated list of skills with only `id`, `key`, `name`, and
-    `ability`.
-
-    Open endpoint, no authentication required.
-
-    `search` is a case-insensitive partial match against the skill name
-    and key. `ability` is an exact match (e.g. `ability=WIS`) and can be
-    combined with `search`.
-
-    Response is `{items, total, page, size}`, same shape as `GET /skills/`.
-
     Does not include the description — use `GET /skills/{skill_id}` for
-    the full record. Intended for dropdowns, tables, and similar listing
-    UI where the full payload is unnecessary.
+    the full record.
     """
-    return skill_service.list_brief(page=page, size=size, search=search, filters={"ability": ability})
+
+    return skill_service.get_all(page=page, size=size, search=search, filters={"ability": ability})
 
 
 @router.get(
@@ -84,6 +56,7 @@ def get_skill(skill_id: int, skill_service: SkillServiceDep):
 
     Open endpoint, no authentication required.
     """
+
     return skill_service.get_by_id(skill_id)
 
 
@@ -122,6 +95,7 @@ def create_skill(
     ),
 ):
     """Create a new skill. **GM only.**"""
+
     return skill_service.create(skill_data)
 
 
@@ -141,6 +115,7 @@ def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillSe
     Only fields included in the request body are changed; omitted fields
     are left as-is.
     """
+
     return skill_service.update(skill_id, update_data)
 
 
@@ -161,5 +136,6 @@ def delete_skill(skill_id: int, skill_service: SkillServiceDep, _: FounderDep):
     or a character's skill proficiencies (the service raises
     ``RecordInUseError``, mapped to a 409 by the global exception handler).
     """
+
     skill_service.delete(skill_id)
     return None
