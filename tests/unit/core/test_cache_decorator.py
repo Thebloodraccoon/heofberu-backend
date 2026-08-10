@@ -9,12 +9,17 @@ per-test (``app.settings.test`` keeps it off by default).
 
 from contextlib import asynccontextmanager
 import fnmatch
+from types import SimpleNamespace
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import pytest
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import declarative_base
 
+from app.core.base_service import Page
 from app.core.cache import invalidate, use_cache
 import app.core.cache.client as cache_client
+from app.core.cached_service import CachedService
 from app.settings import settings
 
 
@@ -355,3 +360,107 @@ class TestNamespaceResolution:
         await multi.get()
 
         assert any(key.startswith("cache:first:") for key in fake_redis.data)
+
+
+_DynBase = declarative_base()
+
+
+class DynItemModel(_DynBase):
+    __tablename__ = "dyn_catalog_items"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+
+
+class DynItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
+class DynItemIn(BaseModel):
+    name: str
+
+
+class DynRepo:
+    """Recording fake standing in for ``BaseRepository`` on the read paths."""
+
+    def __init__(self, row):
+        self.row = row
+        self.model = DynItemModel
+        self.get_by_id_calls = 0
+        self.get_brief_calls = 0
+        self.count_calls = 0
+
+    async def get_by_id(self, item_id):
+        self.get_by_id_calls += 1
+        return self.row
+
+    async def get_brief(self, *columns, order_by=None, skip=0, limit=100, filters=None, search=None):
+        self.get_brief_calls += 1
+        return [self.row]
+
+    async def count(self, *, filters=None, search=None):
+        self.count_calls += 1
+        return 1
+
+
+class DynCatalog(CachedService[DynItemModel, DynItemIn, DynItemIn, DynItemOut, DynItemOut]):
+    cache_namespaces = ("dyn_catalog",)
+
+    def __init__(self, repo):
+        super().__init__(repository=repo, response_schema=DynItemOut, get_all_schema=DynItemOut)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestCachedServiceDynamicSchema:
+    """``CachedService``'s TypeVar-annotated reads resolve the schema per-call."""
+
+    async def test_get_by_id_decodes_into_response_schema(self, fake_redis):
+        repo = DynRepo(SimpleNamespace(id=7, name="Elf"))
+        service = DynCatalog(repo)
+
+        first = await service.get_by_id(7)
+        second = await service.get_by_id(7)
+
+        assert isinstance(first, DynItemOut)
+        assert first == second
+        assert repo.get_by_id_calls == 1
+        assert any(key.startswith("cache:dyn_catalog:get_by_id:") for key in fake_redis.data)
+
+    async def test_get_all_decodes_into_page_of_get_all_schema(self, fake_redis):
+        repo = DynRepo(SimpleNamespace(id=1, name="Human"))
+        service = DynCatalog(repo)
+
+        first = await service.get_all(page=1, size=10)
+        second = await service.get_all(page=1, size=10)
+
+        assert isinstance(first, Page)
+        assert isinstance(first.items[0], DynItemOut)
+        assert first.total == 1
+        assert first == second
+        assert repo.count_calls == 1
+        assert repo.get_brief_calls == 1
+
+    async def test_missing_return_annotation_uses_instance_response_schema(self, fake_redis):
+        class NoHintService:
+            cache_namespaces = ("no_hint",)
+            response_schema = DynItemOut
+
+            def __init__(self):
+                self.calls = 0
+
+            @use_cache()
+            def get(self, item_id: int):
+                self.calls += 1
+                return DynItemOut(id=item_id, name="X")
+
+        service = NoHintService()
+
+        first = await service.get(item_id=3)
+        second = await service.get(item_id=3)
+
+        assert isinstance(first, DynItemOut)
+        assert first == second
+        assert service.calls == 1

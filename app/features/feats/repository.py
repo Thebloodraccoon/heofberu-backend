@@ -1,6 +1,6 @@
 """Feat repository: base CRUD plus ASI-choice management and in-use guard."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -66,15 +66,12 @@ class FeatRepository(BaseRepository[Feat]):
         and flush instead, without duplicating this method.
         """
 
-        await self.db.execute(delete(FeatAbilityScoreIncrease).where(FeatAbilityScoreIncrease.feat_id == feat.id))
-
-        for item in increases:
-            self.db.add(FeatAbilityScoreIncrease(feat_id=feat.id, ability=item["ability"], amount=item["amount"]))
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(feat)
-        else:
-            await self.db.flush()
+        await self.replace_child_rows(
+            FeatAbilityScoreIncrease,
+            feat,
+            "feat_id",
+            increases,
+            commit=commit,
+        )
 
         return feat

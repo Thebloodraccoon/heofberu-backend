@@ -11,7 +11,7 @@ from app.features.feats.schemas import (
     FeatResponse,
     FeatUpdate,
 )
-from app.features.features.schemas import FeaturesReplace
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
 
 router = APIRouter(prefix="/feats", tags=["Feats"])
 
@@ -227,60 +227,102 @@ async def set_feat_ability_score_increases(
     return await feat_service.set_ability_score_increases(feat_id, data)
 
 
-@router.put(
+@router.post(
     "/{feat_id}/features",
     response_model=FeatResponse,
-    summary="Replace a feat's features",
+    status_code=201,
+    summary="Add a feature to a feat",
     responses={
-        400: {"description": "An item's feature id does not belong to this feat."},
-        422: {"description": "Duplicate feature ids in one request."},
         404: {"description": "No feat exists with the given ID."},
     },
 )
-async def replace_feat_features(
+async def add_feat_feature(
     feat_id: int,
     feat_service: FeatServiceDep,
     _: GmUserDep,
-    data: FeaturesReplace = Body(
+    data: NestedFeatureCreate = Body(
         openapi_examples={
-            "replace": {
-                "summary": "Replace the feat feature list (matched by id)",
+            "alert_initiative": {
+                "summary": "Add one feature",
                 "value": {
-                    "features": [
-                        {
-                            "id": 8,
-                            "name": "Alert Initiative",
-                            "description": "You gain a +5 bonus to initiative.",
-                        },
-                        {
-                            "name": "Never Startled",
-                            "description": "You always act in the surprise round.",
-                        },
-                    ]
+                    "name": "Alert Initiative",
+                    "description": "You gain a +5 bonus to initiative.",
                 },
-            },
-            "clear": {
-                "summary": "Remove all feat features",
-                "value": {"features": []},
             },
         },
     ),
 ):
     """
-    Replace a feat's feature list. **GM only.**
+    Add one feature to a feat. **GM only.**
 
-    Full replace, not merge, matched by feature `id`:
+    The feature is created with ``source_type: FEAT`` and becomes an
+    auto-grant for every character holding this feat in the same
+    transaction. Returns the updated feat.
 
-    - items carrying an `id` update that existing feature in place — the
-      feature keeps its id, so any character grants (and notes on them)
-      survive the update;
-    - items without an `id` create new features;
-    - current features whose id is not in the request body are deleted,
-      which cascades away their character grants.
-
-    Send `{"features": []}` to delete every feature of the feat. An `id`
-    that doesn't belong to this feat is rejected with 400; duplicate ids
-    within one request are rejected with 422.
+    ``level`` is not meaningful for feat features and must stay ``null``.
     """
 
-    return await feat_service.replace_feat_features(feat_id, data, created_by_id=_.id)
+    return await feat_service.add_feature(feat_id, data, created_by_id=_.id)
+
+
+@router.patch(
+    "/{feat_id}/features/{feature_id}",
+    response_model=FeatResponse,
+    summary="Update one feature of a feat",
+    responses={
+        400: {"description": "The feature belongs to a different feat, or the update is invalid."},
+        404: {"description": "No feat exists with the given ID, or no feature exists with the given ID."},
+    },
+)
+async def update_feat_feature(
+    feat_id: int,
+    feature_id: int,
+    feat_service: FeatServiceDep,
+    _: GmUserDep,
+    data: FeatureUpdate = Body(
+        openapi_examples={
+            "rename": {
+                "summary": "Edit one feature",
+                "value": {
+                    "name": "Alert Initiative (Improved)",
+                    "description": "You gain a +10 bonus to initiative.",
+                },
+            },
+        },
+    ),
+):
+    """
+    Update one feature of a feat in place. **GM only.**
+
+    The feature keeps its id, so character grants and any player notes on
+    them survive. Only `name`, `level`, `description` and `is_homebrew`
+    are editable; omitted fields are left as-is.
+    """
+
+    return await feat_service.update_feature(feat_id, feature_id, data)
+
+
+@router.delete(
+    "/{feat_id}/features/{feature_id}",
+    status_code=204,
+    summary="Remove a feature from a feat",
+    responses={
+        400: {"description": "The feature belongs to a different feat."},
+        404: {"description": "No feat exists with the given ID, or no feature exists with the given ID."},
+    },
+)
+async def remove_feat_feature(
+    feat_id: int,
+    feature_id: int,
+    feat_service: FeatServiceDep,
+    _: GmUserDep,
+):
+    """
+    Remove one feature from a feat. **GM only.**
+
+    Deletes the feature, cascading away any `CharacterFeature` grants on
+    it, and reconciles the affected characters in the same transaction.
+    """
+
+    await feat_service.remove_feature(feat_id, feature_id)
+    return None

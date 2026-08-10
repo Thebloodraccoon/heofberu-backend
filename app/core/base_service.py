@@ -222,6 +222,11 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         return item
 
+    async def _get_response(self, item_id: int) -> ResponseSchema:
+        """Fetch a record by id, serialize it to ``response_schema``, or raise ``RecordNotFoundError``."""
+
+        return self.response_schema.model_validate(await self._get_or_404(item_id))
+
     @staticmethod
     async def resolve_ids(
         lookup_fn: Callable[[list[int]], list[ResolvedItem]], ids: list[int], model_name: str

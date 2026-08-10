@@ -16,24 +16,25 @@ class TestFeatureOpenRead:
         names = {item["name"] for item in response.json()["items"]}
         assert {"Extra Attack", "Darkvision"} <= names
 
-    async def test_list_features_filters_by_source_type(self, client, create_class, create_feature):
+    async def test_list_features_excludes_source_owned_features(self, client, create_class, create_feature):
         character_class = await create_class(name="Fighter")
         await create_feature(name="Extra Attack", source_type="CLASS", class_id=character_class.id, level=5)
+        await create_feature(name="Homebrew Boon", source_type="OTHER")
 
-        response = await client.get(f"/features?source_type=CLASS&class_id={character_class.id}")
+        response = await client.get("/features")
 
         assert response.status_code == 200
-        assert [item["name"] for item in response.json()["items"]] == ["Extra Attack"]
+        names = {item["name"] for item in response.json()["items"]}
+        assert "Homebrew Boon" in names
+        assert "Extra Attack" not in names
 
-    async def test_list_features_filters_by_subclass_id(self, client, create_class, create_subclass, create_feature):
+    async def test_get_source_owned_feature_returns_404(self, client, create_class, create_feature):
         character_class = await create_class(name="Fighter")
-        subclass = await create_subclass(class_id=character_class.id, name="Champion")
-        await create_feature(name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3)
+        feature = await create_feature(name="Extra Attack", source_type="CLASS", class_id=character_class.id, level=5)
 
-        response = await client.get(f"/features?source_type=SUBCLASS&subclass_id={subclass.id}")
+        response = await client.get(f"/features/{feature.id}")
 
-        assert response.status_code == 200
-        assert [item["name"] for item in response.json()["items"]] == ["Improved Critical"]
+        assert response.status_code == 404
 
     async def test_get_feature_by_id(self, client, create_feature):
         feature = await create_feature(name="Extra Attack", source_type="OTHER")

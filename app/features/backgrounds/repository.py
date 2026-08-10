@@ -1,17 +1,18 @@
 """Background repository: base CRUD plus granted-skill management."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
+from app.features.skills.mixins import SkillLookupMixin
 from app.models import CharacterFeature, Feature
 from app.models.background_association_models import background_skills
 from app.models.background_model import Background
 from app.models.skill_model import Skill
 
 
-class BackgroundRepository(BaseRepository[Background]):
+class BackgroundRepository(SkillLookupMixin, BaseRepository[Background]):
     """Background-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
@@ -40,15 +41,6 @@ class BackgroundRepository(BaseRepository[Background]):
         result = await self.db.execute(select(CharacterFeature).where(CharacterFeature.feature_id.in_(feature_ids)))
         return result.scalar_one_or_none() is not None
 
-    async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
-        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
-
-        if not skill_ids:
-            return []
-
-        result = await self.db.execute(select(Skill).where(Skill.id.in_(skill_ids)))
-        return list(result.scalars().unique().all())
-
     async def set_skills(self, background: Background, skills: list[Skill], *, commit: bool = True) -> Background:
         """
         Replace all granted skills for a background with the given list.
@@ -64,18 +56,13 @@ class BackgroundRepository(BaseRepository[Background]):
         commit and flush instead, without duplicating this method.
         """
 
-        await self.db.execute(delete(background_skills).where(background_skills.c.background_id == background.id))
-
-        if skills:
-            await self.db.execute(
-                background_skills.insert(),
-                [{"background_id": background.id, "skill_id": skill.id} for skill in skills],
-            )
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(background)
-        else:
-            await self.db.flush()
+        await self.replace_association(
+            background_skills,
+            background,
+            "background_id",
+            "skill_id",
+            [skill.id for skill in skills],
+            commit=commit,
+        )
 
         return background

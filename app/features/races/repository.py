@@ -1,17 +1,17 @@
 """Race repository: base CRUD plus ability-bonus/skill management."""
 
-from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
+from app.features.skills.mixins import SkillLookupMixin
 from app.models import Character
 from app.models.race_association_models import RaceAbilityBonus, race_skills
 from app.models.race_model import Race
 from app.models.skill_model import Skill
 
 
-class RaceRepository(BaseRepository[Race]):
+class RaceRepository(SkillLookupMixin, BaseRepository[Race]):
     """
     Race-specific repository built on :class:`BaseRepository`.
 
@@ -52,8 +52,7 @@ class RaceRepository(BaseRepository[Race]):
         via ON DELETE RESTRICT.
         """
 
-        result = await self.db.execute(select(Character).where(Character.race_id == race_id))
-        return result.scalar_one_or_none() is not None
+        return await self.exists_referencing(Character, "race_id", race_id)
 
     async def set_ability_bonuses(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> Race:
         """
@@ -64,26 +63,15 @@ class RaceRepository(BaseRepository[Race]):
         the commit and flush instead, without duplicating this method.
         """
 
-        await self.db.execute(delete(RaceAbilityBonus).where(RaceAbilityBonus.race_id == race.id))
-
-        for item in bonuses:
-            self.db.add(RaceAbilityBonus(race_id=race.id, ability=item["ability"], bonus=item["bonus"]))
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(race)
-        else:
-            await self.db.flush()
+        await self.replace_child_rows(
+            RaceAbilityBonus,
+            race,
+            "race_id",
+            bonuses,
+            commit=commit,
+        )
 
         return race
-
-    async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
-        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
-        if not skill_ids:
-            return []
-
-        result = await self.db.execute(select(Skill).where(Skill.id.in_(skill_ids)))
-        return list(result.scalars().unique().all())
 
     async def set_skills(self, race: Race, skills: list[Skill], *, commit: bool = True) -> Race:
         """
@@ -97,18 +85,13 @@ class RaceRepository(BaseRepository[Race]):
         See ``set_ability_bonuses`` for the meaning of ``commit=False``.
         """
 
-        await self.db.execute(delete(race_skills).where(race_skills.c.race_id == race.id))
-
-        if skills:
-            await self.db.execute(
-                race_skills.insert(),
-                [{"race_id": race.id, "skill_id": skill.id} for skill in skills],
-            )
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(race)
-        else:
-            await self.db.flush()
+        await self.replace_association(
+            race_skills,
+            race,
+            "race_id",
+            "skill_id",
+            [skill.id for skill in skills],
+            commit=commit,
+        )
 
         return race

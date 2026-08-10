@@ -1,15 +1,11 @@
 """Race CRUD service including ability-bonus and skill management."""
 
-from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
-from app.core.base_service import BaseService, Page
-from app.core.cache import use_cache
-from app.features.characters.progression.feature_sync import reconcile_characters_for_source
-from app.features.features.schemas import FeaturesReplace
-from app.features.features.service import create_features_for_source, replace_features_for_source
+from app.core.cached_service import CachedService
+from app.features.features.mixins import SourceFeatureMixin
+from app.features.features.service import FeatureService
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
@@ -17,14 +13,18 @@ from app.features.races.schemas import (
     RaceGetAllResponse,
     RaceResponse,
     RaceUpdate,
-    SkillsUpdate,
 )
+from app.features.skills.mixins import SkillsManagerMixin
 from app.models.race_model import Race
 
 
-class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGetAllResponse]):
+class RaceService(
+    SkillsManagerMixin,
+    SourceFeatureMixin,
+    CachedService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGetAllResponse],
+):
     """
-    Race-specific CRUD service built on :class:`BaseService`.
+    Race-specific CRUD service built on :class:`CachedService`.
 
     Adds behaviors the generic base class doesn't provide:
       - a uniqueness check on ``name`` before create/update;
@@ -35,13 +35,15 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         their own association tables and have no generic base-class
         equivalent. ``create_race`` sets them up front, in the same
         transaction as the race itself, via ``BaseService._atomic()``;
+      - per-source feature CRUD (``add_feature``/``update_feature``/
+        ``remove_feature``) inherited from :class:`SourceFeatureMixin`;
       - a delete guard that blocks removing a race still assigned to any
         character (``characters.race_id`` is ``ON DELETE SET NULL`` at the
         DB level, so the guard is what prevents detachment).
 
     ``get_by_id``, ``get_all``, and ``delete`` are all inherited unchanged
-    from ``BaseService`` — the in-use delete guard lives in
-    ``BaseRepository.delete`` (via ``check_in_use_on_delete=True`` +
+    from ``CachedService``/``BaseService`` — the in-use delete guard lives
+    in ``BaseRepository.delete`` (via ``check_in_use_on_delete=True`` +
     ``RaceRepository.is_in_use``). Listing and detail reads are cached via
     ``@use_cache``; the lightweight listing derives its columns from
     ``RaceGetAllResponse``'s field names (id, name, size, is_homebrew) and
@@ -54,30 +56,15 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
 
     cache_namespaces = ("races", "features")
 
+    _feature_source_type = FeatureSourceType.RACE
+
     def __init__(self, db: AsyncSession):
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,
             get_all_schema=RaceGetAllResponse,
         )
-
-    @use_cache()
-    async def get_all(
-        self,
-        page: int = 1,
-        size: int = 100,
-        filters: dict[str, Any] | None = None,
-        search: str | None = None,
-    ) -> Page[RaceGetAllResponse]:
-        """Cached lightweight listing — see ``BaseService.get_all``."""
-
-        return await super().get_all(page=page, size=size, filters=filters, search=search)
-
-    @use_cache()
-    async def get_by_id(self, item_id: int) -> RaceResponse:
-        """Cached single-record fetch — see ``BaseService.get_by_id``."""
-
-        return await super().get_by_id(item_id)
+        self._features = FeatureService(db)
 
     async def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
         """
@@ -101,11 +88,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         on ``_atomic()``/``BaseRepository.create``.
         """
 
-        skills = (
-            await self.resolve_ids(self.repository.get_skills_by_ids, race_data.granted_skills, "Skills")
-            if race_data.granted_skills
-            else None
-        )
+        skills = await self._resolve_skills(race_data.granted_skills)
 
         payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills", "features"})
         payload["created_by_id"] = created_by_id
@@ -120,8 +103,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
             if skills:
                 await self.repository.set_skills(item, skills, commit=False)
 
-            await create_features_for_source(
-                self.repository.db,
+            await self._features.create_features_for_source(
                 FeatureSourceType.RACE,
                 item.id,
                 race_data.features,
@@ -131,7 +113,7 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
 
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(item.id))
+        return await self._get_response(item.id)
 
     async def set_ability_bonuses(self, race_id: int, data: AbilityBonusesUpdate) -> RaceResponse:
         """Fully replace a race's ability score bonuses."""
@@ -142,46 +124,4 @@ class RaceService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGe
         await self.repository.set_ability_bonuses(race, bonuses)
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(race_id))
-
-    async def set_skills(self, race_id: int, data: SkillsUpdate) -> RaceResponse:
-        """Fully replace the skills granted by a race."""
-
-        race = await self._get_or_404(race_id)
-        skills = await self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
-
-        await self.repository.set_skills(race, skills)
-        await self._invalidate_cache()
-
-        return self.response_schema.model_validate(await self._get_or_404(race_id))
-
-    async def replace_race_features(
-        self, race_id: int, data: FeaturesReplace, created_by_id: int | None = None
-    ) -> RaceResponse:
-        """
-        Full-replace a race's RACE-source features, matched by feature id.
-
-        Items carrying an ``id`` update that feature in place — the id is
-        kept, so character grants and any player notes on them survive.
-        Items without an ``id`` create new features; existing features
-        whose id is absent from the payload are deleted, cascading their
-        grants away. Runs atomically, then reconciles the grants of every
-        character of this race so their builds match the new feature set.
-        """
-
-        race = await self._get_or_404(race_id)
-        async with self._atomic():
-            await replace_features_for_source(
-                self.repository.db,
-                FeatureSourceType.RACE,
-                race.id,
-                data.features,
-                created_by_id,
-                commit=False,
-            )
-            await reconcile_characters_for_source(self.repository.db, FeatureSourceType.RACE, race.id)
-
-        await self._invalidate_cache()
-
-        self.repository.db.expire(race)
-        return self.response_schema.model_validate(await self._get_or_404(race_id))
+        return await self._get_response(race_id)

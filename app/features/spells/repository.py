@@ -1,6 +1,5 @@
 """Spell repository: base CRUD plus class/race availability management."""
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,20 +24,12 @@ class SpellRepository(BaseRepository[Spell]):
     async def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
         """Fetch the classes matching ``class_ids`` (order not guaranteed)."""
 
-        if not class_ids:
-            return []
-
-        result = await self.db.execute(select(Class).where(Class.id.in_(class_ids)))
-        return list(result.scalars().unique().all())
+        return await self.get_many_by_ids(Class, class_ids)
 
     async def get_races_by_ids(self, race_ids: list[int]) -> list[Race]:
         """Fetch the races matching ``race_ids`` (order not guaranteed)."""
 
-        if not race_ids:
-            return []
-
-        result = await self.db.execute(select(Race).where(Race.id.in_(race_ids)))
-        return list(result.scalars().unique().all())
+        return await self.get_many_by_ids(Race, race_ids)
 
     async def set_classes(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> Spell:
         """

@@ -1,19 +1,16 @@
 """Item CRUD service with created_by attribution."""
 
-from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base_service import BaseService, Page
-from app.core.cache import use_cache
+from app.core.cached_service import CachedService
 from app.features.items.repository import ItemRepository
 from app.features.items.schemas import ItemCreate, ItemGetAllResponse, ItemResponse, ItemUpdate
 from app.models.item_model import Item
 
 
-class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGetAllResponse]):
+class ItemService(CachedService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGetAllResponse]):
     """
-    Item-specific CRUD service built on :class:`BaseService`.
+    Item-specific CRUD service built on :class:`CachedService`.
 
     Adds behaviors the generic base class doesn't provide:
       - a uniqueness check on ``name`` before create/update;
@@ -23,7 +20,7 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGe
         ``SET NULL`` — see ``BackgroundService`` for the contrasting case).
 
     ``get_by_id``, ``get_all``, and ``delete`` are all inherited
-    unchanged from ``BaseService`` — the in-use delete guard is enforced
+    unchanged from ``CachedService`` — the in-use delete guard is enforced
     by ``BaseRepository.delete`` via ``check_in_use_on_delete=True`` +
     ``ItemRepository.is_in_use``. Listing and detail reads are cached via
     ``@use_cache``.
@@ -39,24 +36,6 @@ class ItemService(BaseService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGe
             response_schema=ItemResponse,
             get_all_schema=ItemGetAllResponse,
         )
-
-    @use_cache()
-    async def get_all(
-        self,
-        page: int = 1,
-        size: int = 100,
-        filters: dict[str, Any] | None = None,
-        search: str | None = None,
-    ) -> Page[ItemGetAllResponse]:
-        """Cached lightweight listing — see ``BaseService.get_all``."""
-
-        return await super().get_all(page=page, size=size, filters=filters, search=search)
-
-    @use_cache()
-    async def get_by_id(self, item_id: int) -> ItemResponse:
-        """Cached single-record fetch — see ``BaseService.get_by_id``."""
-
-        return await super().get_by_id(item_id)
 
     async def create_item(self, item_data: ItemCreate, created_by_id: int | None = None) -> ItemResponse:
         """

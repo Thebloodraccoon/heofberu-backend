@@ -67,7 +67,7 @@ class Class(settings.Base):  # type: ignore
             Feature.class_id == Class.id,
             Feature.source_type == FeatureSourceType.CLASS,
         ),
-        order_by="Feature.level",
+        order_by="Feature.id",
     )
     characters = relationship("Character", back_populates="character_class")
     created_by = relationship("User")

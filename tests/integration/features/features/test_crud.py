@@ -120,7 +120,7 @@ class TestFeatureCrud:
 
         assert response.status_code == 422
 
-    async def test_cannot_set_level_on_other_feature(self, client, gm_token, create_feature):
+    async def test_gm_can_set_level_on_other_feature(self, client, gm_token, create_feature):
         feature = await create_feature(name="Old Feature", source_type="OTHER")
 
         response = await client.patch(
@@ -129,7 +129,8 @@ class TestFeatureCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert response.json()["level"] == 5
 
     async def test_gm_can_delete_feature(self, client, gm_token, create_feature):
         feature = await create_feature(name="Doomed Feature", source_type="OTHER")
@@ -152,7 +153,9 @@ class TestFeatureCrud:
         )
 
         assert response.status_code == 400
-        assert (await client.get(f"/features/{feature.id}")).json()["name"] == "Extra Attack"
+        assert (await client.get(f"/features/{feature.id}")).status_code == 404
+        fetched = await client.get(f"/classes/{character_class.id}")
+        assert [item["name"] for item in fetched.json()["features"]] == ["Extra Attack"]
 
     async def test_cannot_delete_source_owned_feature_via_features_crud(
         self, client, gm_token, create_race, create_feature
@@ -163,4 +166,6 @@ class TestFeatureCrud:
         response = await client.delete(f"/features/{feature.id}", headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 400
-        assert (await client.get(f"/features/{feature.id}")).status_code == 200
+        assert (await client.get(f"/features/{feature.id}")).status_code == 404
+        fetched = await client.get(f"/races/{race.id}")
+        assert [item["name"] for item in fetched.json()["features"]] == ["Darkvision"]

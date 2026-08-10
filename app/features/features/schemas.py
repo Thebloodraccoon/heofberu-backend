@@ -17,6 +17,13 @@ _REQUIRED_FK_BY_SOURCE_TYPE: dict[FeatureSourceType, str | None] = {
 }
 _ALL_SOURCE_FKS = ("class_id", "subclass_id", "race_id", "background_id", "feat_id")
 
+# source_types for which the ``level`` field is meaningful.
+_ALLOW_LEVEL = (
+    FeatureSourceType.CLASS,
+    FeatureSourceType.SUBCLASS,
+    FeatureSourceType.OTHER,
+)
+
 
 def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict) -> None:
     """
@@ -46,8 +53,8 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
                     else f"source_type='{source_type.value}' must not set '{fk_name}'."
                 )
 
-    if source_type not in (FeatureSourceType.CLASS, FeatureSourceType.SUBCLASS) and values.get("level") is not None:
-        raise ValueError("'level' is only meaningful when source_type is CLASS or SUBCLASS.")
+    if source_type not in _ALLOW_LEVEL and values.get("level") is not None:
+        raise ValueError("'level' is only meaningful when source_type is CLASS, SUBCLASS or OTHER.")
 
 
 class FeatureBase(BaseModel):
@@ -136,52 +143,6 @@ class NestedFeatureResponse(BaseModel):
     description: str
     level: int | None = None
     is_homebrew: bool
-
-
-class FeatureReplaceItem(BaseModel):
-    """
-    A single feature in a replace payload, matched by id.
-
-    ``id`` is optional:
-      - present  → update that existing feature in place (the row keeps
-                   its id, so character grants and their notes survive);
-      - omitted  → create a new feature.
-    """
-
-    id: int | None = None
-    name: str
-    description: str = ""
-    is_homebrew: bool = False
-    level: int | None = None
-
-
-class FeaturesReplace(BaseModel):
-    """
-    Full-replacement payload for a source entity's feature list.
-
-    Matched by feature id, not name:
-
-    - items carrying an ``id`` update that existing feature in place —
-      the row keeps its id, so character grants and their notes survive;
-    - items without an ``id`` create new features attached to the source;
-    - current features whose id is not in the payload are deleted, which
-      cascades their character grants away.
-
-    An ``id`` that does not belong to the source record is rejected with
-    a 400. Duplicate ids within one request are rejected with a 422.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    features: list[FeatureReplaceItem]
-
-    @field_validator("features")
-    def validate_unique_ids(cls, features):
-        ids = [item.id for item in features if item.id is not None]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Duplicate feature ids are not allowed in a feature replacement.")
-
-        return features
 
 
 class FeatureUpdate(BaseModel):

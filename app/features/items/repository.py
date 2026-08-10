@@ -1,6 +1,5 @@
 """Item repository: base CRUD with in-use ownership guard."""
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_repository import BaseRepository
@@ -23,5 +22,4 @@ class ItemRepository(BaseRepository[Item]):
     async def is_in_use(self, item_id: int) -> bool:
         """Return whether any character currently owns the item."""
 
-        result = await self.db.execute(select(CharacterItem).where(CharacterItem.item_id == item_id))
-        return result.scalar_one_or_none() is not None
+        return await self.exists_referencing(CharacterItem, "item_id", item_id)

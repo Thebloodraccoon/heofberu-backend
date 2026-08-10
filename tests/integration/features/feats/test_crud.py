@@ -74,9 +74,9 @@ class TestFeatCrud:
         assert [item["name"] for item in response.json()["features"]] == ["Alert Initiative", "Cannot Be Surprised"]
 
         feat_id = response.json()["id"]
-        listed = await client.get(f"/features?source_type=FEAT&feat_id={feat_id}")
-        assert listed.status_code == 200
-        assert [item["name"] for item in listed.json()["items"]] == ["Alert Initiative", "Cannot Be Surprised"]
+        fetched = await client.get(f"/feats/{feat_id}")
+        assert fetched.status_code == 200
+        assert [item["name"] for item in fetched.json()["features"]] == ["Alert Initiative", "Cannot Be Surprised"]
 
     async def test_gm_cannot_delete_feat(self, client, gm_token, create_feat):
         feat = await create_feat(name="Doomed Feat")
@@ -131,89 +131,91 @@ class TestFeatCrud:
         assert response.status_code == 409
         assert (await client.get(f"/feats/{feat.id}")).status_code == 200
 
-    async def test_player_cannot_replace_feat_features(self, client, player_token, create_feat):
+    async def test_player_cannot_add_feat_feature(self, client, player_token, create_feat):
         feat = await create_feat(name="Alert")
 
-        response = await client.put(
+        response = await client.post(
             f"/feats/{feat.id}/features",
-            json={"features": [{"name": "Alert Initiative"}]},
+            json={"name": "Alert Initiative"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 403
 
-    async def test_gm_can_replace_feat_features_by_id(self, client, gm_token):
-        created = await client.post(
-            "/feats",
-            json={
-                "name": "Alert",
-                "features": [
-                    {"name": "Alert Initiative", "description": "You gain a +5 bonus to initiative."},
-                    {"name": "Cannot Be Surprised", "description": "You can't be surprised while conscious."},
-                ],
-            },
+    async def test_gm_can_add_update_and_remove_feat_features(self, client, gm_token, create_feat):
+        feat = await create_feat(name="Alert")
+
+        added = await client.post(
+            f"/feats/{feat.id}/features",
+            json={"name": "Alert Initiative", "description": "You gain a +5 bonus to initiative."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert created.status_code == 201
-        feat_id = created.json()["id"]
-        original = {feature["name"]: feature["id"] for feature in created.json()["features"]}
+        assert added.status_code == 201
+        feature = added.json()["features"][0]
+        assert feature["name"] == "Alert Initiative"
 
-        response = await client.put(
-            f"/feats/{feat_id}/features",
-            json={
-                "features": [
-                    {
-                        "id": original["Alert Initiative"],
-                        "name": "Alert Initiative",
-                        "description": "You gain a +10 bonus to initiative.",
-                    },
-                    {"name": "Never Startled", "description": "You always act in the surprise round."},
-                ]
-            },
+        updated = await client.patch(
+            f"/feats/{feat.id}/features/{feature['id']}",
+            json={"description": "You gain a +10 bonus to initiative."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
+        assert updated.status_code == 200
+        updated_feature = updated.json()["features"][0]
+        assert updated_feature["id"] == feature["id"]
+        assert updated_feature["description"] == "You gain a +10 bonus to initiative."
 
-        assert response.status_code == 200
-        features = {feature["name"]: feature for feature in response.json()["features"]}
-        assert set(features) == {"Alert Initiative", "Never Startled"}
-        # Kept id → updated in place (grants survive); no id → created.
-        assert features["Alert Initiative"]["id"] == original["Alert Initiative"]
-        # Feature absent from the payload is gone.
-        assert (await client.get(f"/features/{original['Cannot Be Surprised']}")).status_code == 404
+        removed = await client.delete(
+            f"/feats/{feat.id}/features/{feature['id']}",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert removed.status_code == 204
+        fetched = await client.get(f"/feats/{feat.id}")
+        assert fetched.json()["features"] == []
 
-    async def test_replace_feat_features_unknown_id_returns_400(self, client, gm_token, create_feat, create_feature):
+    async def test_update_feat_feature_of_another_source_returns_400(self, client, gm_token, create_feat, create_feature):
         feat = await create_feat(name="Alert")
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
-        response = await client.put(
-            f"/feats/{feat.id}/features",
-            json={"features": [{"id": foreign.id, "name": "Alien Feature"}]},
+        response = await client.patch(
+            f"/feats/{feat.id}/features/{foreign.id}",
+            json={"name": "Renamed"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 400
 
-    async def test_gm_can_clear_feat_features(self, client, gm_token, create_feat, create_feature):
+    async def test_remove_feat_feature_of_another_source_returns_400(self, client, gm_token, create_feat, create_feature):
         feat = await create_feat(name="Alert")
-        await create_feature(name="Alert Initiative", source_type="FEAT", feat_id=feat.id)
+        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
-        response = await client.put(
-            f"/feats/{feat.id}/features",
-            json={"features": []},
+        response = await client.delete(
+            f"/feats/{feat.id}/features/{foreign.id}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 200
-        assert response.json()["features"] == []
+        assert response.status_code == 400
 
-    async def test_replace_feat_features_returns_404(self, client, gm_token):
-        response = await client.put(
-            "/feats/9999/features",
-            json={"features": []},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 404
+    async def test_feat_feature_endpoints_return_404(self, client, gm_token):
+        assert (
+            await client.post(
+                "/feats/9999/features",
+                json={"name": "Alert Initiative"},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).status_code == 404
+        assert (
+            await client.patch(
+                "/feats/9999/features/1",
+                json={"name": "Renamed"},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).status_code == 404
+        assert (
+            await client.delete(
+                "/feats/9999/features/1",
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).status_code == 404
 
     async def test_delete_feat_whose_feature_is_granted_to_character_returns_409(
         self,

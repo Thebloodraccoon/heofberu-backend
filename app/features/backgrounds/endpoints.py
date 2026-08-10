@@ -11,7 +11,7 @@ from app.features.backgrounds.schemas import (
     BackgroundUpdate,
     SkillsUpdate,
 )
-from app.features.features.schemas import FeaturesReplace
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
 
 router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
 
@@ -201,60 +201,103 @@ async def set_background_skills(
     return await background_service.set_skills(background_id, data)
 
 
-@router.put(
+@router.post(
     "/{background_id}/features",
     response_model=BackgroundResponse,
-    summary="Replace a background's features",
+    status_code=201,
+    summary="Add a feature to a background",
     responses={
-        400: {"description": "An item's feature id does not belong to this background."},
-        422: {"description": "Duplicate feature ids in one request."},
         404: {"description": "No background exists with the given ID."},
     },
 )
-async def replace_background_features(
+async def add_background_feature(
     background_id: int,
     background_service: BackgroundServiceDep,
     _: GmUserDep,
-    data: FeaturesReplace = Body(
+    data: NestedFeatureCreate = Body(
         openapi_examples={
-            "replace": {
-                "summary": "Replace the background feature list (matched by id)",
+            "shelter": {
+                "summary": "Add one feature",
                 "value": {
-                    "features": [
-                        {
-                            "id": 5,
-                            "name": "Shelter of the Faithful",
-                            "description": "You can perform religious ceremonies of your faith.",
-                        },
-                        {
-                            "name": "Devotion",
-                            "description": "You have a personal devotional practice.",
-                        },
-                    ]
+                    "name": "Shelter of the Faithful",
+                    "description": "You and your companions can expect free healing and care at a temple.",
                 },
-            },
-            "clear": {
-                "summary": "Remove all background features",
-                "value": {"features": []},
             },
         },
     ),
 ):
     """
-    Replace a background's feature list. **GM only.**
+    Add one feature to a background. **GM only.**
 
-    Full replace, not merge, matched by feature `id`:
+    The feature is created with ``source_type: BACKGROUND`` and becomes an
+    auto-grant for every character bearing this background in the same
+    transaction. Returns the updated background.
 
-    - items carrying an `id` update that existing feature in place — the
-      feature keeps its id, so any character grants (and notes on them)
-      survive the update;
-    - items without an `id` create new features;
-    - current features whose id is not in the request body are deleted,
-      which cascades away their character grants.
-
-    Send `{"features": []}` to delete every feature of the background. An
-    `id` that doesn't belong to this background is rejected with 400;
-    duplicate ids within one request are rejected with 422.
+    ``level`` is not meaningful for background features and must stay
+    ``null``.
     """
 
-    return await background_service.replace_background_features(background_id, data, created_by_id=_.id)
+    return await background_service.add_feature(background_id, data, created_by_id=_.id)
+
+
+@router.patch(
+    "/{background_id}/features/{feature_id}",
+    response_model=BackgroundResponse,
+    summary="Update one feature of a background",
+    responses={
+        400: {"description": "The feature belongs to a different background, or the update is invalid."},
+        404: {"description": "No background exists with the given ID, or no feature exists with the given ID."},
+    },
+)
+async def update_background_feature(
+    background_id: int,
+    feature_id: int,
+    background_service: BackgroundServiceDep,
+    _: GmUserDep,
+    data: FeatureUpdate = Body(
+        openapi_examples={
+            "rename": {
+                "summary": "Edit one feature",
+                "value": {
+                    "name": "Shelter of the Faithful (Expanded)",
+                    "description": "You and your companions can expect free healing and care at any shrine.",
+                },
+            },
+        },
+    ),
+):
+    """
+    Update one feature of a background in place. **GM only.**
+
+    The feature keeps its id, so character grants and any player notes on
+    them survive. Only `name`, `level`, `description` and `is_homebrew`
+    are editable; omitted fields are left as-is.
+    """
+
+    return await background_service.update_feature(background_id, feature_id, data)
+
+
+@router.delete(
+    "/{background_id}/features/{feature_id}",
+    status_code=204,
+    summary="Remove a feature from a background",
+    responses={
+        400: {"description": "The feature belongs to a different background."},
+        404: {"description": "No background exists with the given ID, or no feature exists with the given ID."},
+    },
+)
+async def remove_background_feature(
+    background_id: int,
+    feature_id: int,
+    background_service: BackgroundServiceDep,
+    _: GmUserDep,
+):
+    """
+    Remove one feature from a background. **GM only.**
+
+    Deletes the feature, cascading away any `CharacterFeature` grants on
+    it, and reconciles the affected characters in the same transaction.
+    """
+
+    await background_service.remove_feature(background_id, feature_id)
+    return None

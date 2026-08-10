@@ -1,10 +1,11 @@
 """Class repository: base CRUD plus abilities/throws/skills/spell-slot/subclass management."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
+from app.features.skills.mixins import SkillLookupMixin
 from app.models import (
     Character,
     Class,
@@ -18,7 +19,7 @@ from app.models.feature_model import Feature
 from app.models.subclass_model import Subclass
 
 
-class ClassRepository(BaseRepository[Class]):
+class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
     """Class-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
@@ -45,8 +46,7 @@ class ClassRepository(BaseRepository[Class]):
         via ON DELETE RESTRICT.
         """
 
-        result = await self.db.execute(select(Character).where(Character.class_id == class_id))
-        return result.scalar_one_or_none() is not None
+        return await self.exists_referencing(Character, "class_id", class_id)
 
     async def get_spell_slot_progression(self, class_id: int, class_level: int) -> dict[str, int]:
         """
@@ -76,28 +76,17 @@ class ClassRepository(BaseRepository[Class]):
         Full replace: existing rows for this level are deleted first.
         """
 
-        await self.db.execute(
-            delete(ClassSpellSlotProgression).where(
-                ClassSpellSlotProgression.class_id == character_class.id,
-                ClassSpellSlotProgression.class_level == class_level,
-            )
+        await self.replace_child_rows(
+            ClassSpellSlotProgression,
+            character_class,
+            "class_id",
+            [
+                {"class_level": class_level, "spell_level": spell_level, "slots": slots}
+                for spell_level, slots in slots_by_spell_level.items()
+            ],
+            extra_filters={"class_level": class_level},
+            commit=commit,
         )
-
-        for spell_level, slots in slots_by_spell_level.items():
-            self.db.add(
-                ClassSpellSlotProgression(
-                    class_id=character_class.id,
-                    class_level=class_level,
-                    spell_level=spell_level,
-                    slots=slots,
-                )
-            )
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(character_class)
-        else:
-            await self.db.flush()
 
         return character_class
 
@@ -113,16 +102,13 @@ class ClassRepository(BaseRepository[Class]):
         this method.
         """
 
-        await self.db.execute(delete(ClassPrimaryAbility).where(ClassPrimaryAbility.class_id == character_class.id))
-
-        for ability in abilities:
-            self.db.add(ClassPrimaryAbility(class_id=character_class.id, ability=ability))
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(character_class)
-        else:
-            await self.db.flush()
+        await self.replace_child_rows(
+            ClassPrimaryAbility,
+            character_class,
+            "class_id",
+            [{"ability": ability} for ability in abilities],
+            commit=commit,
+        )
 
         return character_class
 
@@ -133,27 +119,15 @@ class ClassRepository(BaseRepository[Class]):
         See ``set_primary_abilities`` for the meaning of ``commit=False``.
         """
 
-        await self.db.execute(delete(ClassSavingThrow).where(ClassSavingThrow.class_id == character_class.id))
-
-        for ability in abilities:
-            self.db.add(ClassSavingThrow(class_id=character_class.id, ability=ability))
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(character_class)
-        else:
-            await self.db.flush()
+        await self.replace_child_rows(
+            ClassSavingThrow,
+            character_class,
+            "class_id",
+            [{"ability": ability} for ability in abilities],
+            commit=commit,
+        )
 
         return character_class
-
-    async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
-        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
-
-        if not skill_ids:
-            return []
-
-        result = await self.db.execute(select(Skill).where(Skill.id.in_(skill_ids)))
-        return list(result.scalars().unique().all())
 
     async def set_available_skills(self, character_class: Class, skills: list[Skill], *, commit: bool = True) -> Class:
         """
@@ -167,21 +141,14 @@ class ClassRepository(BaseRepository[Class]):
         See ``set_primary_abilities`` for the meaning of ``commit=False``.
         """
 
-        await self.db.execute(
-            delete(class_available_skills).where(class_available_skills.c.class_id == character_class.id)
+        await self.replace_association(
+            class_available_skills,
+            character_class,
+            "class_id",
+            "skill_id",
+            [skill.id for skill in skills],
+            commit=commit,
         )
-
-        if skills:
-            await self.db.execute(
-                class_available_skills.insert(),
-                [{"class_id": character_class.id, "skill_id": skill.id} for skill in skills],
-            )
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(character_class)
-        else:
-            await self.db.flush()
 
         return character_class
 
@@ -207,6 +174,7 @@ class ClassRepository(BaseRepository[Class]):
             select(Subclass)
             .options(selectinload(Subclass.features))
             .where(Subclass.id == subclass_id, Subclass.class_id == class_id)
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -218,6 +186,7 @@ class ClassRepository(BaseRepository[Class]):
             .options(selectinload(Subclass.features))
             .where(Subclass.class_id == class_id)
             .order_by(Subclass.name)
+            .execution_options(populate_existing=True)
         )
         return list(result.scalars().unique().all())
 

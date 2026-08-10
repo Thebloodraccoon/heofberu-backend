@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, Query
 from app.constants import RaceSize
 from app.core.base_service import Page
 from app.core.dependencies import FounderDep, GmUserDep, RaceServiceDep
-from app.features.features.schemas import FeaturesReplace
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
     RaceCreate,
@@ -236,60 +236,102 @@ async def set_race_skills(
     return await race_service.set_skills(race_id, data)
 
 
-@router.put(
+@router.post(
     "/{race_id}/features",
     response_model=RaceResponse,
-    summary="Replace a race's features",
+    status_code=201,
+    summary="Add a feature to a race",
     responses={
-        400: {"description": "An item's feature id does not belong to this race."},
-        422: {"description": "Duplicate feature ids in one request."},
         404: {"description": "No race exists with the given ID."},
     },
 )
-async def replace_race_features(
+async def add_race_feature(
     race_id: int,
     race_service: RaceServiceDep,
     _: GmUserDep,
-    data: FeaturesReplace = Body(
+    data: NestedFeatureCreate = Body(
         openapi_examples={
-            "replace": {
-                "summary": "Replace the race feature list (matched by id)",
+            "darkvision": {
+                "summary": "Add one feature",
                 "value": {
-                    "features": [
-                        {
-                            "id": 3,
-                            "name": "Darkvision",
-                            "description": "See in dim light as if it were bright light.",
-                        },
-                        {
-                            "name": "Fey Ancestry",
-                            "description": "Advantage on saves vs charm.",
-                        },
-                    ]
+                    "name": "Darkvision",
+                    "description": "See in dim light within 60 ft.",
                 },
-            },
-            "clear": {
-                "summary": "Remove all race features",
-                "value": {"features": []},
             },
         },
     ),
 ):
     """
-    Replace a race's feature list. **GM only.**
+    Add one feature to a race. **GM only.**
 
-    Full replace, not merge, matched by feature `id`:
+    The feature is created with ``source_type: RACE`` and becomes an
+    auto-grant for every character of this race (level-gated where
+    applicable) in the same transaction. Returns the updated race.
 
-    - items carrying an `id` update that existing feature in place — the
-      feature keeps its id, so any character grants (and notes on them)
-      survive the update;
-    - items without an `id` create new features;
-    - current features whose id is not in the request body are deleted,
-      which cascades away their character grants.
-
-    Send `{"features": []}` to delete every feature of the race. An `id`
-    that doesn't belong to this race is rejected with 400; duplicate ids
-    within one request are rejected with 422.
+    ``level`` is not meaningful for race features and must stay ``null``.
     """
 
-    return await race_service.replace_race_features(race_id, data, created_by_id=_.id)
+    return await race_service.add_feature(race_id, data, created_by_id=_.id)
+
+
+@router.patch(
+    "/{race_id}/features/{feature_id}",
+    response_model=RaceResponse,
+    summary="Update one feature of a race",
+    responses={
+        400: {"description": "The feature belongs to a different race, or the update is invalid."},
+        404: {"description": "No race exists with the given ID, or no feature exists with the given ID."},
+    },
+)
+async def update_race_feature(
+    race_id: int,
+    feature_id: int,
+    race_service: RaceServiceDep,
+    _: GmUserDep,
+    data: FeatureUpdate = Body(
+        openapi_examples={
+            "rename": {
+                "summary": "Edit one feature",
+                "value": {
+                    "name": "Darkvision (Improved)",
+                    "description": "See in dim light within 120 ft.",
+                },
+            },
+        },
+    ),
+):
+    """
+    Update one feature of a race in place. **GM only.**
+
+    The feature keeps its id, so character grants and any player notes on
+    them survive. Only `name`, `level`, `description` and `is_homebrew`
+    are editable; omitted fields are left as-is.
+    """
+
+    return await race_service.update_feature(race_id, feature_id, data)
+
+
+@router.delete(
+    "/{race_id}/features/{feature_id}",
+    status_code=204,
+    summary="Remove a feature from a race",
+    responses={
+        400: {"description": "The feature belongs to a different race."},
+        404: {"description": "No race exists with the given ID, or no feature exists with the given ID."},
+    },
+)
+async def remove_race_feature(
+    race_id: int,
+    feature_id: int,
+    race_service: RaceServiceDep,
+    _: GmUserDep,
+):
+    """
+    Remove one feature from a race. **GM only.**
+
+    Deletes the feature, cascading away any `CharacterFeature` grants on
+    it, and reconciles the affected characters in the same transaction.
+    """
+
+    await race_service.remove_feature(race_id, feature_id)
+    return None

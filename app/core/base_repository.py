@@ -13,7 +13,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Generic, Protocol, TypeVar
 
-from sqlalchemy import String, Text, func, inspect, or_, select
+from sqlalchemy import String, Text, delete, func, inspect, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,7 +129,10 @@ class BaseRepository(Generic[ModelType]):
             stmt = stmt.options(*self._default_load_options)
 
         stmt = stmt.where(self.model.id == model_id)
-        return await self.db.scalar(stmt)
+        # Repopulate an existing identity-map instance instead of returning its
+        # stale state: mutation flows (child-row replacement, ``db.expire`` after
+        # feature edits) leave in-memory collections out of sync with the DB.
+        return await self.db.scalar(stmt.execution_options(populate_existing=True))
 
     async def get_all(
         self,
@@ -340,4 +343,133 @@ class BaseRepository(Generic[ModelType]):
         """
 
         stmt = select(self.model.id).where(self.model.id == model_id).limit(1)
+        return await self.db.scalar(stmt) is not None
+
+    async def get_many_by_ids(
+        self,
+        model: Any,
+        ids: list[int],
+        *,
+        load_options: list[Any] | None = None,
+    ) -> list[Any]:
+        """
+        Fetch the ``model`` records whose ids are in ``ids`` (order not guaranteed).
+
+        Generic ``SELECT ... WHERE id IN (...)`` used by the reference
+        lookups (``get_skills_by_ids``, ``get_classes_by_ids``,
+        ``get_races_by_ids``) so the id-IN pattern is defined once.
+
+        Args:
+            model: SQLAlchemy model to query (need not be ``self.model``).
+            ids: Ids to fetch.
+            load_options: Optional loader options applied to the statement.
+        """
+
+        if not ids:
+            return []
+
+        stmt = select(model).where(model.id.in_(ids))
+        if load_options:
+            stmt = stmt.options(*load_options)
+
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
+
+    async def replace_association(
+        self,
+        association: Any,
+        parent: Any,
+        parent_fk: str,
+        child_fk: str,
+        child_ids: list[int],
+        *,
+        commit: bool = True,
+    ) -> None:
+        """
+        Replace a many-to-many association with ``child_ids`` in one batch.
+
+        Deletes the parent's existing rows, inserts one row per new child
+        id, then commits (or flushes when ``commit=False``). Written through
+        the association table instead of assigning the ORM relationship:
+        assigning an unloaded many-to-many collection would trigger a lazy
+        load, which is not supported on the async stack.
+
+        Args:
+            association: The ``Table`` (or mapped class) linking parent and child.
+            parent: The owning model instance.
+            parent_fk: Column name on ``association`` referencing ``parent``.
+            child_fk: Column name on ``association`` referencing the child.
+            child_ids: New child ids (``[]`` clears the association).
+            commit: ``False`` flushes instead, leaving the transaction open.
+        """
+
+        parent_column = getattr(association, "c", None)
+        if parent_column is not None:
+            parent_column = parent_column[parent_fk]
+        else:
+            parent_column = getattr(association, parent_fk)
+
+        await self.db.execute(delete(association).where(parent_column == parent.id))
+
+        if child_ids:
+            await self.db.execute(
+                association.insert(),
+                [{parent_fk: parent.id, child_fk: child_id} for child_id in child_ids],
+            )
+
+        if commit:
+            await self.db.commit()
+        else:
+            await self.db.flush()
+
+    async def replace_child_rows(
+        self,
+        child_model: Any,
+        parent: Any,
+        fk_name: str,
+        rows: list[dict[str, Any]],
+        *,
+        extra_filters: dict[str, Any] | None = None,
+        commit: bool = True,
+    ) -> None:
+        """
+        Replace the ``child_model`` rows owned by ``parent`` in one batch.
+
+        Deletes the parent's existing rows (optionally restricted by
+        ``extra_filters``, e.g. ``{"class_level": 3}``), then adds a fresh
+        ``child_model`` row per entry in ``rows``. Commits (or flushes when
+        ``commit=False``).
+
+        Args:
+            child_model: ORM model of the child rows.
+            parent: The owning model instance.
+            fk_name: Column name on ``child_model`` referencing ``parent``.
+            rows: Child payloads, each without the FK column (it is injected).
+            extra_filters: Extra exact-match filters on the delete
+                (e.g. scoping to a single ``class_level``).
+            commit: ``False`` flushes instead, leaving the transaction open.
+        """
+
+        stmt = delete(child_model).where(getattr(child_model, fk_name) == parent.id)
+        for field, value in (extra_filters or {}).items():
+            stmt = stmt.where(getattr(child_model, field) == value)
+        await self.db.execute(stmt)
+
+        for row in rows:
+            self.db.add(child_model(**{fk_name: parent.id, **row}))
+
+        if commit:
+            await self.db.commit()
+        else:
+            await self.db.flush()
+
+    async def exists_referencing(self, referencing_model: Any, fk_name: str, value: Any) -> bool:
+        """
+        Return whether any ``referencing_model`` row has ``fk_name`` == ``value``.
+
+        Lightweight presence check (``LIMIT 1``) used by the in-use delete
+        guards (``is_in_use``) so the FK-existence pattern is defined once.
+        """
+
+        stmt = select(referencing_model).where(getattr(referencing_model, fk_name) == value).limit(1)
         return await self.db.scalar(stmt) is not None

@@ -4,6 +4,7 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_repository import BaseRepository
+from app.features.skills.mixins import SkillLookupMixin
 from app.models.background_association_models import background_skills
 from app.models.character_association_models import CharacterSkillProficiency
 from app.models.class_association_models import class_available_skills
@@ -11,7 +12,7 @@ from app.models.race_association_models import race_skills
 from app.models.skill_model import Skill
 
 
-class SkillRepository(BaseRepository[Skill]):
+class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
     """Skill-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
@@ -22,13 +23,6 @@ class SkillRepository(BaseRepository[Skill]):
             unique_fields=["name", "key"],
             check_in_use_on_delete=True,
         )
-
-    async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
-        """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
-        if not skill_ids:
-            return []
-        result = await self.db.execute(select(Skill).where(Skill.id.in_(skill_ids)))
-        return list(result.scalars().unique().all())
 
     async def is_in_use(self, skill_id: int) -> bool:
         """

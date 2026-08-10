@@ -28,6 +28,10 @@ Behavior
 * The deserialization schema is read from the function's return
   annotation at decoration time (so ``Page[XGetAllResponse]`` resolves
   against the service module's globals); override it with ``schema=``.
+  When the annotation is missing or still carries an unbound
+  ``TypeVar`` (generic cached base methods such as
+  ``CachedService.get_all``), the schema is instead resolved per-call
+  from the concrete instance's ``get_all_schema``/``response_schema``.
 * ``skip_if`` bypasses the cache entirely for the call when it returns
   truthy (e.g. ``skip_if=lambda self, **_: self.some_flag``).
 * ``cache_none=False`` skips storing ``None`` results (useful when a
@@ -41,10 +45,15 @@ returned. Every cached/uncached branch is awaited by the caller.
 from collections.abc import Callable
 import functools
 import inspect
+import typing
 from typing import Any, get_type_hints
 
 from app.core.cache.client import cache_enabled, cache_get, cache_prefix, cache_set
 from app.core.cache.serialization import decode, encode
+from typing_extensions import TypeVar
+
+
+_DYNAMIC_SCHEMA = object()  # sentinel: resolve the schema per-call from the service instance
 
 
 def use_cache(
@@ -74,10 +83,14 @@ def use_cache(
             if skip_if is not None and skip_if(*args, **kwargs):
                 return await _call(*args, **kwargs)
 
+            call_schema = return_schema
+            if call_schema is _DYNAMIC_SCHEMA:
+                call_schema = _resolve_call_schema(func, args)
+
             key = _build_key(namespace, func, args, kwargs, key_builder)
             raw = await cache_get(key)
             if raw is not None:
-                return decode(raw, return_schema)
+                return decode(raw, call_schema)
 
             result = await _call(*args, **kwargs)
             if result is None and not cache_none:
@@ -98,7 +111,67 @@ def _resolve_return_schema(func: Callable) -> Any:
         hints = get_type_hints(func)
     except Exception:
         return None
-    return hints.get("return")
+
+    hint = hints.get("return")
+    if hint is None or _contains_unbound_typevar(hint):
+        return _DYNAMIC_SCHEMA
+
+    return hint
+
+
+def _contains_unbound_typevar(hint: Any) -> bool:
+    """
+    Return whether ``hint`` references an unbound ``TypeVar`` (i.e. isn't concrete).
+
+    Covers bare ``TypeVar`` returns and subscripted generics. Pydantic v2
+    generic aliases (``Page[~GetAllSchema]``) do *not* expose their bare
+    type parameter through ``__args__``/``__parameters__`` — they stash it
+    in ``__pydantic_generic_metadata__["parameters"]`` (empty for a
+    concrete parametrization like ``Page[RaceGetAllResponse]``). A
+    ``TypeVar`` instance is recognized by class name because
+    ``typing_extensions.TypeVar`` does not subclass ``typing.TypeVar``.
+    """
+
+    if hint.__class__.__name__ == "TypeVar":
+        return True
+
+    metadata = getattr(hint, "__pydantic_generic_metadata__", None)
+    if metadata and metadata.get("parameters"):
+        return True
+
+    params = getattr(hint, "__parameters__", None)
+    if params:
+        return any(_contains_unbound_typevar(param) for param in params)
+
+    args = getattr(hint, "__args__", None)
+    if args:
+        return any(_contains_unbound_typevar(arg) for arg in args)
+
+    return False
+
+
+def _resolve_call_schema(func: Callable, args: tuple) -> Any:
+    """
+    Resolve the deserialization schema from the concrete service instance.
+
+    Used by generic cached base methods whose annotation only carries a
+    ``TypeVar`` (``CachedService.get_all``/``get_by_id``): the concrete
+    schema is read off the instance at call time (``get_all_schema`` for
+    listings wrapped in ``Page``, ``response_schema`` for detail reads).
+    """
+
+    if not args:
+        return None
+
+    instance = args[0]
+    if func.__name__ == "get_all":
+        item_schema = getattr(instance, "get_all_schema", None)
+        if item_schema is not None:
+            from app.core.base_service import Page  # deferred to avoid an import cycle
+
+            return Page[item_schema]
+
+    return getattr(instance, "response_schema", None)
 
 
 def _build_key(

@@ -46,7 +46,7 @@ class Subclass(settings.Base):  # type: ignore
         back_populates="subclass",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="Feature.level",
+        order_by="Feature.id",
     )
     created_by = relationship("User")
 

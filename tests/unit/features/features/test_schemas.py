@@ -17,8 +17,12 @@ class TestFeatureValidators:
             FeatureCreate(name="Bad", source_type="OTHER", race_id=1)
 
     def test_level_only_for_class_or_subclass(self):
-        with pytest.raises(ValidationError, match="only meaningful when source_type is CLASS or SUBCLASS"):
+        with pytest.raises(ValidationError, match="only meaningful when source_type is CLASS, SUBCLASS or OTHER"):
             FeatureCreate(name="Bad", source_type="RACE", race_id=1, level=5)
+
+    def test_other_feature_allows_level(self):
+        feature = FeatureCreate(name="Aether Gift", source_type="OTHER", level=3)
+        assert feature.level == 3
 
 
 @pytest.mark.unit

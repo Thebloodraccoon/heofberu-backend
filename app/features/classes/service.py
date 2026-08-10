@@ -1,13 +1,9 @@
 """Class CRUD service including abilities/throws/skills/spell-slot/subclass management."""
 
-from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
-from app.core.base_service import BaseService, Page
-from app.core.cache import use_cache
-from app.features.characters.progression.feature_sync import reconcile_characters_for_source
+from app.core.cached_service import CachedService
 from app.features.classes.exceptions import (
     InvalidClassLevelException,
     SpellcastingAbilityNotPrimaryException,
@@ -21,7 +17,6 @@ from app.features.classes.schemas import (
     ClassProgressionResponse,
     ClassResponse,
     ClassUpdate,
-    NestedFeatureCreate,
     ProgressionLevelRow,
     SavingThrowsUpdate,
     SpellSlotProgressionUpdate,
@@ -31,15 +26,21 @@ from app.features.classes.schemas import (
     SubclassUpdate,
     _proficiency_bonus,
 )
-from app.features.features.schemas import FeaturesReplace
-from app.features.features.service import create_features_for_source, replace_features_for_source
+from app.features.features.mixins import SourceFeatureMixin
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
+from app.features.features.service import FeatureService
+from app.features.skills.mixins import SkillsManagerMixin
 from app.models.class_model import Class
 from app.models.subclass_model import Subclass
 
 
-class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, ClassGetAllResponse]):
+class ClassService(
+    SkillsManagerMixin,
+    SourceFeatureMixin,
+    CachedService[Class, ClassCreate, ClassUpdate, ClassResponse, ClassGetAllResponse],
+):
     """
-    Class-specific CRUD service built on :class:`BaseService`.
+    Class-specific CRUD service built on :class:`CachedService`.
 
     Extends the generic base with:
       - name uniqueness check on create/update;
@@ -47,7 +48,8 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         CLASS-source features, spell_slot_progression, and nested subclasses
         (each with their own SUBCLASS-source features) in a single transaction;
       - spellcasting_ability ↔ primary_abilities consistency checks;
-      - subclass CRUD (create / get / list / update / delete);
+      - subclass CRUD (create / get / list / update / delete), including
+        per-subclass feature management via ``_mutate_feature``;
       - progression table builder (GET /classes/{id}/progression).
 
     Listing and detail reads are cached via ``@use_cache``. Because a
@@ -60,30 +62,17 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
     cache_namespaces = ("classes", "features")
 
+    _feature_source_type = FeatureSourceType.CLASS
+
+    _set_skills_method = "set_available_skills"
+
     def __init__(self, db: AsyncSession):
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,
             get_all_schema=ClassGetAllResponse,
         )
-
-    @use_cache()
-    async def get_all(
-        self,
-        page: int = 1,
-        size: int = 100,
-        filters: dict[str, Any] | None = None,
-        search: str | None = None,
-    ) -> Page[ClassGetAllResponse]:
-        """Cached lightweight listing — see ``BaseService.get_all``."""
-
-        return await super().get_all(page=page, size=size, filters=filters, search=search)
-
-    @use_cache()
-    async def get_by_id(self, item_id: int) -> ClassResponse:
-        """Cached single-record fetch — see ``BaseService.get_by_id``."""
-
-        return await super().get_by_id(item_id)
+        self._features = FeatureService(db)
 
     async def create_class(self, class_data: ClassCreate, created_by_id: int | None = None) -> ClassResponse:
         """
@@ -100,11 +89,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         Everything commits together or rolls back entirely.
         """
 
-        skills = (
-            await self.resolve_ids(self.repository.get_skills_by_ids, class_data.available_skills, "Skills")
-            if class_data.available_skills
-            else None
-        )
+        skills = await self._resolve_skills(class_data.available_skills)
 
         payload = class_data.model_dump(
             exclude={
@@ -131,8 +116,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
                 await self.repository.set_available_skills(item, skills, commit=False)
 
             # CLASS-source features.
-            await create_features_for_source(
-                self.repository.db,
+            await self._features.create_features_for_source(
                 FeatureSourceType.CLASS,
                 item.id,
                 class_data.features,
@@ -153,8 +137,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
                     sub_payload["created_by_id"] = created_by_id
                     subclass = await self.repository.create_subclass(item, sub_payload, commit=False)
 
-                    await create_features_for_source(
-                        self.repository.db,
+                    await self._features.create_features_for_source(
                         FeatureSourceType.SUBCLASS,
                         subclass.id,
                         sub_data.features,
@@ -164,7 +147,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(item.id))
+        return await self._get_response(item.id)
 
     async def update_class(self, class_id: int, update_data: ClassUpdate) -> ClassResponse:
         """
@@ -197,7 +180,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
             character_class = await self.repository.set_saving_throws(character_class, update_data.saving_throws)
 
         await self._invalidate_cache()
-        return self.response_schema.model_validate(await self._get_or_404(class_id))
+        return await self._get_response(class_id)
 
     async def set_saving_throws(self, class_id: int, data: SavingThrowsUpdate) -> ClassResponse:
         character_class = await self._get_or_404(class_id)
@@ -205,16 +188,12 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         await self.repository.set_saving_throws(character_class, data.saving_throws)
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(class_id))
+        return await self._get_response(class_id)
 
     async def set_available_skills(self, class_id: int, data: AvailableSkillsUpdate) -> ClassResponse:
-        character_class = await self._get_or_404(class_id)
+        """Fully replace the skills a class may choose proficiencies from."""
 
-        skills = await self.resolve_ids(self.repository.get_skills_by_ids, data.skill_ids, "Skills")
-        await self.repository.set_available_skills(character_class, skills)
-        await self._invalidate_cache()
-
-        return self.response_schema.model_validate(await self._get_or_404(class_id))
+        return await self.set_skills(class_id, data)
 
     async def set_spell_slots(self, class_id: int, class_level: int, data: SpellSlotProgressionUpdate) -> ClassResponse:
         """
@@ -230,38 +209,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         await self.repository.set_spell_slots(character_class, class_level, slots_by_spell_level)
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(class_id))
-
-    async def replace_class_features(
-        self, class_id: int, data: FeaturesReplace, created_by_id: int | None = None
-    ) -> ClassResponse:
-        """
-        Full-replace a class's CLASS-source features, matched by feature id.
-
-        Items carrying an ``id`` update that feature in place — the id is
-        kept, so character grants and any player notes on them survive.
-        Items without an ``id`` create new features; existing features
-        whose id is absent from the payload are deleted, cascading their
-        grants away. Runs atomically, then reconciles the grants of every
-        character of this class so their builds match the new feature set.
-        """
-
-        character_class = await self._get_or_404(class_id)
-        async with self._atomic():
-            await replace_features_for_source(
-                self.repository.db,
-                FeatureSourceType.CLASS,
-                character_class.id,
-                data.features,
-                created_by_id,
-                commit=False,
-            )
-            await reconcile_characters_for_source(self.repository.db, FeatureSourceType.CLASS, character_class.id)
-
-        await self._invalidate_cache()
-
-        self.repository.db.expire(character_class)
-        return self.response_schema.model_validate(await self._get_or_404(class_id))
+        return await self._get_response(class_id)
 
     async def create_subclass(
         self, class_id: int, data: SubclassCreate, created_by_id: int | None = None
@@ -279,8 +227,7 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
         async with self._atomic():
             subclass = await self.repository.create_subclass(character_class, sub_payload, commit=False)
 
-            await create_features_for_source(
-                self.repository.db,
+            await self._features.create_features_for_source(
                 FeatureSourceType.SUBCLASS,
                 subclass.id,
                 data.features,
@@ -312,35 +259,87 @@ class ClassService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, C
 
         return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass_id))
 
-    async def replace_subclass_features(
-        self, class_id: int, subclass_id: int, data: FeaturesReplace, created_by_id: int | None = None
+    async def add_subclass_feature(
+        self,
+        class_id: int,
+        subclass_id: int,
+        data: NestedFeatureCreate,
+        created_by_id: int | None = None,
     ) -> SubclassResponse:
         """
-        Full-replace a subclass's SUBCLASS-source features, matched by id.
+        Add one SUBCLASS-source feature to a subclass.
 
-        Same semantics as :meth:`replace_class_features` — items with an
-        ``id`` keep that feature id (character grants survive), items
-        without an ``id`` are created, and features absent from the payload
-        are deleted. Grants of every character holding this subclass are
-        reconciled to the new feature set in the same transaction.
+        Creates a new feature owned by the subclass, then reconciles the
+        grants of every character holding this subclass so qualifying
+        characters gain it in the same transaction.
         """
 
         subclass = await self._get_subclass_or_404(class_id, subclass_id)
-        async with self._atomic():
-            await replace_features_for_source(
-                self.repository.db,
+        await self._mutate_feature(
+            subclass,
+            FeatureSourceType.SUBCLASS,
+            lambda: self._features.create_feature_for_source(
                 FeatureSourceType.SUBCLASS,
                 subclass.id,
-                data.features,
+                data,
                 created_by_id,
                 commit=False,
-            )
-            await reconcile_characters_for_source(self.repository.db, FeatureSourceType.SUBCLASS, subclass.id)
+            ),
+        )
 
-        await self._invalidate_cache()
-
-        self.repository.db.expire(subclass)
         return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass_id))
+
+    async def update_subclass_feature(
+        self,
+        class_id: int,
+        subclass_id: int,
+        feature_id: int,
+        update_data: FeatureUpdate,
+    ) -> SubclassResponse:
+        """
+        Update one SUBCLASS-source feature of a subclass in place, keeping its id.
+
+        The row keeps its id, so character grants and any player notes on
+        them survive. Characters are reconciled in the same transaction —
+        raising a feature's ``level`` revokes it from characters below the
+        new level.
+        """
+
+        subclass = await self._get_subclass_or_404(class_id, subclass_id)
+        fields = update_data.model_dump(exclude_unset=True)
+        await self._mutate_feature(
+            subclass,
+            FeatureSourceType.SUBCLASS,
+            lambda: self._features.update_feature_for_source(
+                FeatureSourceType.SUBCLASS,
+                subclass.id,
+                feature_id,
+                fields,
+                commit=False,
+            ),
+        )
+
+        return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass_id))
+
+    async def remove_subclass_feature(self, class_id: int, subclass_id: int, feature_id: int) -> None:
+        """
+        Remove one SUBCLASS-source feature from a subclass.
+
+        The feature row is deleted, cascading its ``character_features``
+        grants away; characters are reconciled in the same transaction.
+        """
+
+        subclass = await self._get_subclass_or_404(class_id, subclass_id)
+        await self._mutate_feature(
+            subclass,
+            FeatureSourceType.SUBCLASS,
+            lambda: self._features.delete_feature_for_source(
+                FeatureSourceType.SUBCLASS,
+                subclass.id,
+                feature_id,
+                commit=False,
+            ),
+        )
 
     async def delete_subclass(self, class_id: int, subclass_id: int) -> None:
         subclass = await self._get_subclass_or_404(class_id, subclass_id)

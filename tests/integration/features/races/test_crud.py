@@ -65,9 +65,12 @@ class TestRaceCrud:
         assert response.status_code == 201
         race_id = response.json()["id"]
 
-        features = (await client.get(f"/features?source_type=RACE&race_id={race_id}")).json()["items"]
-        assert [feature["name"] for feature in features] == ["Darkvision", "Sunlight Sensitivity"]
-        assert all(feature["source_type"] == "RACE" and feature["race_id"] == race_id for feature in features)
+        fetched = await client.get(f"/races/{race_id}")
+        assert fetched.status_code == 200
+        assert [feature["name"] for feature in fetched.json()["features"]] == [
+            "Darkvision",
+            "Sunlight Sensitivity",
+        ]
 
     async def test_create_duplicate_race_name_returns_400(self, client, gm_token, create_race):
         await create_race(name="Orc")
@@ -155,86 +158,92 @@ class TestRaceCrud:
 
         assert response.status_code == 409
 
-    async def test_player_cannot_replace_race_features(self, client, player_token, create_race):
+    async def test_player_cannot_add_race_feature(self, client, player_token, create_race):
         race = await create_race(name="Elf")
 
-        response = await client.put(
+        response = await client.post(
             f"/races/{race.id}/features",
-            json={"features": [{"name": "Darkvision"}]},
+            json={"name": "Darkvision"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 403
 
-    async def test_gm_can_replace_race_features_by_id(self, client, gm_token):
-        created = await client.post(
-            "/races",
-            json={
-                "name": "Elf",
-                "size": "MEDIUM",
-                "speed": 30,
-                "features": [
-                    {"name": "Darkvision", "description": "See in dim light within 60 ft."},
-                    {"name": "Fey Ancestry", "description": "Advantage on saves vs charm."},
-                ],
-            },
+    async def test_gm_can_add_update_and_remove_race_features(self, client, gm_token, create_race):
+        race = await create_race(name="Elf")
+
+        added = await client.post(
+            f"/races/{race.id}/features",
+            json={"name": "Darkvision", "description": "See in dim light within 60 ft."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert created.status_code == 201
-        race_id = created.json()["id"]
-        original = {feature["name"]: feature["id"] for feature in created.json()["features"]}
+        assert added.status_code == 201
+        feature = added.json()["features"][0]
+        assert feature["name"] == "Darkvision"
 
-        response = await client.put(
-            f"/races/{race_id}/features",
-            json={
-                "features": [
-                    {"id": original["Darkvision"], "name": "Darkvision", "description": "See in the dark."},
-                    {"name": "Trance", "description": "Meditate for 4 hours instead of sleeping."},
-                ]
-            },
+        updated = await client.patch(
+            f"/races/{race.id}/features/{feature['id']}",
+            json={"description": "See in dim light within 120 ft."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
+        assert updated.status_code == 200
+        updated_feature = updated.json()["features"][0]
+        assert updated_feature["id"] == feature["id"]
+        assert updated_feature["description"] == "See in dim light within 120 ft."
 
-        assert response.status_code == 200
-        features = {feature["name"]: feature for feature in response.json()["features"]}
-        assert set(features) == {"Darkvision", "Trance"}
-        # Kept id → updated in place (grants survive); no id → created.
-        assert features["Darkvision"]["id"] == original["Darkvision"]
-        trance_id = features["Trance"]["id"]
-        assert (await client.get(f"/features/{trance_id}")).json()["source_type"] == "RACE"
-        # Feature absent from the payload is gone.
-        assert (await client.get(f"/features/{original['Fey Ancestry']}")).status_code == 404
+        removed = await client.delete(
+            f"/races/{race.id}/features/{feature['id']}",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert removed.status_code == 204
+        fetched = await client.get(f"/races/{race.id}")
+        assert fetched.json()["features"] == []
 
-    async def test_replace_race_features_unknown_id_returns_400(self, client, gm_token, create_race, create_feature):
+    async def test_update_race_feature_of_another_source_returns_400(
+        self, client, gm_token, create_race, create_feature
+    ):
         race = await create_race(name="Elf")
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
-        response = await client.put(
-            f"/races/{race.id}/features",
-            json={"features": [{"id": foreign.id, "name": "Alien Feature"}]},
+        response = await client.patch(
+            f"/races/{race.id}/features/{foreign.id}",
+            json={"name": "Renamed"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 400
 
-    async def test_gm_can_clear_race_features(self, client, gm_token, create_race, create_feature):
+    async def test_remove_race_feature_of_another_source_returns_400(
+        self, client, gm_token, create_race, create_feature
+    ):
         race = await create_race(name="Elf")
-        await create_feature(name="Darkvision", source_type="RACE", race_id=race.id)
+        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
-        response = await client.put(
-            f"/races/{race.id}/features",
-            json={"features": []},
+        response = await client.delete(
+            f"/races/{race.id}/features/{foreign.id}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 200
-        assert response.json()["features"] == []
+        assert response.status_code == 400
 
-    async def test_replace_race_features_returns_404(self, client, gm_token):
-        response = await client.put(
-            "/races/9999/features",
-            json={"features": []},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 404
+    async def test_race_feature_endpoints_return_404(self, client, gm_token):
+        assert (
+            await client.post(
+                "/races/9999/features",
+                json={"name": "Darkvision"},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).status_code == 404
+        assert (
+            await client.patch(
+                "/races/9999/features/1",
+                json={"name": "Renamed"},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).status_code == 404
+        assert (
+            await client.delete(
+                "/races/9999/features/1",
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).status_code == 404

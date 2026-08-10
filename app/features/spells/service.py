@@ -1,11 +1,8 @@
 """Spell CRUD service with transactional class/race availability setup."""
 
-from typing import Any
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base_service import BaseService, Page
-from app.core.cache import use_cache
+from app.core.cached_service import CachedService
 from app.features.spells.repository import SpellRepository
 from app.features.spells.schemas import (
     ClassAvailabilityUpdate,
@@ -18,9 +15,9 @@ from app.features.spells.schemas import (
 from app.models.spell_model import Spell
 
 
-class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellGetAllResponse]):
+class SpellService(CachedService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellGetAllResponse]):
     """
-    Spell-specific CRUD service built on :class:`BaseService`.
+    Spell-specific CRUD service built on :class:`CachedService`.
 
     Adds behaviors the generic base class doesn't provide:
       - the inherited paginated ``get_all`` (ordered by ``Spell.id``,
@@ -45,24 +42,6 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
             response_schema=SpellResponse,
             get_all_schema=SpellGetAllResponse,
         )
-
-    @use_cache()
-    async def get_all(
-        self,
-        page: int = 1,
-        size: int = 100,
-        filters: dict[str, Any] | None = None,
-        search: str | None = None,
-    ) -> Page[SpellGetAllResponse]:
-        """Cached lightweight listing — see ``BaseService.get_all``."""
-
-        return await super().get_all(page=page, size=size, filters=filters, search=search)
-
-    @use_cache()
-    async def get_by_id(self, item_id: int) -> SpellResponse:
-        """Cached single-record fetch — see ``BaseService.get_by_id``."""
-
-        return await super().get_by_id(item_id)
 
     async def create_spell(self, spell_data: SpellCreate) -> SpellResponse:
         """
@@ -101,7 +80,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
 
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(item.id))
+        return await self._get_response(item.id)
 
     async def set_classes(self, spell_id: int, data: ClassAvailabilityUpdate) -> SpellResponse:
         """Fully replace the classes a spell is available to. Empty list = unrestricted."""
@@ -112,7 +91,7 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         await self.repository.set_classes(spell, classes)
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(spell_id))
+        return await self._get_response(spell_id)
 
     async def set_races(self, spell_id: int, data: RaceAvailabilityUpdate) -> SpellResponse:
         """Fully replace the races a spell is available to. Empty list = unrestricted."""
@@ -123,4 +102,4 @@ class SpellService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, S
         await self.repository.set_races(spell, races)
         await self._invalidate_cache()
 
-        return self.response_schema.model_validate(await self._get_or_404(spell_id))
+        return await self._get_response(spell_id)
