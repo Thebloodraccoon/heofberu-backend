@@ -72,13 +72,26 @@ async def cache_set(key: str, value: Any, ttl: int | None = None) -> None:
         logger.warning("Cache SET failed for %s", key, exc_info=True)
 
 
-async def cache_delete_prefix(namespace: str) -> None:
-    """Delete every key under ``<prefix>:<namespace>:*`` (best-effort)."""
+async def cache_delete_key(key: str) -> None:
+    """Delete a single cache key (best-effort)."""
 
     if not cache_enabled():
         return
 
-    pattern = f"{cache_prefix()}:{namespace}:*"
+    try:
+        async with _redis_provider()() as redis:
+            await redis.delete(key)
+
+    except Exception:
+        logger.warning("Cache DELETE failed for %s", key, exc_info=True)
+
+
+async def cache_delete_pattern(pattern: str) -> None:
+    """Delete every key matching ``pattern`` (best-effort)."""
+
+    if not cache_enabled():
+        return
+
     try:
         async with _redis_provider()() as redis:
             keys = [key async for key in redis.scan_iter(match=pattern, count=500)]
@@ -86,4 +99,10 @@ async def cache_delete_prefix(namespace: str) -> None:
                 await redis.delete(*keys)
 
     except Exception:
-        logger.warning("Cache invalidation failed for %s", namespace, exc_info=True)
+        logger.warning("Cache invalidation failed for %s", pattern, exc_info=True)
+
+
+async def cache_delete_prefix(namespace: str) -> None:
+    """Delete every key under ``<prefix>:<namespace>:*`` (best-effort)."""
+
+    await cache_delete_pattern(f"{cache_prefix()}:{namespace}:*")

@@ -14,10 +14,11 @@ class FeatRepository(BaseRepository[Feat]):
     """
     Feat-specific repository built on :class:`BaseRepository`.
 
-    ``ability_score_increases`` and ``features`` are always part of
-    ``FeatResponse``, so they're wired up as ``default_load_options``
-    rather than re-implemented via a hand-rolled ``get_all`` override —
-    same reasoning as ``RaceRepository``.
+    ``ability_score_increases`` is always part of ``FeatResponse``, so it's
+    wired up as ``default_load_options`` rather than re-implemented via a
+    hand-rolled ``get_all`` override — same reasoning as ``RaceRepository``.
+    The feat's ``features`` are no longer embedded in the response; they're
+    read through the dedicated ``nested_features`` cache.
     """
 
     def __init__(self, db: AsyncSession):
@@ -26,7 +27,6 @@ class FeatRepository(BaseRepository[Feat]):
             db,
             default_load_options=[
                 selectinload(Feat.ability_score_increases),
-                selectinload(Feat.features),
             ],
             search_fields=["name"],
             unique_fields=["name"],

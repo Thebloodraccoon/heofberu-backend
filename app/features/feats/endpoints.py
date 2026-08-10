@@ -11,7 +11,7 @@ from app.features.feats.schemas import (
     FeatResponse,
     FeatUpdate,
 )
-from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
 
 router = APIRouter(prefix="/feats", tags=["Feats"])
 
@@ -56,7 +56,7 @@ async def get_feats(
 async def get_feat(feat_id: int, feat_service: FeatServiceDep):
     """
     Return a single feat by ID, with full detail — including
-    prerequisites, ability score increase choices, and features.
+    prerequisites and ability score increase choices.
 
     Open endpoint, no authentication required.
     """
@@ -227,9 +227,21 @@ async def set_feat_ability_score_increases(
     return await feat_service.set_ability_score_increases(feat_id, data)
 
 
+@router.get(
+    "/{feat_id}/features",
+    response_model=list[NestedFeatureResponse],
+    summary="List a feat's features",
+    responses={404: {"description": "No feat exists with the given ID."}},
+)
+async def list_feat_features(feat_id: int, feat_service: FeatServiceDep):
+    """Return every feature owned by the feat (``source_type: FEAT``). Open endpoint."""
+
+    return await feat_service.list_features(feat_id)
+
+
 @router.post(
     "/{feat_id}/features",
-    response_model=FeatResponse,
+    response_model=NestedFeatureResponse,
     status_code=201,
     summary="Add a feature to a feat",
     responses={
@@ -257,7 +269,7 @@ async def add_feat_feature(
 
     The feature is created with ``source_type: FEAT`` and becomes an
     auto-grant for every character holding this feat in the same
-    transaction. Returns the updated feat.
+    transaction. Returns the created feature.
 
     ``level`` is not meaningful for feat features and must stay ``null``.
     """
@@ -267,7 +279,7 @@ async def add_feat_feature(
 
 @router.patch(
     "/{feat_id}/features/{feature_id}",
-    response_model=FeatResponse,
+    response_model=NestedFeatureResponse,
     summary="Update one feature of a feat",
     responses={
         400: {"description": "The feature belongs to a different feat, or the update is invalid."},
@@ -296,7 +308,8 @@ async def update_feat_feature(
 
     The feature keeps its id, so character grants and any player notes on
     them survive. Only `name`, `level`, `description` and `is_homebrew`
-    are editable; omitted fields are left as-is.
+    are editable; omitted fields are left as-is. Returns the updated
+    feature.
     """
 
     return await feat_service.update_feature(feat_id, feature_id, data)

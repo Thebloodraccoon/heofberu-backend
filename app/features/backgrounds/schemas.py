@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
+from app.features.features.schemas import NestedFeatureCreate
 
 
 class BackgroundBase(BaseModel):
@@ -94,7 +94,6 @@ class BackgroundResponse(BackgroundBase):
     id: int
     created_by_id: int | None = None
     granted_skills: list[SkillResponse] = []
-    features: list[NestedFeatureResponse] = []
 
 
 class BackgroundGetAllResponse(BaseModel):

@@ -126,7 +126,6 @@ class SubclassResponse(BaseModel):
     description: str
     is_homebrew: bool
     created_by_id: int | None = None
-    features: list[NestedFeatureResponse] = []
 
 
 class SubclassBriefResponse(BaseModel):
@@ -340,8 +339,16 @@ class ClassResponse(ClassBase):
     saving_throws: list[SavingThrowResponse] = []
     available_skills: list[SkillResponse] = []
     spell_slot_progression: list[SpellSlotProgressionResponse] = []
-    features: list[NestedFeatureResponse] = []
     subclasses: list[SubclassBriefResponse] = []
+
+
+class SubclassListResponse(BaseModel):
+    """Minimal subclass reference embedded in ``ClassGetAllResponse.subclasses``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
 
 
 class ClassGetAllResponse(BaseModel):
@@ -353,6 +360,7 @@ class ClassGetAllResponse(BaseModel):
     name: str
     hit_dice: DiceType
     is_homebrew: bool = False
+    subclasses: list[SubclassListResponse] = []
 
 
 class ProgressionLevelRow(BaseModel):

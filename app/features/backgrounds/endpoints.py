@@ -11,7 +11,7 @@ from app.features.backgrounds.schemas import (
     BackgroundUpdate,
     SkillsUpdate,
 )
-from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
 
 router = APIRouter(prefix="/backgrounds", tags=["Backgrounds"])
 
@@ -57,7 +57,7 @@ async def get_backgrounds(
 async def get_background(background_id: int, background_service: BackgroundServiceDep):
     """
     Return a single background by ID, with full detail — including
-    granted skills and features.
+    granted skills.
 
     Open endpoint, no authentication required.
     """
@@ -201,9 +201,21 @@ async def set_background_skills(
     return await background_service.set_skills(background_id, data)
 
 
+@router.get(
+    "/{background_id}/features",
+    response_model=list[NestedFeatureResponse],
+    summary="List a background's features",
+    responses={404: {"description": "No background exists with the given ID."}},
+)
+async def list_background_features(background_id: int, background_service: BackgroundServiceDep):
+    """Return every feature owned by the background (``source_type: BACKGROUND``). Open endpoint."""
+
+    return await background_service.list_features(background_id)
+
+
 @router.post(
     "/{background_id}/features",
-    response_model=BackgroundResponse,
+    response_model=NestedFeatureResponse,
     status_code=201,
     summary="Add a feature to a background",
     responses={
@@ -231,7 +243,7 @@ async def add_background_feature(
 
     The feature is created with ``source_type: BACKGROUND`` and becomes an
     auto-grant for every character bearing this background in the same
-    transaction. Returns the updated background.
+    transaction. Returns the created feature.
 
     ``level`` is not meaningful for background features and must stay
     ``null``.
@@ -242,7 +254,7 @@ async def add_background_feature(
 
 @router.patch(
     "/{background_id}/features/{feature_id}",
-    response_model=BackgroundResponse,
+    response_model=NestedFeatureResponse,
     summary="Update one feature of a background",
     responses={
         400: {"description": "The feature belongs to a different background, or the update is invalid."},
@@ -271,7 +283,8 @@ async def update_background_feature(
 
     The feature keeps its id, so character grants and any player notes on
     them survive. Only `name`, `level`, `description` and `is_homebrew`
-    are editable; omitted fields are left as-is.
+    are editable; omitted fields are left as-is. Returns the updated
+    feature.
     """
 
     return await background_service.update_feature(background_id, feature_id, data)

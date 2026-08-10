@@ -38,7 +38,6 @@ class RaceRepository(SkillLookupMixin, BaseRepository[Race]):
             default_load_options=[
                 selectinload(Race.ability_bonuses),
                 selectinload(Race.granted_skills),
-                selectinload(Race.features),
             ],
             search_fields=["name"],
             unique_fields=["name"],

@@ -18,7 +18,7 @@ from app.features.classes.schemas import (
     SubclassResponse,
     SubclassUpdate,
 )
-from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
 
@@ -35,8 +35,8 @@ async def get_classes(
     search: str | None = None,
 ):
     """
-    Return a paginated list of classes with only `id`, `name`, `hit_dice`,
-    and `is_homebrew`, ordered by id.
+    Return a paginated list of classes with `id`, `name`, `hit_dice`,
+    `is_homebrew`, and the `id`/`name` of each subclass, ordered by id.
 
     Open endpoint, no authentication required.
 
@@ -355,9 +355,21 @@ async def set_class_spell_slots(
     return await class_service.set_spell_slots(class_id, class_level, data)
 
 
+@router.get(
+    "/{class_id}/features",
+    response_model=list[NestedFeatureResponse],
+    summary="List a class's features",
+    responses={404: {"description": "No class exists with the given ID."}},
+)
+async def list_class_features(class_id: int, class_service: ClassServiceDep):
+    """Return every CLASS-source feature of the class. Open endpoint."""
+
+    return await class_service.list_features(class_id)
+
+
 @router.post(
     "/{class_id}/features",
-    response_model=ClassResponse,
+    response_model=NestedFeatureResponse,
     status_code=201,
     summary="Add a feature to a class",
     responses={
@@ -386,7 +398,7 @@ async def add_class_feature(
 
     The feature is created with ``source_type: CLASS`` and becomes an
     auto-grant for every character of this class (level-gated) in the same
-    transaction. Returns the updated class.
+    transaction. Returns the created feature.
     """
 
     return await class_service.add_feature(class_id, data, created_by_id=_.id)
@@ -394,7 +406,7 @@ async def add_class_feature(
 
 @router.patch(
     "/{class_id}/features/{feature_id}",
-    response_model=ClassResponse,
+    response_model=NestedFeatureResponse,
     summary="Update one feature of a class",
     responses={
         400: {"description": "The feature belongs to a different class, or the update is invalid."},
@@ -425,7 +437,8 @@ async def update_class_feature(
     The feature keeps its id, so character grants and any player notes on
     them survive. Only `name`, `level`, `description` and `is_homebrew`
     are editable; omitted fields are left as-is. Raising a feature's
-    `level` revokes it from characters below the new level.
+    `level` revokes it from characters below the new level. Returns the
+    updated feature.
     """
 
     return await class_service.update_feature(class_id, feature_id, data)
@@ -499,7 +512,7 @@ async def list_subclasses(class_id: int, class_service: ClassServiceDep):
     responses={404: {"description": "Class or subclass not found."}},
 )
 async def get_subclass(class_id: int, subclass_id: int, class_service: ClassServiceDep):
-    """Full subclass detail including all its features. Open endpoint."""
+    """Full subclass detail. Features live under `GET /classes/{class_id}/subclasses/{subclass_id}/features`. Open endpoint."""
 
     return await class_service.get_subclass(class_id, subclass_id)
 
@@ -566,9 +579,21 @@ async def update_subclass(
     return await class_service.update_subclass(class_id, subclass_id, data)
 
 
+@router.get(
+    "/{class_id}/subclasses/{subclass_id}/features",
+    response_model=list[NestedFeatureResponse],
+    summary="List a subclass's features",
+    responses={404: {"description": "Class or subclass not found."}},
+)
+async def list_subclass_features(class_id: int, subclass_id: int, class_service: ClassServiceDep):
+    """Return every SUBCLASS-source feature of the subclass. Open endpoint."""
+
+    return await class_service.list_subclass_features(class_id, subclass_id)
+
+
 @router.post(
     "/{class_id}/subclasses/{subclass_id}/features",
-    response_model=SubclassResponse,
+    response_model=NestedFeatureResponse,
     status_code=201,
     summary="Add a feature to a subclass",
     responses={
@@ -598,7 +623,7 @@ async def add_subclass_feature(
 
     The feature is created with ``source_type: SUBCLASS`` and becomes an
     auto-grant for every character holding this subclass (level-gated) in
-    the same transaction. Returns the updated subclass.
+    the same transaction. Returns the created feature.
     """
 
     return await class_service.add_subclass_feature(class_id, subclass_id, data, created_by_id=_.id)
@@ -606,7 +631,7 @@ async def add_subclass_feature(
 
 @router.patch(
     "/{class_id}/subclasses/{subclass_id}/features/{feature_id}",
-    response_model=SubclassResponse,
+    response_model=NestedFeatureResponse,
     summary="Update one feature of a subclass",
     responses={
         400: {"description": "The feature belongs to a different subclass, or the update is invalid."},
@@ -638,7 +663,8 @@ async def update_subclass_feature(
     The feature keeps its id, so character grants and any player notes on
     them survive. Only `name`, `level`, `description` and `is_homebrew`
     are editable; omitted fields are left as-is. Raising a feature's
-    `level` revokes it from characters below the new level.
+    `level` revokes it from characters below the new level. Returns the
+    updated feature.
     """
 
     return await class_service.update_subclass_feature(class_id, subclass_id, feature_id, data)

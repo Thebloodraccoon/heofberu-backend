@@ -19,7 +19,7 @@ class BackgroundRepository(SkillLookupMixin, BaseRepository[Background]):
         super().__init__(
             Background,
             db,
-            default_load_options=[selectinload(Background.granted_skills), selectinload(Background.features)],
+            default_load_options=[selectinload(Background.granted_skills)],
             search_fields=["name"],
             unique_fields=["name"],
             check_in_use_on_delete=True,

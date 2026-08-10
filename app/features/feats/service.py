@@ -13,7 +13,7 @@ from app.features.feats.schemas import (
     FeatUpdate,
 )
 from app.features.features.mixins import SourceFeatureMixin
-from app.features.features.service import FeatureService
+from app.features.features.nested_service import NestedFeatureService
 from app.models.feat_model import Feat
 
 
@@ -28,20 +28,23 @@ class FeatService(
     create/update, management of ``ability_score_increases`` (its own
     child table, no generic base-class equivalent, set up in the same
     transaction as the feat via ``BaseService._atomic()``), per-source
-    feature CRUD (``add_feature``/``update_feature``/``remove_feature``
-    from :class:`SourceFeatureMixin`), and a delete guard blocking removal
-    of a feat still granted to any character or whose features are still
+    feature CRUD (``add_feature``/``update_feature``/``remove_feature``)
+    and per-source feature listing (``list_features``) from
+    :class:`SourceFeatureMixin`, and a delete guard blocking removal of a
+    feat still granted to any character or whose features are still
     granted to a character (its own ``features`` rows cascade away with
     the feat).
 
-    Listing and detail reads are cached via ``@use_cache``. Because a
-    feat's writes also touch the ``features`` table (FEAT-source rows),
-    the service invalidates both its own namespace and ``features``.
+    Listing and detail reads are cached via ``@use_cache``. The feat
+    responses no longer embed their ``features`` — they are read through
+    ``list_features`` (cached under the dedicated ``nested_features``
+    namespace), so the service invalidates both its own namespace and
+    ``nested_features`` on catalog writes.
     """
 
     repository: FeatRepository
 
-    cache_namespaces = ("feats", "features")
+    cache_namespaces = ("feats", "nested_features")
 
     _feature_source_type = FeatureSourceType.FEAT
 
@@ -51,7 +54,7 @@ class FeatService(
             response_schema=FeatResponse,
             get_all_schema=FeatGetAllResponse,
         )
-        self._features = FeatureService(db)
+        self._features = NestedFeatureService(db)
 
     async def create_feat(self, feat_data: FeatCreate, created_by_id: int | None = None) -> FeatResponse:
         """

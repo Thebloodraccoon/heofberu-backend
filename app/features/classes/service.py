@@ -27,8 +27,8 @@ from app.features.classes.schemas import (
     _proficiency_bonus,
 )
 from app.features.features.mixins import SourceFeatureMixin
-from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
-from app.features.features.service import FeatureService
+from app.features.features.nested_service import NestedFeatureService
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
 from app.features.skills.mixins import SkillsManagerMixin
 from app.models.class_model import Class
 from app.models.subclass_model import Subclass
@@ -49,18 +49,22 @@ class ClassService(
         (each with their own SUBCLASS-source features) in a single transaction;
       - spellcasting_ability ↔ primary_abilities consistency checks;
       - subclass CRUD (create / get / list / update / delete), including
-        per-subclass feature management via ``_mutate_feature``;
+        per-subclass feature management via ``_mutate_feature`` and
+        per-class/per-subclass feature listing (``list_features`` /
+        ``list_subclass_features``);
       - progression table builder (GET /classes/{id}/progression).
 
-    Listing and detail reads are cached via ``@use_cache``. Because a
-    class's writes also touch the ``features`` table (CLASS- and
-    SUBCLASS-source rows, which the ``GET /features`` listing is filtered
-    by), the service invalidates both its own namespace and ``features``.
+    Listing and detail reads are cached via ``@use_cache``. The class and
+    subclass responses no longer embed their ``features`` — they are read
+    through ``list_features`` / ``list_subclass_features`` (cached under
+    the dedicated ``nested_features`` namespace), so the service
+    invalidates both its own namespace and ``nested_features`` on catalog
+    writes.
     """
 
     repository: ClassRepository
 
-    cache_namespaces = ("classes", "features")
+    cache_namespaces = ("classes", "nested_features")
 
     _feature_source_type = FeatureSourceType.CLASS
 
@@ -72,7 +76,7 @@ class ClassService(
             response_schema=ClassResponse,
             get_all_schema=ClassGetAllResponse,
         )
-        self._features = FeatureService(db)
+        self._features = NestedFeatureService(db)
 
     async def create_class(self, class_data: ClassCreate, created_by_id: int | None = None) -> ClassResponse:
         """
@@ -259,23 +263,36 @@ class ClassService(
 
         return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass_id))
 
+    async def list_features(self, class_id: int) -> list[NestedFeatureResponse]:
+        """Return every CLASS-source feature of the class (cached under ``nested_features``)."""
+
+        await self._get_or_404(class_id)  # 404 if class doesn't exist
+        return await self._features.list_for_source(FeatureSourceType.CLASS, class_id)
+
+    async def list_subclass_features(self, class_id: int, subclass_id: int) -> list[NestedFeatureResponse]:
+        """Return every SUBCLASS-source feature of the subclass (cached under ``nested_features``)."""
+
+        subclass = await self._get_subclass_or_404(class_id, subclass_id)
+        return await self._features.list_for_source(FeatureSourceType.SUBCLASS, subclass.id)
+
     async def add_subclass_feature(
         self,
         class_id: int,
         subclass_id: int,
         data: NestedFeatureCreate,
         created_by_id: int | None = None,
-    ) -> SubclassResponse:
+    ) -> NestedFeatureResponse:
         """
         Add one SUBCLASS-source feature to a subclass.
 
         Creates a new feature owned by the subclass, then reconciles the
         grants of every character holding this subclass so qualifying
-        characters gain it in the same transaction.
+        characters gain it in the same transaction. Returns the created
+        feature.
         """
 
         subclass = await self._get_subclass_or_404(class_id, subclass_id)
-        await self._mutate_feature(
+        return await self._mutate_feature(
             subclass,
             FeatureSourceType.SUBCLASS,
             lambda: self._features.create_feature_for_source(
@@ -287,27 +304,25 @@ class ClassService(
             ),
         )
 
-        return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass_id))
-
     async def update_subclass_feature(
         self,
         class_id: int,
         subclass_id: int,
         feature_id: int,
         update_data: FeatureUpdate,
-    ) -> SubclassResponse:
+    ) -> NestedFeatureResponse:
         """
         Update one SUBCLASS-source feature of a subclass in place, keeping its id.
 
         The row keeps its id, so character grants and any player notes on
         them survive. Characters are reconciled in the same transaction —
         raising a feature's ``level`` revokes it from characters below the
-        new level.
+        new level. Returns the updated feature.
         """
 
         subclass = await self._get_subclass_or_404(class_id, subclass_id)
         fields = update_data.model_dump(exclude_unset=True)
-        await self._mutate_feature(
+        return await self._mutate_feature(
             subclass,
             FeatureSourceType.SUBCLASS,
             lambda: self._features.update_feature_for_source(
@@ -318,8 +333,6 @@ class ClassService(
                 commit=False,
             ),
         )
-
-        return SubclassResponse.model_validate(await self._get_subclass_or_404(class_id, subclass_id))
 
     async def remove_subclass_feature(self, class_id: int, subclass_id: int, feature_id: int) -> None:
         """

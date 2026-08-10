@@ -12,7 +12,7 @@ from app.features.backgrounds.schemas import (
     BackgroundUpdate,
 )
 from app.features.features.mixins import SourceFeatureMixin
-from app.features.features.service import FeatureService
+from app.features.features.nested_service import NestedFeatureService
 from app.features.skills.mixins import SkillsManagerMixin
 from app.models.background_model import Background
 
@@ -32,7 +32,8 @@ class BackgroundService(
         equivalent. ``create_background`` can optionally set them up
         front, in the same transaction as the background itself;
       - per-source feature CRUD (``add_feature``/``update_feature``/
-        ``remove_feature``) inherited from :class:`SourceFeatureMixin`.
+        ``remove_feature``) and per-source feature listing
+        (``list_features``) inherited from :class:`SourceFeatureMixin`.
 
     Unlike ``RaceService``, deletion is *not* blocked by characters
     bearing the background: its FK on ``characters.background_id`` is
@@ -46,15 +47,16 @@ class BackgroundService(
     ``CachedService``. The listing falls back to the eager-loaded
     ``repository.get_all`` because ``BackgroundGetAllResponse`` contains
     the ``granted_skills`` relationship, which the base column-select path
-    cannot load. Listing and detail reads are cached via ``@use_cache``;
-    because a background's writes also touch the ``features`` table
-    (BACKGROUND-source rows), the service invalidates both its own
-    namespace and ``features``.
+    cannot load. Listing and detail reads are cached via ``@use_cache``.
+    The background responses no longer embed their ``features`` — they are
+    read through ``list_features`` (cached under the dedicated
+    ``nested_features`` namespace), so the service invalidates both its own
+    namespace and ``nested_features`` on catalog writes.
     """
 
     repository: BackgroundRepository
 
-    cache_namespaces = ("backgrounds", "features")
+    cache_namespaces = ("backgrounds", "nested_features")
 
     _feature_source_type = FeatureSourceType.BACKGROUND
 
@@ -64,7 +66,7 @@ class BackgroundService(
             response_schema=BackgroundResponse,
             get_all_schema=BackgroundGetAllResponse,
         )
-        self._features = FeatureService(db)
+        self._features = NestedFeatureService(db)
 
     async def create_background(
         self, background_data: BackgroundCreate, created_by_id: int | None = None

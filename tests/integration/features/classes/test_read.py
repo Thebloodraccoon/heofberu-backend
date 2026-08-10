@@ -35,6 +35,25 @@ class TestClassOpenRead:
         assert response.json()["name"] == "Cleric"
         assert response.json()["spellcasting_ability"] == "WIS"
 
+    async def test_list_classes_includes_subclass_id_and_name(self, client, create_class, create_subclass):
+        character_class = await create_class(name="Fighter")
+        subclass = await create_subclass(class_id=character_class.id, name="Champion")
+
+        response = await client.get("/classes")
+
+        assert response.status_code == 200
+        fighters = [item for item in response.json()["items"] if item["name"] == "Fighter"]
+        assert fighters[0]["subclasses"] == [{"id": subclass.id, "name": "Champion"}]
+
+    async def test_list_classes_without_subclasses_returns_empty_list(self, client, create_class):
+        await create_class(name="Fighter")
+
+        response = await client.get("/classes")
+
+        assert response.status_code == 200
+        fighters = [item for item in response.json()["items"] if item["name"] == "Fighter"]
+        assert fighters[0]["subclasses"] == []
+
     async def test_get_class_404(self, client):
         assert (await client.get("/classes/999999")).status_code == 404
 
@@ -48,18 +67,15 @@ class TestClassOpenRead:
         assert response.status_code == 200
         assert {item["name"] for item in response.json()} == {"Battle Master", "Champion"}
 
-    async def test_get_subclass_includes_features(self, client, create_class, create_subclass, create_feature):
+    async def test_get_subclass_features(self, client, create_class, create_subclass, create_feature):
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
         await create_feature(name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3)
 
-        response = await client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}")
+        response = await client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}/features")
 
         assert response.status_code == 200
-        body = response.json()
-        assert body["name"] == "Champion"
-        assert body["unlock_level"] == 3
-        assert [item["name"] for item in body["features"]] == ["Improved Critical"]
+        assert [item["name"] for item in response.json()] == ["Improved Critical"]
 
     async def test_get_subclass_404(self, client, create_class):
         character_class = await create_class(name="Fighter")

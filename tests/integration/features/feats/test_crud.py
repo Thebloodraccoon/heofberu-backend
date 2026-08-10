@@ -71,12 +71,11 @@ class TestFeatCrud:
         )
 
         assert response.status_code == 201
-        assert [item["name"] for item in response.json()["features"]] == ["Alert Initiative", "Cannot Be Surprised"]
-
         feat_id = response.json()["id"]
-        fetched = await client.get(f"/feats/{feat_id}")
+
+        fetched = await client.get(f"/feats/{feat_id}/features")
         assert fetched.status_code == 200
-        assert [item["name"] for item in fetched.json()["features"]] == ["Alert Initiative", "Cannot Be Surprised"]
+        assert [item["name"] for item in fetched.json()] == ["Alert Initiative", "Cannot Be Surprised"]
 
     async def test_gm_cannot_delete_feat(self, client, gm_token, create_feat):
         feat = await create_feat(name="Doomed Feat")
@@ -104,7 +103,9 @@ class TestFeatCrud:
         )
         assert response.status_code == 201
         feat_id = response.json()["id"]
-        feature_id = response.json()["features"][0]["id"]
+        features = await client.get(f"/feats/{feat_id}/features")
+        assert features.status_code == 200
+        feature_id = features.json()[0]["id"]
 
         delete_response = await client.delete(f"/feats/{feat_id}", headers={"Authorization": f"Bearer {founder_token}"})
 
@@ -151,7 +152,7 @@ class TestFeatCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
-        feature = added.json()["features"][0]
+        feature = added.json()
         assert feature["name"] == "Alert Initiative"
 
         updated = await client.patch(
@@ -160,7 +161,7 @@ class TestFeatCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert updated.status_code == 200
-        updated_feature = updated.json()["features"][0]
+        updated_feature = updated.json()
         assert updated_feature["id"] == feature["id"]
         assert updated_feature["description"] == "You gain a +10 bonus to initiative."
 
@@ -169,8 +170,8 @@ class TestFeatCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get(f"/feats/{feat.id}")
-        assert fetched.json()["features"] == []
+        fetched = await client.get(f"/feats/{feat.id}/features")
+        assert fetched.json() == []
 
     async def test_update_feat_feature_of_another_source_returns_400(self, client, gm_token, create_feat, create_feature):
         feat = await create_feat(name="Alert")

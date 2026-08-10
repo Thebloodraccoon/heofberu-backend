@@ -69,10 +69,10 @@ class TestClassCrud:
         assert response.status_code == 201
         class_id = response.json()["id"]
 
-        fetched = await client.get(f"/classes/{class_id}")
+        fetched = await client.get(f"/classes/{class_id}/features")
         assert fetched.status_code == 200
-        assert [feature["name"] for feature in fetched.json()["features"]] == ["Second Wind", "Extra Attack"]
-        assert {feature["name"]: feature["level"] for feature in fetched.json()["features"]} == {
+        assert [feature["name"] for feature in fetched.json()] == ["Second Wind", "Extra Attack"]
+        assert {feature["name"]: feature["level"] for feature in fetched.json()} == {
             "Second Wind": None,
             "Extra Attack": 5,
         }
@@ -127,9 +127,9 @@ class TestClassCrud:
         assert [item["name"] for item in body["subclasses"]] == ["Champion"]
 
         subclass_id = body["subclasses"][0]["id"]
-        fetched = await client.get(f"/classes/{body['id']}/subclasses/{subclass_id}")
+        fetched = await client.get(f"/classes/{body['id']}/subclasses/{subclass_id}/features")
         assert fetched.status_code == 200
-        assert [item["name"] for item in fetched.json()["features"]] == ["Improved Critical"]
+        assert [item["name"] for item in fetched.json()] == ["Improved Critical"]
 
     async def test_create_class_spellcasting_ability_not_primary_returns_400(self, client, gm_token):
         response = await client.post(
@@ -287,11 +287,10 @@ class TestClassCrud:
         subclass_id = body["id"]
         assert body["name"] == "Champion"
         assert body["unlock_level"] == 3
-        assert [item["name"] for item in body["features"]] == ["Improved Critical", "Remarkable Athlete"]
 
-        fetched = await client.get(f"/classes/{character_class.id}/subclasses/{subclass_id}")
+        fetched = await client.get(f"/classes/{character_class.id}/subclasses/{subclass_id}/features")
         assert fetched.status_code == 200
-        assert [item["name"] for item in fetched.json()["features"]] == [
+        assert [item["name"] for item in fetched.json()] == [
             "Improved Critical",
             "Remarkable Athlete",
         ]
@@ -341,7 +340,7 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
-        feature = added.json()["features"][0]
+        feature = added.json()
         assert feature["name"] == "Second Wind"
         assert feature["level"] == 1
 
@@ -351,7 +350,7 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert updated.status_code == 200
-        updated_feature = updated.json()["features"][0]
+        updated_feature = updated.json()
         assert updated_feature["id"] == feature["id"]
         assert updated_feature["level"] == 2
         assert updated_feature["description"] == "Regain more HP as a bonus action."
@@ -361,8 +360,8 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get(f"/classes/{character_class.id}")
-        assert fetched.json()["features"] == []
+        fetched = await client.get(f"/classes/{character_class.id}/features")
+        assert fetched.json() == []
 
     async def test_update_class_feature_of_another_source_returns_400(
         self, client, gm_token, create_class, create_feature
@@ -433,7 +432,9 @@ class TestClassCrud:
         )
         assert created.status_code == 201
         class_id = created.json()["id"]
-        features = {feature["name"]: feature for feature in created.json()["features"]}
+        features_response = await client.get(f"/classes/{class_id}/features")
+        assert features_response.status_code == 200
+        features = {feature["name"]: feature for feature in features_response.json()}
 
         player = await create_user()
         character = await create_character(owner_id=player.id, class_id=class_id, level=11)
@@ -497,7 +498,7 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
-        feature = added.json()["features"][0]
+        feature = added.json()
         assert feature["name"] == "Improved Critical"
         assert feature["level"] == 3
 
@@ -507,7 +508,7 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert updated.status_code == 200
-        updated_feature = updated.json()["features"][0]
+        updated_feature = updated.json()
         assert updated_feature["id"] == feature["id"]
         assert updated_feature["description"] == "Your weapon attacks score a critical hit on a roll of 19 or 20."
 
@@ -516,8 +517,8 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}")
-        assert fetched.json()["features"] == []
+        fetched = await client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}/features")
+        assert fetched.json() == []
 
     async def test_update_subclass_feature_of_another_source_returns_400(
         self, client, gm_token, create_class, create_subclass, create_feature

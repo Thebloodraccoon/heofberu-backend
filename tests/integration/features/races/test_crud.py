@@ -65,9 +65,9 @@ class TestRaceCrud:
         assert response.status_code == 201
         race_id = response.json()["id"]
 
-        fetched = await client.get(f"/races/{race_id}")
+        fetched = await client.get(f"/races/{race_id}/features")
         assert fetched.status_code == 200
-        assert [feature["name"] for feature in fetched.json()["features"]] == [
+        assert [feature["name"] for feature in fetched.json()] == [
             "Darkvision",
             "Sunlight Sensitivity",
         ]
@@ -178,7 +178,7 @@ class TestRaceCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
-        feature = added.json()["features"][0]
+        feature = added.json()
         assert feature["name"] == "Darkvision"
 
         updated = await client.patch(
@@ -187,7 +187,7 @@ class TestRaceCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert updated.status_code == 200
-        updated_feature = updated.json()["features"][0]
+        updated_feature = updated.json()
         assert updated_feature["id"] == feature["id"]
         assert updated_feature["description"] == "See in dim light within 120 ft."
 
@@ -196,8 +196,8 @@ class TestRaceCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get(f"/races/{race.id}")
-        assert fetched.json()["features"] == []
+        fetched = await client.get(f"/races/{race.id}/features")
+        assert fetched.json() == []
 
     async def test_update_race_feature_of_another_source_returns_400(
         self, client, gm_token, create_race, create_feature

@@ -1,11 +1,11 @@
-"""Race endpoints: listing, CRUD, and ability-bonus/skill management."""
+"""Race endpoints: listing, CRUD, ability-bonus/skill and feature management."""
 
 from fastapi import APIRouter, Body, Query
 
 from app.constants import RaceSize
 from app.core.base_service import Page
 from app.core.dependencies import FounderDep, GmUserDep, RaceServiceDep
-from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate
+from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
     RaceCreate,
@@ -236,9 +236,21 @@ async def set_race_skills(
     return await race_service.set_skills(race_id, data)
 
 
+@router.get(
+    "/{race_id}/features",
+    response_model=list[NestedFeatureResponse],
+    summary="List a race's features",
+    responses={404: {"description": "No race exists with the given ID."}},
+)
+async def list_race_features(race_id: int, race_service: RaceServiceDep):
+    """Return every feature owned by the race (``source_type: RACE``). Open endpoint."""
+
+    return await race_service.list_features(race_id)
+
+
 @router.post(
     "/{race_id}/features",
-    response_model=RaceResponse,
+    response_model=NestedFeatureResponse,
     status_code=201,
     summary="Add a feature to a race",
     responses={
@@ -266,7 +278,7 @@ async def add_race_feature(
 
     The feature is created with ``source_type: RACE`` and becomes an
     auto-grant for every character of this race (level-gated where
-    applicable) in the same transaction. Returns the updated race.
+    applicable) in the same transaction. Returns the created feature.
 
     ``level`` is not meaningful for race features and must stay ``null``.
     """
@@ -276,7 +288,7 @@ async def add_race_feature(
 
 @router.patch(
     "/{race_id}/features/{feature_id}",
-    response_model=RaceResponse,
+    response_model=NestedFeatureResponse,
     summary="Update one feature of a race",
     responses={
         400: {"description": "The feature belongs to a different race, or the update is invalid."},
@@ -305,7 +317,8 @@ async def update_race_feature(
 
     The feature keeps its id, so character grants and any player notes on
     them survive. Only `name`, `level`, `description` and `is_homebrew`
-    are editable; omitted fields are left as-is.
+    are editable; omitted fields are left as-is. Returns the updated
+    feature.
     """
 
     return await race_service.update_feature(race_id, feature_id, data)

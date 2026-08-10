@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType
 from app.core.cached_service import CachedService
 from app.features.features.mixins import SourceFeatureMixin
-from app.features.features.service import FeatureService
+from app.features.features.nested_service import NestedFeatureService
 from app.features.races.repository import RaceRepository
 from app.features.races.schemas import (
     AbilityBonusesUpdate,
@@ -36,7 +36,8 @@ class RaceService(
         equivalent. ``create_race`` sets them up front, in the same
         transaction as the race itself, via ``BaseService._atomic()``;
       - per-source feature CRUD (``add_feature``/``update_feature``/
-        ``remove_feature``) inherited from :class:`SourceFeatureMixin`;
+        ``remove_feature``) and per-source feature listing
+        (``list_features``) inherited from :class:`SourceFeatureMixin`;
       - a delete guard that blocks removing a race still assigned to any
         character (``characters.race_id`` is ``ON DELETE SET NULL`` at the
         DB level, so the guard is what prevents detachment).
@@ -47,14 +48,18 @@ class RaceService(
     ``RaceRepository.is_in_use``). Listing and detail reads are cached via
     ``@use_cache``; the lightweight listing derives its columns from
     ``RaceGetAllResponse``'s field names (id, name, size, is_homebrew) and
-    is ordered by ``Race.id``. Because a race's writes also touch the
-    ``features`` table (RACE-source rows), the service invalidates both its
-    own namespace and ``features``.
+    is ordered by ``Race.id``.
+
+    The race responses no longer embed their ``features`` — per-source
+    features are read through ``list_features`` (cached under the dedicated
+    ``nested_features`` namespace). The service therefore invalidates both
+    its own namespace and ``nested_features`` on catalog writes (creating
+    or deleting a race also creates/deletes its feature rows).
     """
 
     repository: RaceRepository
 
-    cache_namespaces = ("races", "features")
+    cache_namespaces = ("races", "nested_features")
 
     _feature_source_type = FeatureSourceType.RACE
 
@@ -64,7 +69,7 @@ class RaceService(
             response_schema=RaceResponse,
             get_all_schema=RaceGetAllResponse,
         )
-        self._features = FeatureService(db)
+        self._features = NestedFeatureService(db)
 
     async def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
         """

@@ -61,12 +61,11 @@ class TestBackgroundCrud:
         )
 
         assert response.status_code == 201
-        assert [item["name"] for item in response.json()["features"]] == ["Shelter of the Faithful"]
 
         background_id = response.json()["id"]
-        fetched = await client.get(f"/backgrounds/{background_id}")
+        fetched = await client.get(f"/backgrounds/{background_id}/features")
         assert fetched.status_code == 200
-        assert [item["name"] for item in fetched.json()["features"]] == ["Shelter of the Faithful"]
+        assert [item["name"] for item in fetched.json()] == ["Shelter of the Faithful"]
 
     async def test_gm_cannot_delete_background(self, client, gm_token, create_background):
         background = await create_background(name="Doomed Background")
@@ -138,7 +137,7 @@ class TestBackgroundCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
-        feature = added.json()["features"][0]
+        feature = added.json()
         assert feature["name"] == "Shelter of the Faithful"
 
         updated = await client.patch(
@@ -147,7 +146,7 @@ class TestBackgroundCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert updated.status_code == 200
-        updated_feature = updated.json()["features"][0]
+        updated_feature = updated.json()
         assert updated_feature["id"] == feature["id"]
         assert updated_feature["description"] == "Free healing and care at a shrine."
 
@@ -156,8 +155,8 @@ class TestBackgroundCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get(f"/backgrounds/{background.id}")
-        assert fetched.json()["features"] == []
+        fetched = await client.get(f"/backgrounds/{background.id}/features")
+        assert fetched.json() == []
 
     async def test_update_background_feature_of_another_source_returns_400(
         self, client, gm_token, create_background, create_feature

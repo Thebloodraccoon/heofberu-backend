@@ -31,8 +31,7 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
                 selectinload(Class.primary_abilities),
                 selectinload(Class.saving_throws),
                 selectinload(Class.spell_slot_progression),
-                selectinload(Class.features),
-                selectinload(Class.subclasses).selectinload(Subclass.features),
+                selectinload(Class.subclasses),
             ],
             search_fields=["name"],
             unique_fields=["name"],
@@ -172,7 +171,6 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
 
         result = await self.db.execute(
             select(Subclass)
-            .options(selectinload(Subclass.features))
             .where(Subclass.id == subclass_id, Subclass.class_id == class_id)
             .execution_options(populate_existing=True)
         )
@@ -183,7 +181,6 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
 
         result = await self.db.execute(
             select(Subclass)
-            .options(selectinload(Subclass.features))
             .where(Subclass.class_id == class_id)
             .order_by(Subclass.name)
             .execution_options(populate_existing=True)
