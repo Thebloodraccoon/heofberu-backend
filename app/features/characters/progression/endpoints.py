@@ -1,4 +1,4 @@
-"""Endpoints for character progression: race/class change and leveling up."""
+"""Endpoints for character progression: race/class/subclass/subrace change and leveling up."""
 
 from fastapi import APIRouter
 
@@ -9,6 +9,7 @@ from app.features.characters.progression.schemas import (
     LevelUpRequest,
     RaceChange,
     SubclassChange,
+    SubraceChange,
 )
 from app.features.characters.schemas import CharacterResponse
 
@@ -66,6 +67,27 @@ async def change_subclass(
     current_user: CurrentUserDep,
 ) -> CharacterResponse:
     await progression_service.set_subclass(character_id, data, current_user)
+    return await character_service.get_character(character_id, current_user)
+
+
+@router.patch(
+    "/{character_id}/progression/subrace",
+    response_model=CharacterResponse,
+    summary="Set or clear a character's subrace",
+    description=(
+        "Sets ``subrace_id`` (must belong to the character's race; null clears it). "
+        "Grants the subrace's features at or below the character's current level "
+        "and re-derives subrace ability bonuses."
+    ),
+)
+async def change_subrace(
+    character_id: int,
+    data: SubraceChange,
+    progression_service: CharacterProgressionServiceDep,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+) -> CharacterResponse:
+    await progression_service.set_subrace(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
 
 

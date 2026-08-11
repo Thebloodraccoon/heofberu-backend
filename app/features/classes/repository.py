@@ -9,10 +9,12 @@ from app.features.skills.mixins import SkillLookupMixin
 from app.models import (
     Character,
     Class,
+    ClassArmorProficiency,
     ClassPrimaryAbility,
     ClassSavingThrow,
     ClassSpellSlotProgression,
     Skill,
+    SourceItem,
     class_available_skills,
 )
 from app.models.feature_model import Feature
@@ -30,6 +32,8 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
                 selectinload(Class.available_skills),
                 selectinload(Class.primary_abilities),
                 selectinload(Class.saving_throws),
+                selectinload(Class.armor_proficiencies),
+                selectinload(Class.starting_items).selectinload(SourceItem.item),
                 selectinload(Class.spell_slot_progression),
                 selectinload(Class.subclasses),
             ],
@@ -123,6 +127,25 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
             character_class,
             "class_id",
             [{"ability": ability} for ability in abilities],
+            commit=commit,
+        )
+
+        return character_class
+
+    async def set_armor_proficiencies(
+        self, character_class: Class, armor_types: list[str], *, commit: bool = True
+    ) -> Class:
+        """
+        Replace all armor proficiencies for a class with the given list.
+
+        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        """
+
+        await self.replace_child_rows(
+            ClassArmorProficiency,
+            character_class,
+            "class_id",
+            [{"armor_type": armor_type} for armor_type in armor_types],
             commit=commit,
         )
 

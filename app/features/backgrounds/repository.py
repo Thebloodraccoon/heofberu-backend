@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base_repository import BaseRepository
 from app.features.skills.mixins import SkillLookupMixin
-from app.models import CharacterFeature, Feature
+from app.models import CharacterFeature, Feature, SourceItem
 from app.models.background_association_models import background_skills
 from app.models.background_model import Background
 from app.models.skill_model import Skill
@@ -19,7 +19,10 @@ class BackgroundRepository(SkillLookupMixin, BaseRepository[Background]):
         super().__init__(
             Background,
             db,
-            default_load_options=[selectinload(Background.granted_skills)],
+            default_load_options=[
+                selectinload(Background.granted_skills),
+                selectinload(Background.starting_items).selectinload(SourceItem.item),
+            ],
             search_fields=["name"],
             unique_fields=["name"],
             check_in_use_on_delete=True,

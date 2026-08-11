@@ -1,9 +1,10 @@
 """
 Pure calculation of a character's effective ability scores and derived combat stats.
 
-Effective ability scores are the base values plus race/feat bonuses;
-derived combat stats (hit dice, speed, armor class) are computed from the
-class, race, and equipped armor. Both are pure helpers — no database access.
+Effective ability scores are the base values plus race/subrace/feat
+bonuses; derived combat stats (hit dice, speed, armor class) are computed
+from the class, race, and equipped armor. Both are pure helpers — no
+database access.
 """
 
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from app.constants import AbilityScore
 from app.models.character_model import Character
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
+from app.models.subrace_association_models import SubraceAbilityBonus
 
 BASE_FIELD_BY_ABILITY = {
     AbilityScore.STR: "strength",
@@ -41,6 +43,8 @@ class CharacterAbilityScoreCalculator:
     Bonus sources considered:
       - ``race.ability_bonuses`` (RaceAbilityBonus rows for the
         character's race, if any);
+      - ``subrace.ability_bonuses`` (SubraceAbilityBonus rows for the
+        character's subrace, if any);
       - feat-granted ability score increases: for each row in
         ``character_feats``, if ``ability_score_increase_id`` is set,
         the corresponding ``FeatAbilityScoreIncrease.amount`` is added
@@ -52,18 +56,20 @@ class CharacterAbilityScoreCalculator:
 
     This is a PURE calculation helper — it does not touch the database
     or the ``character_ability_scores`` cache table. The bonus rows
-    (``race_bonuses``/``feat_increases``) are loaded by the caller and
-    passed in (see ``CharacterStatsRepository.get_race_bonuses``
-    / ``get_feat_increases``, or the ``CharacterStatsService.compute``
-    convenience), which makes this class directly unit-testable with zero
-    DB setup — the old version took a ``Session`` and ran the queries
-    itself.
+    (``race_bonuses``/``subrace_bonuses``/``feat_increases``) are loaded
+    by the caller and passed in (see
+    ``CharacterStatsRepository.get_race_bonuses`` /
+    ``get_subrace_bonuses`` / ``get_feat_increases``, or the
+    ``CharacterStatsService.compute`` convenience), which makes this
+    class directly unit-testable with zero DB setup — the old version
+    took a ``Session`` and ran the queries itself.
     """
 
     def compute(
         self,
         character: Character,
         race_bonuses: list[RaceAbilityBonus],
+        subrace_bonuses: list[SubraceAbilityBonus],
         feat_increases: list[FeatAbilityScoreIncrease],
     ) -> dict[str, int]:
         """
@@ -75,6 +81,9 @@ class CharacterAbilityScoreCalculator:
         totals = {ability: getattr(character, BASE_FIELD_BY_ABILITY[ability]) for ability in AbilityScore}
 
         for bonus in race_bonuses:
+            totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
+
+        for bonus in subrace_bonuses:
             totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
 
         for increase in feat_increases:

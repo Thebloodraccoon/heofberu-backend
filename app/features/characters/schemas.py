@@ -28,6 +28,7 @@ class CharacterBase(BaseModel):
     class_id: int
     subclass_id: int | None = None
     race_id: int | None = None
+    subrace_id: int | None = None
     background_id: int | None = None
 
     current_hp: int = Field(default=0, ge=0)
@@ -54,11 +55,6 @@ class CharacterBase(BaseModel):
     backstory: str = ""
     notes: str = ""
 
-    personality_traits: str = ""
-    ideals: str = ""
-    bonds: str = ""
-    flaws: str = ""
-
     money_gold: int = Field(default=0, ge=0)
     money_silver: int = Field(default=0, ge=0)
     money_copper: int = Field(default=0, ge=0)
@@ -73,13 +69,14 @@ class CharacterCreate(CharacterBase):
     Create payload for a character.
 
     ``class_id`` is required and must reference an existing class;
-    ``subclass_id``/``race_id``/``background_id`` are optional but, if
-    provided, must also reference existing records (``subclass_id`` must
-    belong to ``class_id``). Existence checks happen in
+    ``subclass_id``/``race_id``/``subrace_id``/``background_id`` are
+    optional but, if provided, must also reference existing records
+    (``subclass_id`` must belong to ``class_id``; ``subrace_id`` must
+    belong to ``race_id``). Existence checks happen in
     ``CharacterService.create_character`` (needs DB access, not doable
     at the schema layer) — see ``SubclassNotFoundException`` /
-    ``ClassNotFoundException`` / ``RaceNotFoundException`` /
-    ``BackgroundNotFoundException``.
+    ``SubraceNotFoundException`` / ``ClassNotFoundException`` /
+    ``RaceNotFoundException`` / ``BackgroundNotFoundException``.
     """
 
 
@@ -91,12 +88,13 @@ class CharacterUpdate(BaseModel):
     spells, and attacks are managed through their own dedicated endpoints,
     not through this schema.
 
-    Note: ``class_id``, ``subclass_id``, ``race_id``, and ``background_id``
-    cannot be changed via this schema — a character's class, subclass,
-    race, and background are set at creation and only the subclass can be
-    changed afterwards, through the dedicated
-    ``PATCH /characters/{id}/progression/subclass`` endpoint (which also
-    keeps the character's granted class/subclass features in sync).
+    Note: ``class_id``, ``subclass_id``, ``race_id``, ``subrace_id``, and
+    ``background_id`` cannot be changed via this schema — a character's
+    class, subclass, race, subrace, and background are set at creation and
+    only the subclass/subrace can be changed afterwards, through the
+    dedicated ``PATCH /characters/{id}/progression/subclass`` and
+    ``PATCH /characters/{id}/progression/subrace`` endpoints (which also
+    keep the character's granted class/subclass/subrace features in sync).
     ``level`` and the base ability scores (``strength``..``charisma``) are
     likewise not editable here: level changes go through the dedicated
     level-up endpoint, and base scores only change via that endpoint's
@@ -122,11 +120,6 @@ class CharacterUpdate(BaseModel):
     traits: str | None = None
     backstory: str | None = None
     notes: str | None = None
-
-    personality_traits: str | None = None
-    ideals: str | None = None
-    bonds: str | None = None
-    flaws: str | None = None
 
     money_gold: int | None = Field(default=None, ge=0)
     money_silver: int | None = Field(default=None, ge=0)

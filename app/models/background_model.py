@@ -44,6 +44,13 @@ class Background(settings.Base):  # type: ignore
         "Skill",
         secondary=background_skills,
     )
+    starting_items = relationship(
+        "SourceItem",
+        primaryjoin="Background.id == SourceItem.background_id",
+        foreign_keys="SourceItem.background_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     characters = relationship("Character", back_populates="background")
     created_by = relationship("User")
 

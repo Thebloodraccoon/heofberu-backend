@@ -42,6 +42,13 @@ class Race(settings.Base):  # type: ignore
         passive_deletes=True,
         order_by="Feature.id",
     )
+    subraces = relationship(
+        "Subrace",
+        back_populates="race",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Subrace.name",
+    )
 
     def __repr__(self):
         return f"<Race(id={self.id}, name='{self.name}')>"

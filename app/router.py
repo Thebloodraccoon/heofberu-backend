@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.features.admin.endpoints import router as admin_router
 from app.features.auth.endpoints import router as auth_router
 from app.features.backgrounds.endpoints import router as background_router
 from app.features.characters.router import router as character_router
@@ -18,6 +19,7 @@ from app.features.users.endpoints import router as user_router
 api_router = APIRouter(prefix="/api")
 
 _feature_routers = (
+    admin_router,
     ping_router,
     auth_router,
     user_router,

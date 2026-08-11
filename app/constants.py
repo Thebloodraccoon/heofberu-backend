@@ -187,14 +187,24 @@ class ItemRarity(str, Enum):
 
 
 class FeatureSourceType(str, Enum):
-    """Origin of a feature: class, subclass, race, background, feat, other."""
+    """Origin of a feature: class, subclass, race, subrace, background, feat, other."""
 
     CLASS = "CLASS"
     SUBCLASS = "SUBCLASS"
     RACE = "RACE"
+    SUBRACE = "SUBRACE"
     BACKGROUND = "BACKGROUND"
     FEAT = "FEAT"
     OTHER = "OTHER"
+
+
+class ArmorProficiency(str, Enum):
+    """Armor categories a class grants proficiency in (5e-style)."""
+
+    LIGHT = "LIGHT"
+    MEDIUM = "MEDIUM"
+    HEAVY = "HEAVY"
+    SHIELD = "SHIELD"
 
 
 class ASILevelChoice(str, Enum):

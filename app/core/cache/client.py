@@ -106,3 +106,15 @@ async def cache_delete_prefix(namespace: str) -> None:
     """Delete every key under ``<prefix>:<namespace>:*`` (best-effort)."""
 
     await cache_delete_pattern(f"{cache_prefix()}:{namespace}:*")
+
+
+async def cache_flush_all() -> None:
+    """
+    Delete every cached entry (all namespaces) under ``<prefix>:*``.
+
+    Only keys namespaced under the app's ``CACHE_PREFIX`` are removed —
+    other Redis data (e.g. the ``token_blacklist:*`` JWT revocations) is
+    left untouched. Best-effort, like the per-namespace invalidators.
+    """
+
+    await cache_delete_pattern(f"{cache_prefix()}:*")

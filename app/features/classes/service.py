@@ -11,6 +11,7 @@ from app.features.classes.exceptions import (
 )
 from app.features.classes.repository import ClassRepository
 from app.features.classes.schemas import (
+    ArmorProficienciesUpdate,
     AvailableSkillsUpdate,
     ClassCreate,
     ClassGetAllResponse,
@@ -29,6 +30,8 @@ from app.features.classes.schemas import (
 from app.features.features.mixins import SourceFeatureMixin
 from app.features.features.nested_service import NestedFeatureService
 from app.features.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
+from app.features.items.mixins import SourceItemManagerMixin
+from app.features.items.nested_service import NestedSourceItemService
 from app.features.skills.mixins import SkillsManagerMixin
 from app.models.class_model import Class
 from app.models.subclass_model import Subclass
@@ -37,6 +40,7 @@ from app.models.subclass_model import Subclass
 class ClassService(
     SkillsManagerMixin,
     SourceFeatureMixin,
+    SourceItemManagerMixin,
     CachedService[Class, ClassCreate, ClassUpdate, ClassResponse, ClassGetAllResponse],
 ):
     """
@@ -44,29 +48,36 @@ class ClassService(
 
     Extends the generic base with:
       - name uniqueness check on create/update;
-      - atomic creation of primary_abilities, saving_throws, available_skills,
-        CLASS-source features, spell_slot_progression, and nested subclasses
-        (each with their own SUBCLASS-source features) in a single transaction;
+      - atomic creation of primary_abilities, saving_throws, armor
+        proficiencies, available_skills, CLASS-source features,
+        spell_slot_progression, and nested subclasses (each with their own
+        SUBCLASS-source features) in a single transaction;
       - spellcasting_ability ↔ primary_abilities consistency checks;
       - subclass CRUD (create / get / list / update / delete), including
         per-subclass feature management via ``_mutate_feature`` and
         per-class/per-subclass feature listing (``list_features`` /
         ``list_subclass_features``);
+      - per-class starting equipment (``list_items``/``set_items``) and
+        nested ``starting_items`` on create, inherited from
+        :class:`SourceItemManagerMixin`;
+      - armor proficiency replacement (``set_armor_proficiencies``);
       - progression table builder (GET /classes/{id}/progression).
 
     Listing and detail reads are cached via ``@use_cache``. The class and
     subclass responses no longer embed their ``features`` — they are read
     through ``list_features`` / ``list_subclass_features`` (cached under
-    the dedicated ``nested_features`` namespace), so the service
-    invalidates both its own namespace and ``nested_features`` on catalog
+    the dedicated ``nested_features`` namespace), and starting equipment
+    through ``list_items`` (cached under ``nested_items``), so the service
+    invalidates its own namespace plus both nested namespaces on catalog
     writes.
     """
 
     repository: ClassRepository
 
-    cache_namespaces = ("classes", "nested_features")
+    cache_namespaces = ("classes", "nested_features", "nested_items")
 
     _feature_source_type = FeatureSourceType.CLASS
+    _source_item_source_type = FeatureSourceType.CLASS
 
     _set_skills_method = "set_available_skills"
 
@@ -77,6 +88,7 @@ class ClassService(
             get_all_schema=ClassGetAllResponse,
         )
         self._features = NestedFeatureService(db)
+        self._items = NestedSourceItemService(db)
 
     async def create_class(self, class_data: ClassCreate, created_by_id: int | None = None) -> ClassResponse:
         """
@@ -84,11 +96,13 @@ class ClassService(
 
         Within ``_atomic()``:
           1. Insert the ``Class`` row.
-          2. Set primary_abilities, saving_throws, available_skills.
+          2. Set primary_abilities, saving_throws, armor_proficiencies,
+             available_skills.
           3. Create CLASS-source features.
           4. Apply spell_slot_progression.
           5. For each nested SubclassCreate: insert Subclass row, then
              create SUBCLASS-source features linked to the new subclass_id.
+          6. Create CLASS-source starting items.
 
         Everything commits together or rolls back entirely.
         """
@@ -99,10 +113,12 @@ class ClassService(
             exclude={
                 "primary_abilities",
                 "saving_throws",
+                "armor_proficiencies",
                 "available_skills",
                 "features",
                 "subclasses",
                 "spell_slot_progression",
+                "starting_items",
             }
         )
         payload["created_by_id"] = created_by_id
@@ -116,6 +132,9 @@ class ClassService(
             if class_data.saving_throws:
                 await self.repository.set_saving_throws(item, class_data.saving_throws, commit=False)
 
+            if class_data.armor_proficiencies:
+                await self.repository.set_armor_proficiencies(item, class_data.armor_proficiencies, commit=False)
+
             if skills:
                 await self.repository.set_available_skills(item, skills, commit=False)
 
@@ -125,6 +144,14 @@ class ClassService(
                 item.id,
                 class_data.features,
                 created_by_id,
+                commit=False,
+            )
+
+            # CLASS-source starting items.
+            await self._items.create_items_for_source(
+                FeatureSourceType.CLASS,
+                item.id,
+                class_data.starting_items,
                 commit=False,
             )
 
@@ -159,10 +186,14 @@ class ClassService(
 
         Checks spellcasting_ability ↔ primary_abilities consistency when
         primary_abilities is changed without an explicit spellcasting_ability.
+        ``primary_abilities``/``saving_throws``/``armor_proficiencies`` are
+        full-replace when set.
         """
 
         character_class = await self._get_or_404(class_id)
-        fields = update_data.model_dump(exclude_unset=True, exclude={"primary_abilities", "saving_throws"})
+        fields = update_data.model_dump(
+            exclude_unset=True, exclude={"primary_abilities", "saving_throws", "armor_proficiencies"}
+        )
 
         if update_data.primary_abilities is not None and update_data.spellcasting_ability is None:
             current = character_class.spellcasting_ability
@@ -183,6 +214,11 @@ class ClassService(
         if update_data.saving_throws is not None:
             character_class = await self.repository.set_saving_throws(character_class, update_data.saving_throws)
 
+        if update_data.armor_proficiencies is not None:
+            character_class = await self.repository.set_armor_proficiencies(
+                character_class, update_data.armor_proficiencies
+            )
+
         await self._invalidate_cache()
         return await self._get_response(class_id)
 
@@ -190,6 +226,14 @@ class ClassService(
         character_class = await self._get_or_404(class_id)
 
         await self.repository.set_saving_throws(character_class, data.saving_throws)
+        await self._invalidate_cache()
+
+        return await self._get_response(class_id)
+
+    async def set_armor_proficiencies(self, class_id: int, data: ArmorProficienciesUpdate) -> ClassResponse:
+        character_class = await self._get_or_404(class_id)
+
+        await self.repository.set_armor_proficiencies(character_class, data.armor_proficiencies)
         await self._invalidate_cache()
 
         return await self._get_response(class_id)

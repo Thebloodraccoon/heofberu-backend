@@ -1,5 +1,6 @@
-"""Race repository: base CRUD plus ability-bonus/skill management."""
+"""Race repository: base CRUD plus ability-bonus/skill/subrace management."""
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,6 +10,8 @@ from app.models import Character
 from app.models.race_association_models import RaceAbilityBonus, race_skills
 from app.models.race_model import Race
 from app.models.skill_model import Skill
+from app.models.subrace_association_models import SubraceAbilityBonus
+from app.models.subrace_model import Subrace
 
 
 class RaceRepository(SkillLookupMixin, BaseRepository[Race]):
@@ -18,6 +21,8 @@ class RaceRepository(SkillLookupMixin, BaseRepository[Race]):
     ``ability_bonuses`` and ``granted_skills`` are always part of
     ``RaceResponse``, so they're wired up as ``default_load_options``
     rather than re-implemented here via a hand-rolled ``get_all`` override.
+    ``subraces`` (with their own ability bonuses) are loaded the same way so
+    ``RaceResponse`` can embed them without extra queries.
 
     ``search_fields=["name"]`` pins free-text ``search`` (on the inherited
     ``get_all``/``get_brief``) to just ``name`` — without this, the base
@@ -38,6 +43,7 @@ class RaceRepository(SkillLookupMixin, BaseRepository[Race]):
             default_load_options=[
                 selectinload(Race.ability_bonuses),
                 selectinload(Race.granted_skills),
+                selectinload(Race.subraces).selectinload(Subrace.ability_bonuses),
             ],
             search_fields=["name"],
             unique_fields=["name"],
@@ -94,3 +100,81 @@ class RaceRepository(SkillLookupMixin, BaseRepository[Race]):
         )
 
         return race
+
+    async def get_subrace(self, race_id: int, subrace_id: int) -> Subrace | None:
+        """Fetch a subrace by its own id, scoped to ``race_id``."""
+
+        result = await self.db.execute(
+            select(Subrace)
+            .where(Subrace.race_id == race_id, Subrace.id == subrace_id)
+            .options(selectinload(Subrace.ability_bonuses))
+        )
+        return result.scalar_one_or_none()
+
+    async def list_subraces(self, race_id: int) -> list[Subrace]:
+        """Return every subrace belonging to ``race_id`` (ordered by name)."""
+
+        result = await self.db.execute(
+            select(Subrace)
+            .where(Subrace.race_id == race_id)
+            .options(selectinload(Subrace.ability_bonuses))
+            .order_by(Subrace.name)
+        )
+        return list(result.scalars().all())
+
+    async def create_subrace(
+        self, race: Race, payload: dict, *, commit: bool = True
+    ) -> Subrace:
+        """
+        Insert a ``Subrace`` row linked to ``race``.
+        ``commit=False`` leaves the transaction open for the caller.
+        """
+
+        subrace = Subrace(**payload, race_id=race.id)
+        self.db.add(subrace)
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(subrace)
+        else:
+            await self.db.flush()
+        return subrace
+
+    async def update_subrace(self, subrace: Subrace, fields: dict, *, commit: bool = True) -> Subrace:
+        """Apply partial ``fields`` to ``subrace`` and persist them."""
+
+        for key, value in fields.items():
+            setattr(subrace, key, value)
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
+
+        return subrace
+
+    async def delete_subrace(self, subrace: Subrace, *, commit: bool = True) -> None:
+        """Delete ``subrace``, cascading to its ability bonuses and features."""
+
+        await self.db.delete(subrace)
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
+
+    async def set_subrace_ability_bonuses(
+        self, subrace: Subrace, bonuses: list[dict], *, commit: bool = True
+    ) -> Subrace:
+        """
+        Replace all ability bonuses for a subrace with the given list.
+
+        ``commit`` lets callers that need atomicity across multiple writes
+        (e.g. creating a subrace + its bonuses together) defer the commit
+        and flush instead, without duplicating this method.
+        """
+
+        await self.replace_child_rows(
+            SubraceAbilityBonus,
+            subrace,
+            "subrace_id",
+            bonuses,
+            commit=commit,
+        )
+
+        return subrace

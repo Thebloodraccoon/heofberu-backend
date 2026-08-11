@@ -1,9 +1,9 @@
 """
 Per-source (nested) feature service.
 
-The race/class/background/feat/subclass catalogs no longer embed their
-``features`` in the parent record responses. A parent's features are now
-read and mutated through this service instead:
+The race/subrace/class/background/feat/subclass catalogs no longer embed
+their ``features`` in the parent record responses. A parent's features are
+now read and mutated through this service instead:
 
   - reads (``list_for_source``) are cached under the dedicated
     ``nested_features`` namespace — the per-source feature listing
@@ -45,10 +45,10 @@ class NestedFeatureService:
     Per-source feature reads and writes behind the ``nested_features`` cache
     namespace.
 
-    The parent catalog services (race/class/background/feat) and the class
-    service's subclass feature methods each hold one instance (``_features``)
-    and expose it through their own ``add_feature``/``update_feature``/
-    ``remove_feature``/``list_features`` methods.
+    The parent catalog services (race/subrace/class/background/feat) and
+    the class service's subclass feature methods each hold one instance
+    (``_features``) and expose it through their own ``add_feature``/
+    ``update_feature``/``remove_feature``/``list_features`` methods.
     """
 
     cache_namespaces = ("nested_features",)

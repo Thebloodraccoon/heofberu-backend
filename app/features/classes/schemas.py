@@ -4,8 +4,9 @@ import math
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.constants import AbilityScore, DiceType, SpellLevel
+from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel
 from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
+from app.features.items.schemas import SourceItemEntry, SourceItemResponse, _validate_unique_item_ids
 
 
 def _proficiency_bonus(class_level: int) -> int:
@@ -26,6 +27,13 @@ def _validate_unique_saving_throws(saving_throws: list[AbilityScore]) -> list[Ab
         raise ValueError("Duplicate saving throws are not allowed.")
 
     return saving_throws
+
+
+def _validate_unique_armor_proficiencies(armor_proficiencies: list[ArmorProficiency]) -> list[ArmorProficiency]:
+    if len(armor_proficiencies) != len(set(armor_proficiencies)):
+        raise ValueError("Duplicate armor proficiencies are not allowed.")
+
+    return armor_proficiencies
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
@@ -158,8 +166,9 @@ class ClassCreate(ClassBase):
     ``features`` are CLASS-source features (e.g. Rage, Extra Attack).
     ``subclasses`` are created in the same transaction — each may carry
     its own nested ``features`` (SUBCLASS-source).
-    ``available_skills``, ``primary_abilities``, ``saving_throws``, and
-    ``spell_slot_progression`` are all optional and applied atomically.
+    ``available_skills``, ``primary_abilities``, ``saving_throws``,
+    ``armor_proficiencies``, ``spell_slot_progression``, and
+    ``starting_items`` are all optional and applied atomically.
 
     If ``spellcasting_ability`` is set (non-null) it must appear in
     ``primary_abilities``.
@@ -167,10 +176,12 @@ class ClassCreate(ClassBase):
 
     primary_abilities: list[AbilityScore] = []
     saving_throws: list[AbilityScore] = []
+    armor_proficiencies: list[ArmorProficiency] = []
     available_skills: list[int] | None = None
     features: list[NestedFeatureCreate] | None = None
     subclasses: list[SubclassCreate] | None = None
     spell_slot_progression: list[ClassSpellSlotProgressionCreate] | None = None
+    starting_items: list[SourceItemEntry] | None = None
 
     @field_validator("primary_abilities")
     def validate_unique_primary_abilities(cls, v):
@@ -180,12 +191,23 @@ class ClassCreate(ClassBase):
     def validate_unique_saving_throws(cls, v):
         return _validate_unique_saving_throws(v)
 
+    @field_validator("armor_proficiencies")
+    def validate_unique_armor_proficiencies(cls, v):
+        return _validate_unique_armor_proficiencies(v)
+
     @field_validator("available_skills")
     def validate_unique_available_skills(cls, v):
         if v is None:
             return v
 
         return _validate_unique_skill_ids(v)
+
+    @field_validator("starting_items")
+    def validate_unique_item_ids(cls, v):
+        if v is None:
+            return v
+
+        return _validate_unique_item_ids(v)
 
     @model_validator(mode="after")
     def validate_spellcasting_ability_is_primary(self):
@@ -215,7 +237,8 @@ class ClassUpdate(BaseModel):
     Does not include ``available_skills`` (dedicated PUT endpoint).
     Does not include ``features`` or ``subclasses`` — manage those through
     their own endpoints to keep replace-vs-patch semantics unambiguous.
-    ``primary_abilities`` and ``saving_throws`` are full-replace when set.
+    ``primary_abilities``, ``saving_throws``, and ``armor_proficiencies``
+    are full-replace when set.
     """
 
     name: str | None = None
@@ -226,6 +249,7 @@ class ClassUpdate(BaseModel):
     is_homebrew: bool | None = None
     primary_abilities: list[AbilityScore] | None = None
     saving_throws: list[AbilityScore] | None = None
+    armor_proficiencies: list[ArmorProficiency] | None = None
 
     @field_validator("primary_abilities")
     def validate_unique_primary_abilities(cls, v):
@@ -240,6 +264,13 @@ class ClassUpdate(BaseModel):
             return v
 
         return _validate_unique_saving_throws(v)
+
+    @field_validator("armor_proficiencies")
+    def validate_unique_armor_proficiencies_update(cls, v):
+        if v is None:
+            return v
+
+        return _validate_unique_armor_proficiencies(v)
 
     @model_validator(mode="after")
     def validate_spellcasting_ability_is_primary_if_both_set(self):
@@ -265,6 +296,16 @@ class SavingThrowsUpdate(BaseModel):
     @field_validator("saving_throws")
     def validate_unique(cls, v):
         return _validate_unique_saving_throws(v)
+
+
+class ArmorProficienciesUpdate(BaseModel):
+    """Full replacement list of armor proficiencies for a class."""
+
+    armor_proficiencies: list[ArmorProficiency]
+
+    @field_validator("armor_proficiencies")
+    def validate_unique(cls, v):
+        return _validate_unique_armor_proficiencies(v)
 
 
 class AvailableSkillsUpdate(BaseModel):
@@ -316,6 +357,14 @@ class SavingThrowResponse(BaseModel):
     ability: AbilityScore
 
 
+class ArmorProficiencyResponse(BaseModel):
+    """A class's armor proficiency, as returned in responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    armor_type: ArmorProficiency
+
+
 class SkillResponse(BaseModel):
     """Brief skill representation embedded in class responses."""
 
@@ -337,7 +386,9 @@ class ClassResponse(ClassBase):
     created_by_id: int | None = None
     primary_abilities: list[PrimaryAbilityResponse] = []
     saving_throws: list[SavingThrowResponse] = []
+    armor_proficiencies: list[ArmorProficiencyResponse] = []
     available_skills: list[SkillResponse] = []
+    starting_items: list[SourceItemResponse] = []
     spell_slot_progression: list[SpellSlotProgressionResponse] = []
     subclasses: list[SubclassBriefResponse] = []
 

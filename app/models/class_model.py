@@ -40,6 +40,11 @@ class Class(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    armor_proficiencies = relationship(
+        "ClassArmorProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     available_skills = relationship(
         "Skill",
         secondary=class_available_skills,
@@ -68,6 +73,13 @@ class Class(settings.Base):  # type: ignore
             Feature.source_type == FeatureSourceType.CLASS,
         ),
         order_by="Feature.id",
+    )
+    starting_items = relationship(
+        "SourceItem",
+        primaryjoin="Class.id == SourceItem.class_id",
+        foreign_keys="SourceItem.class_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     characters = relationship("Character", back_populates="character_class")
     created_by = relationship("User")

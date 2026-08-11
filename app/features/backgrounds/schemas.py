@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.features.features.schemas import NestedFeatureCreate
+from app.features.items.schemas import SourceItemEntry, SourceItemResponse, _validate_unique_item_ids
 
 
 class BackgroundBase(BaseModel):
@@ -29,14 +30,16 @@ class BackgroundCreate(BackgroundBase):
     """
     Create payload for a background.
 
-    ``granted_skills`` is optional — a background can be created without
-    it (matching prior behavior) or with it supplied up front, avoiding
-    an extra PUT round-trip. When provided, semantics are "full replace
-    from empty", same as the dedicated PUT endpoint.
+    ``granted_skills``, ``features``, and ``starting_items`` are optional
+    — a background can be created without them (matching prior behavior)
+    or with them supplied up front, avoiding extra PUT round-trips. When
+    provided, semantics are "full replace from empty", same as the
+    dedicated PUT endpoints.
     """
 
     granted_skills: list[int] | None = None
     features: list[NestedFeatureCreate] | None = None
+    starting_items: list[SourceItemEntry] | None = None
 
     @field_validator("granted_skills")
     def validate_unique_skill_ids(cls, value):
@@ -44,6 +47,13 @@ class BackgroundCreate(BackgroundBase):
         if value is None:
             return value
         return _validate_unique_skill_ids(value)
+
+    @field_validator("starting_items")
+    def validate_unique_item_ids(cls, value):
+        """Reject lists containing duplicate item IDs."""
+        if value is None:
+            return value
+        return _validate_unique_item_ids(value)
 
 
 class BackgroundUpdate(BaseModel):
@@ -94,6 +104,7 @@ class BackgroundResponse(BackgroundBase):
     id: int
     created_by_id: int | None = None
     granted_skills: list[SkillResponse] = []
+    starting_items: list[SourceItemResponse] = []
 
 
 class BackgroundGetAllResponse(BaseModel):

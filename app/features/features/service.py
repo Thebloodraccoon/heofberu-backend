@@ -75,8 +75,8 @@ class FeatureService(
 
     - per-source management (``create_feature_for_source``,
       ``create_features_for_source``, ``update_feature_for_source``,
-      ``delete_feature_for_source``) — used by the race/class/background/
-      feat services and their per-feature endpoints;
+      ``delete_feature_for_source``) — used by the race/subrace/class/
+      background/feat services and their per-feature endpoints;
     - standalone (OTHER) CRUD served by ``/features/`` — listing is pinned
       to OTHER, ``get_by_id`` only returns OTHER features, and create/
       update/delete reject source-owned features;
@@ -84,8 +84,9 @@ class FeatureService(
       ``level`` on a non-CLASS/SUBCLASS/OTHER feature is rejected.
 
     Listing and detail reads are cached via ``@use_cache`` under the
-    ``features`` namespace. The parent services (race/class/background/
-    feat) invalidate this namespace too when their feature lists change.
+    ``features`` namespace. The parent services (race/subrace/class/
+    background/feat) invalidate this namespace too when their feature
+    lists change.
     """
 
     repository: FeatureRepository
@@ -103,8 +104,8 @@ class FeatureService(
         """
         Fetch a single feature, but only standalone (OTHER) ones.
 
-        Source-owned features (class/race/background/feat/subclass) are
-        managed through their parent record and are not served by
+        Source-owned features (class/subclass/race/subrace/background/feat)
+        are managed through their parent record and are not served by
         ``/features/`` — a request for one returns 404, as if it did not
         exist through this endpoint.
         """
@@ -121,7 +122,7 @@ class FeatureService(
         if feature.source_type != FeatureSourceType.OTHER:
             raise InvalidFeatureSourceException(
                 "Only standalone (OTHER) features can be managed through /features/; "
-                "class/race/background/feat/subclass features are managed through their parent records."
+                "class/subclass/race/subrace/background/feat features are managed through their parent records."
             )
 
     async def create_features_for_source(
@@ -136,9 +137,9 @@ class FeatureService(
         """
         Create ``Feature`` rows attached to a source record inside an open transaction.
 
-        Called by race/class/background/feat/subclass create services so a
-        client can supply features up front in the same request that creates
-        the source.
+        Called by race/subrace/class/background/feat/subclass create
+        services so a client can supply features up front in the same
+        request that creates the source.
 
         Args:
             source_type: Which source the features belong to. Determines the

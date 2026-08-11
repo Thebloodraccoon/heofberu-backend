@@ -11,11 +11,12 @@ _REQUIRED_FK_BY_SOURCE_TYPE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.CLASS: "class_id",
     FeatureSourceType.SUBCLASS: "subclass_id",
     FeatureSourceType.RACE: "race_id",
+    FeatureSourceType.SUBRACE: "subrace_id",
     FeatureSourceType.BACKGROUND: "background_id",
     FeatureSourceType.FEAT: "feat_id",
     FeatureSourceType.OTHER: None,
 }
-_ALL_SOURCE_FKS = ("class_id", "subclass_id", "race_id", "background_id", "feat_id")
+_ALL_SOURCE_FKS = ("class_id", "subclass_id", "race_id", "subrace_id", "background_id", "feat_id")
 
 # source_types for which the ``level`` field is meaningful.
 _ALLOW_LEVEL = (
@@ -32,9 +33,10 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
       - CLASS      -> class_id required, others must be None
       - SUBCLASS   -> subclass_id required, others must be None
       - RACE       -> race_id required, others must be None
+      - SUBRACE    -> subrace_id required, others must be None
       - BACKGROUND -> background_id required, others must be None
       - FEAT       -> feat_id required, others must be None
-      - OTHER      -> none of the five may be set
+      - OTHER      -> none of the six may be set
     """
 
     required_fk = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
@@ -66,6 +68,7 @@ class FeatureBase(BaseModel):
     class_id: int | None = None
     subclass_id: int | None = None
     race_id: int | None = None
+    subrace_id: int | None = None
     background_id: int | None = None
     feat_id: int | None = None
 
@@ -88,7 +91,7 @@ class FeatureCreate(FeatureBase):
     Direct creation through ``POST /features/`` uses
     :class:`StandaloneFeatureCreate` instead — non-OTHER features are
     owned by their parent record and are created through that parent's
-    nested ``features`` payload (race, class, background, feat,
+    nested ``features`` payload (race, subrace, class, background, feat,
     subclass).
     """
 
@@ -98,7 +101,7 @@ class StandaloneFeatureCreate(FeatureBase):
     Payload for ``POST /features/`` — standalone features only.
 
     ``source_type`` is pinned to ``OTHER`` so no source FK is involved.
-    CLASS/SUBCLASS/RACE/BACKGROUND/FEAT features are owned by their
+    CLASS/SUBCLASS/RACE/SUBRACE/BACKGROUND/FEAT features are owned by their
     parent record and must be supplied through that parent's create
     payload (``race.features``, ``background.features``, ``feat.features``
     etc.); posting them directly here is rejected with a 422.
@@ -111,7 +114,7 @@ class StandaloneFeatureCreate(FeatureBase):
         if value != FeatureSourceType.OTHER:
             raise ValueError(
                 "Only standalone (OTHER) features can be created through /features/; "
-                "CLASS/SUBCLASS/RACE/BACKGROUND/FEAT features are created through their parent entities."
+                "CLASS/SUBCLASS/RACE/SUBRACE/BACKGROUND/FEAT features are created through their parent entities."
             )
 
         return value
@@ -119,8 +122,8 @@ class StandaloneFeatureCreate(FeatureBase):
 
 class NestedFeatureCreate(BaseModel):
     """
-    A feature embedded in a parent create payload (race, class, background,
-    feat, subclass).
+    A feature embedded in a parent create payload (race, subrace, class,
+    background, feat, subclass).
 
     The owning service injects ``source_type`` and the matching source FK,
     then validates the merged payload through ``FeatureCreate`` so the same
@@ -150,9 +153,9 @@ class FeatureUpdate(BaseModel):
     All fields optional — PATCH semantics.
 
     ``source_type`` and its FK (``class_id``/``subclass_id``/``race_id``/
-    ``background_id``/``feat_id``) are immutable once a feature exists —
-    ownership never moves. Only ``name``, ``level``, ``description`` and
-    ``is_homebrew`` are editable; setting ``level`` on a non-CLASS/
+    ``subrace_id``/``background_id``/``feat_id``) are immutable once a feature
+    exists — ownership never moves. Only ``name``, ``level``, ``description``
+    and ``is_homebrew`` are editable; setting ``level`` on a non-CLASS/
     SUBCLASS feature is still rejected by the service (level is only
     meaningful for class/subclass features).
     """
@@ -185,6 +188,7 @@ class FeatureGetAllResponse(BaseModel):
     class_id: int | None = None
     subclass_id: int | None = None
     race_id: int | None = None
+    subrace_id: int | None = None
     background_id: int | None = None
     feat_id: int | None = None
     level: int | None = None

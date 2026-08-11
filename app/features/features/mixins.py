@@ -6,7 +6,7 @@ The race/class/background/feat services each exposed an identical trio
 ``list_features`` read that wraps a :class:`NestedFeatureService` call and
 the character-grant reconciliation in one ``_atomic()`` transaction.
 :class:`SourceFeatureMixin` defines those once; a concrete service only
-declares ``_feature_source_type`` (and, for subclasses, reuses
+declares ``_feature_source_type`` (and, for subclasses/subraces, reuses
 ``_mutate_feature`` with a different source type).
 
 Per-source feature writes return the affected :class:`NestedFeatureResponse`

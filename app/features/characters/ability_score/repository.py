@@ -17,6 +17,7 @@ from app.models import (
 from app.models.character_association_models import CharacterFeat
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
+from app.models.subrace_association_models import SubraceAbilityBonus
 
 
 class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
@@ -76,6 +77,17 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             return []
 
         result = await self.db.execute(select(RaceAbilityBonus).where(RaceAbilityBonus.race_id == race_id))
+        return list(result.scalars().unique().all())
+
+    async def get_subrace_bonuses(self, subrace_id: int | None) -> list[SubraceAbilityBonus]:
+        """Fetch a subrace's ability bonuses, or ``[]`` for a character with no subrace."""
+
+        if subrace_id is None:
+            return []
+
+        result = await self.db.execute(
+            select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id == subrace_id)
+        )
         return list(result.scalars().unique().all())
 
     async def get_feat_increases(self, character_id: int) -> list[FeatAbilityScoreIncrease]:

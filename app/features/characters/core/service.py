@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import UserRole
+from app.constants import FeatureSourceType, UserRole
 from app.core.base_service import BaseService, Page, paginate
 from app.features.backgrounds.exceptions import BackgroundNotFoundException
 from app.features.backgrounds.repository import BackgroundRepository
@@ -24,10 +24,12 @@ from app.features.characters.schemas import (
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
 from app.features.classes.repository import ClassRepository
-from app.features.races.exceptions import RaceNotFoundException
+from app.features.items.repository import ItemRepository
+from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.races.repository import RaceRepository
 from app.features.users.schemas import UserResponse
 from app.models import CharacterAbilityScore
+from app.models.character_item_model import CharacterItem
 from app.models.character_model import Character
 
 # Spell slot progression policy is documented on ``CharacterService``;
@@ -49,9 +51,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     Proficiencies, spell slots, known spells, attacks, and feats each live
     in their own subdomain package; this service owns the character record
-    itself plus validating its FK references (class/race/background).
-    Character progression (race change, class change, leveling up) lives
-    in ``characters.progression`` and reuses this service for
+    itself plus validating its FK references (class/subclass/race/
+    subrace/background). Character progression (race change, class change,
+    subclass/subrace change, leveling up) lives in
+    ``characters.progression`` and reuses this service for
     serialization and spell-slot re-application.
 
     Ability score cache policy is decided by
@@ -90,6 +93,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.class_repository = ClassRepository(db)
         self.race_repository = RaceRepository(db)
         self.background_repository = BackgroundRepository(db)
+        self.item_repository = ItemRepository(db)
         self.stats_service = CharacterStatsService(db)
 
     async def get_characters(
@@ -170,23 +174,27 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         Validates that ``class_id`` (required) and, if provided,
         ``subclass_id`` (must belong to ``class_id``) /
-        ``race_id``/``background_id`` reference existing records before
-        writing anything — a bad reference is rejected with a clear 404
-        rather than surfacing as a raw FK IntegrityError.
+        ``race_id``/``subrace_id`` (must belong to ``race_id``)/
+        ``background_id`` reference existing records before writing
+        anything — a bad reference is rejected with a clear 404 rather
+        than surfacing as a raw FK IntegrityError.
 
         After creation, the class's spell slot progression for the
         character's starting level is applied immediately — see class
-        docstring — and the class/subclass/race/background features the
-        character is entitled to are granted. The character row, its
-        initial slot rows, and its feature grants are written in one
-        transaction (``_atomic()`` with ``commit=False`` on all writes):
-        either all persist or none do.
+        docstring — and the class/subclass/race/subrace/background
+        features the character is entitled to are granted, along with the
+        starting equipment granted by the character's class and background
+        (aggregated into one stack per item). The character row, its
+        initial slot rows, its feature grants, and its starting items are
+        written in one transaction (``_atomic()`` with ``commit=False`` on
+        all writes): either all persist or none do.
         """
 
         await self._validate_references(
             class_id=character_data.class_id,
             subclass_id=character_data.subclass_id,
             race_id=character_data.race_id,
+            subrace_id=character_data.subrace_id,
             background_id=character_data.background_id,
         )
 
@@ -199,6 +207,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             # Grant the class/subclass features the character is entitled to
             # at its starting level.
             await sync_progression_features(self.repository.db, character)
+            # Grant the starting equipment from the character's class and
+            # background.
+            await self._apply_starting_equipment(character, commit=False)
 
         character = await get_character_for_user(self.repository, character.id, current_user)
         return await self._to_response(character, refresh=True)
@@ -284,16 +295,18 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         class_id: int,
         subclass_id: int | None,
         race_id: int | None,
+        subrace_id: int | None,
         background_id: int | None,
     ) -> None:
         """
         Raise the matching not-found exception if any given ID doesn't
         exist. Called from :meth:`create_character` only — the old
         ``"unset"`` sentinel for PATCH validation is gone, since
-        ``class_id``/``subclass_id``/``race_id``/``background_id`` are
-        not fields of ``CharacterUpdate`` and therefore can never appear
-        in an update (the subclass is changed through the progression
-        endpoint, which re-validates it).
+        ``class_id``/``subclass_id``/``race_id``/``subrace_id``/
+        ``background_id`` are not fields of ``CharacterUpdate`` and
+        therefore can never appear in an update (the subclass/subrace are
+        changed through the progression endpoints, which re-validate
+        them).
         """
 
         if not await self.class_repository.exists_by_id(class_id):
@@ -304,6 +317,12 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         if race_id is not None and not await self.race_repository.exists_by_id(race_id):
             raise RaceNotFoundException(race_id=race_id)
+
+        if subrace_id is not None:
+            if race_id is None:
+                raise SubraceNotFoundException(race_id=race_id or 0, subrace_id=subrace_id)
+            if await self.race_repository.get_subrace(race_id, subrace_id) is None:
+                raise SubraceNotFoundException(race_id=race_id, subrace_id=subrace_id)
 
         if background_id is not None and not await self.background_repository.exists_by_id(background_id):
             raise BackgroundNotFoundException(background_id=background_id)
@@ -329,6 +348,46 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         await self.character_spell_slot_repository.apply_spell_slot_progression(
             character.id, slots_by_level, commit=commit
         )
+
+    async def _apply_starting_equipment(self, character: Character, *, commit: bool = True) -> None:
+        """
+        Grant the character the starting equipment of its class and
+        background.
+
+        All ``source_items`` rows owned by the character's sources are
+        collected in one query, then aggregated into one ``CharacterItem``
+        stack per item (quantities summed across sources — e.g. a class
+        and a background both granting a dagger produce a single stack of
+        two daggers, matching D&D's combined starting-equipment feel).
+
+        ``commit=False`` defers the commit so the caller can wrap this in
+        a transaction with other writes — see :meth:`create_character`.
+        """
+
+        sources: list[tuple[FeatureSourceType, int]] = []
+        if character.class_id is not None:
+            sources.append((FeatureSourceType.CLASS, character.class_id))
+        if character.background_id is not None:
+            sources.append((FeatureSourceType.BACKGROUND, character.background_id))
+
+        if not sources:
+            return
+
+        entries = await self.item_repository.get_source_items_for_sources(sources)
+
+        quantities: dict[int, int] = {}
+        for entry in entries:
+            quantities[entry.item_id] = quantities.get(entry.item_id, 0) + entry.quantity
+
+        for item_id, quantity in quantities.items():
+            self.repository.db.add(
+                CharacterItem(character_id=character.id, item_id=item_id, quantity=quantity)
+            )
+
+        if commit:
+            await self.repository.db.commit()
+        else:
+            await self.repository.db.flush()
 
     async def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """

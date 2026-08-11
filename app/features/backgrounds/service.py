@@ -13,6 +13,8 @@ from app.features.backgrounds.schemas import (
 )
 from app.features.features.mixins import SourceFeatureMixin
 from app.features.features.nested_service import NestedFeatureService
+from app.features.items.mixins import SourceItemManagerMixin
+from app.features.items.nested_service import NestedSourceItemService
 from app.features.skills.mixins import SkillsManagerMixin
 from app.models.background_model import Background
 
@@ -20,6 +22,7 @@ from app.models.background_model import Background
 class BackgroundService(
     SkillsManagerMixin,
     SourceFeatureMixin,
+    SourceItemManagerMixin,
     CachedService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, BackgroundGetAllResponse],
 ):
     """
@@ -33,7 +36,10 @@ class BackgroundService(
         front, in the same transaction as the background itself;
       - per-source feature CRUD (``add_feature``/``update_feature``/
         ``remove_feature``) and per-source feature listing
-        (``list_features``) inherited from :class:`SourceFeatureMixin`.
+        (``list_features``) inherited from :class:`SourceFeatureMixin`;
+      - per-source starting equipment (``list_items``/``set_items``) and
+        nested ``starting_items`` on create, inherited from
+        :class:`SourceItemManagerMixin`.
 
     Unlike ``RaceService``, deletion is *not* blocked by characters
     bearing the background: its FK on ``characters.background_id`` is
@@ -50,15 +56,18 @@ class BackgroundService(
     cannot load. Listing and detail reads are cached via ``@use_cache``.
     The background responses no longer embed their ``features`` — they are
     read through ``list_features`` (cached under the dedicated
-    ``nested_features`` namespace), so the service invalidates both its own
-    namespace and ``nested_features`` on catalog writes.
+    ``nested_features`` namespace), and starting equipment through
+    ``list_items`` (cached under ``nested_items``), so the service
+    invalidates its own namespace plus both nested namespaces on catalog
+    writes.
     """
 
     repository: BackgroundRepository
 
-    cache_namespaces = ("backgrounds", "nested_features")
+    cache_namespaces = ("backgrounds", "nested_features", "nested_items")
 
     _feature_source_type = FeatureSourceType.BACKGROUND
+    _source_item_source_type = FeatureSourceType.BACKGROUND
 
     def __init__(self, db: AsyncSession):
         super().__init__(
@@ -67,6 +76,7 @@ class BackgroundService(
             get_all_schema=BackgroundGetAllResponse,
         )
         self._features = NestedFeatureService(db)
+        self._items = NestedSourceItemService(db)
 
     async def create_background(
         self, background_data: BackgroundCreate, created_by_id: int | None = None
@@ -79,19 +89,21 @@ class BackgroundService(
         ``BackgroundCreate`` itself, since it comes from the authenticated
         user, not client input.
 
-        ``background_data.granted_skills`` / ``background_data.features``
-        are optional. If supplied, they're set in the *same transaction*
-        as the background itself — base fields + skills + features commit
-        together, or none do. See ``RaceService.create_race`` for the same
+        ``background_data.granted_skills`` / ``background_data.features`` /
+        ``background_data.starting_items`` are optional. If supplied,
+        they're set in the *same transaction* as the background itself —
+        base fields + skills + features + starting items commit together,
+        or none do. See ``RaceService.create_race`` for the same
         pattern and the reasoning behind every nested write passing
         ``commit=False``. Nested features are created through
         ``FeatureService.create_features_for_source`` with
-        ``source_type=BACKGROUND``.
+        ``source_type=BACKGROUND``; nested starting items through
+        ``create_items_for_source``.
         """
 
         skills = await self._resolve_skills(background_data.granted_skills)
 
-        payload = background_data.model_dump(exclude={"granted_skills", "features"})
+        payload = background_data.model_dump(exclude={"granted_skills", "features", "starting_items"})
         payload["created_by_id"] = created_by_id
 
         async with self._atomic():
@@ -105,6 +117,13 @@ class BackgroundService(
                 item.id,
                 background_data.features,
                 created_by_id,
+                commit=False,
+            )
+
+            await self._items.create_items_for_source(
+                FeatureSourceType.BACKGROUND,
+                item.id,
+                background_data.starting_items,
                 commit=False,
             )
 

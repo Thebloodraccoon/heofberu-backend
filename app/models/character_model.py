@@ -33,6 +33,7 @@ class Character(settings.Base):  # type: ignore
     class_id = Column(Integer, ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False, index=True)
     subclass_id = Column(Integer, ForeignKey("subclasses.id", ondelete="SET NULL"), nullable=True, index=True)
     race_id = Column(Integer, ForeignKey("races.id", ondelete="SET NULL"), index=True)
+    subrace_id = Column(Integer, ForeignKey("subraces.id", ondelete="SET NULL"), nullable=True, index=True)
     background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="SET NULL"), index=True)
 
     # Combat stats
@@ -65,12 +66,6 @@ class Character(settings.Base):  # type: ignore
     backstory = Column(Text, nullable=False, default="")
     notes = Column(Text, nullable=False, default="")
 
-    # Personality (typically drawn from Background suggestions, but freely editable)
-    personality_traits = Column(Text, nullable=False, default="")
-    ideals = Column(Text, nullable=False, default="")
-    bonds = Column(Text, nullable=False, default="")
-    flaws = Column(Text, nullable=False, default="")
-
     # Currency
     money_gold = Column(Integer, nullable=False, default=0)
     money_silver = Column(Integer, nullable=False, default=0)
@@ -92,6 +87,7 @@ class Character(settings.Base):  # type: ignore
     character_class = relationship("Class", back_populates="characters")
     subclass = relationship("Subclass")
     race = relationship("Race", back_populates="characters")
+    subrace = relationship("Subrace")
     background = relationship("Background", back_populates="characters")
 
     attacks = relationship("Attack", back_populates="character", cascade="all, delete-orphan", passive_deletes=True)
