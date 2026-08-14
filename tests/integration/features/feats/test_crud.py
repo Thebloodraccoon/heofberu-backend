@@ -173,7 +173,9 @@ class TestFeatCrud:
         fetched = await client.get(f"/feats/{feat.id}/features")
         assert fetched.json() == []
 
-    async def test_update_feat_feature_of_another_source_returns_400(self, client, gm_token, create_feat, create_feature):
+    async def test_update_feat_feature_of_another_source_returns_400(
+        self, client, gm_token, create_feat, create_feature
+    ):
         feat = await create_feat(name="Alert")
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
@@ -185,7 +187,9 @@ class TestFeatCrud:
 
         assert response.status_code == 400
 
-    async def test_remove_feat_feature_of_another_source_returns_400(self, client, gm_token, create_feat, create_feature):
+    async def test_remove_feat_feature_of_another_source_returns_400(
+        self, client, gm_token, create_feat, create_feature
+    ):
         feat = await create_feat(name="Alert")
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 

@@ -3,7 +3,6 @@
 from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
-from app.constants import FeatureSourceType
 from app.models.enums import FeatureSourceTypeType
 from app.settings import settings
 

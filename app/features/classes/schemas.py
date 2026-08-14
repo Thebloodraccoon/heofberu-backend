@@ -1,12 +1,13 @@
-"""Request/response schemas for the class endpoints."""
+"""Request/response schemas for the class endpoints (class-level only; see subclasses/crud/schemas.py)."""
 
 import math
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel
-from app.features.features.schemas import NestedFeatureCreate, NestedFeatureResponse
-from app.features.items.schemas import SourceItemEntry, SourceItemResponse, _validate_unique_item_ids
+from app.features.classes.subclasses.crud.schemas import SubclassBriefResponse, SubclassFullResponse
+from app.features.shared.features.schemas import NestedFeatureResponse
+from app.features.shared.items.schemas import SourceItemResponse
 
 
 def _proficiency_bonus(class_level: int) -> int:
@@ -81,73 +82,6 @@ class ClassSpellSlotProgressionCreate(BaseModel):
         return _validate_unique_spell_levels(slots)
 
 
-class SubclassCreate(BaseModel):
-    """
-    Create payload for a subclass.
-
-    ``features`` are created in the same transaction as the subclass itself
-    with ``source_type=SUBCLASS`` and ``subclass_id`` set automatically.
-    ``unlock_level`` defaults to 3 (most classes unlock at level 3); pass
-    explicitly for classes that unlock earlier (1 for Cleric/Sorcerer/Warlock).
-    """
-
-    name: str
-    archetype_group_name: str | None = None
-    unlock_level: int = 3
-    description: str = ""
-    is_homebrew: bool = False
-    features: list[NestedFeatureCreate] | None = None
-
-    @field_validator("unlock_level")
-    def validate_unlock_level(cls, v):
-        if not (1 <= v <= 20):
-            raise ValueError("unlock_level must be between 1 and 20.")
-        return v
-
-
-class SubclassUpdate(BaseModel):
-    """All fields optional — PATCH semantics. Does not touch features."""
-
-    name: str | None = None
-    archetype_group_name: str | None = None
-    unlock_level: int | None = None
-    description: str | None = None
-    is_homebrew: bool | None = None
-
-    @field_validator("unlock_level")
-    def validate_unlock_level(cls, v):
-        if v is not None and not (1 <= v <= 20):
-            raise ValueError("unlock_level must be between 1 and 20.")
-        return v
-
-
-class SubclassResponse(BaseModel):
-    """Full subclass representation returned by the API."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    class_id: int
-    name: str
-    archetype_group_name: str | None = None
-    unlock_level: int
-    description: str
-    is_homebrew: bool
-    created_by_id: int | None = None
-
-
-class SubclassBriefResponse(BaseModel):
-    """Lightweight subclass row for listings."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    class_id: int
-    name: str
-    unlock_level: int
-    is_homebrew: bool
-
-
 class ClassBase(BaseModel):
     """Base class fields shared by create, update, and response schemas."""
 
@@ -156,19 +90,25 @@ class ClassBase(BaseModel):
     skill_choice_count: int = 2
     spellcasting_ability: AbilityScore | None
     description: str = ""
-    is_homebrew: bool = False
 
 
 class ClassCreate(ClassBase):
     """
     Create payload for a class.
 
-    ``features`` are CLASS-source features (e.g. Rage, Extra Attack).
-    ``subclasses`` are created in the same transaction — each may carry
-    its own nested ``features`` (SUBCLASS-source).
-    ``available_skills``, ``primary_abilities``, ``saving_throws``,
-    ``armor_proficiencies``, ``spell_slot_progression``, and
-    ``starting_items`` are all optional and applied atomically.
+    Kept minimal on purpose: only the class's own scalar fields plus its
+    directly-owned simple child rows (``primary_abilities``,
+    ``saving_throws``, ``armor_proficiencies``, ``available_skills``) are
+    set here, atomically, alongside the ``Class`` row itself.
+
+    Everything with heavier/nested dependencies — ``features``,
+    ``subclasses`` (which themselves nest features), ``starting_items``,
+    and ``spell_slot_progression`` — is intentionally NOT part of create.
+    Attach those afterwards through their dedicated endpoints:
+      - ``POST /classes/{id}/features``
+      - ``POST /classes/{id}/subclasses``
+      - ``PUT /classes/{id}/starting-items``
+      - ``PUT /classes/{id}/spell-slots/{class_level}``
 
     If ``spellcasting_ability`` is set (non-null) it must appear in
     ``primary_abilities``.
@@ -178,10 +118,6 @@ class ClassCreate(ClassBase):
     saving_throws: list[AbilityScore] = []
     armor_proficiencies: list[ArmorProficiency] = []
     available_skills: list[int] | None = None
-    features: list[NestedFeatureCreate] | None = None
-    subclasses: list[SubclassCreate] | None = None
-    spell_slot_progression: list[ClassSpellSlotProgressionCreate] | None = None
-    starting_items: list[SourceItemEntry] | None = None
 
     @field_validator("primary_abilities")
     def validate_unique_primary_abilities(cls, v):
@@ -202,13 +138,6 @@ class ClassCreate(ClassBase):
 
         return _validate_unique_skill_ids(v)
 
-    @field_validator("starting_items")
-    def validate_unique_item_ids(cls, v):
-        if v is None:
-            return v
-
-        return _validate_unique_item_ids(v)
-
     @model_validator(mode="after")
     def validate_spellcasting_ability_is_primary(self):
         """Ensure a non-null ``spellcasting_ability`` is also a primary ability."""
@@ -217,15 +146,6 @@ class ClassCreate(ClassBase):
             raise ValueError(
                 f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
             )
-
-        return self
-
-    @model_validator(mode="after")
-    def validate_unique_class_levels(self):
-        if self.spell_slot_progression:
-            levels = [e.class_level for e in self.spell_slot_progression]
-            if len(levels) != len(set(levels)):
-                raise ValueError("Duplicate class_level entries in spell_slot_progression are not allowed.")
 
         return self
 
@@ -246,7 +166,6 @@ class ClassUpdate(BaseModel):
     skill_choice_count: int | None = None
     spellcasting_ability: AbilityScore | None = None
     description: str | None = None
-    is_homebrew: bool | None = None
     primary_abilities: list[AbilityScore] | None = None
     saving_throws: list[AbilityScore] | None = None
     armor_proficiencies: list[ArmorProficiency] | None = None
@@ -393,15 +312,6 @@ class ClassResponse(ClassBase):
     subclasses: list[SubclassBriefResponse] = []
 
 
-class SubclassListResponse(BaseModel):
-    """Minimal subclass reference embedded in ``ClassGetAllResponse.subclasses``."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-
-
 class ClassGetAllResponse(BaseModel):
     """Lightweight listing row."""
 
@@ -410,8 +320,7 @@ class ClassGetAllResponse(BaseModel):
     id: int
     name: str
     hit_dice: DiceType
-    is_homebrew: bool = False
-    subclasses: list[SubclassListResponse] = []
+    subclasses: list["SubclassListResponse"] = []
 
 
 class ProgressionLevelRow(BaseModel):
@@ -441,3 +350,30 @@ class ClassProgressionResponse(BaseModel):
     class_id: int
     class_name: str
     rows: list[ProgressionLevelRow]
+
+
+class ClassFullResponse(ClassResponse):
+    """
+    Everything about a class in one payload: base fields, primary
+    abilities/saving throws/armor proficiencies/available skills/starting
+    items/spell slots (all inherited from ``ClassResponse``), plus
+    CLASS-source ``features`` and each subclass with its own
+    SUBCLASS-source features.
+
+    Returned by ``GET /classes/{id}/full`` and cached as a single unit
+    under the ``class_full`` namespace, so a client that needs the whole
+    class (features, subclasses, items, slots) gets it in one cached
+    round-trip instead of stitching together several endpoints.
+    """
+
+    features: list[NestedFeatureResponse] = []
+    subclasses: list[SubclassFullResponse] = []
+
+
+# Needed because ClassGetAllResponse references SubclassListResponse by
+# forward ref (defined in subclasses/crud/schemas.py) to avoid a circular
+# import at module load time (subclasses/crud/schemas.py does not import
+# from here).
+from app.features.classes.subclasses.crud.schemas import SubclassListResponse  # noqa: E402
+
+ClassGetAllResponse.model_rebuild()

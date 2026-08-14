@@ -1,0 +1,172 @@
+"""Feat endpoints: listing, CRUD, and ASI-choice management."""
+
+from fastapi import APIRouter, Body, Query
+
+from app.core.base.service import Page
+from app.core.security.dependencies import FounderDep, GmUserDep
+from app.features.feats.dependencies import FeatCrudDep
+from app.features.feats.schemas import (
+    FeatCreate,
+    FeatFullResponse,
+    FeatGetAllResponse,
+    FeatResponse,
+    FeatUpdate,
+)
+
+router = APIRouter()
+
+
+@router.get(
+    "",
+    response_model=Page[FeatGetAllResponse],
+    summary="List feats",
+)
+async def get_feats(
+    feat_service: FeatCrudDep,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    search: str | None = None,
+):
+    """
+    Return a paginated list of feats with only `id` and `name`.
+
+    Open endpoint, no authentication required.
+
+    `search` is a case-insensitive partial match against the feat name.
+
+    Response is `{items, total, page, size}` — `total` is the count of
+    matching feats across every page, not just this one.
+
+    Does not include prerequisites or ability score increase choices —
+    use `GET /feats/{feat_id}` for the full record.
+    """
+
+    return await feat_service.get_all(page=page, size=size, search=search)
+
+
+@router.get(
+    "/{feat_id}",
+    response_model=FeatFullResponse,
+    summary="Get a feat by ID",
+    responses={
+        404: {"description": "Feat with id not found."},
+    },
+)
+async def get_feat(feat_id: int, feat_service: FeatCrudDep):
+    """
+    Return a single feat by ID, with everything about it: base fields,
+    ability score increase choices, and its own FEAT-source `features`.
+
+    Cached as a single unit, so once warm this is one cache hit instead
+    of a separate call to `.../features`.
+
+    Open endpoint, no authentication required.
+    """
+
+    return await feat_service.get_by_id(feat_id)
+
+
+@router.post(
+    "",
+    response_model=FeatResponse,
+    status_code=201,
+    summary="Create a feat",
+    responses={
+        409: {"description": "A feat with this name already exists."},
+    },
+)
+async def create_feat(
+    feat_service: FeatCrudDep,
+    current_user: GmUserDep,
+    feat_data: FeatCreate = Body(
+        openapi_examples={
+            "no_prerequisite": {
+                "summary": "No prerequisite, no ASI (e.g. Alert)",
+                "value": {
+                    "name": "Alert",
+                    "description": "You gain a +5 bonus to initiative and can't be surprised while conscious.",
+                },
+            },
+            "with_prerequisite": {
+                "summary": "Ability score prerequisite (e.g. Heavy Armor Master)",
+                "value": {
+                    "name": "Heavy Armor Master",
+                    "description": "While wearing heavy armor, bludgeoning, piercing, and slashing damage from nonmagical attacks is reduced by 3.",
+                    "prerequisite_ability": "STR",
+                    "prerequisite_minimum_score": 13,
+                },
+            },
+            "with_asi_choice": {
+                "summary": "Grants a choice of ASI (e.g. Resilient)",
+                "value": {
+                    "name": "Resilient",
+                    "description": "Choose one ability score. You gain proficiency in saving throws using the chosen ability.",
+                    "ability_score_increases": [
+                        {"ability": "STR", "amount": 1},
+                        {"ability": "DEX", "amount": 1},
+                        {"ability": "CON", "amount": 1},
+                        {"ability": "INT", "amount": 1},
+                        {"ability": "WIS", "amount": 1},
+                        {"ability": "CHA", "amount": 1},
+                    ],
+                },
+            },
+        },
+    ),
+):
+    """
+    Create a new feat. **GM only.**
+
+    `ability_score_increases` is optional. If provided, it's saved
+    together with the feat in a single transaction.
+
+    This endpoint is intentionally minimal: it does NOT accept `features`.
+    Attach those afterwards through `POST /feats/{feat_id}/features` —
+    they become FEAT-source features that any character granted this feat
+    gains automatically.
+    """
+
+    return await feat_service.create_feat(feat_data, created_by_id=current_user.id)
+
+
+@router.patch(
+    "/{feat_id}",
+    response_model=FeatResponse,
+    summary="Update a feat's base fields",
+    responses={
+        404: {"description": "No feat exists with the given ID."},
+        409: {"description": "Another feat already uses the requested name."},
+    },
+)
+async def update_feat(feat_id: int, update_data: FeatUpdate, feat_service: FeatCrudDep, _: GmUserDep):
+    """
+    Partially update a feat's base fields. **GM only.**
+
+    Only fields included in the request body are changed; omitted fields
+    are left as-is. Does not touch ability score increase choices — use
+    `PUT /feats/{feat_id}/ability-score-increases` for those.
+    """
+
+    return await feat_service.update(feat_id, update_data)
+
+
+@router.delete(
+    "/{feat_id}",
+    status_code=204,
+    summary="Delete a feat",
+    responses={
+        404: {"description": "No feat exists with the given ID."},
+        409: {"description": "Feat is still in use by one or more characters or features."},
+    },
+)
+async def delete_feat(feat_id: int, feat_service: FeatCrudDep, _: FounderDep):
+    """
+    Delete a feat. **Found-father only.**
+
+    Also removes its ability score increase choices and its features
+    (cascade). Blocked if the feat is still granted to one or more
+    characters, or one of its features is still granted to a character.
+    """
+
+    await feat_service.delete(feat_id)
+    return None

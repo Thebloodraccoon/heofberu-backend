@@ -3,7 +3,13 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, RaceSize
-from app.features.features.schemas import NestedFeatureCreate
+from app.features.races.ability_bonuses.schemas import (
+    AbilityBonusItem,
+    AbilityBonusResponse,
+    _validate_unique_abilities,
+)
+from app.features.races.subraces.crud.schemas import SubraceBriefResponse
+from app.features.shared.features.schemas import NestedFeatureCreate
 
 
 class RaceBase(BaseModel):
@@ -13,23 +19,6 @@ class RaceBase(BaseModel):
     size: RaceSize = RaceSize.MEDIUM
     speed: int = 30
     description: str = ""
-    is_homebrew: bool = False
-
-
-class AbilityBonusItem(BaseModel):
-    """A single ability score bonus, e.g. {"ability": "DEX", "bonus": 2}."""
-
-    ability: AbilityScore
-    bonus: int
-
-
-def _validate_unique_abilities(ability_bonuses: list[AbilityBonusItem]) -> list[AbilityBonusItem]:
-    abilities = [item.ability for item in ability_bonuses]
-    if len(abilities) != len(set(abilities)):
-        duplicates = {a for a in abilities if abilities.count(a) > 1}
-        raise ValueError(f"Duplicate ability score(s): {sorted(duplicates)}")
-
-    return ability_bonuses
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
@@ -85,7 +74,6 @@ class RaceUpdate(BaseModel):
     size: RaceSize | None = None
     speed: int | None = None
     description: str | None = None
-    is_homebrew: bool | None = None
 
 
 class AbilityBonusesUpdate(BaseModel):
@@ -98,91 +86,6 @@ class AbilityBonusesUpdate(BaseModel):
         """Reject bonus lists containing duplicate ability scores."""
 
         return _validate_unique_abilities(ability_bonuses)
-
-
-class AbilityBonusResponse(BaseModel):
-    """A race's ability score bonus as returned in responses."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    ability: AbilityScore
-    bonus: int
-
-
-class SubraceBase(BaseModel):
-    """Base subrace fields shared by create, update, and response schemas."""
-
-    name: str
-    description: str = ""
-    is_homebrew: bool = False
-
-
-class SubraceCreate(SubraceBase):
-    """
-    Create payload for a subrace (nested under a race).
-
-    ``ability_bonuses`` and ``features`` are optional — they can be supplied
-    up front or filled later through the dedicated PUT/POST endpoints.
-    """
-
-    ability_bonuses: list[AbilityBonusItem] | None = None
-    features: list[NestedFeatureCreate] | None = None
-
-    @field_validator("ability_bonuses")
-    def validate_unique_abilities(cls, value):
-        """Reject bonus lists containing duplicate ability scores."""
-
-        if value is None:
-            return value
-
-        return _validate_unique_abilities(value)
-
-
-class SubraceUpdate(BaseModel):
-    """
-    All fields optional — only provided fields are updated (PATCH semantics).
-
-    Deliberately does NOT include ability_bonuses: that list keeps its own
-    PUT endpoint with explicit full-replace semantics.
-    """
-
-    name: str | None = None
-    description: str | None = None
-    is_homebrew: bool | None = None
-
-
-class SubraceAbilityBonusesUpdate(BaseModel):
-    """Full replacement list of ability bonuses for a subrace."""
-
-    ability_bonuses: list[AbilityBonusItem]
-
-    @field_validator("ability_bonuses")
-    def validate_unique_abilities(cls, ability_bonuses):
-        """Reject bonus lists containing duplicate ability scores."""
-
-        return _validate_unique_abilities(ability_bonuses)
-
-
-class SubraceResponse(SubraceBase):
-    """Full subrace representation returned by the API."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    race_id: int
-    created_by_id: int | None = None
-    ability_bonuses: list[AbilityBonusResponse] = []
-
-
-class SubraceBriefResponse(BaseModel):
-    """Compact subrace row for embedding inside race responses."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    race_id: int
-    name: str
-    is_homebrew: bool
 
 
 class SkillsUpdate(BaseModel):
@@ -235,4 +138,3 @@ class RaceGetAllResponse(BaseModel):
     id: int
     name: str
     size: RaceSize
-    is_homebrew: bool

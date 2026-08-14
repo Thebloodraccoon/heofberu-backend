@@ -438,7 +438,9 @@ class TestClassCrud:
 
         player = await create_user()
         character = await create_character(owner_id=player.id, class_id=class_id, level=11)
-        kept_grant = CharacterFeature(character_id=character.id, feature_id=features["Extra Attack"]["id"], notes="notes")
+        kept_grant = CharacterFeature(
+            character_id=character.id, feature_id=features["Extra Attack"]["id"], notes="notes"
+        )
         removed_grant = CharacterFeature(
             character_id=character.id, feature_id=features["Second Wind"]["id"], notes="notes"
         )

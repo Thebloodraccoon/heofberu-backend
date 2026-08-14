@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base_repository import BaseRepository
+from app.core.base.repository import BaseRepository
 from app.models import User
 from app.settings._common import utcnow
 

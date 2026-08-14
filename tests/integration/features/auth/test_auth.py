@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.core.token_utils import decode_token, is_token_blacklisted
+from app.core.security.token import decode_token, is_token_blacklisted
 
 
 @pytest.mark.integration

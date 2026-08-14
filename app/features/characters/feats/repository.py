@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import CharacterFeatSource
-from app.core.base_repository import BaseRepository
+from app.core.base.repository import BaseRepository
 from app.models.character_association_models import CharacterFeat
 
 

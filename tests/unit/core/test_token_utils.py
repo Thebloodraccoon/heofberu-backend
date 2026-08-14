@@ -7,7 +7,7 @@ from jose import jwt
 import pytest
 
 from app.core.exceptions import InvalidTokenException
-from app.core.token_utils import (
+from app.core.security.token import (
     blacklist_token,
     create_access_token,
     create_refresh_token,

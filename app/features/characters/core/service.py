@@ -5,15 +5,15 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType, UserRole
-from app.core.base_service import BaseService, Page, paginate
-from app.features.backgrounds.exceptions import BackgroundNotFoundException
-from app.features.backgrounds.repository import BackgroundRepository
+from app.core.base.service import BaseService, Page, paginate
+from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.core.exceptions import InvalidHpUpdateException
 from app.features.characters.core.repository import CharacterRepository
 from app.features.characters.core.schemas import HpUpdate, RestRequest
+from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.schemas import (
     AbilityScoresResponse,
@@ -22,11 +22,11 @@ from app.features.characters.schemas import (
     CharacterUpdate,
 )
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
+from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
-from app.features.classes.repository import ClassRepository
-from app.features.items.repository import ItemRepository
+from app.features.items.crud.repository import ItemRepository
+from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
-from app.features.races.repository import RaceRepository
 from app.features.users.schemas import UserResponse
 from app.models import CharacterAbilityScore
 from app.models.character_item_model import CharacterItem
@@ -42,8 +42,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     """
     Core character CRUD, HP management, and resting.
 
-    Built on :class:`BaseService`, mirroring ``RaceService`` /
-    ``ClassService`` / ``BackgroundService`` / ``SpellService``:
+    Built on :class:`BaseService`, mirroring ``RaceCrudService`` /
+    ``ClassCrudService`` / ``BackgroundCrudService`` / ``SpellCrudService``:
     ``CharacterRepository`` provides the full generic CRUD (no signature
     overrides), ``owner_id`` is injected into the create payload the same
     way ``created_by_id`` is for the reference features, and
@@ -380,9 +380,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             quantities[entry.item_id] = quantities.get(entry.item_id, 0) + entry.quantity
 
         for item_id, quantity in quantities.items():
-            self.repository.db.add(
-                CharacterItem(character_id=character.id, item_id=item_id, quantity=quantity)
-            )
+            self.repository.db.add(CharacterItem(character_id=character.id, item_id=item_id, quantity=quantity))
 
         if commit:
             await self.repository.db.commit()

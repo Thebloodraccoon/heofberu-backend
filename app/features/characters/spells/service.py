@@ -19,8 +19,8 @@ from app.features.characters.spells.schemas import (
     SpellSlotResponse,
     SpellSlotUpdate,
 )
+from app.features.spells.crud.repository import SpellRepository
 from app.features.spells.exceptions import SpellNotFoundException
-from app.features.spells.repository import SpellRepository
 from app.features.users.schemas import UserResponse
 from app.models.character_spell_model import CharacterSpell
 

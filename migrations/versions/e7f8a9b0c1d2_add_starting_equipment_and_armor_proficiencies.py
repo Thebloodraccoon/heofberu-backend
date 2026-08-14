@@ -67,7 +67,13 @@ def upgrade() -> None:
         sa.Column(
             "source_type",
             postgresql.ENUM(
-                "CLASS", "SUBCLASS", "RACE", "BACKGROUND", "FEAT", "OTHER", name="feature_source_type",
+                "CLASS",
+                "SUBCLASS",
+                "RACE",
+                "BACKGROUND",
+                "FEAT",
+                "OTHER",
+                name="feature_source_type",
                 create_type=False,
             ),
             nullable=False,

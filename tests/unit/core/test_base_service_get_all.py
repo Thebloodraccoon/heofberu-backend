@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.orm import declarative_base, relationship
 
-from app.core.base_service import BaseService
+from app.core.base.service import BaseService
 
 _TestBase = declarative_base()
 

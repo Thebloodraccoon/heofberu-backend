@@ -3,7 +3,7 @@
 from pydantic import ValidationError
 import pytest
 
-from app.features.features.schemas import FeatureCreate, StandaloneFeatureCreate
+from app.features.features.crud.schemas import FeatureCreate, StandaloneFeatureCreate
 
 
 @pytest.mark.unit

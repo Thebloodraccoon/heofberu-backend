@@ -30,12 +30,12 @@ from app.features.characters.progression.schemas import (
     SubclassChange,
     SubraceChange,
 )
+from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
-from app.features.classes.repository import ClassRepository
+from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
-from app.features.feats.repository import FeatRepository
+from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
-from app.features.races.repository import RaceRepository
 from app.features.users.schemas import UserResponse
 from app.models.character_model import Character
 
@@ -110,9 +110,10 @@ class CharacterProgressionService(CharacterSubDomainService):
             character.race_id = data.race_id
 
             if character.subrace_id is not None:
-                if data.race_id is None:
-                    character.subrace_id = None
-                elif await self.race_repository.get_subrace(data.race_id, character.subrace_id) is None:
+                if (
+                    data.race_id is None
+                    or await self.race_repository.get_subrace(data.race_id, character.subrace_id) is None
+                ):
                     character.subrace_id = None
 
             await sync_progression_features(self.repository.db, character)

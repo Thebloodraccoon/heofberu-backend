@@ -1,6 +1,6 @@
 """ORM model for the reference table of playable races."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.enums import RaceSizeType
@@ -21,7 +21,6 @@ class Race(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False, default="")
 
-    is_homebrew = Column(Boolean, nullable=False, default=False)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     ability_bonuses = relationship(

@@ -39,8 +39,6 @@ class Item(settings.Base):  # type: ignore
     stealth_disadvantage = Column(Boolean, nullable=False, default=False)
 
     description = Column(Text, nullable=False, default="")
-
-    is_homebrew = Column(Boolean, nullable=False, default=False)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     created_by = relationship("User")

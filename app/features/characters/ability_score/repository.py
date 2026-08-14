@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.constants import ItemType
-from app.core.base_repository import BaseRepository
+from app.core.base.repository import BaseRepository
 from app.features.characters.ability_score.calculator import ArmorSpec
 from app.models import (
     CharacterAbilityScore,
@@ -85,9 +85,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         if subrace_id is None:
             return []
 
-        result = await self.db.execute(
-            select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id == subrace_id)
-        )
+        result = await self.db.execute(select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id == subrace_id))
         return list(result.scalars().unique().all())
 
     async def get_feat_increases(self, character_id: int) -> list[FeatAbilityScoreIncrease]:

@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
-from app.features.features.schemas import NestedFeatureCreate
+from app.features.shared.features.schemas import NestedFeatureResponse
 
 
 class FeatBase(BaseModel):
@@ -15,8 +15,6 @@ class FeatBase(BaseModel):
     prerequisite_ability: AbilityScore | None = None
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str = ""
-
-    is_homebrew: bool = False
 
 
 class AbilityScoreIncreaseItem(BaseModel):
@@ -46,10 +44,13 @@ class FeatCreate(FeatBase):
     without any ASI of its own (e.g. Alert) or with a set of choices
     supplied up front (e.g. Resilient offers "choose one ability"), same
     "full replace from empty" semantics as ``RaceCreate.ability_bonuses``.
+    It's a simple child table, not a nested dependency, so it stays here.
+
+    ``features`` is NOT part of create — attach them afterwards through
+    ``POST /feats/{id}/features``.
     """
 
     ability_score_increases: list[AbilityScoreIncreaseItem] | None = None
-    features: list[NestedFeatureCreate] | None = None
 
     @field_validator("ability_score_increases")
     def validate_unique_asi_abilities(cls, value):
@@ -74,7 +75,6 @@ class FeatUpdate(BaseModel):
     prerequisite_ability: AbilityScore | None = None
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str | None = None
-    is_homebrew: bool | None = None
 
 
 class AbilityScoreIncreasesUpdate(BaseModel):
@@ -116,4 +116,17 @@ class FeatGetAllResponse(BaseModel):
 
     id: int
     name: str
-    is_homebrew: bool
+
+
+class FeatFullResponse(FeatResponse):
+    """
+    Everything about a feat in one payload: base fields and
+    ability_score_increases (inherited from ``FeatResponse``), plus its
+    own FEAT-source ``features``.
+
+    Returned by ``GET /feats/{id}``, cached as a single unit, so a client
+    gets the whole feat — including features, which otherwise live only
+    under ``GET /feats/{id}/features`` — in one cached round-trip.
+    """
+
+    features: list[NestedFeatureResponse] = []

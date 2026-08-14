@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base_service import BaseService
+from app.core.base.service import BaseService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.proficiencies.repository import CharacterProficiencyRepository
 from app.features.characters.proficiencies.schemas import (
@@ -10,7 +10,7 @@ from app.features.characters.proficiencies.schemas import (
     SkillProficienciesUpdate,
 )
 from app.features.characters.schemas import CharacterResponse
-from app.features.skills.repository import SkillRepository
+from app.features.skills.crud.repository import SkillRepository
 from app.features.users.schemas import UserResponse
 
 

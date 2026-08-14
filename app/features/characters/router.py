@@ -2,15 +2,15 @@
 
 from fastapi import APIRouter
 
-from app.features.characters.attacks.endpoints import router as attacks_router
-from app.features.characters.conditions.endpoints import router as conditions_router
-from app.features.characters.core.endpoints import router as core_router
-from app.features.characters.feats.endpoints import router as feats_router
-from app.features.characters.features.endpoints import router as features_router
-from app.features.characters.items.endpoints import router as items_router
-from app.features.characters.proficiencies.endpoints import router as proficiencies_router
-from app.features.characters.progression.endpoints import router as progression_router
-from app.features.characters.spells.endpoints import router as spells_router
+from app.features.characters.attacks.router import router as attacks_router
+from app.features.characters.conditions.router import router as conditions_router
+from app.features.characters.core.router import router as core_router
+from app.features.characters.feats.router import router as feats_router
+from app.features.characters.features.router import router as features_router
+from app.features.characters.items.router import router as items_router
+from app.features.characters.proficiencies.router import router as proficiencies_router
+from app.features.characters.progression.router import router as progression_router
+from app.features.characters.spells.router import router as spells_router
 
 router = APIRouter()
 

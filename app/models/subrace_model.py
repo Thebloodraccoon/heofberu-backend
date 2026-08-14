@@ -1,6 +1,6 @@
 """ORM model for the reference table of race subraces (lineages)."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.settings import settings
@@ -19,17 +19,12 @@ class Subrace(settings.Base):  # type: ignore
     id = Column(Integer, primary_key=True)
 
     race_id = Column(Integer, ForeignKey("races.id", ondelete="CASCADE"), nullable=False, index=True)
-
     name = Column(String(100), nullable=False, index=True)
-
     description = Column(Text, nullable=False, default="")
-    is_homebrew = Column(Boolean, nullable=False, default=False)
 
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    __table_args__ = (
-        UniqueConstraint("race_id", "name", name="uq_subrace_race_id_name"),
-    )
+    __table_args__ = (UniqueConstraint("race_id", "name", name="uq_subrace_race_id_name"),)
 
     race = relationship("Race", back_populates="subraces")
     ability_bonuses = relationship(

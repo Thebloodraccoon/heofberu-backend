@@ -45,13 +45,10 @@ returned. Every cached/uncached branch is awaited by the caller.
 from collections.abc import Callable
 import functools
 import inspect
-import typing
 from typing import Any, get_type_hints
 
 from app.core.cache.client import cache_enabled, cache_get, cache_prefix, cache_set
 from app.core.cache.serialization import decode, encode
-from typing_extensions import TypeVar
-
 
 _DYNAMIC_SCHEMA = object()  # sentinel: resolve the schema per-call from the service instance
 
@@ -155,9 +152,18 @@ def _resolve_call_schema(func: Callable, args: tuple) -> Any:
     Resolve the deserialization schema from the concrete service instance.
 
     Used by generic cached base methods whose annotation only carries a
-    ``TypeVar`` (``CachedService.get_all``/``get_by_id``): the concrete
-    schema is read off the instance at call time (``get_all_schema`` for
-    listings wrapped in ``Page``, ``response_schema`` for detail reads).
+    ``TypeVar``:
+
+    * ``CachedService.get_all``/``get_by_id`` — the concrete schema is
+      read off the instance at call time (``get_all_schema`` for listings
+      wrapped in ``Page``, ``response_schema`` for detail reads).
+    * ``NestedCollectionService.list_for_source`` — same idea, but the
+      per-call schema must be wrapped in ``list[...]`` instead of
+      ``Page[...]``, since the method returns a bare list, not a page.
+      Distinguished from ``get_all`` by name so a plain single-object
+      ``response_schema`` isn't handed to ``decode`` for a list payload
+      (which would fail: ``Model.model_validate_json`` rejects a
+      JSON array).
     """
 
     if not args:
@@ -167,9 +173,14 @@ def _resolve_call_schema(func: Callable, args: tuple) -> Any:
     if func.__name__ == "get_all":
         item_schema = getattr(instance, "get_all_schema", None)
         if item_schema is not None:
-            from app.core.base_service import Page  # deferred to avoid an import cycle
+            from app.core.base.service import Page  # deferred to avoid an import cycle
 
             return Page[item_schema]
+
+    if func.__name__ == "list_for_source":
+        item_schema = getattr(instance, "response_schema", None)
+        if item_schema is not None:
+            return list[item_schema]
 
     return getattr(instance, "response_schema", None)
 

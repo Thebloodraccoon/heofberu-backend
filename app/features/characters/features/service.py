@@ -13,8 +13,8 @@ from app.features.characters.features.schemas import (
     CharacterFeatureResponse,
     CharacterFeatureUpdate,
 )
+from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
-from app.features.features.repository import FeatureRepository
 from app.features.users.schemas import UserResponse
 from app.models.character_feature_model import CharacterFeature
 
