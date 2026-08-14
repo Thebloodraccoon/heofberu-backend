@@ -385,3 +385,57 @@ class TestRaceBackgroundFeatAutoGrant:
             shelter.id,
             action_surge.id,
         }
+
+    async def test_create_grants_subrace_features(
+        self, client, player, player_token, create_race, create_subrace, create_class, create_feature, create_api_character
+    ):
+        race = await create_race(name="Elf")
+        subrace = await create_subrace(race_id=race.id, name="High Elf")
+        weapon_training = await create_feature(
+            name="Elf Weapon Training", source_type="SUBRACE", subrace_id=subrace.id
+        )
+        character_class = await create_class(name="Fighter")
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, level=1, race_id=race.id, subrace_id=subrace.id
+        )
+
+        assert await get_feature_ids(client, character["id"], player_token) == {weapon_training.id}
+
+    async def test_create_without_subrace_grants_no_subrace_features(
+        self, client, player, player_token, create_race, create_subrace, create_class, create_feature, create_api_character
+    ):
+        race = await create_race(name="Elf")
+        subrace = await create_subrace(race_id=race.id, name="High Elf")
+        await create_feature(name="Elf Weapon Training", source_type="SUBRACE", subrace_id=subrace.id)
+        character_class = await create_class(name="Fighter")
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, level=1, race_id=race.id
+        )
+
+        assert await get_feature_ids(client, character["id"], player_token) == set()
+
+    async def test_change_subrace_grants_new_and_revokes_old(
+        self, client, player, player_token, create_race, create_subrace, create_class, create_feature, create_api_character
+    ):
+        elf = await create_race(name="Elf")
+        high_elf = await create_subrace(race_id=elf.id, name="High Elf")
+        weapon_training = await create_feature(
+            name="Elf Weapon Training", source_type="SUBRACE", subrace_id=high_elf.id
+        )
+        drow = await create_subrace(race_id=elf.id, name="Drow")
+        drow_magic = await create_feature(name="Drow Magic", source_type="SUBRACE", subrace_id=drow.id)
+        character_class = await create_class(name="Fighter")
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, level=1, race_id=elf.id, subrace_id=high_elf.id
+        )
+        assert await get_feature_ids(client, character["id"], player_token) == {weapon_training.id}
+
+        response = await client.patch(
+            f"/characters/{character['id']}/progression/subrace",
+            json={"subrace_id": drow.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["subrace_id"] == drow.id
+        assert await get_feature_ids(client, character["id"], player_token) == {drow_magic.id}

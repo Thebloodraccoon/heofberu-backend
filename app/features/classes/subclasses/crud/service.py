@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
 from app.core.cache import use_cache
+from app.core.cache.client import cache_prefix
 from app.features.classes.subclasses.base import SubclassScopedMixin
 from app.features.classes.subclasses.cache import SUBCLASS_CACHE_NAMESPACES, invalidate_subclass_cache
 from app.features.classes.subclasses.crud.repository import SubclassRepository
@@ -78,7 +79,7 @@ class SubclassCrudService(
 
         return await self._get_response(item.id)
 
-    @use_cache()
+    @use_cache(key_builder=lambda self, item_id: f"{cache_prefix()}:classes:subclass:get_by_id:{item_id}")
     async def get_by_id(self, item_id: int) -> SubclassFullResponse:
         """
         Return a subclass with its own SUBCLASS-source ``features``

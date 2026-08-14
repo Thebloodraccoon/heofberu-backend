@@ -24,7 +24,7 @@ import httpx  # noqa: E402
 import pytest_asyncio  # noqa: E402
 
 from app.constants import UserRole  # noqa: E402
-from app.core.security import get_password_hash  # noqa: E402
+from app.core.security.password import get_password_hash  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     Background,
@@ -37,6 +37,7 @@ from app.models import (  # noqa: E402
     Skill,
     Spell,
     Subclass,
+    Subrace,
     User,
 )
 from app.settings import settings  # noqa: E402
@@ -116,13 +117,12 @@ async def create_skill(db_session):
 
 @pytest_asyncio.fixture
 async def create_race(db_session):
-    async def _create_race(name="Elf", size="MEDIUM", speed=30, description="", is_homebrew=False):
+    async def _create_race(name="Elf", size="MEDIUM", speed=30, description=""):
         race = Race(
             name=name,
             size=size,
             speed=speed,
             description=description,
-            is_homebrew=is_homebrew,
         )
         db_session.add(race)
         await db_session.commit()
@@ -133,6 +133,18 @@ async def create_race(db_session):
 
 
 @pytest_asyncio.fixture
+async def create_subrace(db_session):
+    async def _create_subrace(race_id, name="High Elf", description=""):
+        subrace = Subrace(race_id=race_id, name=name, description=description)
+        db_session.add(subrace)
+        await db_session.commit()
+        await db_session.refresh(subrace)
+        return subrace
+
+    return _create_subrace
+
+
+@pytest_asyncio.fixture
 async def create_class(db_session):
     async def _create_class(
         name="Fighter",
@@ -140,7 +152,6 @@ async def create_class(db_session):
         skill_choice_count=2,
         spellcasting_ability=None,
         description="",
-        is_homebrew=False,
     ):
         class_model = Class(
             name=name,
@@ -148,7 +159,6 @@ async def create_class(db_session):
             skill_choice_count=skill_choice_count,
             spellcasting_ability=spellcasting_ability,
             description=description,
-            is_homebrew=is_homebrew,
         )
         db_session.add(class_model)
         await db_session.commit()
@@ -163,18 +173,14 @@ async def create_subclass(db_session):
     async def _create_subclass(
         class_id,
         name="Champion",
-        unlock_level=3,
         archetype_group_name=None,
         description="",
-        is_homebrew=False,
     ):
         subclass = Subclass(
             class_id=class_id,
             name=name,
-            unlock_level=unlock_level,
             archetype_group_name=archetype_group_name,
             description=description,
-            is_homebrew=is_homebrew,
         )
         db_session.add(subclass)
         await db_session.commit()
@@ -186,8 +192,8 @@ async def create_subclass(db_session):
 
 @pytest_asyncio.fixture
 async def create_background(db_session):
-    async def _create_background(name="Acolyte", is_homebrew=False):
-        background = Background(name=name, is_homebrew=is_homebrew)
+    async def _create_background(name="Acolyte"):
+        background = Background(name=name)
         db_session.add(background)
         await db_session.commit()
         await db_session.refresh(background)
@@ -204,7 +210,6 @@ async def create_feat(db_session):
         prerequisite_ability=None,
         prerequisite_minimum_score=None,
         prerequisite_description="",
-        is_homebrew=False,
     ):
         feat = Feat(
             name=name,
@@ -212,7 +217,6 @@ async def create_feat(db_session):
             prerequisite_ability=prerequisite_ability,
             prerequisite_minimum_score=prerequisite_minimum_score,
             prerequisite_description=prerequisite_description,
-            is_homebrew=is_homebrew,
         )
         db_session.add(feat)
         await db_session.commit()
@@ -230,10 +234,10 @@ async def create_feature(db_session):
         class_id=None,
         subclass_id=None,
         race_id=None,
+        subrace_id=None,
         background_id=None,
         feat_id=None,
         level=None,
-        is_homebrew=False,
     ):
         feature = Feature(
             name=name,
@@ -241,10 +245,10 @@ async def create_feature(db_session):
             class_id=class_id,
             subclass_id=subclass_id,
             race_id=race_id,
+            subrace_id=subrace_id,
             background_id=background_id,
             feat_id=feat_id,
             level=level,
-            is_homebrew=is_homebrew,
         )
         db_session.add(feature)
         await db_session.commit()
@@ -262,7 +266,6 @@ async def create_item(db_session):
         rarity="NONE",
         requires_attunement=False,
         description="",
-        is_homebrew=False,
     ):
         item = Item(
             name=name,
@@ -270,7 +273,6 @@ async def create_item(db_session):
             rarity=rarity,
             requires_attunement=requires_attunement,
             description=description,
-            is_homebrew=is_homebrew,
         )
         db_session.add(item)
         await db_session.commit()
@@ -291,7 +293,6 @@ async def create_spell(db_session):
         duration="INSTANTANEOUS",
         components=None,
         description="",
-        is_homebrew=False,
     ):
         spell = Spell(
             name=name,
@@ -302,7 +303,6 @@ async def create_spell(db_session):
             components=components if components is not None else [],
             duration=duration,
             description=description,
-            is_homebrew=is_homebrew,
         )
         db_session.add(spell)
         await db_session.commit()

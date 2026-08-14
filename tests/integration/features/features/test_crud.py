@@ -53,15 +53,18 @@ class TestFeatureCrud:
         "source_type,fk_name",
         [
             ("RACE", "race_id"),
+            ("SUBRACE", "subrace_id"),
             ("BACKGROUND", "background_id"),
             ("FEAT", "feat_id"),
         ],
     )
     async def test_cannot_create_source_owned_feature_directly(
-        self, client, gm_token, create_race, create_background, create_feat, source_type, fk_name
+        self, client, gm_token, create_race, create_subrace, create_background, create_feat, source_type, fk_name
     ):
+        elf = await create_race(name="Elf")
         parent_by_type = {
-            "RACE": await create_race(name="Elf"),
+            "RACE": elf,
+            "SUBRACE": await create_subrace(race_id=elf.id),
             "BACKGROUND": await create_background(name="Acolyte"),
             "FEAT": await create_feat(name="Alert"),
         }

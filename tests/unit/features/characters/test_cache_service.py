@@ -10,6 +10,7 @@ from app.features.characters.ability_score.service import CharacterStatsService
 from app.models.character_model import Character
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
+from app.models.subrace_association_models import SubraceAbilityBonus
 
 
 def make_character(**overrides) -> Character:
@@ -33,9 +34,19 @@ def make_character(**overrides) -> Character:
 class FakeCacheRepository:
     """Stands in for CharacterStatsRepository, recording calls."""
 
-    def __init__(self, cache_row=None, race_bonuses=None, feat_increases=None, classes=None, races=None, armor=None):
+    def __init__(
+        self,
+        cache_row=None,
+        race_bonuses=None,
+        subrace_bonuses=None,
+        feat_increases=None,
+        classes=None,
+        races=None,
+        armor=None,
+    ):
         self.cache_row = cache_row
         self.race_bonuses = race_bonuses or []
+        self.subrace_bonuses = subrace_bonuses or []
         self.feat_increases = feat_increases or []
         self.classes = classes or {}
         self.races = races or {}
@@ -43,6 +54,7 @@ class FakeCacheRepository:
         self.get_by_calls = []
         self.get_many_calls = []
         self.get_race_bonus_calls = []
+        self.get_subrace_bonus_calls = []
         self.get_feat_increase_calls = []
         self.upsert_calls = []
         self.get_classes_calls = []
@@ -61,11 +73,16 @@ class FakeCacheRepository:
         self.get_race_bonus_calls.append(race_id)
         return self.race_bonuses
 
+    async def get_subrace_bonuses(self, subrace_id):
+        self.get_subrace_bonus_calls.append(subrace_id)
+        return self.subrace_bonuses
+
     async def get_feat_increases(self, character_id):
         self.get_feat_increase_calls.append(character_id)
         return self.feat_increases
 
     async def upsert(self, character_id, totals):
+        await self.get_by_character_id(character_id)
         self.upsert_calls.append((character_id, totals))
         return self.cache_row
 
@@ -95,15 +112,18 @@ class TestCharacterStatsService:
     async def test_compute_loads_bonus_rows_and_returns_totals_without_persisting(self):
         fake_kwargs = {
             "race_bonuses": [RaceAbilityBonus(race_id=5, ability=AbilityScore.DEX, bonus=2)],
+            "subrace_bonuses": [SubraceAbilityBonus(subrace_id=7, ability=AbilityScore.INT, bonus=1)],
             "feat_increases": [FeatAbilityScoreIncrease(feat_id=1, ability=AbilityScore.STR, amount=1)],
         }
         service, fake = make_service(**fake_kwargs)
 
-        totals = await service.compute(make_character())
+        totals = await service.compute(make_character(subrace_id=7))
 
         assert totals["strength_total"] == 15
         assert totals["dexterity_total"] == 12
+        assert totals["intelligence_total"] == 9
         assert fake.get_race_bonus_calls == [5]
+        assert fake.get_subrace_bonus_calls == [7]
         assert fake.get_feat_increase_calls == [1]
         assert fake.upsert_calls == []
 
@@ -113,6 +133,7 @@ class TestCharacterStatsService:
         await service.compute(make_character(race_id=None))
 
         assert fake.get_race_bonus_calls == [None]
+        assert fake.get_subrace_bonus_calls == [None]
 
     async def test_get_or_stale_returns_cached_row_without_recomputing(self):
         row = SimpleNamespace(strength_total=99)
@@ -151,6 +172,7 @@ class TestCharacterStatsService:
         result = await service.for_response(make_character(), refresh=True)
 
         assert result is row
+        assert fake.get_by_calls == [1]
         assert fake.upsert_calls == [
             (
                 1,
@@ -164,6 +186,7 @@ class TestCharacterStatsService:
                 },
             )
         ]
+        assert fake.get_subrace_bonus_calls == [None]
 
     async def test_get_many_derived_assembles_stats_from_references(self):
         character = make_character(id=7, dexterity=14)
