@@ -67,16 +67,18 @@ class CharacterStatsService:
         Recompute a character's effective ability scores WITHOUT writing
         to the cache table.
 
-        Loads the source bonus rows (race bonuses + feat ASI choices)
-        and feeds them to the pure :class:`CharacterAbilityScoreCalculator`.
-        Used by read-only callers that need "what would the current
-        scores be" — e.g. the feat prerequisite check, which must be
-        based on fresh data even if the cache is stale.
+        Loads the source bonus rows (race + subrace bonuses + feat ASI
+        choices) and feeds them to the pure
+        :class:`CharacterAbilityScoreCalculator`. Used by read-only
+        callers that need "what would the current scores be" — e.g. the
+        feat prerequisite check, which must be based on fresh data even
+        if the cache is stale.
         """
 
         race_bonuses = await self.repository.get_race_bonuses(character.race_id)
+        subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
         feat_increases = await self.repository.get_feat_increases(character.id)
-        return self.calculator.compute(character, race_bonuses, feat_increases)
+        return self.calculator.compute(character, race_bonuses, subrace_bonuses, feat_increases)
 
     async def refresh(self, character: Character) -> CharacterAbilityScore:
         """Recompute effective ability scores for ``character`` and persist them."""

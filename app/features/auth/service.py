@@ -9,8 +9,8 @@ from app.core.exceptions import (
     InvalidTokenException,
     RecordAlreadyExistsError,
 )
-from app.core.security import get_password_hash, verify_password
-from app.core.token_utils import (
+from app.core.security.password import get_password_hash, verify_password
+from app.core.security.token import (
     DecodedToken,
     blacklist_token,
     create_access_token,

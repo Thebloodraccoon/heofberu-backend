@@ -48,24 +48,73 @@ class TestBackgroundCrud:
         assert response.status_code == 200
         assert [item["id"] for item in response.json()["granted_skills"]] == [skill.id]
 
-    async def test_gm_can_create_background_with_nested_features(self, client, gm_token):
+    async def test_gm_can_create_background_then_add_features(self, client, gm_token):
+        """BackgroundCreate stays minimal: nested features are attached through the features endpoint."""
+
         response = await client.post(
             "/backgrounds",
-            json={
-                "name": "Acolyte",
-                "features": [
-                    {"name": "Shelter of the Faithful", "description": "Free healing and care at a temple."},
-                ],
-            },
+            json={"name": "Acolyte"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 201
-
         background_id = response.json()["id"]
+
+        assert (await client.get(f"/backgrounds/{background_id}/features")).json() == []
+
+        added = await client.post(
+            f"/backgrounds/{background_id}/features",
+            json={"name": "Shelter of the Faithful", "description": "Free healing and care at a temple."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert added.status_code == 201
+
         fetched = await client.get(f"/backgrounds/{background_id}/features")
         assert fetched.status_code == 200
         assert [item["name"] for item in fetched.json()] == ["Shelter of the Faithful"]
+
+    async def test_gm_can_set_background_starting_items(self, client, gm_token, create_background, create_item):
+        background = await create_background(name="Acolyte")
+        censer = await create_item(name="Censer", item_type="ADVENTURING_GEAR")
+
+        response = await client.put(
+            f"/backgrounds/{background.id}/items",
+            json={"items": [{"item_id": censer.id, "quantity": 1}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert [(entry["item_id"], entry["quantity"]) for entry in response.json()["starting_items"]] == [
+            (censer.id, 1)
+        ]
+
+        fetched = await client.get(f"/backgrounds/{background.id}/items")
+        assert fetched.status_code == 200
+        assert [entry["item"]["name"] for entry in fetched.json()] == ["Censer"]
+
+    async def test_set_background_starting_items_invalid_item_returns_400(
+        self, client, gm_token, create_background
+    ):
+        background = await create_background(name="Acolyte")
+
+        response = await client.put(
+            f"/backgrounds/{background.id}/items",
+            json={"items": [{"item_id": 9999, "quantity": 1}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_player_cannot_set_background_starting_items(self, client, player_token, create_background):
+        background = await create_background(name="Acolyte")
+
+        response = await client.put(
+            f"/backgrounds/{background.id}/items",
+            json={"items": []},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
 
     async def test_gm_cannot_delete_background(self, client, gm_token, create_background):
         background = await create_background(name="Doomed Background")

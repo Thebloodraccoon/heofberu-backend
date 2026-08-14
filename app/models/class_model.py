@@ -1,6 +1,6 @@
 """ORM model for the reference table of playable classes."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, and_
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, and_
 from sqlalchemy.orm import relationship
 
 from app.constants import FeatureSourceType
@@ -26,7 +26,6 @@ class Class(settings.Base):  # type: ignore
     spellcasting_ability = Column(AbilityScoreType, nullable=True)
 
     description = Column(Text, nullable=False, default="")
-    is_homebrew = Column(Boolean, nullable=False, default=False)
 
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
@@ -37,6 +36,11 @@ class Class(settings.Base):  # type: ignore
     )
     saving_throws = relationship(
         "ClassSavingThrow",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    armor_proficiencies = relationship(
+        "ClassArmorProficiency",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -68,6 +72,13 @@ class Class(settings.Base):  # type: ignore
             Feature.source_type == FeatureSourceType.CLASS,
         ),
         order_by="Feature.id",
+    )
+    starting_items = relationship(
+        "SourceItem",
+        primaryjoin="Class.id == SourceItem.class_id",
+        foreign_keys="SourceItem.class_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     characters = relationship("Character", back_populates="character_class")
     created_by = relationship("User")

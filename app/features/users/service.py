@@ -2,8 +2,8 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base_service import BaseService
-from app.core.security import get_password_hash
+from app.core.base.service import BaseService
+from app.core.security.password import get_password_hash
 from app.features.users.exceptions import (
     DefaultUserProtectedException,
     SelfDeletionException,

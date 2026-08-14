@@ -3,7 +3,13 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, RaceSize
-from app.features.features.schemas import NestedFeatureCreate
+from app.features.races.ability_bonuses.schemas import (
+    AbilityBonusItem,
+    AbilityBonusResponse,
+    _validate_unique_abilities,
+)
+from app.features.races.subraces.crud.schemas import SubraceBriefResponse
+from app.features.shared.features.schemas import NestedFeatureCreate
 
 
 class RaceBase(BaseModel):
@@ -13,23 +19,6 @@ class RaceBase(BaseModel):
     size: RaceSize = RaceSize.MEDIUM
     speed: int = 30
     description: str = ""
-    is_homebrew: bool = False
-
-
-class AbilityBonusItem(BaseModel):
-    """A single ability score bonus, e.g. {"ability": "DEX", "bonus": 2}."""
-
-    ability: AbilityScore
-    bonus: int
-
-
-def _validate_unique_abilities(ability_bonuses: list[AbilityBonusItem]) -> list[AbilityBonusItem]:
-    abilities = [item.ability for item in ability_bonuses]
-    if len(abilities) != len(set(abilities)):
-        duplicates = {a for a in abilities if abilities.count(a) > 1}
-        raise ValueError(f"Duplicate ability score(s): {sorted(duplicates)}")
-
-    return ability_bonuses
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
@@ -85,7 +74,6 @@ class RaceUpdate(BaseModel):
     size: RaceSize | None = None
     speed: int | None = None
     description: str | None = None
-    is_homebrew: bool | None = None
 
 
 class AbilityBonusesUpdate(BaseModel):
@@ -98,15 +86,6 @@ class AbilityBonusesUpdate(BaseModel):
         """Reject bonus lists containing duplicate ability scores."""
 
         return _validate_unique_abilities(ability_bonuses)
-
-
-class AbilityBonusResponse(BaseModel):
-    """A race's ability score bonus as returned in responses."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    ability: AbilityScore
-    bonus: int
 
 
 class SkillsUpdate(BaseModel):
@@ -142,6 +121,7 @@ class RaceResponse(RaceBase):
     created_by_id: int | None = None
     ability_bonuses: list[AbilityBonusResponse] = []
     granted_skills: list[SkillResponse] = []
+    subraces: list[SubraceBriefResponse] = []
 
 
 class RaceGetAllResponse(BaseModel):
@@ -158,4 +138,3 @@ class RaceGetAllResponse(BaseModel):
     id: int
     name: str
     size: RaceSize
-    is_homebrew: bool

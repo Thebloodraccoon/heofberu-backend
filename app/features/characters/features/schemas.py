@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from app.features.features.schemas import FeatureGetAllResponse
+from app.features.features.crud.schemas import FeatureGetAllResponse
 
 
 class CharacterFeatureAdd(BaseModel):
@@ -33,7 +33,7 @@ class CharacterFeatureResponse(BaseModel):
     """
     Aggregates a character's feature grant with its per-character notes
     and a *brief* summary of the referenced feature (id, name, source_type,
-    level, is_homebrew).
+    level).
 
     Deliberately does not embed the full feature body (description): a
     character can hold many features, and listing them should stay light.

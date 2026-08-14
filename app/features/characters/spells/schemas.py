@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict
 
 from app.constants import SpellLevel
-from app.features.spells.schemas import SpellResponse
+from app.features.spells.crud.schemas import SpellResponse
 
 
 class SpellSlotResponse(BaseModel):

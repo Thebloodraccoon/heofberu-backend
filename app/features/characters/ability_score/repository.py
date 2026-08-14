@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.constants import ItemType
-from app.core.base_repository import BaseRepository
+from app.core.base.repository import BaseRepository
 from app.features.characters.ability_score.calculator import ArmorSpec
 from app.models import (
     CharacterAbilityScore,
@@ -17,6 +17,7 @@ from app.models import (
 from app.models.character_association_models import CharacterFeat
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
+from app.models.subrace_association_models import SubraceAbilityBonus
 
 
 class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
@@ -76,6 +77,15 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             return []
 
         result = await self.db.execute(select(RaceAbilityBonus).where(RaceAbilityBonus.race_id == race_id))
+        return list(result.scalars().unique().all())
+
+    async def get_subrace_bonuses(self, subrace_id: int | None) -> list[SubraceAbilityBonus]:
+        """Fetch a subrace's ability bonuses, or ``[]`` for a character with no subrace."""
+
+        if subrace_id is None:
+            return []
+
+        result = await self.db.execute(select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id == subrace_id))
         return list(result.scalars().unique().all())
 
     async def get_feat_increases(self, character_id: int) -> list[FeatAbilityScoreIncrease]:

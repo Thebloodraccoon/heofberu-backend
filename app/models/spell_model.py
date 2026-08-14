@@ -58,7 +58,6 @@ class Spell(settings.Base):  # type: ignore
     description = Column(Text, nullable=False)
     higher_levels = Column(Text)
 
-    is_homebrew = Column(Boolean, nullable=False, default=False)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     created_by = relationship("User")

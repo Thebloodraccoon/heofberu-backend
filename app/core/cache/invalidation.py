@@ -9,10 +9,21 @@ because creating a class also writes features table rows that the
 ``GET /features`` listing is filtered by.
 """
 
-from app.core.cache.client import cache_delete_prefix
+from app.core.cache.client import cache_delete_prefix, cache_flush_all
 
 
 async def invalidate(namespace: str) -> None:
     """Delete all cached entries under the given namespace (best-effort)."""
 
     await cache_delete_prefix(namespace)
+
+
+async def flush_all() -> None:
+    """
+    Delete every cached entry across all namespaces (best-effort).
+
+    Only keys under the app's ``CACHE_PREFIX`` are removed — unrelated
+    Redis keys (e.g. the JWT blacklist) are preserved.
+    """
+
+    await cache_flush_all()

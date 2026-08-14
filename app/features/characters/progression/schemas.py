@@ -1,4 +1,4 @@
-"""Schemas for character progression: race/class change and leveling up."""
+"""Schemas for character progression: race/class/subclass/subrace change and leveling up."""
 
 from typing import Annotated, Literal
 
@@ -35,6 +35,19 @@ class SubclassChange(BaseModel):
     """
 
     subclass_id: int | None = None
+
+
+class SubraceChange(BaseModel):
+    """
+    Set or clear a character's subrace.
+
+    ``subrace_id`` must reference a subrace of the character's current
+    race (validated by the service; a character without a race cannot
+    hold a subrace); ``subrace_id: null`` clears it. Setting a subrace
+    grants its features at or below the character's current level.
+    """
+
+    subrace_id: int | None = None
 
 
 class ASIIncreaseItem(BaseModel):

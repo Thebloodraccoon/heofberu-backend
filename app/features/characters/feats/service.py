@@ -16,8 +16,8 @@ from app.features.characters.feats.schemas import (
 )
 from app.features.characters.feats.validation import check_feat_prerequisite, validate_ability_score_increase
 from app.features.characters.progression.feature_sync import sync_progression_features
+from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
-from app.features.feats.repository import FeatRepository
 from app.features.users.schemas import UserResponse
 from app.models.character_association_models import CharacterFeat
 

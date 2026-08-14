@@ -16,10 +16,10 @@ import pytest
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import declarative_base
 
-from app.core.base_service import Page
+from app.core.base.cached_service import CachedService
+from app.core.base.service import Page
 from app.core.cache import invalidate, use_cache
 import app.core.cache.client as cache_client
-from app.core.cached_service import CachedService
 from app.settings import settings
 
 

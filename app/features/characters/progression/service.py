@@ -1,4 +1,4 @@
-"""Service for character progression: race/class change and leveling up."""
+"""Service for character progression: race/class/subclass/subrace change and leveling up."""
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -28,13 +28,14 @@ from app.features.characters.progression.schemas import (
     LevelUpRequest,
     RaceChange,
     SubclassChange,
+    SubraceChange,
 )
+from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
-from app.features.classes.repository import ClassRepository
+from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
-from app.features.feats.repository import FeatRepository
-from app.features.races.exceptions import RaceNotFoundException
-from app.features.races.repository import RaceRepository
+from app.features.races.crud.repository import RaceRepository
+from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models.character_model import Character
 
@@ -42,7 +43,7 @@ from app.models.character_model import Character
 class CharacterProgressionService(CharacterSubDomainService):
     """
     Character progression: race change, class change, subclass change,
-    and leveling up.
+    subrace change, and leveling up.
 
     Leveling up is the entry point for ability score improvements: an
     ASI level (see ``ASI_LEVELS``) *requires* a ``choice`` in the
@@ -50,10 +51,11 @@ class CharacterProgressionService(CharacterSubDomainService):
     ``character_asi_choices`` for audit and future level-down support.
 
     Source-owned feature grants are kept in sync automatically: every
-    level-up, race change, class change, and subclass change reconciles
-    ``character_features`` against the CLASS features of the character's
-    class plus the SUBCLASS features of its subclass, its RACE and
-    BACKGROUND features, and the FEAT features of every granted feat (see
+    level-up, race change, class change, subclass change, and subrace
+    change reconciles ``character_features`` against the CLASS features
+    of the character's class plus the SUBCLASS features of its subclass,
+    the RACE/SUBRACE features of its race/subrace, its BACKGROUND
+    features, and the FEAT features of every granted feat (see
     ``sync_progression_features``).
 
     Writes are transactional: the level bump, HP gain, ASI/feat grant,
@@ -93,9 +95,11 @@ class CharacterProgressionService(CharacterSubDomainService):
         """
         Update a character's ``race_id`` (``None`` clears it).
 
-        The new race's features are granted (the old race's auto-granted
-        features revoked) in the same transaction, then the ability score
-        cache is refreshed to re-derive race bonuses.
+        A subrace that doesn't belong to the new race is cleared along
+        with it (a character can't hold a subrace without a matching
+        race). The new race's features are granted (the old race's
+        auto-granted features revoked) in the same transaction, then the
+        ability score cache is refreshed to re-derive race bonuses.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -104,6 +108,14 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         async with self._atomic():
             character.race_id = data.race_id
+
+            if character.subrace_id is not None:
+                if (
+                    data.race_id is None
+                    or await self.race_repository.get_subrace(data.race_id, character.subrace_id) is None
+                ):
+                    character.subrace_id = None
+
             await sync_progression_features(self.repository.db, character)
 
         await self.stats_service.refresh(character)
@@ -154,6 +166,32 @@ class CharacterProgressionService(CharacterSubDomainService):
         async with self._atomic():
             character.subclass_id = data.subclass_id
             await sync_progression_features(self.repository.db, character)
+
+    async def set_subrace(self, character_id: int, data: SubraceChange, current_user: UserResponse) -> None:
+        """
+        Set or clear a character's subrace.
+
+        ``subrace_id`` must reference a subrace of the character's
+        current race — otherwise ``SubraceNotFoundException`` (a
+        character without a race can't hold a subrace). Setting a
+        subrace grants its features at or below the current level;
+        clearing it revokes that subrace's auto-granted features. The
+        ability score cache is refreshed to re-derive subrace bonuses.
+        """
+
+        character = await self.get_character_for_user(character_id, current_user)
+
+        if data.subrace_id is not None:
+            if character.race_id is None:
+                raise SubraceNotFoundException(race_id=0, subrace_id=data.subrace_id)
+            if await self.race_repository.get_subrace(character.race_id, data.subrace_id) is None:
+                raise SubraceNotFoundException(race_id=character.race_id, subrace_id=data.subrace_id)
+
+        async with self._atomic():
+            character.subrace_id = data.subrace_id
+            await sync_progression_features(self.repository.db, character)
+
+        await self.stats_service.refresh(character)
 
     async def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
         """

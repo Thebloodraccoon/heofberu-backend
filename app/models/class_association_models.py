@@ -1,8 +1,8 @@
-"""ORM models/tables for class sub-resources: available skills, primary abilities, saving throws."""
+"""ORM models/tables for class sub-resources: available skills, primary abilities, saving throws, armor proficiencies."""
 
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
-from app.models.enums import AbilityScoreType
+from app.models.enums import AbilityScoreType, ArmorProficiencyType
 from app.settings import settings
 
 # classes <-> skills (skills a class may choose proficiencies from)
@@ -36,3 +36,15 @@ class ClassSavingThrow(settings.Base):  # type: ignore
 
     def __repr__(self):
         return f"<ClassSavingThrow(class_id={self.class_id}, ability='{self.ability}')>"
+
+
+class ClassArmorProficiency(settings.Base):  # type: ignore
+    """Armor proficiencies granted by a class, e.g. Fighter -> LIGHT, MEDIUM, HEAVY, SHIELD."""
+
+    __tablename__ = "class_armor_proficiencies"
+
+    class_id = Column(Integer, ForeignKey("classes.id", ondelete="CASCADE"), primary_key=True)
+    armor_type = Column(ArmorProficiencyType, primary_key=True)
+
+    def __repr__(self):
+        return f"<ClassArmorProficiency(class_id={self.class_id}, armor_type='{self.armor_type}')>"

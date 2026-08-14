@@ -2,14 +2,15 @@
 Auto-grant/revoke source-owned features for a character.
 
 A character automatically holds every feature owned by its class
-(CLASS), chosen subclass (SUBCLASS), race (RACE), background
-(BACKGROUND) and every currently-granted feat (FEAT), filtered by
-``level``: ``NULL`` (gained at level 1) or ``<= character.level``.
-This module reconciles ``character_features`` against that target set.
+(CLASS), chosen subclass (SUBCLASS), race (RACE), chosen subrace
+(SUBRACE), background (BACKGROUND) and every currently-granted feat
+(FEAT), filtered by ``level``: ``NULL`` (gained at level 1) or
+``<= character.level``. This module reconciles ``character_features``
+against that target set.
 
 It is deliberately small and side-effect free (never commits): callers
 wrap it in their own transaction — ``CharacterService.create_character``,
-``CharacterProgressionService`` (level-up, race/class/subclass change)
+``CharacterProgressionService`` (level-up, race/class/subclass/subrace change)
 and ``CharacterFeatService`` (feat grant/revoke).
 
 Rows it does not own are left untouched: features created manually from
@@ -32,6 +33,7 @@ _AUTO_SOURCE_TYPES = (
     FeatureSourceType.CLASS,
     FeatureSourceType.SUBCLASS,
     FeatureSourceType.RACE,
+    FeatureSourceType.SUBRACE,
     FeatureSourceType.BACKGROUND,
     FeatureSourceType.FEAT,
 )
@@ -40,6 +42,7 @@ _SOURCE_CHARACTER_FILTER = {
     FeatureSourceType.CLASS: lambda source_id: Character.class_id == source_id,
     FeatureSourceType.SUBCLASS: lambda source_id: Character.subclass_id == source_id,
     FeatureSourceType.RACE: lambda source_id: Character.race_id == source_id,
+    FeatureSourceType.SUBRACE: lambda source_id: Character.subrace_id == source_id,
     FeatureSourceType.BACKGROUND: lambda source_id: Character.background_id == source_id,
 }
 
@@ -47,8 +50,8 @@ _SOURCE_CHARACTER_FILTER = {
 async def _desired_features(db: AsyncSession, character: Character) -> list[Feature]:
     """
     The target feature set for a character: features owned by its class,
-    subclass, race, background, and every currently-granted feat, all
-    filtered to ``level`` ``NULL`` or ``<= character.level``.
+    subclass, race, subrace, background, and every currently-granted feat,
+    all filtered to ``level`` ``NULL`` or ``<= character.level``.
     """
 
     conditions = []
@@ -60,6 +63,9 @@ async def _desired_features(db: AsyncSession, character: Character) -> list[Feat
 
     if character.race_id is not None:
         conditions.append(Feature.race_id == character.race_id)
+
+    if character.subrace_id is not None:
+        conditions.append(Feature.subrace_id == character.subrace_id)
 
     if character.background_id is not None:
         conditions.append(Feature.background_id == character.background_id)
@@ -81,8 +87,8 @@ async def _desired_features(db: AsyncSession, character: Character) -> list[Feat
 async def sync_progression_features(db: AsyncSession, character: Character) -> None:
     """
     Reconcile ``character_features`` to match the character's current
-    class/subclass/race/background/feats/level. Adds missing grants,
-    revokes auto-granted features that no longer apply, and leaves
+    class/subclass/race/subrace/background/feats/level. Adds missing
+    grants, revokes auto-granted features that no longer apply, and leaves
     everything else alone.
     """
 
@@ -115,8 +121,8 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
 
     Called by the source replace endpoints (``PUT /{source}/{id}/features``)
     inside their ``_atomic()`` block, so a GM editing a class/race/
-    background/feat's features reconciles the affected characters' grants
-    in the same transaction:
+    subrace/background/feat's features reconciles the affected characters'
+    grants in the same transaction:
 
       - features added to the source are granted to qualifying characters
         (level-gated by :func:`_desired_features`);

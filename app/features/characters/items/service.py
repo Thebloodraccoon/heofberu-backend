@@ -10,8 +10,8 @@ from app.features.characters.items.schemas import (
     CharacterItemResponse,
     CharacterItemUpdate,
 )
+from app.features.items.crud.repository import ItemRepository
 from app.features.items.exceptions import ItemNotFoundException
-from app.features.items.repository import ItemRepository
 from app.features.users.schemas import UserResponse
 from app.models.character_item_model import CharacterItem
 

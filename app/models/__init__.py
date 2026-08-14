@@ -23,6 +23,7 @@ from app.models.character_item_model import CharacterItem  # noqa: F401
 from app.models.character_model import Character  # noqa: F401
 from app.models.character_spell_model import CharacterSpell  # noqa: F401
 from app.models.class_association_models import (  # noqa: F401
+    ClassArmorProficiency,
     ClassPrimaryAbility,
     ClassSavingThrow,
     class_available_skills,
@@ -35,8 +36,8 @@ from app.models.class_spell_slot_progression_model import ClassSpellSlotProgress
 # Feat.
 from app.models.feat_model import Feat  # noqa: F401
 
-# Feature (class/subclass/race/background features and feats).
-# Must come after Subclass so the subclass_id FK resolves correctly.
+# Feature (class/subclass/race/subrace/background features and feats).
+# Must come after Subclass/Subrace so the subclass_id/subrace_id FKs resolve correctly.
 from app.models.feature_model import Feature  # noqa: F401
 
 # Item and character inventory.
@@ -47,10 +48,18 @@ from app.models.race_association_models import RaceAbilityBonus, race_skills  # 
 from app.models.race_model import Race  # noqa: F401
 from app.models.skill_model import Skill  # noqa: F401
 
+# Source-owned starting equipment (classes/backgrounds).
+from app.models.source_item_model import SourceItem  # noqa: F401
+
 # Spell.
 from app.models.spell_model import Spell  # noqa: F401
 
 # Subclass must be imported after Class (FK dependency) and before Feature (FK target).
 from app.models.subclass_model import Subclass  # noqa: F401
+
+# Subrace and its associations.
+# Must come after Class/Race (FK targets) and before Feature (FK target).
+from app.models.subrace_association_models import SubraceAbilityBonus  # noqa: F401
+from app.models.subrace_model import Subrace  # noqa: F401
 from app.models.user_model import User  # noqa: F401
 from app.settings import settings  # noqa: F401

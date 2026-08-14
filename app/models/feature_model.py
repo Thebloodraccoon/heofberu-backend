@@ -1,6 +1,6 @@
 """ORM model for the reference table of discrete rules features."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.enums import FeatureSourceTypeType
@@ -10,10 +10,10 @@ from app.settings import settings
 class Feature(settings.Base):  # type: ignore
     """
     Reference table of discrete rules features: class/subclass features
-    (e.g. 'Rage', 'Sneak Attack', 'Extra Attack'), racial traits, background
-    features, and feat benefits. ``source_type`` + the relevant FK indicate
-    where the feature comes from; ``level`` is only meaningful for CLASS /
-    SUBCLASS features.
+    (e.g. 'Rage', 'Sneak Attack', 'Extra Attack'), racial and subrace traits,
+    background features, and feat benefits. ``source_type`` + the relevant FK
+    indicate where the feature comes from; ``level`` is only meaningful for
+    CLASS / SUBCLASS features.
     """
 
     __tablename__ = "features"
@@ -26,7 +26,10 @@ class Feature(settings.Base):  # type: ignore
     # Populated depending on source_type; nullable since only one applies per row.
     class_id = Column(Integer, ForeignKey("classes.id", ondelete="CASCADE"), nullable=True, index=True)
     subclass_id = Column(Integer, ForeignKey("subclasses.id", ondelete="CASCADE"), nullable=True, index=True)
+
     race_id = Column(Integer, ForeignKey("races.id", ondelete="CASCADE"), nullable=True, index=True)
+    subrace_id = Column(Integer, ForeignKey("subraces.id", ondelete="CASCADE"), nullable=True, index=True)
+
     background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), nullable=True, index=True)
     feat_id = Column(Integer, ForeignKey("feats.id", ondelete="CASCADE"), nullable=True, index=True)
 
@@ -36,12 +39,12 @@ class Feature(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False, default="")
 
-    is_homebrew = Column(Boolean, nullable=False, default=False)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     character_class = relationship("Class")
     subclass = relationship("Subclass", back_populates="features")
     race = relationship("Race", back_populates="features")
+    subrace = relationship("Subrace", back_populates="features")
     background = relationship("Background", back_populates="features")
     feat = relationship("Feat", back_populates="features")
     created_by = relationship("User")

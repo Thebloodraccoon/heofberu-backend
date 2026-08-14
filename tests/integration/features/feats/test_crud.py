@@ -57,21 +57,30 @@ class TestFeatCrud:
         assert response.status_code == 200
         assert {item["ability"]: item["amount"] for item in response.json()["ability_score_increases"]} == {"STR": 1}
 
-    async def test_gm_can_create_feat_with_nested_features(self, client, gm_token):
+    async def test_gm_can_create_feat_then_add_features(self, client, gm_token):
+        """FeatCreate stays minimal: nested features are attached through the features endpoint."""
+
         response = await client.post(
             "/feats",
-            json={
-                "name": "Alert",
-                "features": [
-                    {"name": "Alert Initiative", "description": "You gain a +5 bonus to initiative."},
-                    {"name": "Cannot Be Surprised", "description": "You can't be surprised while conscious."},
-                ],
-            },
+            json={"name": "Alert"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 201
         feat_id = response.json()["id"]
+
+        assert (await client.get(f"/feats/{feat_id}/features")).json() == []
+
+        for feature in [
+            {"name": "Alert Initiative", "description": "You gain a +5 bonus to initiative."},
+            {"name": "Cannot Be Surprised", "description": "You can't be surprised while conscious."},
+        ]:
+            added = await client.post(
+                f"/feats/{feat_id}/features",
+                json=feature,
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            assert added.status_code == 201
 
         fetched = await client.get(f"/feats/{feat_id}/features")
         assert fetched.status_code == 200
@@ -93,19 +102,22 @@ class TestFeatCrud:
         assert response.status_code == 204
         assert (await client.get(f"/feats/{feat.id}")).status_code == 404
 
-    async def test_founder_can_delete_feat_with_features_cascades_them(self, client, founder_token, create_feat):
-        await create_feat(name="Doomed Feat")
-
-        response = await client.post(
+    async def test_founder_can_delete_feat_with_features_cascades_them(self, client, founder_token):
+        created = await client.post(
             "/feats",
-            json={"name": "With Benefit", "features": [{"name": "Benefit", "description": "Something useful."}]},
+            json={"name": "With Benefit"},
             headers={"Authorization": f"Bearer {founder_token}"},
         )
-        assert response.status_code == 201
-        feat_id = response.json()["id"]
-        features = await client.get(f"/feats/{feat_id}/features")
-        assert features.status_code == 200
-        feature_id = features.json()[0]["id"]
+        assert created.status_code == 201
+        feat_id = created.json()["id"]
+
+        added = await client.post(
+            f"/feats/{feat_id}/features",
+            json={"name": "Benefit", "description": "Something useful."},
+            headers={"Authorization": f"Bearer {founder_token}"},
+        )
+        assert added.status_code == 201
+        feature_id = added.json()["id"]
 
         delete_response = await client.delete(f"/feats/{feat_id}", headers={"Authorization": f"Bearer {founder_token}"})
 
@@ -173,7 +185,9 @@ class TestFeatCrud:
         fetched = await client.get(f"/feats/{feat.id}/features")
         assert fetched.json() == []
 
-    async def test_update_feat_feature_of_another_source_returns_400(self, client, gm_token, create_feat, create_feature):
+    async def test_update_feat_feature_of_another_source_returns_400(
+        self, client, gm_token, create_feat, create_feature
+    ):
         feat = await create_feat(name="Alert")
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
@@ -185,7 +199,9 @@ class TestFeatCrud:
 
         assert response.status_code == 400
 
-    async def test_remove_feat_feature_of_another_source_returns_400(self, client, gm_token, create_feat, create_feature):
+    async def test_remove_feat_feature_of_another_source_returns_400(
+        self, client, gm_token, create_feat, create_feature
+    ):
         feat = await create_feat(name="Alert")
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
