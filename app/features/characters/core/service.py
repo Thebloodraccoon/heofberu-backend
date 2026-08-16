@@ -172,12 +172,12 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
         Create a character owned by the caller (GM or player).
 
-        Validates that ``class_id`` (required) and, if provided,
-        ``subclass_id`` (must belong to ``class_id``) /
-        ``race_id``/``subrace_id`` (must belong to ``race_id``)/
-        ``background_id`` reference existing records before writing
-        anything — a bad reference is rejected with a clear 404 rather
-        than surfacing as a raw FK IntegrityError.
+        Validates that ``class_id`` and ``background_id`` (both required)
+        and, if provided, ``subclass_id`` (must belong to ``class_id``) /
+        ``race_id``/``subrace_id`` (must belong to ``race_id``) reference
+        existing records before writing anything — a bad reference is
+        rejected with a clear 404 rather than surfacing as a raw FK
+        IntegrityError.
 
         After creation, the class's spell slot progression for the
         character's starting level is applied immediately — see class

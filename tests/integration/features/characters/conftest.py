@@ -22,7 +22,7 @@ async def create_caster_class(client, gm_token, create_class):
 
 
 @pytest_asyncio.fixture
-async def create_api_character(client, login_as, create_user):
+async def create_api_character(client, login_as, create_user, create_background):
     """Create a character via the API and return the created payload + owner token."""
 
     async def _create_api_character(
@@ -36,6 +36,8 @@ async def create_api_character(client, login_as, create_user):
     ):
         if owner is None:
             owner = await create_user()
+        if background_id is None:
+            background_id = (await create_background()).id
         token = await login_as(owner)
         response = await client.post(
             "/characters",

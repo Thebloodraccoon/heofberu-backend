@@ -1,7 +1,5 @@
 """Class CRUD service: cached catalog CRUD plus composed capability reads."""
 
-import asyncio
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.cached_service import CachedService
@@ -33,9 +31,9 @@ class ClassCrudService(
     The capability services are composed explicitly in ``__init__`` (no
     mixin MRO):
       - ``get_by_id`` reads the CLASS-source ``features`` through
-        :class:`ClassFeatureService` and every subclass (with its own
-        SUBCLASS-source features) through ``self.subclasses``, gathered
-        concurrently, and assembles :class:`ClassFullResponse`;
+        :class:`ClassFeatureService` and a brief reference to every
+        subclass through ``self.subclasses``, and assembles
+        :class:`ClassFullResponse`;
       - ``create_class`` seeds primary abilities, saving throws, armor
         proficiencies, and available skills through the dedicated
         capability services in the same ``_atomic()`` transaction;
@@ -173,14 +171,10 @@ class ClassCrudService(
         fields via a plain ``model_validate``) so ``GET /classes/{id}``
         itself is the full picture: base fields, primary abilities/saving
         throws/armor proficiencies/available skills/starting items/spell
-        slots, CLASS-source ``features``, and every ``subclass`` together
-        with its own SUBCLASS-source features.
-
-        Class features and every subclass's features are fetched
-        concurrently via ``asyncio.gather`` instead of sequentially — one
-        class with N subclasses does 1 (class features) + N (per-subclass
-        features, via ``self.subclasses.list_with_features``) queries in
-        parallel rather than N+1 round-trips in series.
+        slots, CLASS-source ``features``, and a brief reference to every
+        ``subclass`` (the full per-subclass picture — its own
+        SUBCLASS-source features — lives on
+        ``GET /classes/{id}/subclasses/{subclass_id}``).
 
         Any write that touches this class (base fields, primary
         abilities/throws/proficiencies/skills, features, subclasses,
@@ -192,16 +186,13 @@ class ClassCrudService(
         """
 
         character_class = await self._get_or_404(item_id)
-
-        class_features, subclass_payloads = await asyncio.gather(
-            self._features.list_features(item_id),
-            self.subclasses.list_with_features(item_id),
-        )
+        class_features = await self._features.list_features(item_id)
+        subclasses = await self.subclasses.list_for_class(item_id)
 
         return ClassFullResponse.model_validate(
             {
                 **ClassResponse.model_validate(character_class).model_dump(),
                 "features": class_features,
-                "subclasses": subclass_payloads,
+                "subclasses": subclasses,
             }
         )

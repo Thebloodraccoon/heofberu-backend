@@ -28,7 +28,7 @@ class ClassSkillsRepository(SkillLookupMixin, ClassRepository):
             character_class,
             "class_id",
             "skill_id",
-            [skill.id for skill in skills],
+            [skill.id for skill in (skills or [])],
             commit=commit,
         )
 

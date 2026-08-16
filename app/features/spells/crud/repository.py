@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.base.repository import BaseRepository
 from app.models.class_model import Class
 from app.models.race_model import Race
+from app.models.spell_association_models import spell_classes, spell_races
 from app.models.spell_model import Spell
 
 
@@ -35,6 +36,11 @@ class SpellRepository(BaseRepository[Spell]):
         """
         Replace all classes a spell is available to.
 
+        Written through the association table (delete + insert) instead of
+        assigning the ORM ``available_classes`` relationship: assigning an
+        unloaded many-to-many collection would trigger a lazy load, which
+        is not supported on the async stack.
+
         ``commit`` lets callers that need atomicity across multiple writes
         (e.g. creating a spell + its class/race availability together)
         defer the commit and flush instead, without duplicating this
@@ -42,25 +48,27 @@ class SpellRepository(BaseRepository[Spell]):
         pattern.
         """
 
-        spell.available_classes = classes
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(spell)
-        else:
-            await self.db.flush()
+        await self.replace_association(
+            spell_classes,
+            spell,
+            "spell_id",
+            "class_id",
+            [class_.id for class_ in classes],
+            commit=commit,
+        )
 
         return spell
 
     async def set_races(self, spell: Spell, races: list[Race], *, commit: bool = True) -> Spell:
         """Replace all races a spell is available to. See ``set_classes`` for ``commit`` semantics."""
 
-        spell.available_races = races
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(spell)
-        else:
-            await self.db.flush()
+        await self.replace_association(
+            spell_races,
+            spell,
+            "spell_id",
+            "race_id",
+            [race_.id for race_ in races],
+            commit=commit,
+        )
 
         return spell

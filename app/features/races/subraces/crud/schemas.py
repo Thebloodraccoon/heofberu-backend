@@ -7,7 +7,7 @@ from app.features.races.ability_bonuses.schemas import (
     AbilityBonusResponse,
     _validate_unique_abilities,
 )
-from app.features.shared.features.schemas import NestedFeatureCreate
+from app.features.shared.features.schemas import NestedFeatureCreate, NestedFeatureResponse
 
 
 class SubraceBase(BaseModel):
@@ -81,3 +81,9 @@ class SubraceBriefResponse(BaseModel):
     id: int
     race_id: int
     name: str
+
+
+class SubraceFullResponse(SubraceResponse):
+    """A subrace plus its own SUBRACE-source features, for the single-subrace view."""
+
+    features: list[NestedFeatureResponse] = []

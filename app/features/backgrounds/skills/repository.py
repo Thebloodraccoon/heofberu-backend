@@ -36,7 +36,7 @@ class BackgroundSkillsRepository(SkillLookupMixin, BackgroundRepository):
             background,
             "background_id",
             "skill_id",
-            [skill.id for skill in skills],
+            [skill.id for skill in (skills or [])],
             commit=commit,
         )
 

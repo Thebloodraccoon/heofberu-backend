@@ -403,6 +403,16 @@ class TestRaceSkillsRepository:
         assert session.flushes == 1
         assert session.commits == 0
 
+    async def test_set_skills_with_none_clears_association(self):
+        session = FakeAsyncSession()
+        repository = RaceSkillsRepository(session)
+        race = make_race()
+
+        result = await repository.set_skills(race, None)
+
+        assert result is race
+        assert session.commits == 1
+
     async def test_get_skills_by_ids_looks_up_rows(self):
         skill = make_skill()
         session = FakeAsyncSession(execute_results=[FakeResult([skill])])

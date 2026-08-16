@@ -27,9 +27,11 @@ class CharacterBase(BaseModel):
 
     class_id: int
     subclass_id: int | None = None
-    race_id: int | None = None
+
+    race_id: int
     subrace_id: int | None = None
-    background_id: int | None = None
+
+    background_id: int
 
     current_hp: int = Field(default=0, ge=0)
     max_hp: int = Field(default=0, ge=0)
@@ -68,8 +70,8 @@ class CharacterCreate(CharacterBase):
     """
     Create payload for a character.
 
-    ``class_id`` is required and must reference an existing class;
-    ``subclass_id``/``race_id``/``subrace_id``/``background_id`` are
+    ``class_id`` and ``background_id`` are required and must reference
+    existing records; ``subclass_id``/``race_id``/``subrace_id`` are
     optional but, if provided, must also reference existing records
     (``subclass_id`` must belong to ``class_id``; ``subrace_id`` must
     belong to ``race_id``). Existence checks happen in
