@@ -3,7 +3,13 @@
 from fastapi import APIRouter, Body
 
 from app.core.security.dependencies import FounderDep, GmUserDep
-from app.features.races.subraces.crud.schemas import SubraceCreate, SubraceResponse, SubraceUpdate
+from app.features.races.subraces.crud.schemas import (
+    SubraceBriefResponse,
+    SubraceCreate,
+    SubraceFullResponse,
+    SubraceResponse,
+    SubraceUpdate,
+)
 from app.features.races.subraces.dependencies import SubraceCrudDep
 
 router = APIRouter()
@@ -11,12 +17,12 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=list[SubraceResponse],
+    response_model=list[SubraceBriefResponse],
     summary="List a race's subraces",
     responses={404: {"description": "No race exists with the given ID."}},
 )
 async def list_subraces(race_id: int, race_service: SubraceCrudDep):
-    """Return every subrace belonging to the race, with their ability bonuses. Open endpoint."""
+    """Return every subrace belonging to the race. Open endpoint."""
 
     return await race_service.list_for_race(race_id)
 
@@ -73,12 +79,12 @@ async def create_subrace(
 
 @router.get(
     "/{subrace_id}",
-    response_model=SubraceResponse,
+    response_model=SubraceFullResponse,
     summary="Get a subrace by ID",
     responses={404: {"description": "No subrace exists with the given ID under this race."}},
 )
 async def get_subrace(race_id: int, subrace_id: int, race_service: SubraceCrudDep):
-    """Return a single subrace (scoped to the given race). Open endpoint."""
+    """Return a single subrace with its ability bonuses and features (scoped to the given race). Open endpoint."""
 
     return await race_service.get_subrace(race_id, subrace_id)
 

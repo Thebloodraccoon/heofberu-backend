@@ -1,7 +1,5 @@
 """Subclass CRUD service: cached catalog CRUD plus composed feature reads."""
 
-import asyncio
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
@@ -109,30 +107,6 @@ class SubclassCrudService(
     async def list_for_class(self, class_id: int) -> list[SubclassBriefResponse]:
         subclasses = await self.repository.list_for_class(class_id)
         return [SubclassBriefResponse.model_validate(s) for s in subclasses]
-
-    async def list_with_features(self, class_id: int) -> list[SubclassFullResponse]:
-        """
-        Return every subclass of ``class_id`` with its own SUBCLASS-source
-        features embedded — used by ``ClassCrudService.get_by_id`` to build
-        ``ClassFullResponse.subclasses`` without reaching into this
-        service's private ``_features`` attribute.
-
-        Fetches every subclass's features concurrently rather than
-        sequentially — see ``ClassCrudService.get_by_id`` for why.
-        """
-
-        subclasses = await self.repository.list_for_class(class_id)
-
-        features_lists = await asyncio.gather(
-            *[self._features.list_for_source(FeatureSourceType.SUBCLASS, subclass.id) for subclass in subclasses]
-        )
-
-        return [
-            SubclassFullResponse.model_validate(
-                {**SubclassResponse.model_validate(subclass).model_dump(), "features": features}
-            )
-            for subclass, features in zip(subclasses, features_lists, strict=True)
-        ]
 
     async def update_subclass(self, class_id: int, subclass_id: int, data: SubclassUpdate) -> SubclassResponse:
         await self._get_or_404_for_class(class_id, subclass_id)

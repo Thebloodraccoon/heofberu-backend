@@ -5,7 +5,7 @@ import math
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel
-from app.features.classes.subclasses.crud.schemas import SubclassBriefResponse, SubclassFullResponse
+from app.features.classes.subclasses.crud.schemas import SubclassBriefResponse
 from app.features.shared.features.schemas import NestedFeatureResponse
 from app.features.shared.items.schemas import SourceItemResponse
 
@@ -357,17 +357,18 @@ class ClassFullResponse(ClassResponse):
     Everything about a class in one payload: base fields, primary
     abilities/saving throws/armor proficiencies/available skills/starting
     items/spell slots (all inherited from ``ClassResponse``), plus
-    CLASS-source ``features`` and each subclass with its own
-    SUBCLASS-source features.
+    CLASS-source ``features`` and a brief reference to each subclass
+    (``SubclassBriefResponse``). The full per-subclass picture (its own
+    SUBCLASS-source features) lives on ``GET /classes/{class_id}/subclasses/{subclass_id}``.
 
-    Returned by ``GET /classes/{id}/full`` and cached as a single unit
-    under the ``class_full`` namespace, so a client that needs the whole
-    class (features, subclasses, items, slots) gets it in one cached
-    round-trip instead of stitching together several endpoints.
+    Returned by ``GET /classes/{id}`` and cached as a single unit under
+    the ``classes`` namespace, so a client that needs the class (features,
+    items, slots) gets it in one cached round-trip instead of stitching
+    together several endpoints.
     """
 
     features: list[NestedFeatureResponse] = []
-    subclasses: list[SubclassFullResponse] = []
+    subclasses: list[SubclassBriefResponse] = []
 
 
 # Needed because ClassGetAllResponse references SubclassListResponse by

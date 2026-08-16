@@ -6,12 +6,15 @@ import pytest
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCharacterCreate:
-    async def test_any_authenticated_user_can_create_character(self, client, player_token, create_class):
+    async def test_any_authenticated_user_can_create_character(
+        self, client, player_token, create_class, create_background
+    ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
+        background = await create_background()
 
         response = await client.post(
             "/characters",
-            json={"name": "Aragorn", "level": 1, "class_id": character_class.id},
+            json={"name": "Aragorn", "level": 1, "class_id": character_class.id, "background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -20,6 +23,17 @@ class TestCharacterCreate:
         assert body["name"] == "Aragorn"
         assert body["class_id"] == character_class.id
         assert body["level"] == 1
+
+    async def test_create_character_requires_background(self, client, player_token, create_class):
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+
+        response = await client.post(
+            "/characters",
+            json={"name": "Aragorn", "level": 1, "class_id": character_class.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
 
     async def test_create_character_requires_auth(self, client, create_class):
         character_class = await create_class(name="Fighter")
@@ -31,21 +45,31 @@ class TestCharacterCreate:
 
         assert response.status_code == 401
 
-    async def test_create_character_with_unknown_class_returns_404(self, client, player_token):
+    async def test_create_character_with_unknown_class_returns_404(self, client, player_token, create_background):
+        background = await create_background()
+
         response = await client.post(
             "/characters",
-            json={"name": "Ghost", "class_id": 999999},
+            json={"name": "Ghost", "class_id": 999999, "background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 404
 
-    async def test_create_caster_character_applies_spell_slots(self, client, player_token, create_caster_class):
+    async def test_create_caster_character_applies_spell_slots(
+        self, client, player_token, create_caster_class, create_background
+    ):
         character_class = await create_caster_class(name="Wizard")
+        background = await create_background()
 
         response = await client.post(
             "/characters",
-            json={"name": "Gandalf", "level": 1, "class_id": character_class.id},
+            json={
+                "name": "Gandalf",
+                "level": 1,
+                "class_id": character_class.id,
+                "background_id": background.id,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -54,13 +78,22 @@ class TestCharacterCreate:
         assert slots["LEVEL_1"]["total"] == 2
         assert slots["LEVEL_1"]["used"] == 0
 
-    async def test_create_character_with_subclass(self, client, player, player_token, create_class, create_subclass):
+    async def test_create_character_with_subclass(
+        self, client, player_token, create_class, create_subclass, create_background
+    ):
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
+        background = await create_background()
 
         response = await client.post(
             "/characters",
-            json={"name": "Aragorn", "level": 1, "class_id": character_class.id, "subclass_id": subclass.id},
+            json={
+                "name": "Aragorn",
+                "level": 1,
+                "class_id": character_class.id,
+                "subclass_id": subclass.id,
+                "background_id": background.id,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -68,15 +101,21 @@ class TestCharacterCreate:
         assert response.json()["subclass_id"] == subclass.id
 
     async def test_create_character_with_subclass_of_another_class_returns_404(
-        self, client, player, player_token, create_class, create_subclass
+        self, client, player_token, create_class, create_subclass, create_background
     ):
         fighter = await create_class(name="Fighter")
         wizard = await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
         wizard_subclass = await create_subclass(class_id=wizard.id, name="School of Evocation")
+        background = await create_background()
 
         response = await client.post(
             "/characters",
-            json={"name": "Ghost", "class_id": fighter.id, "subclass_id": wizard_subclass.id},
+            json={
+                "name": "Ghost",
+                "class_id": fighter.id,
+                "subclass_id": wizard_subclass.id,
+                "background_id": background.id,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -360,11 +399,21 @@ class TestCharacterHp:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCharacterRest:
-    async def test_long_rest_restores_hp_and_slots(self, client, player, player_token, create_caster_class):
+    async def test_long_rest_restores_hp_and_slots(
+        self, client, player, player_token, create_caster_class, create_background
+    ):
         character_class = await create_caster_class(name="Wizard")
+        background = await create_background()
         character_response = await client.post(
             "/characters",
-            json={"name": "Gandalf", "level": 1, "class_id": character_class.id, "max_hp": 20, "current_hp": 20},
+            json={
+                "name": "Gandalf",
+                "level": 1,
+                "class_id": character_class.id,
+                "background_id": background.id,
+                "max_hp": 20,
+                "current_hp": 20,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert character_response.status_code == 201
@@ -397,11 +446,12 @@ class TestCharacterRest:
         slots = {item["spell_level"]: item for item in body["spell_slots"]}
         assert slots["LEVEL_1"]["used"] == 0
 
-    async def test_short_rest_is_accepted(self, client, player, player_token, create_class):
+    async def test_short_rest_is_accepted(self, client, player, player_token, create_class, create_background):
         character_class = await create_class(name="Fighter")
+        background = await create_background()
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id},
+            json={"name": "Conan", "class_id": character_class.id, "background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert response.status_code == 201

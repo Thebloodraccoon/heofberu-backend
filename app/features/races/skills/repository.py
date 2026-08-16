@@ -28,7 +28,7 @@ class RaceSkillsRepository(SkillLookupMixin, RaceRepository):
             race,
             "race_id",
             "skill_id",
-            [skill.id for skill in skills],
+            [skill.id for skill in (skills or [])],
             commit=commit,
         )
 
