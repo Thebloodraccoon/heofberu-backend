@@ -12,9 +12,9 @@ class CharacterASIChoice(settings.Base):  # type: ignore
     """
     One resolved Ability Score Improvement opportunity for a character.
 
-    A row is created for every ASI class level (4/8/12/16/19 by default)
-    the character passes through a level-up, recording which of the two
-    5e options was taken:
+    A row is created either by a level-up through an ASI class level
+    (4/8/12/16/19 by default, ``class_level`` set) recording which of the
+    two 5e options was taken:
 
       - ASI: ``increases`` holds ``[{"ability": "STR", "amount": 2}]`` and
         the base ability columns on ``Character`` are bumped directly.
@@ -22,17 +22,23 @@ class CharacterASIChoice(settings.Base):  # type: ignore
         at the chosen feat, which is also granted as a
         ``character_feats`` row with ``source_type`` ``"ASI"``.
 
+    ...or by a GM adjustment from the GM panel (``class_level`` NULL):
+    a free-form ±increase applied straight to the base columns, bound to
+    no class level. PostgreSQL treats NULLs as distinct in the unique
+    constraint, so a character may hold any number of GM adjustments.
+
     The unique ``(character_id, class_level)`` pair guarantees each ASI
     level is resolved at most once. This table is the audit trail behind
-    ``CharacterProgressionService``; the base columns / feat grant rows
-    are the source of truth the ability-score cache is computed from.
+    ``CharacterProgressionService`` and the GM panel; the base columns /
+    feat grant rows are the source of truth the ability-score cache is
+    computed from.
     """
 
     __tablename__ = "character_asi_choices"
 
     id = Column(Integer, primary_key=True)
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
-    class_level = Column(Integer, nullable=False)
+    class_level = Column(Integer, nullable=True)
     choice_type = Column(ASILevelChoiceType, nullable=False)
 
     feat_id = Column(Integer, ForeignKey("feats.id", ondelete="RESTRICT"), nullable=True, index=True)

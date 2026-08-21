@@ -11,7 +11,7 @@ against that target set.
 It is deliberately small and side-effect free (never commits): callers
 wrap it in their own transaction — ``CharacterService.create_character``,
 ``CharacterProgressionService`` (level-up, race/class/subclass/subrace change)
-and ``CharacterFeatService`` (feat grant/revoke).
+and ``GmPanelFeatService`` (feat grant/revoke).
 
 Rows it does not own are left untouched: features created manually from
 OTHER sources, and any notes a player wrote on a grant, survive
@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
+from app.features.characters.cache import invalidate_character_cache
 from app.models import CharacterFeature, Feature
 from app.models.character_association_models import CharacterFeat
 from app.models.character_model import Character
@@ -155,3 +156,4 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
 
     for character in characters:
         await sync_progression_features(db, character)
+        await invalidate_character_cache(character.id)

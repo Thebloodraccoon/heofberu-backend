@@ -1,4 +1,4 @@
-"""Integration tests for derived combat stats: hit dice, speed, armor class."""
+"""Integration tests for combat stats: derived hit dice/speed and the editable armor_class column."""
 
 import pytest
 
@@ -73,7 +73,13 @@ class TestDerivedSpeed:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestDerivedArmorClass:
+class TestEditableArmorClass:
+    """
+    Armor class is a plain editable column: there is NO dynamic armor
+    calculation anymore — equipping an ARMOR item does not touch it, and
+    players/GMs set it directly on create or via PATCH.
+    """
+
     async def _create_armor(self, client, gm_token, name, base, dex_bonus, max_dex_bonus=None):
         response = await client.post(
             "/items",
@@ -86,81 +92,56 @@ class TestDerivedArmorClass:
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        print(response.text)
         assert response.status_code == 201, response.text
         return response.json()["id"]
 
-    async def _equip(self, client, token, character_id, item_id, is_equipped):
-        response = await client.post(
-            f"/characters/{character_id}/items",
-            json={"item_id": item_id, "is_equipped": is_equipped},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert response.status_code == 201, response.text
-        return response.json()
-
-    async def test_unarmored_ac_is_ten_plus_dex_modifier(
+    async def test_armor_class_defaults_to_ten(
         self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
 
         character, _ = await create_api_character(class_id=character_class.id, owner=player, dexterity=14)
 
-        assert character["armor_class"] == 12
+        assert character["armor_class"] == 10
 
-    async def test_equipped_armor_uses_base_plus_dex(
-        self, client, gm_token, player, player_token, create_class, create_api_character
+    async def test_armor_class_set_at_creation(
+        self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        character, token = await create_api_character(class_id=character_class.id, owner=player, dexterity=14)
-        armor_id = await self._create_armor(client, gm_token, "Leather", base=11, dex_bonus=True)
-        await self._equip(client, token, character["id"], armor_id, is_equipped=True)
 
-        response = await client.get(f"/characters/{character['id']}", headers={"Authorization": f"Bearer {token}"})
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, armor_class=16)
 
-        assert response.status_code == 200
-        assert response.json()["armor_class"] == 13
+        assert character["armor_class"] == 16
 
-    async def test_armor_dex_bonus_is_capped(
-        self, client, gm_token, player, player_token, create_class, create_api_character
+    async def test_armor_class_is_patchable(
+        self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        character, token = await create_api_character(class_id=character_class.id, owner=player, dexterity=18)
-        armor_id = await self._create_armor(client, gm_token, "Scale Mail", base=14, dex_bonus=True, max_dex_bonus=2)
-        await self._equip(client, token, character["id"], armor_id, is_equipped=True)
+        character, token = await create_api_character(class_id=character_class.id, owner=player)
 
-        response = await client.get(f"/characters/{character['id']}", headers={"Authorization": f"Bearer {token}"})
-
-        assert response.status_code == 200
-        assert response.json()["armor_class"] == 16
-
-    async def test_heavy_armor_ignores_dex(
-        self, client, gm_token, player, player_token, create_class, create_api_character
-    ):
-        character_class = await create_class(name="Fighter")
-        character, token = await create_api_character(class_id=character_class.id, owner=player, dexterity=18)
-        armor_id = await self._create_armor(client, gm_token, "Plate", base=18, dex_bonus=False)
-        await self._equip(client, token, character["id"], armor_id, is_equipped=True)
-
-        response = await client.get(f"/characters/{character['id']}", headers={"Authorization": f"Bearer {token}"})
+        response = await client.patch(
+            f"/characters/{character['id']}",
+            json={"armor_class": 18, "shield": 2},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
         assert response.status_code == 200
         assert response.json()["armor_class"] == 18
+        assert response.json()["shield"] == 2
 
-    async def test_unequipping_armor_restores_unarmored_ac(
+    async def test_equipped_armor_does_not_change_ac(
         self, client, gm_token, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        character, token = await create_api_character(class_id=character_class.id, owner=player, dexterity=14)
-        armor_id = await self._create_armor(client, gm_token, "Leather", base=11, dex_bonus=True)
-        stack = await self._equip(client, token, character["id"], armor_id, is_equipped=True)
+        character, token = await create_api_character(class_id=character_class.id, owner=player, armor_class=12)
+        armor_id = await self._create_armor(client, gm_token, "Scale Mail", base=14, dex_bonus=True, max_dex_bonus=2)
 
-        unequip_response = await client.patch(
-            f"/characters/{character['id']}/items/{stack['id']}",
-            json={"is_equipped": False},
-            headers={"Authorization": f"Bearer {token}"},
+        add_response = await client.post(
+            f"/characters/{character['id']}/gm-panel/items",
+            json={"item_id": armor_id, "is_equipped": True},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert unequip_response.status_code == 200
+        assert add_response.status_code == 201, add_response.text
 
         response = await client.get(f"/characters/{character['id']}", headers={"Authorization": f"Bearer {token}"})
 
@@ -182,4 +163,4 @@ class TestDerivedArmorClass:
         row = next(item for item in response.json()["items"] if item["id"] == character["id"])
         assert row["hit_dice"] == "D10"
         assert row["speed"] == 30
-        assert row["armor_class"] == 12
+        assert row["armor_class"] == 10

@@ -11,7 +11,6 @@ from app.models.character_ability_score_model import CharacterAbilityScore  # no
 from app.models.character_asi_choice_model import CharacterASIChoice  # noqa: F401
 from app.models.character_association_models import (  # noqa: F401
     CharacterFeat,
-    CharacterSavingThrowProficiency,
     CharacterSkillProficiency,
     CharacterSpellSlot,
 )

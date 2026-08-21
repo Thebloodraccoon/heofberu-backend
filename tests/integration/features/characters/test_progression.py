@@ -118,7 +118,11 @@ class TestClassChange:
         assert response.status_code == 200
         body = response.json()
         assert body["class_id"] == caster_class.id
-        slots = {item["spell_level"]: item for item in body["spell_slots"]}
+        slots_response = await client.get(
+            f"/characters/{character['id']}/spell-slots",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        slots = {item["spell_level"]: item for item in slots_response.json()}
         assert slots["LEVEL_1"]["total"] == 2
 
     async def test_unknown_class_returns_404(self, client, player, player_token, create_class, create_api_character):
@@ -465,7 +469,11 @@ class TestLevelUp:
         )
 
         assert response.status_code == 200
-        slots = {item["spell_level"]: item for item in response.json()["spell_slots"]}
+        slots_response = await client.get(
+            f"/characters/{character['id']}/spell-slots",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        slots = {item["spell_level"]: item for item in slots_response.json()}
         assert slots["LEVEL_1"]["total"] == 3
 
     async def test_level_up_at_max_level_returns_400(

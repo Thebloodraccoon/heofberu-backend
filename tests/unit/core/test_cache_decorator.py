@@ -3,7 +3,7 @@ Unit tests for the ``@use_cache`` decorator against a fake Redis store.
 
 The cache layer is exercised with an in-memory ``FakeRedis`` that mimics the
 async ``get``/``set``/``scan_iter``/``delete`` surface, injected by patching
-``app.core.cache.client._redis_provider``. ``CACHE_ENABLED`` is flipped on
+``app.crud.cache.client._redis_provider``. ``CACHE_ENABLED`` is flipped on
 per-test (``app.settings.test`` keeps it off by default).
 """
 

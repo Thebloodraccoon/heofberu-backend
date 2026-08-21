@@ -3,6 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.base import CharacterSubDomainService
+from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.spells.eligibility import CharacterSpellEligibilityChecker
 from app.features.characters.spells.exceptions import (
     CharacterSpellAlreadyKnownException,
@@ -106,6 +107,7 @@ class CharacterSpellService(CharacterSubDomainService):
         slot = await self.character_spell_slot_repository.upsert_spell_slot(
             character_id, level, current_total, new_used
         )
+        await invalidate_character_cache(character_id)
         return SpellSlotResponse.model_validate(slot)
 
     async def get_known_spells(self, character_id: int, current_user: UserResponse) -> list[CharacterSpellResponse]:
@@ -145,6 +147,7 @@ class CharacterSpellService(CharacterSubDomainService):
         await self.eligibility_checker.check(character, spell)
 
         character_spell = await self.character_spell_repository.add_known_spell(character_id, data.spell_id)
+        await invalidate_character_cache(character_id)
         return CharacterSpellResponse.model_validate(character_spell)
 
     async def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> bool:
@@ -153,7 +156,9 @@ class CharacterSpellService(CharacterSubDomainService):
         await self.get_character_for_user(character_id, current_user)
 
         character_spell = await self._get_known_spell_or_404(character_id, spell_id)
-        return await self.character_spell_repository.remove_known_spell(character_spell)
+        result = await self.character_spell_repository.remove_known_spell(character_spell)
+        await invalidate_character_cache(character_id)
+        return result
 
     async def _get_known_spell_or_404(self, character_id: int, spell_id: int) -> CharacterSpell:
         """Fetch a known-spell entry, or raise ``CharacterSpellNotFoundException``."""

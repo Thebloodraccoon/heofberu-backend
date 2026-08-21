@@ -3,7 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.access import get_character_for_user as _get_character_for_user
-from app.features.characters.core.repository import CharacterRepository
+from app.features.characters.crud.repository import CharacterRepository
 from app.features.users.schemas import UserResponse
 from app.models.character_model import Character
 

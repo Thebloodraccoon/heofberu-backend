@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from app.constants import AbilityScore
-from app.features.characters.ability_score.calculator import ArmorSpec
 from app.features.characters.ability_score.repository import CharacterStatsRepository
 from app.models.character_ability_score_model import CharacterAbilityScore
 from tests.unit.fakes import FakeAsyncSession, FakeResult
@@ -158,32 +157,3 @@ class TestCharacterStatsRepository:
         result = await repository.get_races([5])
 
         assert result == {5: row}
-
-    async def test_get_armor_by_character_ids_empty_returns_empty(self):
-        repository = CharacterStatsRepository(make_session([]))
-
-        result = await repository.get_armor_by_character_ids([])
-
-        assert result == {}
-
-    async def test_get_armor_by_character_ids_groups_armor_specs(self):
-        rows = [
-            SimpleNamespace(
-                character_id=1,
-                item=SimpleNamespace(armor_class_base=16, armor_class_dex_bonus=True, armor_class_max_dex_bonus=2),
-            ),
-            SimpleNamespace(
-                character_id=1,
-                item=SimpleNamespace(armor_class_base=14, armor_class_dex_bonus=False, armor_class_max_dex_bonus=None),
-            ),
-        ]
-        repository = CharacterStatsRepository(make_session(rows))
-
-        result = await repository.get_armor_by_character_ids([1])
-
-        assert result == {
-            1: [
-                ArmorSpec(base=16, dex_bonus=True, max_dex_bonus=2),
-                ArmorSpec(base=14, dex_bonus=False, max_dex_bonus=None),
-            ]
-        }

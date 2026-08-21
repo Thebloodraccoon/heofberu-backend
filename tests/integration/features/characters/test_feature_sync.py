@@ -16,7 +16,7 @@ async def get_feature_ids(client, character_id, token):
 @pytest.mark.asyncio
 class TestAutoGrantOnCreate:
     async def test_create_grants_class_features_at_or_below_level(
-        self, client, player, player_token, create_class, create_feature, create_api_character
+        self, client, player, gm_token, create_class, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter")
         second_wind = await create_feature(
@@ -29,10 +29,10 @@ class TestAutoGrantOnCreate:
 
         character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1)
 
-        assert await get_feature_ids(client, character["id"], player_token) == {second_wind.id, uncanny_dodge.id}
+        assert await get_feature_ids(client, character["id"], gm_token) == {second_wind.id, uncanny_dodge.id}
 
     async def test_create_with_subclass_grants_subclass_features(
-        self, client, player, player_token, create_class, create_subclass, create_feature, create_api_character
+        self, client, player, gm_token, create_class, create_subclass, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
@@ -44,10 +44,10 @@ class TestAutoGrantOnCreate:
             class_id=character_class.id, owner=player, level=3, subclass_id=subclass.id
         )
 
-        assert await get_feature_ids(client, character["id"], player_token) == {improved_critical.id}
+        assert await get_feature_ids(client, character["id"], gm_token) == {improved_critical.id}
 
     async def test_create_without_subclass_grants_no_subclass_features(
-        self, client, player, player_token, create_class, create_subclass, create_feature, create_api_character
+        self, client, player, gm_token, create_class, create_subclass, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
@@ -55,7 +55,7 @@ class TestAutoGrantOnCreate:
 
         character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3)
 
-        assert await get_feature_ids(client, character["id"], player_token) == set()
+        assert await get_feature_ids(client, character["id"], gm_token) == set()
 
 
 @pytest.mark.integration
@@ -318,8 +318,8 @@ class TestRaceBackgroundFeatAutoGrant:
     async def test_feat_grant_grants_features_and_revoke_revokes_them(
         self,
         client,
-        player,
-        player_token,
+        gm,
+        gm_token,
         create_class,
         create_feat,
         create_feature,
@@ -328,24 +328,24 @@ class TestRaceBackgroundFeatAutoGrant:
         character_class = await create_class(name="Fighter")
         feat = await create_feat(name="Alert")
         alert_benefit = await create_feature(name="Alert Initiative", source_type="FEAT", feat_id=feat.id)
-        character, token = await create_api_character(class_id=character_class.id, owner=player, level=1)
-        assert await get_feature_ids(client, character["id"], player_token) == set()
+        character, _ = await create_api_character(class_id=character_class.id, owner=gm, level=1)
+        assert await get_feature_ids(client, character["id"], gm_token) == set()
 
         add_response = await client.post(
-            f"/characters/{character['id']}/feats",
+            f"/characters/{character['id']}/gm-panel/feats",
             json={"feat_id": feat.id},
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
-        assert await get_feature_ids(client, character["id"], player_token) == {alert_benefit.id}
+        assert await get_feature_ids(client, character["id"], gm_token) == {alert_benefit.id}
 
         character_feat_id = add_response.json()["id"]
         remove_response = await client.delete(
-            f"/characters/{character['id']}/feats/{character_feat_id}",
-            headers={"Authorization": f"Bearer {token}"},
+            f"/characters/{character['id']}/gm-panel/feats/{character_feat_id}",
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert remove_response.status_code == 204
-        assert await get_feature_ids(client, character["id"], player_token) == set()
+        assert await get_feature_ids(client, character["id"], gm_token) == set()
 
     async def test_race_and_background_features_survive_level_up(
         self,
@@ -413,6 +413,24 @@ class TestRaceBackgroundFeatAutoGrant:
         )
 
         assert await get_feature_ids(client, character["id"], player_token) == set()
+
+    async def test_race_and_subrace_features_both_present(
+        self, client, player, player_token, create_race, create_subrace, create_class, create_feature, create_api_character
+    ):
+        """Race features and subrace features must coexist — subrace does NOT replace race features."""
+        race = await create_race(name="Elf")
+        darkvision = await create_feature(name="Darkvision", source_type="RACE", race_id=race.id)
+        subrace = await create_subrace(race_id=race.id, name="High Elf")
+        weapon_training = await create_feature(
+            name="Elf Weapon Training", source_type="SUBRACE", subrace_id=subrace.id
+        )
+        character_class = await create_class(name="Fighter")
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, level=1, race_id=race.id, subrace_id=subrace.id
+        )
+
+        feature_ids = await get_feature_ids(client, character["id"], player_token)
+        assert feature_ids == {darkvision.id, weapon_training.id}
 
     async def test_change_subrace_grants_new_and_revokes_old(
         self, client, player, player_token, create_race, create_subrace, create_class, create_feature, create_api_character

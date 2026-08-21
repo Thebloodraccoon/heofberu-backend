@@ -9,10 +9,11 @@ from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, Charact
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.core.service import CharacterService
-from app.features.characters.feats.exceptions import CharacterFeatAlreadyKnownException
-from app.features.characters.feats.repository import CharacterFeatRepository
-from app.features.characters.feats.validation import check_feat_prerequisite, validate_ability_score_increase
+from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.crud.service import CharacterService
+from app.features.characters.gm_panel.exceptions import CharacterFeatAlreadyKnownException
+from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
+from app.features.characters.gm_panel.validation import check_feat_prerequisite, validate_ability_score_increase
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     CharacterAlreadyAtMaxLevelException,
@@ -119,6 +120,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             await sync_progression_features(self.repository.db, character)
 
         await self.stats_service.refresh(character)
+        await invalidate_character_cache(character_id)
 
     async def change_class(self, character_id: int, data: ClassChange, current_user: UserResponse) -> None:
         """
@@ -145,6 +147,8 @@ class CharacterProgressionService(CharacterSubDomainService):
             await sync_progression_features(self.repository.db, character)
             await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
+        await invalidate_character_cache(character_id)
+
     async def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
         """
         Set or clear a character's subclass.
@@ -166,6 +170,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         async with self._atomic():
             character.subclass_id = data.subclass_id
             await sync_progression_features(self.repository.db, character)
+
+        await invalidate_character_cache(character_id)
 
     async def set_subrace(self, character_id: int, data: SubraceChange, current_user: UserResponse) -> None:
         """
@@ -192,6 +198,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             await sync_progression_features(self.repository.db, character)
 
         await self.stats_service.refresh(character)
+        await invalidate_character_cache(character_id)
 
     async def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
         """
@@ -235,6 +242,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
         await self.stats_service.refresh(character)
+        await invalidate_character_cache(character_id)
 
     async def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
         """Return the character's resolved ASI-level choices, for audit."""

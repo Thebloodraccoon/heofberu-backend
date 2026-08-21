@@ -3,7 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.attacks.exceptions import AttackNotFoundException
-from app.features.characters.attacks.repository import AttackRepository
+from app.features.characters.attacks.repository import CharacterAttackRepository
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.base import CharacterSubDomainService
 from app.features.users.schemas import UserResponse
@@ -16,12 +16,13 @@ class CharacterAttackService(CharacterSubDomainService):
 
     Access control is enforced against the owning character via the
     inherited ``CharacterSubDomainService`` wiring, but persistence goes
-    through :class:`AttackRepository` since attacks are their own table.
+    through :class:`CharacterAttackRepository` since attacks are their own
+    table.
     """
 
     def __init__(self, db: AsyncSession):
         super().__init__(db)
-        self.attack_repository = AttackRepository(db)
+        self.attack_repository = CharacterAttackRepository(db)
 
     async def get_attacks(self, character_id: int, current_user: UserResponse) -> list[AttackResponse]:
         """List all attacks belonging to a character."""

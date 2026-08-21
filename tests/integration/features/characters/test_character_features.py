@@ -1,4 +1,4 @@
-"""Tests for character feature endpoints: record, update, remove."""
+"""Tests for GM feature endpoints: record, update, remove."""
 
 import pytest
 
@@ -7,16 +7,16 @@ import pytest
 @pytest.mark.asyncio
 class TestCharacterFeatures:
     async def test_add_and_list_feature(
-        self, client, player, player_token, create_class, create_character, create_feature
+        self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
 
         add_response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id, "notes": "Two attacks"},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert add_response.status_code == 201
@@ -25,22 +25,22 @@ class TestCharacterFeatures:
 
         list_response = await client.get(
             f"/characters/{character.id}/features",
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert list_response.status_code == 200
         assert [item["feature_id"] for item in list_response.json()] == [feature.id]
 
     async def test_response_embeds_brief_feature_details(
-        self, client, player, player_token, create_class, create_character, create_feature
+        self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1)
 
         add_response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id, "notes": "Once per short rest"},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert add_response.status_code == 201
@@ -48,115 +48,96 @@ class TestCharacterFeatures:
         assert embedded["id"] == feature.id
         assert embedded["name"] == "Second Wind"
         assert embedded["source_type"] == "CLASS"
-        # The payload stays light — full detail (description) is fetched
-        # on demand via GET /features/{feature_id}.
-        assert "description" not in embedded
+        assert "description" in embedded
 
-    async def test_gm_can_add_standalone_feature_to_player_character(
-        self, client, gm_token, player, create_class, create_character, create_feature
-    ):
+    async def test_add_missing_feature_returns_404(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=player.id, class_id=character_class.id)
-        gift = await create_feature(name="GM Gift", source_type="OTHER")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
 
         response = await client.post(
-            f"/characters/{character.id}/features",
-            json={"feature_id": gift.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 201
-        assert response.json()["feature_id"] == gift.id
-
-    async def test_add_missing_feature_returns_404(self, client, player, player_token, create_class, create_character):
-        character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=player.id, class_id=character_class.id)
-
-        response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": 999999},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 404
 
     async def test_duplicate_feature_returns_409(
-        self, client, player, player_token, create_class, create_character, create_feature
+        self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
 
         await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 409
 
     async def test_update_feature_notes(
-        self, client, player, player_token, create_class, create_character, create_feature
+        self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Fighting Style", source_type="OTHER")
         add_response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id, "notes": "Defense"},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_feature_id = add_response.json()["id"]
 
         response = await client.patch(
-            f"/characters/{character.id}/features/{character_feature_id}",
+            f"/characters/{character.id}/gm-panel/features/{character_feature_id}",
             json={"notes": "Dueling"},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
         assert response.json()["notes"] == "Dueling"
 
-    async def test_remove_feature(self, client, player, player_token, create_class, create_character, create_feature):
+    async def test_remove_feature(self, client, gm, gm_token, create_class, create_character, create_feature):
         character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
         add_response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_feature_id = add_response.json()["id"]
 
         response = await client.delete(
-            f"/characters/{character.id}/features/{character_feature_id}",
-            headers={"Authorization": f"Bearer {player_token}"},
+            f"/characters/{character.id}/gm-panel/features/{character_feature_id}",
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 204
         assert (
             await client.get(
                 f"/characters/{character.id}/features",
-                headers={"Authorization": f"Bearer {player_token}"},
+                headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json() == []
 
-    async def test_player_cannot_add_feature_to_other_players_character(
-        self, client, player_token, create_user, create_class, create_character, create_feature
+    async def test_player_denied_feature_grant(
+        self, client, player, player_token, create_class, create_character, create_feature
     ):
         character_class = await create_class(name="Fighter")
-        other = await create_user(username="other", email="other@example.com")
-        character = await create_character(owner_id=other.id, class_id=character_class.id)
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
 
         response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )

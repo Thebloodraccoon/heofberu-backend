@@ -7,10 +7,7 @@ from fastapi import Depends
 from app.core.db import DatabaseDep
 from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.conditions.service import CharacterConditionService
-from app.features.characters.core.service import CharacterService
-from app.features.characters.feats.service import CharacterFeatService
-from app.features.characters.features.service import CharacterFeatureService
-from app.features.characters.items.service import CharacterItemService
+from app.features.characters.crud.service import CharacterService
 from app.features.characters.proficiencies.service import CharacterProficiencyService
 from app.features.characters.progression.service import CharacterProgressionService
 from app.features.characters.spells.service import CharacterSpellService
@@ -50,33 +47,6 @@ def get_character_attack_service(db: DatabaseDep) -> CharacterAttackService:
 
 
 CharacterAttackServiceDep = Annotated[CharacterAttackService, Depends(get_character_attack_service)]
-
-
-def get_character_feat_service(db: DatabaseDep) -> CharacterFeatService:
-    """Get the character feat service instance."""
-
-    return CharacterFeatService(db)
-
-
-CharacterFeatServiceDep = Annotated[CharacterFeatService, Depends(get_character_feat_service)]
-
-
-def get_character_feature_service(db: DatabaseDep) -> CharacterFeatureService:
-    """Get the character feature service instance."""
-
-    return CharacterFeatureService(db)
-
-
-CharacterFeatureServiceDep = Annotated[CharacterFeatureService, Depends(get_character_feature_service)]
-
-
-def get_character_item_service(db: DatabaseDep) -> CharacterItemService:
-    """Get the character item service instance."""
-
-    return CharacterItemService(db)
-
-
-CharacterItemServiceDep = Annotated[CharacterItemService, Depends(get_character_item_service)]
 
 
 def get_character_condition_service(db: DatabaseDep) -> CharacterConditionService:

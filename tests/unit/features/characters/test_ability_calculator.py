@@ -102,6 +102,27 @@ class TestCharacterAbilityScoreCalculator:
 
         assert totals["dexterity_total"] == 13
 
+    def test_race_and_subrace_on_same_ability_sum_not_override(self):
+        """Race +2 DEX and subrace +1 DEX must produce +3 total, not +1 (override)."""
+        character = make_character(dexterity=10)
+        race_bonuses = [make_race_bonus(AbilityScore.DEX, 2)]
+        subrace_bonuses = [make_subrace_bonus(AbilityScore.DEX, 1)]
+
+        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses, [])
+
+        assert totals["dexterity_total"] == 13  # 10 + 2 + 1, NOT 10 + 1
+
+    def test_race_and_subrace_on_different_abilities_both_apply(self):
+        """Race bonus to STR and subrace bonus to DEX must both apply."""
+        character = make_character(strength=10, dexterity=10)
+        race_bonuses = [make_race_bonus(AbilityScore.STR, 2)]
+        subrace_bonuses = [make_subrace_bonus(AbilityScore.DEX, 1)]
+
+        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses, [])
+
+        assert totals["strength_total"] == 12
+        assert totals["dexterity_total"] == 11
+
     def test_feat_increase_applied(self):
         character = make_character()
         feat_increases = [make_feat_increase(AbilityScore.STR)]

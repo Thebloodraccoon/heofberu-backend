@@ -1,14 +1,9 @@
 """Character schemas, including the aggregated CharacterResponse."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import AbilityScore
-from app.features.characters.attacks.schemas import AttackResponse
-from app.features.characters.proficiencies.schemas import (
-    SavingThrowProficiencyResponse,
-    SkillProficiencyResponse,
-)
-from app.features.characters.spells.schemas import SpellSlotResponse
+from app.constants import AbilityScore, CharacterFeatSource, FeatureSourceType
+from app.features.characters.conditions.schemas import CharacterConditionResponse
 
 # Standard D&D 5e ability-score range for values entered directly by a
 # player (before racial/feat bonuses are applied) — matches the typical
@@ -22,24 +17,65 @@ class CharacterBase(BaseModel):
     """Base character fields shared by create and response schemas."""
 
     name: str
-    image_path: str | None = None
     level: int = Field(default=1, ge=1, le=20)
 
     class_id: int
     subclass_id: int | None = None
 
-    race_id: int
+    race_id: int | None = None
     subrace_id: int | None = None
 
-    background_id: int
+    background_id: int | None = None
 
     current_hp: int = Field(default=0, ge=0)
     max_hp: int = Field(default=0, ge=0)
     temp_hp: int = Field(default=0, ge=0)
-    shield: int = 0
-    initiative_bonus: int = 0
-    passive_perception_bonus: int = 0
-    has_jack_of_all_trades: bool = False
+
+    # Combat stats entered/set directly on the sheet — there is no
+    # dynamic armor calculation anymore; whatever is stored here is what
+    # every read returns.
+    armor_class: int = Field(default=10, ge=0)
+    shield: int = Field(default=0, ge=0)
+
+    # Base ability scores — what the player entered, before racial or
+    # feat bonuses. Effective (post-bonus) totals are exposed separately
+    # on CharacterResponse via the ability_scores field.
+    strength: int
+    dexterity: int
+    constitution: int
+    intelligence: int
+    wisdom: int
+    charisma: int
+
+    backstory: str = ""
+    notes: str = ""
+
+    # Personality card free-text fields (5e "Personality" section).
+    personality_traits: str = ""
+    ideals: str = ""
+    bonds: str = ""
+    flaws: str = ""
+
+    money_gold: int = Field(default=0, ge=0)
+    money_silver: int = Field(default=0, ge=0)
+    money_copper: int = Field(default=0, ge=0)
+
+
+class CharacterCreate(CharacterBase):
+    """
+    Create payload for a character.
+
+    ``class_id`` is required and must reference an existing class;
+    ``race_id``/``background_id`` are optional but, if provided, must
+    also reference existing records. ``subclass_id``/``subrace_id`` are
+    also optional and constrained to their parent (``subclass_id`` must
+    belong to ``class_id``; ``subrace_id`` must belong to ``race_id``).
+    Existence checks happen in ``CharacterService.create_character``
+    (needs DB access, not doable at the schema layer) — see
+    ``SubclassNotFoundException`` / ``SubraceNotFoundException`` /
+    ``ClassNotFoundException`` / ``RaceNotFoundException`` /
+    ``BackgroundNotFoundException``.
+    """
 
     # Base ability scores — what the player entered, before racial or
     # feat bonuses. Effective (post-bonus) totals are exposed separately
@@ -50,36 +86,6 @@ class CharacterBase(BaseModel):
     intelligence: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     wisdom: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     charisma: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
-
-    proficiencies: str = ""
-
-    traits: str = ""
-    backstory: str = ""
-    notes: str = ""
-
-    money_gold: int = Field(default=0, ge=0)
-    money_silver: int = Field(default=0, ge=0)
-    money_copper: int = Field(default=0, ge=0)
-
-    spell_ability: AbilityScore | None = None
-    spell_dc_misc_bonus: int = 0
-    spell_attack_misc_bonus: int = 0
-
-
-class CharacterCreate(CharacterBase):
-    """
-    Create payload for a character.
-
-    ``class_id`` and ``background_id`` are required and must reference
-    existing records; ``subclass_id``/``race_id``/``subrace_id`` are
-    optional but, if provided, must also reference existing records
-    (``subclass_id`` must belong to ``class_id``; ``subrace_id`` must
-    belong to ``race_id``). Existence checks happen in
-    ``CharacterService.create_character`` (needs DB access, not doable
-    at the schema layer) — see ``SubclassNotFoundException`` /
-    ``SubraceNotFoundException`` / ``ClassNotFoundException`` /
-    ``RaceNotFoundException`` / ``BackgroundNotFoundException``.
-    """
 
 
 class CharacterUpdate(BaseModel):
@@ -100,36 +106,33 @@ class CharacterUpdate(BaseModel):
     ``level`` and the base ability scores (``strength``..``charisma``) are
     likewise not editable here: level changes go through the dedicated
     level-up endpoint, and base scores only change via that endpoint's
-    Ability Score Improvement choice. ``hit_dice``, ``speed``, and
-    ``armor_class`` are not editable either — they are derived from the
-    character's class, race, and equipped armor on every read (see
-    ``CharacterStatsService``). See ``CharacterProgressionService``.
+    Ability Score Improvement choice or a GM ASI grant.
+    ``max_hp`` is GM-only — see ``PATCH /characters/{id}/gm-panel/max-hp``.
+    ``hit_dice`` and ``speed`` are not editable either — they are derived
+    from the character's class and race on every read (see
+    ``CharacterStatsService``). ``armor_class`` and ``shield`` are plain
+    editable columns — there is no dynamic armor calculation anymore.
     """
 
     name: str | None = None
-    image_path: str | None = None
 
     current_hp: int | None = Field(default=None, ge=0)
-    max_hp: int | None = Field(default=None, ge=0)
     temp_hp: int | None = Field(default=None, ge=0)
+
+    armor_class: int | None = Field(default=None, ge=0)
     shield: int | None = Field(default=None, ge=0)
-    initiative_bonus: int | None = Field(default=None, ge=0)
-    passive_perception_bonus: int | None = Field(default=None, ge=0)
-    has_jack_of_all_trades: bool | None = None
 
-    proficiencies: str | None = None
-
-    traits: str | None = None
     backstory: str | None = None
     notes: str | None = None
+
+    personality_traits: str | None = None
+    ideals: str | None = None
+    bonds: str | None = None
+    flaws: str | None = None
 
     money_gold: int | None = Field(default=None, ge=0)
     money_silver: int | None = Field(default=None, ge=0)
     money_copper: int | None = Field(default=None, ge=0)
-
-    spell_ability: AbilityScore | None = None
-    spell_dc_misc_bonus: int | None = Field(default=None, ge=0)
-    spell_attack_misc_bonus: int | None = Field(default=None, ge=0)
 
 
 class AbilityScoresResponse(BaseModel):
@@ -138,8 +141,8 @@ class AbilityScoresResponse(BaseModel):
     and feat bonuses. Backed by the ``character_ability_scores`` cache
     table; see ``CharacterAbilityScoreCalculator`` for how it's computed
     and ``CharacterStatsService`` for the write paths that refresh it
-    (character create, feat grant/update/remove, level-up ASI, race
-    change). Reads never recompute the cache.
+    (character create, feat grant/update/remove, level-up ASI, GM ASI
+    grant, race change). Reads never recompute the cache.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -156,22 +159,20 @@ class CharacterResponse(CharacterBase):
     """
     Aggregates response schemas from every sub-domain into one payload.
 
-    ``ability_scores`` holds the effective (post-bonus) totals, kept
-    distinct from the base ``strength``..``charisma`` fields inherited
-    from ``CharacterBase`` so callers can always see both the raw input
-    and the computed result. It is read from the
-    ``character_ability_scores`` cache as-is and never recomputed on a
-    read — a character that has never gone through a write path that
-    refreshes it (create always does) reports ``None`` here. The cache is
-    refreshed by the write paths that can affect ability scores: create,
-    feat grant/update/remove, level-up ASI, and race change.
+    The raw base ability scores are accepted on input (and read from the
+    row via ``from_attributes``) but are EXCLUDED from serialized output —
+    clients consume the effective totals from ``ability_scores`` instead,
+    and the original base values are exposed to the GM through
+    ``GET /characters/{id}/gm-panel/stats``. They carry inert defaults so
+    the cached-response JSON round-trips without them.
 
-    ``hit_dice``, ``speed``, and ``armor_class`` are likewise not read
-    from the character row — they are derived from the class, race, and
-    equipped armor by ``CharacterStatsService`` and written onto
-    the response in ``CharacterService._to_response``. They are declared
-    here (with defaults) so the response stays flat, but are never
-    accepted by ``CharacterCreate``/``CharacterUpdate``.
+    ``hit_dice`` and ``speed`` are not read from the character row (the
+    row holds no such columns anymore) — they are derived from the class
+    and race by ``CharacterStatsService`` and written onto the response in
+    ``CharacterService._to_response``. They are declared here (with
+    defaults) so the response stays flat, but are never accepted by
+    ``CharacterCreate``/``CharacterUpdate``. ``armor_class``/``shield``
+    come straight off the row — they are plain editable columns.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -182,10 +183,61 @@ class CharacterResponse(CharacterBase):
     # Derived combat stats — populated by ``CharacterService._to_response``.
     hit_dice: str = ""
     speed: int = 30
-    armor_class: int = 10
 
     ability_scores: AbilityScoresResponse | None = None
     skill_proficiencies: list[SkillProficiencyResponse] = []
     saving_throw_proficiencies: list[SavingThrowProficiencyResponse] = []
-    spell_slots: list[SpellSlotResponse] = []
-    attacks: list[AttackResponse] = []
+    conditions: list[CharacterConditionResponse] = []
+
+
+class FeatBriefResponse(BaseModel):
+    """Feat name/description embedded in a character's feat grant row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str = ""
+
+
+class CharacterFeatResponse(BaseModel):
+    """Aggregates a character's feat grant with its chosen ASI and feat brief."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    character_id: int
+    feat_id: int
+    ability_score_increase_id: int | None = None
+    source_type: CharacterFeatSource = CharacterFeatSource.GM
+    feat: FeatBriefResponse | None = None
+
+
+class CharacterFeatureBriefResponse(BaseModel):
+    """
+    Feature summary embedded in a character's feature grant row.
+
+    Unlike the catalog listing row (``FeatureGetAllResponse``) this
+    carries ``description`` so the sheet can render details without a
+    follow-up call.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    source_type: FeatureSourceType
+    level: int | None = None
+    description: str = ""
+
+
+class CharacterFeatureResponse(BaseModel):
+    """Aggregates a character's feature grant with notes and a brief feature summary."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    character_id: int
+    feature_id: int
+    notes: str = ""
+    feature: CharacterFeatureBriefResponse
