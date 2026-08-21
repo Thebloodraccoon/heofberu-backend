@@ -107,7 +107,7 @@ class TestAutoGrantOnLevelUp:
         assert await get_feature_ids(client, character["id"], player_token) == {remarkable_athlete.id}
 
     async def test_manual_other_source_feature_survives_level_up(
-        self, client, player, player_token, create_class, create_feature, create_api_character
+        self, client, player, player_token, gm_token, create_class, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         action_surge = await create_feature(
@@ -116,10 +116,11 @@ class TestAutoGrantOnLevelUp:
         manual = await create_feature(name="Custom Gift", source_type="OTHER")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
+        # Manual (OTHER-source) grants are a GM-panel write.
         add_response = await client.post(
-            f"/characters/{character['id']}/features",
+            f"/characters/{character['id']}/gm-panel/features",
             json={"feature_id": manual.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 
@@ -157,7 +158,7 @@ class TestAutoRevokeOnChange:
         assert await get_feature_ids(client, character["id"], player_token) == {arcane_recovery.id}
 
     async def test_class_change_keeps_manual_other_source_feature(
-        self, client, player, player_token, create_class, create_feature, create_api_character
+        self, client, player, player_token, gm_token, create_class, create_feature, create_api_character
     ):
         fighter = await create_class(name="Fighter")
         wizard = await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
@@ -167,9 +168,9 @@ class TestAutoRevokeOnChange:
         character, _ = await create_api_character(class_id=fighter.id, owner=player)
 
         add_response = await client.post(
-            f"/characters/{character['id']}/features",
+            f"/characters/{character['id']}/gm-panel/features",
             json={"feature_id": manual.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 
@@ -188,7 +189,7 @@ class TestAutoRevokeOnChange:
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
         improved_critical = await create_feature(
-            name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3
+            name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=1
         )
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
         assert await get_feature_ids(client, character["id"], player_token) == set()
@@ -216,7 +217,7 @@ class TestAutoRevokeOnChange:
 @pytest.mark.asyncio
 class TestManualGrantInteractions:
     async def test_adding_already_auto_granted_feature_returns_409(
-        self, client, player, player_token, create_class, create_feature, create_api_character
+        self, client, player, player_token, gm_token, create_class, create_feature, create_api_character
     ):
         character_class = await create_class(name="Fighter")
         second_wind = await create_feature(
@@ -226,9 +227,9 @@ class TestManualGrantInteractions:
         assert await get_feature_ids(client, character["id"], player_token) == {second_wind.id}
 
         response = await client.post(
-            f"/characters/{character['id']}/features",
+            f"/characters/{character['id']}/gm-panel/features",
             json={"feature_id": second_wind.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 409

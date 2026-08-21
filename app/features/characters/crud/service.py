@@ -464,7 +464,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         damage = -delta
         absorbed = min(temp_hp, damage)
-        return current_hp + (damage - absorbed), temp_hp - absorbed
+        return current_hp - (damage - absorbed), temp_hp - absorbed
 
     async def rest(self, character_id: int, data: RestRequest, current_user: UserResponse) -> CharacterResponse:
         """

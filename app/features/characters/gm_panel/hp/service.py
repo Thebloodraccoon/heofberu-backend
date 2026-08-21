@@ -21,6 +21,10 @@ class GmPanelHpService(CharacterSubDomainService):
     clamped down to it; temp HP is untouched.
     """
 
+    # Serializes a full ``CharacterResponse`` — needs the eagerly loaded
+    # collections (skill proficiencies, conditions), not the light fetch.
+    _light_character_fetch = False
+
     def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.stats_service = CharacterStatsService(db)

@@ -212,6 +212,17 @@ class CharacterResponse(CharacterBase):
     max_hp: int
     temp_hp: int
 
+    # Raw base ability scores — accepted on input and read from the row,
+    # but excluded from serialized output (clients use ``ability_scores``;
+    # the GM sees base values via /gm-panel/stats). Inert defaults keep
+    # cached-response JSON round-trips working.
+    strength: int = Field(default=10, exclude=True)
+    dexterity: int = Field(default=10, exclude=True)
+    constitution: int = Field(default=10, exclude=True)
+    intelligence: int = Field(default=10, exclude=True)
+    wisdom: int = Field(default=10, exclude=True)
+    charisma: int = Field(default=10, exclude=True)
+
     # Derived combat stats — populated by ``CharacterService._to_response``.
     hit_dice: str = ""
     speed: int = 30

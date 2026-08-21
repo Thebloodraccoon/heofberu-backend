@@ -506,7 +506,7 @@ class TestLevelUp:
         character = await create_character(owner_id=player.id, class_id=character_class.id, level=20)
 
         response = await client.post(
-            f"/characters/{character['id']}/progression/level-up",
+            f"/characters/{character.id}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
