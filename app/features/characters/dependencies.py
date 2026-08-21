@@ -8,7 +8,6 @@ from app.core.db import DatabaseDep
 from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.conditions.service import CharacterConditionService
 from app.features.characters.crud.service import CharacterService
-from app.features.characters.proficiencies.service import CharacterProficiencyService
 from app.features.characters.progression.service import CharacterProgressionService
 from app.features.characters.spells.service import CharacterSpellService
 
@@ -20,15 +19,6 @@ def get_character_service(db: DatabaseDep) -> CharacterService:
 
 
 CharacterServiceDep = Annotated[CharacterService, Depends(get_character_service)]
-
-
-def get_character_proficiency_service(db: DatabaseDep) -> CharacterProficiencyService:
-    """Get the character proficiency service instance."""
-
-    return CharacterProficiencyService(db)
-
-
-CharacterProficiencyServiceDep = Annotated[CharacterProficiencyService, Depends(get_character_proficiency_service)]
 
 
 def get_character_spell_service(db: DatabaseDep) -> CharacterSpellService:

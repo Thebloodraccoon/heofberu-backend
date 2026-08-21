@@ -1,79 +1,22 @@
-"""Character spell endpoints: slots, known spells, and learning."""
+"""Character spell endpoints: known spells with class-derived slot totals."""
 
-from fastapi import APIRouter, Body, status
+from fastapi import APIRouter, status
 
 from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterSpellServiceDep
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
-    SpellSlotResponse,
-    SpellSlotUpdate,
+    CharacterSpellsResponse,
 )
 
 router = APIRouter(tags=["Characters Spells"])
 
 
 @router.get(
-    "/{character_id}/spell-slots",
-    response_model=list[SpellSlotResponse],
-    summary="List a character's spell slots",
-    responses={
-        403: {"description": "You do not have access to this character."},
-        404: {"description": "No character exists with the given ID."},
-    },
-)
-async def get_character_spell_slots(
-    character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep
-):
-    """Get all spell slot entries (by level) for a character."""
-
-    return await spell_service.get_spell_slots(character_id, current_user)
-
-
-@router.patch(
-    "/{character_id}/spell-slots",
-    response_model=SpellSlotResponse,
-    summary="Spend or restore spell slots at a level",
-    responses={
-        400: {"description": "`used` would be negative or exceed `total`."},
-        403: {"description": "You do not have access to this character."},
-        404: {"description": "No character exists with the given ID."},
-    },
-)
-async def update_character_spell_slot(
-    character_id: int,
-    spell_service: CharacterSpellServiceDep,
-    current_user: CurrentUserDep,
-    data: SpellSlotUpdate = Body(
-        openapi_examples={
-            "spend": {
-                "summary": "Spend a slot (cast a level-3 spell)",
-                "value": {"level": "LEVEL_3", "used": 2},
-            },
-            "restore": {
-                "summary": "Restore all slots at a level",
-                "value": {"level": "LEVEL_3", "used": 0},
-            },
-        },
-    ),
-):
-    """
-    Spend or restore spell slots at a given level.
-
-    Only ``used`` is editable. Slot ``total`` is always derived from the
-    character's class/level spell-slot progression (applied on create and
-    re-applied on level-up/class change) — it is not client-settable, so
-    a player cannot grant themselves extra slots.
-    """
-
-    return await spell_service.update_spell_slot(character_id, data, current_user)
-
-
-@router.get(
     "/{character_id}/spells",
-    response_model=list[CharacterSpellResponse],
-    summary="List a character's known spells",
+    response_model=CharacterSpellsResponse,
+    summary="List a character's spell slots and known spells",
     responses={
         403: {"description": "You do not have access to this character."},
         404: {"description": "No character exists with the given ID."},
@@ -82,9 +25,18 @@ async def update_character_spell_slot(
 async def get_character_spells(
     character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep
 ):
-    """List all spells known by the character."""
+    """
+    List the character's spellcasting picture in one payload: the slot
+    totals per level plus the known spells.
 
-    return await spell_service.get_known_spells(character_id, current_user)
+    Slot ``total`` is always derived from the character's class/level
+    spell-slot progression (applied on create and re-applied on level-up
+    and class change) — it is not client-settable and there is no
+    spend/restore endpoint: a level's total doubles as the cap on how
+    many spells of that level the character may know.
+    """
+
+    return await spell_service.get_spells(character_id, current_user)
 
 
 @router.post(
@@ -113,11 +65,12 @@ async def add_character_spell(
     """
     Add a spell to the character's known spells (e.g. `{"spell_id": 5}`).
 
-    There is no separate "prepared" state — knowing a spell is having it
-    ready to cast. Choosing a spell is capped by the character's spell
-    slot totals: a character may know at most as many spells of a given
-    level as they have slots of that level. To swap a known spell for a
-    different one, remove the old one first to free up its slot.
+    There is no separate "prepared" state and no slot spending — knowing
+    a spell is having it ready to cast. Choosing a spell is capped by the
+    character's spell slot totals: a character may know at most as many
+    spells of a given level as they have slots of that level. To swap a
+    known spell for a different one, remove the old one first to free up
+    its slot.
     """
 
     return await spell_service.add_known_spell(character_id, data, current_user)

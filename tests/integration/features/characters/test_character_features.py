@@ -6,9 +6,7 @@ import pytest
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCharacterFeatures:
-    async def test_add_and_list_feature(
-        self, client, gm, gm_token, create_class, create_character, create_feature
-    ):
+    async def test_add_and_list_feature(self, client, gm, gm_token, create_class, create_character, create_feature):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
@@ -83,9 +81,7 @@ class TestCharacterFeatures:
 
         assert response.status_code == 409
 
-    async def test_update_feature_notes(
-        self, client, gm, gm_token, create_class, create_character, create_feature
-    ):
+    async def test_update_feature_notes(self, client, gm, gm_token, create_class, create_character, create_feature):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Fighting Style", source_type="OTHER")

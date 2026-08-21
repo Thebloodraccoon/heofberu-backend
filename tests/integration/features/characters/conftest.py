@@ -29,7 +29,6 @@ async def create_api_character(client, login_as, create_user, create_background)
         class_id,
         owner=None,
         name="Test Character",
-        level=1,
         race_id=None,
         background_id=None,
         **kwargs,
@@ -43,7 +42,6 @@ async def create_api_character(client, login_as, create_user, create_background)
             "/characters",
             json={
                 "name": name,
-                "level": level,
                 "class_id": class_id,
                 "race_id": race_id,
                 "background_id": background_id,

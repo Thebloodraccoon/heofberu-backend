@@ -1,4 +1,5 @@
-"""GM free-form ASI adjustment endpoints: GET/POST/DELETE under ``/gm-panel/asi``.
+"""
+GM free-form ASI adjustment endpoints: GET/POST/DELETE under ``/gm-panel/asi``.
 
 The sub-router declares no prefix of its own; the panel's aggregating
 router applies ``/{character_id}/gm-panel``.

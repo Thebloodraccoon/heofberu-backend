@@ -1,4 +1,5 @@
-"""GM-panel inventory endpoints: view (GM/owner) and manage (GM-only) a character's items.
+"""
+GM-panel inventory endpoints: view (GM/owner) and manage (GM-only) a character's items.
 
 The sub-router declares no prefix of its own; the panel's aggregating
 router applies ``/{character_id}/gm-panel`` — combined, ``"/items"``

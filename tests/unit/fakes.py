@@ -1,4 +1,5 @@
-"""Shared fakes for unit tests: async session, result, and repository stand-ins.
+"""
+Shared fakes for unit tests: async session, result, and repository stand-ins.
 
 These stand in for SQLAlchemy ``AsyncSession`` / ``BaseRepository`` so service
 logic can be exercised without a database. They are intentionally dumb: they
@@ -42,7 +43,8 @@ class FakeResult:
 
 
 class FakeAsyncSession:
-    """Minimal async context-manager session: savepoint/commit bookkeeping.
+    """
+    Minimal async context-manager session: savepoint/commit bookkeeping.
 
     ``execute`` returns a configurable queue of ``FakeResult`` objects (in
     call order) and falls back to an empty result when the queue is drained.

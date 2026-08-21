@@ -1,4 +1,5 @@
-"""Unit tests for the subrace subdomain services (crud / ability bonuses / features).
+"""
+Unit tests for the subrace subdomain services (crud / ability bonuses / features).
 
 The services are exercised with recording fake repositories so the service
 bodies (which integration tests through the HTTP layer do not trace) are
@@ -139,9 +140,7 @@ def no_subrace_invalidate(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_reconcile(monkeypatch):
-    monkeypatch.setattr(
-        "app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock()
-    )
+    monkeypatch.setattr("app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock())
 
 
 def make_crud_service(existing_by_id=None, race_exists=True):
@@ -189,9 +188,7 @@ class TestSubraceCrudService:
             await service.list_for_race(99)
 
     async def test_get_subrace_returns_serialized_row(self):
-        subrace = make_subrace(
-            ability_bonuses=[SubraceAbilityBonus(subrace_id=1, ability=AbilityScore.DEX, bonus=2)]
-        )
+        subrace = make_subrace(ability_bonuses=[SubraceAbilityBonus(subrace_id=1, ability=AbilityScore.DEX, bonus=2)])
         service, _ = make_crud_service(existing_by_id={1: subrace})
 
         result = await service.get_subrace(1, 1)
@@ -320,11 +317,11 @@ class TestSubraceAbilityBonusService:
         subrace = make_subrace(id=1)
         service, db = make_ability_bonus_service()
 
-        await service.set_ability_bonuses_for_subrace(subrace, [{"ability": AbilityScore.STR, "bonus": 1}], commit=False)
+        await service.set_ability_bonuses_for_subrace(
+            subrace, [{"ability": AbilityScore.STR, "bonus": 1}], commit=False
+        )
 
-        assert service.repository.set_bonuses_calls == [
-            (subrace, [{"ability": AbilityScore.STR, "bonus": 1}], False)
-        ]
+        assert service.repository.set_bonuses_calls == [(subrace, [{"ability": AbilityScore.STR, "bonus": 1}], False)]
         assert db.commits == 0
 
 

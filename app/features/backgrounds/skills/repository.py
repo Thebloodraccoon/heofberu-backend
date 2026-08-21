@@ -2,9 +2,7 @@
 
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.shared.skills.mixins import SkillLookupMixin
-from app.models.background_association_models import background_skills
-from app.models.background_model import Background
-from app.models.skill_model import Skill
+from app.models import Background, Skill, background_skills
 
 
 class BackgroundSkillsRepository(SkillLookupMixin, BackgroundRepository):

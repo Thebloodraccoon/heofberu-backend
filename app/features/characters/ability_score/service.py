@@ -8,8 +8,7 @@ from app.features.characters.ability_score.calculator import (
     DerivedStats,
 )
 from app.features.characters.ability_score.repository import CharacterStatsRepository
-from app.models import CharacterAbilityScore
-from app.models.character_model import Character
+from app.models import Character, CharacterAbilityScore
 
 
 class CharacterStatsService:

@@ -7,8 +7,7 @@ from app.features.backgrounds.cache import BACKGROUND_CACHE_NAMESPACES
 from app.features.backgrounds.crud.schemas import BackgroundCreate, BackgroundResponse, BackgroundUpdate
 from app.features.backgrounds.skills.repository import BackgroundSkillsRepository
 from app.features.shared.skills.mixins import SkillsManagerMixin
-from app.models.background_model import Background
-from app.models.skill_model import Skill
+from app.models import Background, Skill
 
 
 class BackgroundSkillsService(

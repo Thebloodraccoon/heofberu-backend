@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.models.character_model import Character
+from app.models.class_model import Class
 
 
 class CharacterRepository(BaseRepository[Character]):
@@ -29,7 +30,9 @@ class CharacterRepository(BaseRepository[Character]):
     Eager-loads every relationship ``CharacterResponse`` always
     serializes, via ``default_load_options`` — this prevents the N+1 the
     previous implementation had on ``skill_proficiencies``,
-    ``saving_throw_proficiencies``, ``spell_slots``, and ``attacks``.
+    ``spell_slots``, and ``attacks``, and (since saving throws moved from
+    per-character rows to the class) loads the character's class with its
+    ``saving_throws`` so responses can derive them without extra queries.
 
     ``search_fields=["name"]`` pins free-text ``search`` (on the
     inherited ``get_all``) to just ``name`` — without this, the base
@@ -48,7 +51,7 @@ class CharacterRepository(BaseRepository[Character]):
             db,
             default_load_options=[
                 selectinload(Character.skill_proficiencies),
-                selectinload(Character.saving_throw_proficiencies),
+                selectinload(Character.character_class).selectinload(Class.saving_throws),
                 selectinload(Character.conditions),
             ],
             search_fields=["name"],
@@ -69,8 +72,8 @@ class CharacterRepository(BaseRepository[Character]):
 
         Used by the sub-domain services (features, feats, spells, items,
         conditions, attacks, progression), which only need the scalar
-        columns for the access check and their own writes — loading all
-        four relationship collections here would cost four queries per
+        columns for the access check and their own writes — loading the
+        relationship collections here would cost extra queries per
         call for nothing.
         """
 

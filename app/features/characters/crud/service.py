@@ -12,7 +12,11 @@ from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.cache import invalidate_character_cache
-from app.features.characters.crud.exceptions import InvalidHpUpdateException
+from app.features.characters.crud.exceptions import (
+    InvalidHpUpdateException,
+    SkillNotAvailableForClassException,
+    TooManySkillChoicesException,
+)
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import BackgroundNotFoundException
@@ -26,6 +30,7 @@ from app.features.characters.schemas import (
     CharacterFeatureResponse,
     CharacterResponse,
     CharacterUpdate,
+    SavingThrowProficiencyResponse,
 )
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
 from app.features.classes.crud.repository import ClassRepository
@@ -34,9 +39,10 @@ from app.features.items.crud.repository import ItemRepository
 from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models import CharacterAbilityScore
+from app.models import CharacterAbilityScore, CharacterSkillProficiency, Class
 from app.models.character_item_model import CharacterItem
 from app.models.character_model import Character
+
 
 class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, CharacterResponse]):
     """
@@ -49,11 +55,15 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     way ``created_by_id`` is for the reference features, and
     ``_get_or_404`` / ``_atomic`` / ``resolve_ids`` come from the base.
 
-    Proficiencies, spell slots, known spells, attacks, and feats each live
+    Spell slots, known spells, attacks, and feats each live
     in their own subdomain package; this service owns the character record
     itself plus validating its FK references (class/subclass/race/
-    subrace/background). Character progression (race change, class change,
-    subclass/subrace change, leveling up) lives in
+    subrace/background) and the one-shot creation contract (level pinned
+    to 1, skill choices validated against the class + background grants,
+    starting HP resolved from the hit die + CON). Saving throws are not
+    stored on the character at all — they are read from the character's
+    class on every response. Character progression (race change, class
+    change, subclass/subrace change, leveling up) lives in
     ``characters.progression`` and reuses this service for
     serialization and spell-slot re-application.
 
@@ -204,24 +214,38 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     async def create_character(self, character_data: CharacterCreate, current_user: UserResponse) -> CharacterResponse:
         """
-        Create a character owned by the caller (GM or player).
+        One-shot creation of a level-1 character owned by the caller.
 
-        Validates that ``class_id`` and ``background_id`` (both required)
-        and, if provided, ``subclass_id`` (must belong to ``class_id``) /
-        ``race_id``/``subrace_id`` (must belong to ``race_id``) reference
-        existing records before writing anything — a bad reference is
-        rejected with a clear 404 rather than surfacing as a raw FK
-        IntegrityError.
+        Validates that ``class_id`` (required) and, if provided,
+        ``subclass_id`` (must belong to ``class_id``) /
+        ``race_id``/``subrace_id`` (must belong to ``race_id``) /
+        ``background_id`` reference existing records before writing
+        anything — a bad reference is rejected with a clear 404 rather
+        than surfacing as a raw FK IntegrityError.
 
-        After creation, the class's spell slot progression for the
-        character's starting level is applied immediately — see class
-        docstring — and the class/subclass/race/subrace/background
+        Creation contract (everything is derived server-side; the payload
+        carries no ``level``/HP/skill rows):
+          - the character always starts at ``level=1`` with
+            ``temp_hp=0`` — leveling up happens only through the
+            progression endpoint;
+          - skill proficiencies come from ``skill_ids`` (validated against
+            the class's ``available_skills`` and ``skill_choice_count``)
+            plus the background's and the race's granted skills,
+            deduplicated;
+          - saving throws are not written at all — they are read from the
+            class on every response;
+          - HP: the level-1 maximum is fixed server-side as the class's
+            hit die faces + effective CON modifier; ``current_hp`` starts
+            equal to it.
+
+        After creation, the class's spell slot progression for level 1 is
+        applied immediately, and the class/subclass/race/subrace/background
         features the character is entitled to are granted, along with the
         starting equipment granted by the character's class and background
         (aggregated into one stack per item). The character row, its
-        initial slot rows, its feature grants, and its starting items are
-        written in one transaction (``_atomic()`` with ``commit=False`` on
-        all writes): either all persist or none do.
+        proficiency rows, initial slot rows, feature grants, and starting
+        items are written in one transaction (``_atomic()`` with
+        ``commit=False`` on all writes): either all persist or none do.
         """
 
         await self._validate_references(
@@ -232,11 +256,44 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             background_id=character_data.background_id,
         )
 
-        payload = character_data.model_dump()
+        # Fetched once here so the whole flow can rely on the eager-loaded
+        # available_skills / saving_throws / hit dice without refetching.
+        character_class = await self.class_repository.get_by_id(character_data.class_id)
+        if character_class is None:
+            raise ClassNotFoundException(class_id=character_data.class_id)
+
+        chosen_skill_ids = self._validate_chosen_skills(character_data.skill_ids, character_class)
+
+        background_skill_ids: list[int] = []
+        if character_data.background_id is not None:
+            background = await self.background_repository.get_by_id(character_data.background_id)
+            if background is not None:
+                background_skill_ids = [skill.id for skill in background.granted_skills]
+
+        # Same pattern as the background: get_by_id eager-loads granted_skills,
+        # so no extra query is needed to collect them.
+        race_skill_ids: list[int] = []
+        if character_data.race_id is not None:
+            race = await self.race_repository.get_by_id(character_data.race_id)
+            if race is not None:
+                race_skill_ids = [skill.id for skill in race.granted_skills]
+
+        payload = character_data.model_dump(exclude={"skill_ids"})
         payload["owner_id"] = current_user.id
+        payload["level"] = 1
+        payload["temp_hp"] = 0
 
         async with self._atomic():
             character = await self.repository.create(payload, commit=False)
+
+            max_hp = await self._compute_starting_max_hp(character, character_class)
+            character.max_hp = max_hp
+            character.current_hp = max_hp
+            await self.repository.db.flush()
+
+            await self._apply_skill_proficiencies(
+                character, chosen_skill_ids, background_skill_ids, race_skill_ids, commit=False
+            )
             await self._apply_spell_slot_progression(character, commit=False)
 
             await sync_progression_features(self.repository.db, character)
@@ -247,6 +304,80 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         await invalidate_character_cache(character.id)
 
         return await self._to_response(character, refresh=True)
+
+    @staticmethod
+    def _validate_chosen_skills(skill_ids: list[int], character_class: Class) -> list[int]:
+        """
+        Validate the player's class skill choices against the class rules:
+        every id must be one of the class's ``available_skills`` and the
+        total must not exceed ``skill_choice_count``. A non-existent skill
+        id can never be in ``available_skills``, so existence needs no
+        separate lookup.
+        """
+
+        if not skill_ids:
+            return []
+
+        allowed = character_class.skill_choice_count
+        if len(skill_ids) > allowed:
+            raise TooManySkillChoicesException(class_id=character_class.id, allowed=allowed, requested=len(skill_ids))
+
+        available_ids = {skill.id for skill in character_class.available_skills}
+        for skill_id in skill_ids:
+            if skill_id not in available_ids:
+                raise SkillNotAvailableForClassException(class_id=character_class.id, skill_id=skill_id)
+
+        return skill_ids
+
+    async def _compute_starting_max_hp(self, character: Character, character_class: Class) -> int:
+        """
+        Starting max HP for a level-1 character: the full hit die + CON
+        modifier. There is nothing to validate — the value is always
+        derived, never client-supplied.
+
+        CON modifier comes from the *effective* CON total (base + race +
+        feats), matching the level-up math in the progression service. A
+        pathological ceiling below 1 (tiny die + heavily negative CON) is
+        clamped to 1 so the row always satisfies the DB check constraint.
+        """
+
+        die_faces = int(character_class.hit_dice.value[1:])
+        totals = await self.stats_service.compute(character)
+        con_mod = (totals["constitution_total"] - 10) // 2
+
+        return max(die_faces + con_mod, 1)
+
+    async def _apply_skill_proficiencies(
+        self,
+        character: Character,
+        chosen_skill_ids: list[int],
+        background_skill_ids: list[int],
+        race_skill_ids: list[int],
+        *,
+        commit: bool = True,
+    ) -> None:
+        """
+        Write the character's starting skill proficiencies: the validated
+        class choices plus the background's and the race's granted skills,
+        deduplicated across all three sources (a granted skill already
+        chosen counts as one row), all with ``is_expertise=False`` —
+        expertise is toggled afterwards via
+        ``PATCH /{id}/gm-panel/skills/{skill_id}``.
+
+        ``commit=False`` defers the commit so the caller can wrap this in
+        a transaction with other writes — see :meth:`create_character`.
+        """
+
+        merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
+        for skill_id in merged_skill_ids:
+            self.repository.db.add(
+                CharacterSkillProficiency(character_id=character.id, skill_id=skill_id, is_expertise=False)
+            )
+
+        if commit:
+            await self.repository.db.commit()
+        else:
+            await self.repository.db.flush()
 
     async def update_character(
         self, character_id: int, update_data: CharacterUpdate, current_user: UserResponse
@@ -339,9 +470,11 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
         Apply a short or long rest.
 
-        Long rest: restore current_hp to max_hp, clear temp_hp, and reset
-        all spell slots (used -> 0). Short rest: accepted as a no-op
-        placeholder until hit dice tracking is added.
+        Long rest: restore current_hp to max_hp and clear temp_hp. Known
+        spells and slot totals are unchanged (the legacy ``used`` column
+        is zeroed for DB-constraint hygiene, but nothing spends slots
+        anymore). Short rest: accepted as a no-op placeholder until hit
+        dice tracking is added.
         """
 
         character = await get_character_for_user(self.repository, character_id, current_user)
@@ -475,7 +608,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     ) -> CharacterResponse:
         """
         Serialize a character to ``CharacterResponse``, attaching
-        ``ability_scores`` from a cache row and the derived combat stats.
+        ``ability_scores`` from a cache row, the derived combat stats, and
+        the class-derived saving throw proficiencies (there is no
+        per-character saving throw storage — the class owns them).
 
         When ``cache_row`` is given it's used as-is (the batch listing
         path — ``get_characters`` loads all rows in one query). Otherwise
@@ -488,6 +623,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         page); when absent it is computed here. ``armor_class`` and
         ``shield`` need no derivation — they are plain editable columns
         serialized straight off the row.
+
+        The character's class must be eager-loaded with its
+        ``saving_throws`` (see ``CharacterRepository.default_load_options``).
         """
 
         if cache_row is None:
@@ -500,5 +638,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
         response.hit_dice = derived.hit_dice
         response.speed = derived.speed
+        response.saving_throw_proficiencies = [
+            SavingThrowProficiencyResponse.model_validate(saving_throw)
+            for saving_throw in (character.character_class.saving_throws if character.character_class else [])
+        ]
 
         return response

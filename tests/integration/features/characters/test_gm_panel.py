@@ -1,6 +1,8 @@
-"""Tests for the GM panel: max HP writes, stats overview, free-form ASI adjustments."""
+"""Tests for the GM panel: max HP writes, stats overview, free-form ASI adjustments, skill expertise."""
 
 import pytest
+
+from app.models.character_association_models import CharacterSkillProficiency
 
 
 @pytest.mark.integration
@@ -8,9 +10,7 @@ import pytest
 class TestGmPanelMaxHp:
     async def test_set_max_hp_clamps_current_hp(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
-        character = await create_character(
-            owner_id=gm.id, class_id=character_class.id, max_hp=20, current_hp=20
-        )
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, max_hp=20, current_hp=20)
 
         response = await client.patch(
             f"/characters/{character.id}/gm-panel/max-hp",
@@ -52,9 +52,7 @@ class TestGmPanelMaxHp:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestGmPanelStats:
-    async def test_stats_show_base_vs_total_without_bonuses(
-        self, client, gm, gm_token, create_class, create_character
-    ):
+    async def test_stats_show_base_vs_total_without_bonuses(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=14, dexterity=10)
 
@@ -70,9 +68,7 @@ class TestGmPanelStats:
         for ability in ("constitution", "intelligence", "wisdom", "charisma"):
             assert set(stats[ability]) == {"base", "total"}
 
-    async def test_stats_reflect_asi_adjustment_freshly(
-        self, client, gm, gm_token, create_class, create_character
-    ):
+    async def test_stats_reflect_asi_adjustment_freshly(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=14)
 
@@ -120,9 +116,7 @@ class TestGmPanelAsiAdjustments:
         assert list_response.status_code == 200
         assert [row["id"] for row in list_response.json()] == [adjustment["id"]]
 
-    async def test_remove_adjustment_reverts_base_scores(
-        self, client, gm, gm_token, create_class, create_character
-    ):
+    async def test_remove_adjustment_reverts_base_scores(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
 
@@ -183,3 +177,73 @@ class TestGmPanelAsiAdjustments:
         )
 
         assert response.status_code == 403
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestGmPanelSkillExpertise:
+    async def test_gm_can_toggle_expertise_on_and_off(
+        self, client, player, gm_token, db_session, create_class, create_character, create_skill
+    ):
+        character_class = await create_class(name="Rogue")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        db_session.add(CharacterSkillProficiency(character_id=character.id, skill_id=skill.id, is_expertise=False))
+        await db_session.commit()
+
+        on_response = await client.patch(
+            f"/characters/{character.id}/gm-panel/skills/{skill.id}",
+            json={"is_expertise": True},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert on_response.status_code == 200
+        assert on_response.json() == {"skill_id": skill.id, "is_expertise": True}
+
+        read_response = await client.get(
+            f"/characters/{character.id}",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        proficiencies = {item["skill_id"]: item for item in read_response.json()["skill_proficiencies"]}
+        assert proficiencies[skill.id]["is_expertise"] is True
+
+        off_response = await client.patch(
+            f"/characters/{character.id}/gm-panel/skills/{skill.id}",
+            json={"is_expertise": False},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert off_response.status_code == 200
+        assert off_response.json()["is_expertise"] is False
+
+    async def test_player_denied_expertise_write(
+        self, client, player, player_token, db_session, create_class, create_character, create_skill
+    ):
+        character_class = await create_class(name="Rogue")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        db_session.add(CharacterSkillProficiency(character_id=character.id, skill_id=skill.id, is_expertise=False))
+        await db_session.commit()
+
+        response = await client.patch(
+            f"/characters/{character.id}/gm-panel/skills/{skill.id}",
+            json={"is_expertise": True},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+    async def test_expertise_without_proficiency_returns_404(
+        self, client, player, gm_token, create_class, create_character, create_skill
+    ):
+        """Expertise requires an existing proficiency row — no row means a 404."""
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+
+        response = await client.patch(
+            f"/characters/{character.id}/gm-panel/skills/{skill.id}",
+            json={"is_expertise": True},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404

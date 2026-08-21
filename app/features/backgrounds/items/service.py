@@ -9,7 +9,7 @@ from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.backgrounds.crud.schemas import BackgroundCreate, BackgroundResponse, BackgroundUpdate
 from app.features.shared.items.mixins import SourceItemManagerMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
-from app.models.background_model import Background
+from app.models import Background
 
 
 class BackgroundItemsService(

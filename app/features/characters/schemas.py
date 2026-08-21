@@ -17,7 +17,6 @@ class CharacterBase(BaseModel):
     """Base character fields shared by create and response schemas."""
 
     name: str
-    level: int = Field(default=1, ge=1, le=20)
 
     class_id: int
     subclass_id: int | None = None
@@ -26,10 +25,6 @@ class CharacterBase(BaseModel):
     subrace_id: int | None = None
 
     background_id: int | None = None
-
-    current_hp: int = Field(default=0, ge=0)
-    max_hp: int = Field(default=0, ge=0)
-    temp_hp: int = Field(default=0, ge=0)
 
     # Combat stats entered/set directly on the sheet — there is no
     # dynamic armor calculation anymore; whatever is stored here is what
@@ -63,19 +58,25 @@ class CharacterBase(BaseModel):
 
 class CharacterCreate(CharacterBase):
     """
-    Create payload for a character.
+    One-shot creation payload for a level-1 character.
 
-    ``class_id`` is required and must reference an existing class;
-    ``race_id``/``background_id`` are optional but, if provided, must
-    also reference existing records. ``subclass_id``/``subrace_id`` are
-    also optional and constrained to their parent (``subclass_id`` must
-    belong to ``class_id``; ``subrace_id`` must belong to ``race_id``).
-    Existence checks happen in ``CharacterService.create_character``
-    (needs DB access, not doable at the schema layer) — see
-    ``SubclassNotFoundException`` / ``SubraceNotFoundException`` /
-    ``ClassNotFoundException`` / ``RaceNotFoundException`` /
-    ``BackgroundNotFoundException``.
+    ``level`` is not accepted — every character starts at level 1 and
+    grows only through the level-up endpoint. HP is fully server-derived
+    and not part of the payload at all: at level 1 the maximum is fixed
+    (class hit-die faces + effective CON modifier), ``current_hp`` starts
+    equal to it and ``temp_hp`` at 0.
+
+    ``extra="forbid"`` rejects unknown fields with a 422 so stale clients
+    that still send removed fields (e.g. ``level``/``max_hp``) fail loudly
+    instead of being silently ignored.
+
+    ``skill_ids`` are the class skill-proficiency choices: each must exist,
+    belong to the class's ``available_skills``, and the total must not
+    exceed the class's ``skill_choice_count``. The background's granted
+    skills (when ``background_id`` is set) are added automatically.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # Base ability scores — what the player entered, before racial or
     # feat bonuses. Effective (post-bonus) totals are exposed separately
@@ -87,14 +88,21 @@ class CharacterCreate(CharacterBase):
     wisdom: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     charisma: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
 
+    skill_ids: list[int] = Field(default_factory=list)
+
+    @field_validator("skill_ids")
+    def validate_unique_skill_ids(cls, skill_ids):
+        """Reject lists containing duplicate skill IDs."""
+
+        if len(skill_ids) != len(set(skill_ids)):
+            raise ValueError("Duplicate skill IDs are not allowed.")
+
+        return skill_ids
+
 
 class CharacterUpdate(BaseModel):
     """
     All fields optional — only provided fields are updated (PATCH semantics).
-
-    Skill proficiencies, saving throw proficiencies, spell slots, known
-    spells, and attacks are managed through their own dedicated endpoints,
-    not through this schema.
 
     Note: ``class_id``, ``subclass_id``, ``race_id``, ``subrace_id``, and
     ``background_id`` cannot be changed via this schema — a character's
@@ -108,6 +116,8 @@ class CharacterUpdate(BaseModel):
     level-up endpoint, and base scores only change via that endpoint's
     Ability Score Improvement choice or a GM ASI grant.
     ``max_hp`` is GM-only — see ``PATCH /characters/{id}/gm-panel/max-hp``.
+    Skill proficiencies are fixed at creation (class choices + background
+    grants); saving throws come from the class — neither is editable.
     ``hit_dice`` and ``speed`` are not editable either — they are derived
     from the character's class and race on every read (see
     ``CharacterStatsService``). ``armor_class`` and ``shield`` are plain
@@ -155,6 +165,23 @@ class AbilityScoresResponse(BaseModel):
     charisma_total: int
 
 
+class SkillProficiencyResponse(BaseModel):
+    """A skill proficiency row returned on the character."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    skill_id: int
+    is_expertise: bool
+
+
+class SavingThrowProficiencyResponse(BaseModel):
+    """A saving throw proficiency — derived from the character's class."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ability: AbilityScore
+
+
 class CharacterResponse(CharacterBase):
     """
     Aggregates response schemas from every sub-domain into one payload.
@@ -179,6 +206,11 @@ class CharacterResponse(CharacterBase):
 
     id: int
     owner_id: int
+
+    level: int
+    current_hp: int
+    max_hp: int
+    temp_hp: int
 
     # Derived combat stats — populated by ``CharacterService._to_response``.
     hit_dice: str = ""

@@ -4,10 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.class_model import Class
-from app.models.race_model import Race
+from app.models import Class, Race, Spell
 from app.models.spell_association_models import spell_classes, spell_races
-from app.models.spell_model import Spell
 
 
 class SpellRepository(BaseRepository[Spell]):

@@ -132,15 +132,18 @@ async def create_character(
     Create a new character, owned by the caller.
 
     Any authenticated user (GM or player) can create a character; it is
-    always owned by whoever creates it.
+    always owned by whoever creates it. Creation is one-shot at level 1:
+    the payload carries no `level`/HP fields (unknown fields are rejected
+    with a 422) — `level` is pinned to 1, and starting HP is derived
+    from the class hit die + CON modifier. `class_id` is required and
+    must reference an existing class; `race_id`/`background_id` are
+    optional but, if provided, must reference existing records.
 
-    `class_id` is required and must reference an existing class.
-    `race_id`/`background_id` are optional but, if provided, must also
-    reference existing records.
-
-    On creation, the class's spell slot progression for the character's
-    starting `level` is applied immediately, so a level-1 caster already
-    has spell slot rows without a follow-up `PATCH` to `/spell-slots`.
+    On creation: `skill_ids` are validated against the class's available
+    skills and merged with the background's and the race's granted skills;
+    the class's level-1 spell slot progression is applied immediately, so
+    a caster already has spell slot totals without any follow-up call.
+    Saving throws are not written — they come from the class on every read.
     """
 
     return await character_service.create_character(character_data, current_user)
@@ -176,9 +179,10 @@ async def update_character(
     changes through the dedicated level-up endpoint, which also
     re-applies the class's spell slot progression).
 
-    Skill proficiencies, saving throw proficiencies, known spells, and
-    attacks are managed through their own dedicated endpoints, not
-    through this one.
+    Skill proficiencies are fixed at creation (class choices + background
+    grants), saving throws come from the class, and known spells and
+    attacks are managed through their own dedicated endpoints — none of
+    them are editable here.
     """
 
     return await character_service.update_character(character_id, update_data, current_user)
@@ -259,13 +263,12 @@ async def rest_character(
     """
     Take a short or long rest (`{"type": "long"}` or `{"type": "short"}`).
 
-    Long rest: restores `current_hp` to `max_hp`, clears `temp_hp`, and
-    resets all spell slots (`used` back to 0).
+    Long rest: restores `current_hp` to `max_hp` and clears `temp_hp`.
+    Known spells and slot totals are unchanged.
 
     Short rest: currently a no-op placeholder. 5e short rests recover HP
-    via spent hit dice, which isn't modeled yet, and only certain caster
-    subclasses recover slots on a short rest — `"short"` is accepted now
-    so the rest-type contract is already in place for when hit dice
+    via spent hit dice, which isn't modeled yet — `"short"` is accepted
+    now so the rest-type contract is already in place for when hit dice
     tracking is added.
     """
 

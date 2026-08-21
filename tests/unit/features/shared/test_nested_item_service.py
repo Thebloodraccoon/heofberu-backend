@@ -1,4 +1,5 @@
-"""Unit tests for NestedSourceItemService and SourceItemManagerMixin.
+"""
+Unit tests for NestedSourceItemService and SourceItemManagerMixin.
 
 ``NestedSourceItemService`` is the shared per-source starting-equipment engine
 (shared/items/nested_service.py); ``SourceItemManagerMixin`` is exercised
@@ -142,9 +143,7 @@ class TestNestedSourceItemService:
     async def test_set_items_for_source_deletes_then_adds_and_commits(self):
         service, db = make_nested_item_service(items={1: SimpleNamespace(id=1)})
 
-        await service.set_items_for_source(
-            FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=1, quantity=2)]
-        )
+        await service.set_items_for_source(FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=1, quantity=2)])
 
         assert db.executes
         assert db.added[0].class_id == 3
@@ -164,9 +163,7 @@ class TestNestedSourceItemService:
         service, _ = make_nested_item_service(items={})
 
         with pytest.raises(RecordIdsInvalidError):
-            await service.set_items_for_source(
-                FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=999, quantity=1)]
-            )
+            await service.set_items_for_source(FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=999, quantity=1)])
 
 
 @pytest.mark.unit

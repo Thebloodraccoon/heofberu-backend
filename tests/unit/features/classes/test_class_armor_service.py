@@ -43,11 +43,7 @@ class FakeClassRepository(FakeRepository):
 
     async def set_armor_proficiencies(self, character_class, armor_types, *, commit=True):
         self.armor_calls.append((character_class, armor_types, commit))
-        setattr(
-            character_class,
-            "armor_proficiencies",
-            [SimpleNamespace(armor_type=armor_type) for armor_type in armor_types],
-        )
+        character_class.armor_proficiencies = [SimpleNamespace(armor_type=armor_type) for armor_type in armor_types]
         if commit:
             await self.db.commit()
         return character_class

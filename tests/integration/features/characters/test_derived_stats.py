@@ -95,27 +95,21 @@ class TestEditableArmorClass:
         assert response.status_code == 201, response.text
         return response.json()["id"]
 
-    async def test_armor_class_defaults_to_ten(
-        self, client, player, player_token, create_class, create_api_character
-    ):
+    async def test_armor_class_defaults_to_ten(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter")
 
         character, _ = await create_api_character(class_id=character_class.id, owner=player, dexterity=14)
 
         assert character["armor_class"] == 10
 
-    async def test_armor_class_set_at_creation(
-        self, client, player, player_token, create_class, create_api_character
-    ):
+    async def test_armor_class_set_at_creation(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter")
 
         character, _ = await create_api_character(class_id=character_class.id, owner=player, armor_class=16)
 
         assert character["armor_class"] == 16
 
-    async def test_armor_class_is_patchable(
-        self, client, player, player_token, create_class, create_api_character
-    ):
+    async def test_armor_class_is_patchable(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter")
         character, token = await create_api_character(class_id=character_class.id, owner=player)
 

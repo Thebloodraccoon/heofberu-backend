@@ -11,7 +11,7 @@ from app.models.character_model import Character
 class CharacterSubDomainService:
     """
     Shared base for the character sub-domain services (attacks, feats,
-    spells, proficiencies).
+    spells, conditions).
 
     Every sub-domain service needs the *owning* character for access
     control (the GM/owner check) before touching its own tables. Before

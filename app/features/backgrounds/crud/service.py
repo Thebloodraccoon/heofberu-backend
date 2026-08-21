@@ -15,7 +15,7 @@ from app.features.backgrounds.crud.schemas import (
 )
 from app.features.backgrounds.features.service import BackgroundFeatureService
 from app.features.backgrounds.skills.service import BackgroundSkillsService
-from app.models.background_model import Background
+from app.models import Background
 
 
 class BackgroundCrudService(

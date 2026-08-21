@@ -12,7 +12,7 @@ from app.features.spells.crud.schemas import (
     SpellResponse,
     SpellUpdate,
 )
-from app.models.spell_model import Spell
+from app.models import Spell
 
 
 class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellGetAllResponse]):

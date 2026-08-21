@@ -2,43 +2,24 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from app.constants import SpellLevel
 from app.features.spells.crud.schemas import SpellResponse
 
 
 class SpellSlotResponse(BaseModel):
-    """A character's spell slot entry for one level."""
+    """
+    A character's spell slot entry for one level.
+
+    Only ``total`` is exposed: it always comes from the character's
+    class/level spell-slot progression (applied on create and re-applied
+    on level-up/class change) and doubles as the cap on how many spells
+    of that level the character may know. There is no per-slot ``used``
+    tracking — slots are not spent, they are capacity for known spells.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     spell_level: str
     total: int
-    used: int
-
-
-class SpellSlotUpdate(BaseModel):
-    """
-    Update the ``used`` count for a single spell slot level.
-
-    ``total`` is deliberately NOT settable here — it is always derived
-    from the character's class/level spell-slot progression (applied on
-    create and re-applied on level-up/class-change, see
-    ``CharacterService._apply_spell_slot_progression``). Allowing a
-    client to overwrite ``total`` would let a player grant themselves
-    slots, so the field is excluded (``extra="forbid"`` rejects it with
-    a 422).
-
-    ``level`` is validated against the ``SpellLevel`` enum, so a request
-    with anything other than a known level string (e.g. ``"LEVEL_3"`` or
-    ``"CANTRIP"``) is rejected with a 422 at the schema layer — the old
-    free-form ``str`` let arbitrary strings through until they hit the
-    DB's check constraint.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    level: SpellLevel
-    used: int | None = None
 
 
 class CharacterSpellAdd(BaseModel):
@@ -54,3 +35,14 @@ class CharacterSpellResponse(BaseModel):
 
     spell_id: int
     spell: SpellResponse
+
+
+class CharacterSpellsResponse(BaseModel):
+    """
+    Combined read model behind ``GET /characters/{id}/spells``: the
+    class-derived slot totals per level together with the known spells,
+    so a client renders the whole spellcasting picture from one call.
+    """
+
+    spell_slots: list[SpellSlotResponse] = []
+    spells: list[CharacterSpellResponse] = []

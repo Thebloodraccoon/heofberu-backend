@@ -1,4 +1,5 @@
-"""GM feat-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/feats``.
+"""
+GM feat-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/feats``.
 
 The sub-router declares no prefix of its own; the panel's aggregating
 router applies ``/{character_id}/gm-panel``.

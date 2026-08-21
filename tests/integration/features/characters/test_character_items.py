@@ -6,7 +6,9 @@ import pytest
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCharacterItems:
-    async def test_add_and_list_item(self, client, gm_token, player, player_token, create_class, create_character, create_item):
+    async def test_add_and_list_item(
+        self, client, gm_token, player, player_token, create_class, create_character, create_item
+    ):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         item = await create_item(name="Longsword")
@@ -42,7 +44,9 @@ class TestCharacterItems:
 
         assert response.status_code == 404
 
-    async def test_update_item_stack(self, client, gm_token, player, player_token, create_class, create_character, create_item):
+    async def test_update_item_stack(
+        self, client, gm_token, player, player_token, create_class, create_character, create_item
+    ):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         item = await create_item(name="Longsword")
@@ -64,7 +68,9 @@ class TestCharacterItems:
         assert response.json()["is_attuned"] is True
         assert response.json()["is_equipped"] is False
 
-    async def test_remove_item(self, client, gm_token, player, player_token, create_class, create_character, create_item):
+    async def test_remove_item(
+        self, client, gm_token, player, player_token, create_class, create_character, create_item
+    ):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         item = await create_item(name="Longsword")

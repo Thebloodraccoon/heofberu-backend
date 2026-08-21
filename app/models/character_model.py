@@ -1,7 +1,6 @@
 """ORM model for the D&D 5e character sheet."""
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -12,7 +11,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from app.models.enums import AbilityScoreType
 from app.settings import settings
 from app.settings._common import utcnow
 

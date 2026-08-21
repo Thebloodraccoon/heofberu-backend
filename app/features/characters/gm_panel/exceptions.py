@@ -104,6 +104,21 @@ class CharacterItemNotFoundException(HTTPException):
         )
 
 
+class SkillProficiencyNotFoundException(HTTPException):
+    """
+    Raised when the character has no proficiency row for the given skill —
+    expertise can only be toggled on an existing proficiency.
+    """
+
+    def __init__(self, character_id: int, skill_id: int):
+        self.character_id = character_id
+        self.skill_id = skill_id
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Character {character_id} has no proficiency in skill {skill_id}.",
+        )
+
+
 class LevelTiedAsiChoiceException(HTTPException):
     """
     Raised when attempting to remove an ASI choice that is tied to a

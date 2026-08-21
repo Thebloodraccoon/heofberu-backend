@@ -1,4 +1,5 @@
-"""Request schemas for GM feat grants on a character.
+"""
+Request schemas for GM feat grants on a character.
 
 The response shape (``CharacterFeatResponse`` and its embedded brief)
 lives in the top-level ``characters/schemas.py`` because it is shared

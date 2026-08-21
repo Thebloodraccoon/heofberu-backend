@@ -106,9 +106,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
         """Re-fetch a grant with its feat eager-loaded (for safe serialization)."""
 
         result = await self.db.execute(
-            select(CharacterFeat)
-            .options(selectinload(CharacterFeat.feat))
-            .where(CharacterFeat.id == grant_id)
+            select(CharacterFeat).options(selectinload(CharacterFeat.feat)).where(CharacterFeat.id == grant_id)
         )
         return result.scalar_one()
 

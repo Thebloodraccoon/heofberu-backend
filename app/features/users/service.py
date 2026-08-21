@@ -11,9 +11,8 @@ from app.features.users.exceptions import (
 )
 from app.features.users.repository import UserRepository
 from app.features.users.schemas import UserCreate, UserProfileUpdate, UserResponse, UserUpdate
-from app.models.user_model import User
+from app.models import User
 from app.settings import settings
-from app.settings._common import utcnow
 
 
 class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
@@ -75,7 +74,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         self._ensure_not_default_user(user)
         fields = data.model_dump(exclude_unset=True)
 
-        fields["updated_at"] = utcnow()
+        fields["updated_at"] = settings.utcnow()
         updated_user = await self.repository.update(user, fields)
         return self.response_schema.model_validate(updated_user)
 
@@ -91,7 +90,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         user = await self._get_or_404(user_id)
         fields = data.model_dump(exclude_unset=True)
-        fields["updated_at"] = utcnow()
+        fields["updated_at"] = settings.utcnow()
 
         updated_user = await self.repository.update(user, fields)
         return self.response_schema.model_validate(updated_user)

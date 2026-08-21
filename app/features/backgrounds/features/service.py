@@ -13,7 +13,7 @@ from app.features.backgrounds.crud.schemas import BackgroundCreate, BackgroundRe
 from app.features.shared.features.mixins import SourceFeatureMixin
 from app.features.shared.features.nested_service import NestedFeatureService
 from app.features.shared.features.schemas import NestedFeatureResponse
-from app.models.background_model import Background
+from app.models import Background
 
 
 class BackgroundFeatureService(

@@ -1,4 +1,5 @@
-"""GM max-HP endpoint: PATCH under ``/gm-panel/max-hp``.
+"""
+GM max-HP endpoint: PATCH under ``/gm-panel/max-hp``.
 
 The sub-router declares no prefix of its own; the panel's aggregating
 router applies ``/{character_id}/gm-panel``.

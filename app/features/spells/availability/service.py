@@ -7,9 +7,7 @@ from app.features.spells.availability.schemas import ClassAvailabilityUpdate, Ra
 from app.features.spells.cache import invalidate_spell_cache
 from app.features.spells.crud.repository import SpellRepository
 from app.features.spells.crud.schemas import SpellCreate, SpellResponse, SpellUpdate
-from app.models.class_model import Class
-from app.models.race_model import Race
-from app.models.spell_model import Spell
+from app.models import Class, Race, Spell
 
 
 class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, None]):

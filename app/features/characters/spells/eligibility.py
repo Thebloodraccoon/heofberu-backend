@@ -8,8 +8,7 @@ from app.features.characters.spells.repository import (
     CharacterSpellRepository,
     CharacterSpellSlotRepository,
 )
-from app.models.character_model import Character
-from app.models.spell_model import Spell
+from app.models import Character, Spell
 
 
 class CharacterSpellEligibilityChecker:

@@ -33,7 +33,7 @@ from app.models.class_model import Class  # noqa: F401
 from app.models.class_spell_slot_progression_model import ClassSpellSlotProgression  # noqa: F401
 
 # Feat.
-from app.models.feat_model import Feat  # noqa: F401
+from app.models.feat_model import Feat, FeatAbilityScoreIncrease  # noqa: F401
 
 # Feature (class/subclass/race/subrace/background features and feats).
 # Must come after Subclass/Subrace so the subclass_id/subrace_id FKs resolve correctly.

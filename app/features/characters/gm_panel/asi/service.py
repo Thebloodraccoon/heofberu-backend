@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ASILevelChoice, AbilityScore
+from app.constants import AbilityScore, ASILevelChoice
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
@@ -33,9 +33,7 @@ class GmPanelAsiService(CharacterSubDomainService):
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.stats_service = CharacterStatsService(db)
 
-    async def get_asi_adjustments(
-        self, character_id: int, current_user: UserResponse
-    ) -> list[GmAsiChoiceResponse]:
+    async def get_asi_adjustments(self, character_id: int, current_user: UserResponse) -> list[GmAsiChoiceResponse]:
         """List every GM ASI adjustment recorded on a character (level-tied choices excluded)."""
 
         await self.get_character_for_user(character_id, current_user)

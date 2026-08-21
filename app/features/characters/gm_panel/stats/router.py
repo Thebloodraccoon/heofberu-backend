@@ -1,4 +1,5 @@
-"""GM stats-overview endpoint: GET under ``/gm-panel/stats``.
+"""
+GM stats-overview endpoint: GET under ``/gm-panel/stats``.
 
 The sub-router declares no prefix of its own; the panel's aggregating
 router applies ``/{character_id}/gm-panel``.

@@ -67,9 +67,7 @@ class TestCharacterFeats:
 
         assert response.status_code == 400
 
-    async def test_grant_feat_with_asi_choice(
-        self, client, gm, gm_token, create_class, create_character, create_feat
-    ):
+    async def test_grant_feat_with_asi_choice(self, client, gm, gm_token, create_class, create_character, create_feat):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
         feat = await create_feat(name="Resilient")

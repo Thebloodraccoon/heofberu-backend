@@ -92,9 +92,7 @@ class TestBackgroundCrud:
         assert fetched.status_code == 200
         assert [entry["item"]["name"] for entry in fetched.json()] == ["Censer"]
 
-    async def test_set_background_starting_items_invalid_item_returns_400(
-        self, client, gm_token, create_background
-    ):
+    async def test_set_background_starting_items_invalid_item_returns_400(self, client, gm_token, create_background):
         background = await create_background(name="Acolyte")
 
         response = await client.put(
