@@ -29,13 +29,14 @@ class CharacterSpellAlreadyKnownException(HTTPException):
 
 class SpellNotAvailableToCharacterException(HTTPException):
     """
-    Raised when a spell's ``available_classes``/``available_races``
-    restrictions (if any) don't include the character's class/race.
+    Raised when a spell's ``available_classes`` / ``available_subclasses``
+    / ``available_races`` / ``available_subraces`` restrictions (if any)
+    don't include the character's class/subclass/race/subrace.
 
-    A spell with an empty list for either dimension is unrestricted on
-    that dimension (see ``SpellCreate`` for the empty-list-unrestricted
+    A spell with an empty list for a dimension is unrestricted on that
+    dimension (see ``SpellCreate`` for the empty-list-unrestricted
     convention) — this is only raised when at least one dimension is
-    restricted and the character's class/race isn't in it.
+    restricted and the character doesn't match it.
     """
 
     def __init__(self, character_id: int, spell_id: int):
@@ -43,7 +44,9 @@ class SpellNotAvailableToCharacterException(HTTPException):
         self.spell_id = spell_id
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(f"Spell {spell_id} is not available to character {character_id}'s class or race."),
+            detail=(
+                f"Spell {spell_id} is not available to character {character_id}'s class, subclass, race, or subrace."
+            ),
         )
 
 

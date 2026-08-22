@@ -16,7 +16,7 @@ from app.models.enums import (
     SpellRangeTypeType,
     SpellSchoolType,
 )
-from app.models.spell_association_models import spell_classes, spell_races
+from app.models.spell_association_models import spell_classes, spell_races, spell_subclasses, spell_subraces
 from app.settings import settings
 
 
@@ -63,7 +63,9 @@ class Spell(settings.Base):  # type: ignore
     created_by = relationship("User")
 
     available_classes = relationship("Class", secondary=spell_classes)
+    available_subclasses = relationship("Subclass", secondary=spell_subclasses)
     available_races = relationship("Race", secondary=spell_races)
+    available_subraces = relationship("Subrace", secondary=spell_subraces)
 
     def __repr__(self):
         return f"<Spell(id={self.id}, name='{self.name}', level='{self.level}')>"

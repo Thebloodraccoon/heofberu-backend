@@ -147,6 +147,136 @@ class TestCharacterKnownSpells:
 
         assert response.status_code == 400
 
+    async def test_add_spell_restricted_to_matching_subclass_is_allowed(
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        create_caster_class,
+        create_api_character,
+        create_spell,
+        create_subclass,
+    ):
+        character_class = await create_caster_class(name="Wizard")
+        subclass = await create_subclass(class_id=character_class.id, name="Evoker")
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, subclass_id=subclass.id)
+        spell = await create_spell(name="School Special", school="EVOCATION", level="LEVEL_1")
+
+        restrict_response = await client.put(
+            f"/spells/{spell.id}/subclasses",
+            json={"subclass_ids": [subclass.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert restrict_response.status_code == 200
+
+        response = await client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 201
+
+    async def test_add_spell_restricted_to_other_subclass_returns_400(
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        create_caster_class,
+        create_api_character,
+        create_spell,
+        create_subclass,
+    ):
+        character_class = await create_caster_class(name="Wizard")
+        other_subclass = await create_subclass(class_id=character_class.id, name="Abjurer")
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        spell = await create_spell(name="Abjurer Only", school="ABJURATION", level="LEVEL_1")
+
+        restrict_response = await client.put(
+            f"/spells/{spell.id}/subclasses",
+            json={"subclass_ids": [other_subclass.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert restrict_response.status_code == 200
+
+        response = await client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_add_spell_restricted_to_subrace_without_one_returns_400(
+        self,
+        client,
+        player,
+        player_token,
+        create_caster_class,
+        create_api_character,
+        create_spell,
+        create_race,
+        create_subrace,
+        gm_token,
+    ):
+        character_class = await create_caster_class(name="Wizard")
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        spell = await create_spell(name="Elven Grace", school="ILLUSION", level="LEVEL_1")
+
+        race = await create_race(name="Elf")
+        subrace = await create_subrace(race_id=race.id, name="High Elf")
+        restrict_response = await client.put(
+            f"/spells/{spell.id}/subraces",
+            json={"subrace_ids": [subrace.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert restrict_response.status_code == 200
+
+        response = await client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_add_spell_restricted_to_matching_subrace_is_allowed(
+        self,
+        client,
+        player,
+        player_token,
+        create_caster_class,
+        create_api_character,
+        create_spell,
+        create_race,
+        create_subrace,
+        gm_token,
+    ):
+        character_class = await create_caster_class(name="Wizard")
+        race = await create_race(name="Elf")
+        subrace = await create_subrace(race_id=race.id, name="High Elf")
+        character, _ = await create_api_character(
+            class_id=character_class.id, owner=player, race_id=race.id, subrace_id=subrace.id
+        )
+        spell = await create_spell(name="Elven Grace", school="ILLUSION", level="LEVEL_1")
+
+        restrict_response = await client.put(
+            f"/spells/{spell.id}/subraces",
+            json={"subrace_ids": [subrace.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert restrict_response.status_code == 200
+
+        response = await client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 201
+
     async def test_list_and_remove_known_spell(
         self, client, player, player_token, create_caster_class, create_api_character, create_spell
     ):

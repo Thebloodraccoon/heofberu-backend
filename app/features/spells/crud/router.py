@@ -48,7 +48,8 @@ async def get_spells(
 ):
     """
     Return a paginated list of spells with only `id`, `name`, `school`,
-    `level`, `available_classes`, and `available_races`.
+    `level`, and the four availability lists (`available_classes`,
+    `available_subclasses`, `available_races`, `available_subraces`).
 
     Open endpoint, no authentication required.
 
@@ -98,8 +99,8 @@ async def get_spells(
 )
 async def get_spell(spell_id: int, spell_service: SpellCrudDep):
     """
-    Return a single spell by ID, with full detail — including available
-    classes and available races.
+    Return a single spell by ID, with full detail — including its
+    availability lists (available classes, subclasses, races, subraces).
 
     Open endpoint, no authentication required.
     """
@@ -113,9 +114,7 @@ async def get_spell(spell_id: int, spell_service: SpellCrudDep):
     status_code=201,
     summary="Create a spell",
     responses={
-        400: {
-            "description": "A spell with this name already exists, or an available_classes/available_races id is invalid."
-        },
+        400: {"description": "A spell with this name already exists, or an availability id is invalid."},
     },
 )
 async def create_spell(
@@ -222,10 +221,11 @@ async def create_spell(
     """
     Create a new spell. **GM only.**
 
-    `available_classes` and `available_races` are optional. If provided,
-    they're saved together with the spell in a single transaction — the
-    spell is fully set up in one call instead of a `POST` followed by
-    `PUT` calls. An empty (or omitted) list on either side means the
+    The four availability lists (`available_classes`,
+    `available_subclasses`, `available_races`, `available_subraces`) are
+    optional. If provided, they're saved together with the spell in a
+    single transaction — the spell is fully set up in one call instead of
+    a `POST` followed by `PUT` calls. An empty (or omitted) list means the
     spell is unrestricted for that dimension.
     """
 
@@ -246,8 +246,9 @@ async def update_spell(spell_id: int, update_data: SpellUpdate, spell_service: S
     Partially update a spell. **GM only.**
 
     Only fields included in the request body are changed; omitted fields
-    are left as-is. Does not touch available classes or available races —
-    use `PUT /spells/{spell_id}/classes` and `PUT /spells/{spell_id}/races`
+    are left as-is. Does not touch the availability lists — use
+    `PUT /spells/{spell_id}/classes`, `PUT /spells/{spell_id}/subclasses`,
+    `PUT /spells/{spell_id}/races`, and `PUT /spells/{spell_id}/subraces`
     for those.
     """
 
