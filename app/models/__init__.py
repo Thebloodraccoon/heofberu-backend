@@ -19,6 +19,7 @@ from app.models.character_feature_model import CharacterFeature  # noqa: F401
 from app.models.character_item_model import CharacterItem  # noqa: F401
 
 # Character and everything that depends on it.
+from app.models.character_max_level_model import CharacterMaxLevel  # noqa: F401
 from app.models.character_model import Character  # noqa: F401
 from app.models.character_spell_model import CharacterSpell  # noqa: F401
 from app.models.class_association_models import (  # noqa: F401

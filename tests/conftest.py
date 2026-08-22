@@ -23,12 +23,13 @@ os.environ.setdefault("TEST_REDIS_URL", "redis://localhost:6381/0")
 import httpx  # noqa: E402
 import pytest_asyncio  # noqa: E402
 
-from app.constants import UserRole  # noqa: E402
+from app.constants import CHARACTER_MAX_LEVEL, UserRole  # noqa: E402
 from app.core.security.password import get_password_hash  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     Background,
     Character,
+    CharacterMaxLevel,
     Class,
     Feat,
     Feature,
@@ -337,6 +338,13 @@ async def create_character(db_session):
         db_session.add(character)
         await db_session.commit()
         await db_session.refresh(character)
+
+        # Seed the GM-set level-up cap wide open (20) so tests that level
+        # up freely keep working; cap-specific tests override it via the
+        # GM panel endpoint or by writing the row directly.
+        db_session.add(CharacterMaxLevel(character_id=character.id, max_level=CHARACTER_MAX_LEVEL))
+        await db_session.commit()
+
         return character
 
     return _create_character

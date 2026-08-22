@@ -138,3 +138,40 @@ class LevelTiedAsiChoiceException(HTTPException):
                 f"level {class_level}; only GM adjustments (no class level) can be removed."
             ),
         )
+
+
+class MaxLevelCanOnlyIncreaseException(HTTPException):
+    """
+    Raised when a GM attempts to lower (or keep) a character's maximum
+    allowed level — the cap can only ever move up.
+    """
+
+    def __init__(self, character_id: int, current_max_level: int):
+        self.character_id = character_id
+        self.current_max_level = current_max_level
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Character {character_id}'s maximum level is already {current_max_level}; "
+                "it can only be raised, never lowered."
+            ),
+        )
+
+
+class MaxLevelBelowCharacterLevelException(HTTPException):
+    """
+    Raised when a GM attempts to set a maximum level below the
+    character's current level.
+    """
+
+    def __init__(self, character_id: int, max_level: int, character_level: int):
+        self.character_id = character_id
+        self.max_level = max_level
+        self.character_level = character_level
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Cannot set maximum level {max_level} for character {character_id}: "
+                f"the character is already level {character_level}."
+            ),
+        )

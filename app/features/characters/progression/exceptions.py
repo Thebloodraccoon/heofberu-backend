@@ -4,13 +4,17 @@ from fastapi import HTTPException, status
 
 
 class CharacterAlreadyAtMaxLevelException(HTTPException):
-    """Raised when trying to level up a character already at level 20."""
+    """Raised when trying to level up a character already at its GM-set maximum level."""
 
-    def __init__(self, character_id: int):
+    def __init__(self, character_id: int, max_level: int = 20):
         self.character_id = character_id
+        self.max_level = max_level
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Character {character_id} is already at the maximum level (20) and cannot level up.",
+            detail=(
+                f"Character {character_id} has reached its maximum allowed level ({max_level}) "
+                "and cannot level up until a GM raises it."
+            ),
         )
 
 

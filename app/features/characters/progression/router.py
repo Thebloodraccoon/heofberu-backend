@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterProgressionServiceDep, CharacterServiceDep
 from app.features.characters.progression.schemas import (
+    CanLevelUpResponse,
     CharacterASIChoiceResponse,
     ClassChange,
     LevelUpRequest,
@@ -110,6 +111,23 @@ async def level_up(
 ) -> CharacterResponse:
     await progression_service.level_up(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
+
+
+@router.get(
+    "/{character_id}/progression/can-level-up",
+    response_model=CanLevelUpResponse,
+    summary="Check whether a character can level up",
+    description=(
+        "Returns whether the character's level is below the GM-set maximum "
+        "(``character_max_levels``), along with both values."
+    ),
+)
+async def can_level_up(
+    character_id: int,
+    progression_service: CharacterProgressionServiceDep,
+    current_user: CurrentUserDep,
+) -> CanLevelUpResponse:
+    return await progression_service.can_level_up(character_id, current_user)
 
 
 @router.get(

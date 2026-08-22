@@ -22,6 +22,7 @@ from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
 from app.features.characters.gm_panel.features.repository import CharacterFeatureRepository
+from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.schemas import (
     AbilityScoresResponse,
@@ -108,6 +109,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.item_repository = ItemRepository(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.feature_grant_repository = CharacterFeatureRepository(db)
+        self.max_level_repository = CharacterMaxLevelRepository(db)
         self.stats_service = CharacterStatsService(db)
 
     async def get_characters(
@@ -228,6 +230,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
           - the character always starts at ``level=1`` with
             ``temp_hp=0`` — leveling up happens only through the
             progression endpoint;
+          - the character's GM-set level-up cap (``character_max_levels``)
+            is seeded at its starting level, so it cannot level up until
+            a GM raises its maximum via the GM panel;
           - skill proficiencies come from ``skill_ids`` (validated against
             the class's ``available_skills`` and ``skill_choice_count``)
             plus the background's and the race's granted skills,
@@ -285,6 +290,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         async with self._atomic():
             character = await self.repository.create(payload, commit=False)
+
+            # The GM-set level-up cap starts at the character's starting
+            # level: it cannot level up until a GM raises its maximum.
+            await self.max_level_repository.create_for_character(character.id, character.level, commit=False)
 
             max_hp = await self._compute_starting_max_hp(character, character_class)
             character.max_hp = max_hp

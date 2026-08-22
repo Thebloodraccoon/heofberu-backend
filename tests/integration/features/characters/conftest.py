@@ -2,6 +2,8 @@
 
 import pytest_asyncio
 
+from app.constants import CHARACTER_MAX_LEVEL
+
 
 @pytest_asyncio.fixture
 async def create_caster_class(client, gm_token, create_class):
@@ -22,8 +24,16 @@ async def create_caster_class(client, gm_token, create_class):
 
 
 @pytest_asyncio.fixture
-async def create_api_character(client, login_as, create_user, create_background):
-    """Create a character via the API and return the created payload + owner token."""
+async def create_api_character(client, login_as, create_user, create_background, gm_token):
+    """
+    Create a character via the API and return the created payload + owner token.
+
+    Characters are created with their GM-set level-up cap seeded at 1; by
+    default this fixture raises it to ``CHARACTER_MAX_LEVEL`` (20) via the
+    GM panel so tests that level up freely keep working. Pass
+    ``raise_max_level=False`` to keep the raw level-1 cap (used by the
+    max-level system's own tests).
+    """
 
     async def _create_api_character(
         class_id,
@@ -31,6 +41,7 @@ async def create_api_character(client, login_as, create_user, create_background)
         name="Test Character",
         race_id=None,
         background_id=None,
+        raise_max_level=True,
         **kwargs,
     ):
         if owner is None:
@@ -50,6 +61,16 @@ async def create_api_character(client, login_as, create_user, create_background)
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 201, response.text
-        return response.json(), token
+        character = response.json()
+
+        if raise_max_level and character["level"] < CHARACTER_MAX_LEVEL:
+            raise_response = await client.patch(
+                f"/characters/{character['id']}/gm-panel/max-level",
+                json={"max_level": CHARACTER_MAX_LEVEL},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            assert raise_response.status_code == 200, raise_response.text
+
+        return character, token
 
     return _create_api_character
