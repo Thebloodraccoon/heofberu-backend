@@ -5,11 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
 from app.features.shared.skills.mixins import SkillLookupMixin
-from app.models.background_association_models import background_skills
-from app.models.character_association_models import CharacterSkillProficiency
-from app.models.class_association_models import class_available_skills
-from app.models.race_association_models import race_skills
-from app.models.skill_model import Skill
+from app.models import CharacterSkillProficiency, Skill, background_skills, class_available_skills, race_skills
 
 
 class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):

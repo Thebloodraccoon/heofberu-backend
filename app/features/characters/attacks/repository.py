@@ -7,7 +7,7 @@ from app.core.base.repository import BaseRepository
 from app.models.attack_model import Attack
 
 
-class AttackRepository(BaseRepository[Attack]):
+class CharacterAttackRepository(BaseRepository[Attack]):
     """
     Repository for the ``Attack`` model. Used by the attacks sub-domain
     (CRUD).

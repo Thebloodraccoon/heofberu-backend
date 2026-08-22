@@ -1,4 +1,5 @@
-"""Unit tests for NestedFeatureService and SourceFeatureMixin.
+"""
+Unit tests for NestedFeatureService and SourceFeatureMixin.
 
 ``NestedFeatureService`` is the shared per-source feature read/write engine
 (shared/features/nested_service.py); ``SourceFeatureMixin`` is exercised
@@ -93,9 +94,7 @@ def no_redis_invalidate(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_reconcile(monkeypatch):
-    monkeypatch.setattr(
-        "app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock()
-    )
+    monkeypatch.setattr("app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock())
 
 
 def make_nested_service(db=None):
@@ -136,7 +135,9 @@ class TestNestedFeatureService:
         service, _ = make_nested_service()
         data = NestedFeatureCreate(name="Keen Senses", description="d", level=None)
 
-        feature = await service.create_feature_for_source(FeatureSourceType.RACE, 3, data, created_by_id=7, commit=False)
+        feature = await service.create_feature_for_source(
+            FeatureSourceType.RACE, 3, data, created_by_id=7, commit=False
+        )
 
         assert feature.id == 1
         assert service._features.calls == [("create", FeatureSourceType.RACE, 3, data, 7, False)]

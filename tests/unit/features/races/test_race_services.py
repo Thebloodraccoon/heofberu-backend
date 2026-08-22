@@ -1,4 +1,5 @@
-"""Unit tests for the race crud / ability-bonus / skill services and repositories.
+"""
+Unit tests for the race crud / ability-bonus / skill services and repositories.
 
 Covers the service bodies that integration tests through the HTTP layer do not
 trace: ``create_race`` with nested capabilities, the public ability-bonus
@@ -281,9 +282,7 @@ class TestRaceAbilityBonusService:
         race = make_race()
         service, db = make_ability_bonus_service()
 
-        await service.set_ability_bonuses_for_race(
-            race, [{"ability": AbilityScore.STR, "bonus": 1}], commit=False
-        )
+        await service.set_ability_bonuses_for_race(race, [{"ability": AbilityScore.STR, "bonus": 1}], commit=False)
 
         assert service.repository.set_ability_bonuses_calls == [
             (race, [{"ability": AbilityScore.STR, "bonus": 1}], False)

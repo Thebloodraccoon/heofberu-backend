@@ -269,6 +269,10 @@ ASI_LEVELS = frozenset({4, 8, 12, 16, 19})
 # Maximum effective (post-bonus) ability score, per the 5e rule.
 ABILITY_SCORE_CAP = 20
 
+# Hard ceiling for character levels (also enforced by DB check constraints
+# on ``characters.level`` and ``character_max_levels.max_level``).
+CHARACTER_MAX_LEVEL = 20
+
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"
 ON_DELETE_RESTRICT = "RESTRICT"

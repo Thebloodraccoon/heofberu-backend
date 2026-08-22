@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
 from app.features.characters.base import CharacterSubDomainService
+from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.conditions.exceptions import (
     CharacterConditionAlreadyExistsException,
     CharacterConditionNotFoundException,
@@ -65,6 +66,7 @@ class CharacterConditionService(CharacterSubDomainService):
             data.exhaustion_level,
             data.source,
         )
+        await invalidate_character_cache(character_id)
         return CharacterConditionResponse.model_validate(row)
 
     async def update_condition(
@@ -85,6 +87,7 @@ class CharacterConditionService(CharacterSubDomainService):
         self._validate_exhaustion_level(condition, merged_level)
 
         updated_row = await self.condition_repository.update_character_condition(row, update_data)
+        await invalidate_character_cache(character_id)
         return CharacterConditionResponse.model_validate(updated_row)
 
     async def remove_condition(self, character_id: int, condition: ConditionType, current_user: UserResponse) -> bool:
@@ -93,7 +96,9 @@ class CharacterConditionService(CharacterSubDomainService):
         await self.get_character_for_user(character_id, current_user)
 
         row = await self._get_condition_or_404(character_id, condition)
-        return await self.condition_repository.remove_character_condition(row)
+        result = await self.condition_repository.remove_character_condition(row)
+        await invalidate_character_cache(character_id)
+        return result
 
     async def _get_condition_or_404(self, character_id: int, condition: ConditionType) -> CharacterCondition:
         """Fetch a condition scoped to the character, or raise ``CharacterConditionNotFoundException``."""

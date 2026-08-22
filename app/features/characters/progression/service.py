@@ -9,10 +9,12 @@ from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, Charact
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.core.service import CharacterService
-from app.features.characters.feats.exceptions import CharacterFeatAlreadyKnownException
-from app.features.characters.feats.repository import CharacterFeatRepository
-from app.features.characters.feats.validation import check_feat_prerequisite, validate_ability_score_increase
+from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.crud.service import CharacterService
+from app.features.characters.gm_panel.exceptions import CharacterFeatAlreadyKnownException
+from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
+from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
+from app.features.characters.gm_panel.validation import check_feat_prerequisite, validate_ability_score_increase
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     CharacterAlreadyAtMaxLevelException,
@@ -23,6 +25,7 @@ from app.features.characters.progression.exceptions import (
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.progression.schemas import (
+    CanLevelUpResponse,
     CharacterASIChoiceResponse,
     ClassChange,
     LevelUpRequest,
@@ -72,6 +75,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         self.feat_repository = FeatRepository(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
+        self.max_level_repository = CharacterMaxLevelRepository(db)
         self.stats_service = CharacterStatsService(db)
 
     @asynccontextmanager
@@ -119,6 +123,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             await sync_progression_features(self.repository.db, character)
 
         await self.stats_service.refresh(character)
+        await invalidate_character_cache(character_id)
 
     async def change_class(self, character_id: int, data: ClassChange, current_user: UserResponse) -> None:
         """
@@ -145,6 +150,8 @@ class CharacterProgressionService(CharacterSubDomainService):
             await sync_progression_features(self.repository.db, character)
             await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
+        await invalidate_character_cache(character_id)
+
     async def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
         """
         Set or clear a character's subclass.
@@ -166,6 +173,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         async with self._atomic():
             character.subclass_id = data.subclass_id
             await sync_progression_features(self.repository.db, character)
+
+        await invalidate_character_cache(character_id)
 
     async def set_subrace(self, character_id: int, data: SubraceChange, current_user: UserResponse) -> None:
         """
@@ -192,22 +201,27 @@ class CharacterProgressionService(CharacterSubDomainService):
             await sync_progression_features(self.repository.db, character)
 
         await self.stats_service.refresh(character)
+        await invalidate_character_cache(character_id)
 
     async def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
         """
         Advance a character exactly one level.
 
-        At an ASI level (4/8/12/16/19) a ``choice`` is required and at
-        any other level it is rejected. HP defaults to the class's
-        standard average (half hit die + 1 + CON modifier) unless
-        ``hit_points_gained`` is given (bounded by the hit die + CON).
-        Class/subclass features unlocked by the new level are granted,
-        and spell slots are re-applied.
+        Leveling up is only allowed while the character's level is below
+        the GM-set maximum in ``character_max_levels`` (raised via the
+        GM panel's ``PATCH /gm-panel/max-level``). At an ASI level
+        (4/8/12/16/19) a ``choice`` is required and at any other level it
+        is rejected. HP defaults to the class's standard average (half
+        hit die + 1 + CON modifier) unless ``hit_points_gained`` is given
+        (bounded by the hit die + CON). Class/subclass features unlocked
+        by the new level are granted, and spell slots are re-applied.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
-        if character.level >= ABILITY_SCORE_CAP:
-            raise CharacterAlreadyAtMaxLevelException(character_id)
+
+        max_level = await self._allowed_max_level(character_id, character.level)
+        if character.level >= max_level:
+            raise CharacterAlreadyAtMaxLevelException(character_id, max_level)
 
         new_level = character.level + 1
         is_asi_level = new_level in ASI_LEVELS
@@ -235,6 +249,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
         await self.stats_service.refresh(character)
+        await invalidate_character_cache(character_id)
 
     async def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
         """Return the character's resolved ASI-level choices, for audit."""
@@ -243,6 +258,33 @@ class CharacterProgressionService(CharacterSubDomainService):
         choices = await self.asi_repository.get_character_choices(character_id)
 
         return [CharacterASIChoiceResponse.model_validate(choice) for choice in choices]
+
+    async def can_level_up(self, character_id: int, current_user: UserResponse) -> CanLevelUpResponse:
+        """
+        Report whether the character may take another level-up: it is
+        possible while the character's level is below the GM-set maximum
+        (``character_max_levels``).
+        """
+
+        character = await self.get_character_for_user(character_id, current_user)
+        max_level = await self._allowed_max_level(character_id, character.level)
+
+        return CanLevelUpResponse(
+            can_level_up=character.level < max_level,
+            current_level=character.level,
+            max_level=max_level,
+        )
+
+    async def _allowed_max_level(self, character_id: int, character_level: int) -> int:
+        """
+        The maximum level the character may reach, from its
+        ``character_max_levels`` row. A missing row is treated defensively
+        as capped at the character's current level — characters always get
+        a row at creation and via the migration backfill.
+        """
+
+        row = await self.max_level_repository.get_by_character_id(character_id)
+        return row.max_level if row is not None else min(character_level, ABILITY_SCORE_CAP)
 
     async def _apply_asi(self, character: Character, increases, class_level: int) -> None:
         """

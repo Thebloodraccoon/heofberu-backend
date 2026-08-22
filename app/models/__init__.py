@@ -11,7 +11,6 @@ from app.models.character_ability_score_model import CharacterAbilityScore  # no
 from app.models.character_asi_choice_model import CharacterASIChoice  # noqa: F401
 from app.models.character_association_models import (  # noqa: F401
     CharacterFeat,
-    CharacterSavingThrowProficiency,
     CharacterSkillProficiency,
     CharacterSpellSlot,
 )
@@ -20,6 +19,7 @@ from app.models.character_feature_model import CharacterFeature  # noqa: F401
 from app.models.character_item_model import CharacterItem  # noqa: F401
 
 # Character and everything that depends on it.
+from app.models.character_max_level_model import CharacterMaxLevel  # noqa: F401
 from app.models.character_model import Character  # noqa: F401
 from app.models.character_spell_model import CharacterSpell  # noqa: F401
 from app.models.class_association_models import (  # noqa: F401
@@ -34,7 +34,7 @@ from app.models.class_model import Class  # noqa: F401
 from app.models.class_spell_slot_progression_model import ClassSpellSlotProgression  # noqa: F401
 
 # Feat.
-from app.models.feat_model import Feat  # noqa: F401
+from app.models.feat_model import Feat, FeatAbilityScoreIncrease  # noqa: F401
 
 # Feature (class/subclass/race/subrace/background features and feats).
 # Must come after Subclass/Subrace so the subclass_id/subrace_id FKs resolve correctly.

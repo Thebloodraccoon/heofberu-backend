@@ -3,7 +3,7 @@ Application exceptions and the standardized error response format.
 
 Defines the ``ErrorResponse`` payload shape plus the auth/access exceptions
 (HTTP-layer) and the feature-agnostic data-layer exceptions that the global
-handlers in ``app/core/handlers`` map to HTTP responses.
+handlers in ``app/crud/handlers`` map to HTTP responses.
 """
 
 from datetime import datetime

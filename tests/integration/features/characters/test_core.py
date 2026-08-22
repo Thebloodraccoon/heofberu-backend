@@ -1,4 +1,4 @@
-"""Tests for character core endpoints: CRUD, HP, and resting."""
+"""Tests for character crud endpoints: CRUD, HP, and resting."""
 
 import pytest
 
@@ -14,7 +14,7 @@ class TestCharacterCreate:
 
         response = await client.post(
             "/characters",
-            json={"name": "Aragorn", "level": 1, "class_id": character_class.id, "background_id": background.id},
+            json={"name": "Aragorn", "class_id": character_class.id, "background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -24,12 +24,10 @@ class TestCharacterCreate:
         assert body["class_id"] == character_class.id
         assert body["level"] == 1
 
-    async def test_create_character_requires_background(self, client, player_token, create_class):
-        character_class = await create_class(name="Fighter", hit_dice="D10")
-
+    async def test_create_character_requires_class(self, client, player_token):
         response = await client.post(
             "/characters",
-            json={"name": "Aragorn", "level": 1, "class_id": character_class.id},
+            json={"name": "Aragorn"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -66,7 +64,6 @@ class TestCharacterCreate:
             "/characters",
             json={
                 "name": "Gandalf",
-                "level": 1,
                 "class_id": character_class.id,
                 "background_id": background.id,
             },
@@ -74,9 +71,14 @@ class TestCharacterCreate:
         )
 
         assert response.status_code == 201
-        slots = {item["spell_level"]: item for item in response.json()["spell_slots"]}
+        character_id = response.json()["id"]
+        spells_response = await client.get(
+            f"/characters/{character_id}/spells",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        slots = {item["spell_level"]: item for item in spells_response.json()["spell_slots"]}
         assert slots["LEVEL_1"]["total"] == 2
-        assert slots["LEVEL_1"]["used"] == 0
+        assert "used" not in slots["LEVEL_1"]
 
     async def test_create_character_with_subclass(
         self, client, player_token, create_class, create_subclass, create_background
@@ -89,7 +91,6 @@ class TestCharacterCreate:
             "/characters",
             json={
                 "name": "Aragorn",
-                "level": 1,
                 "class_id": character_class.id,
                 "subclass_id": subclass.id,
                 "background_id": background.id,
@@ -292,7 +293,7 @@ class TestCharacterUpdate:
         )
 
         assert response.status_code == 200
-        assert response.json()["strength"] == 10
+        assert "strength" not in response.json()
 
     async def test_class_id_is_not_editable(self, client, player, player_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
@@ -395,44 +396,113 @@ class TestCharacterHp:
 
         assert response.status_code == 400
 
+    async def test_damage_is_absorbed_by_temp_hp_first(
+        self, client, player, player_token, create_class, create_character
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(
+            owner_id=player.id, class_id=character_class.id, max_hp=20, current_hp=20, temp_hp=8
+        )
+
+        response = await client.patch(
+            f"/characters/{character.id}/hp",
+            json={"delta": -5},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["current_hp"] == 20
+        assert response.json()["temp_hp"] == 3
+
+    async def test_damage_overflow_past_temp_hits_current(
+        self, client, player, player_token, create_class, create_character
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(
+            owner_id=player.id, class_id=character_class.id, max_hp=20, current_hp=20, temp_hp=3
+        )
+
+        response = await client.patch(
+            f"/characters/{character.id}/hp",
+            json={"delta": -7},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["current_hp"] == 16
+        assert response.json()["temp_hp"] == 0
+
+    async def test_healing_does_not_restore_temp_hp(self, client, player, player_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(
+            owner_id=player.id, class_id=character_class.id, max_hp=20, current_hp=10, temp_hp=5
+        )
+
+        response = await client.patch(
+            f"/characters/{character.id}/hp",
+            json={"delta": 4},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["current_hp"] == 14
+        assert response.json()["temp_hp"] == 5
+
+    async def test_temp_hp_gain_replaces_only_when_higher(
+        self, client, player, player_token, create_class, create_character
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(
+            owner_id=player.id, class_id=character_class.id, max_hp=20, current_hp=15, temp_hp=6
+        )
+
+        lower = await client.patch(
+            f"/characters/{character.id}/hp",
+            json={"temp_hp": 4},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert lower.status_code == 200
+        assert lower.json()["temp_hp"] == 6
+
+        higher = await client.patch(
+            f"/characters/{character.id}/hp",
+            json={"temp_hp": 9},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert higher.status_code == 200
+        assert higher.json()["temp_hp"] == 9
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCharacterRest:
-    async def test_long_rest_restores_hp_and_slots(
+    async def test_long_rest_restores_hp_and_keeps_slots(
         self, client, player, player_token, create_caster_class, create_background
     ):
         character_class = await create_caster_class(name="Wizard")
         background = await create_background()
+        # Wizard D6, CON 10 -> default starting max_hp = 6.
         character_response = await client.post(
             "/characters",
             json={
                 "name": "Gandalf",
-                "level": 1,
                 "class_id": character_class.id,
                 "background_id": background.id,
-                "max_hp": 20,
-                "current_hp": 20,
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert character_response.status_code == 201
         character_id = character_response.json()["id"]
+        assert character_response.json()["current_hp"] == 6
 
         hp_response = await client.patch(
             f"/characters/{character_id}/hp",
-            json={"delta": -12},
+            json={"delta": -4},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert hp_response.status_code == 200
-        assert hp_response.json()["current_hp"] == 8
-
-        slot_response = await client.patch(
-            f"/characters/{character_id}/spell-slots",
-            json={"level": "LEVEL_1", "used": 2},
-            headers={"Authorization": f"Bearer {player_token}"},
-        )
-        assert slot_response.status_code == 200
+        assert hp_response.json()["current_hp"] == 2
 
         rest_response = await client.post(
             f"/characters/{character_id}/rest",
@@ -442,9 +512,14 @@ class TestCharacterRest:
 
         assert rest_response.status_code == 200
         body = rest_response.json()
-        assert body["current_hp"] == 20
-        slots = {item["spell_level"]: item for item in body["spell_slots"]}
-        assert slots["LEVEL_1"]["used"] == 0
+        assert body["current_hp"] == 6
+
+        spells_response = await client.get(
+            f"/characters/{character_id}/spells",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        slots = {item["spell_level"]: item for item in spells_response.json()["spell_slots"]}
+        assert slots["LEVEL_1"]["total"] == 2
 
     async def test_short_rest_is_accepted(self, client, player, player_token, create_class, create_background):
         character_class = await create_class(name="Fighter")

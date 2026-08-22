@@ -3,31 +3,6 @@
 from fastapi import HTTPException, status
 
 
-class SpellSlotNotFoundException(HTTPException):
-    """
-    Raised when the character has no spell slot entry for the given level.
-
-    Currently unused — ``CharacterSpellService.update_spell_slot`` creates
-    missing entries on demand rather than raising. Reserved for a strict
-    read path.
-    """
-
-    def __init__(self, character_id: int, level: str):
-        self.character_id = character_id
-        self.level = level
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Character {character_id} has no spell slot entry for level '{level}'.",
-        )
-
-
-class InvalidSpellSlotUsageException(HTTPException):
-    """Raised when a spell slot update would result in used < 0 or used > total."""
-
-    def __init__(self, message: str = "Spell slot 'used' must be between 0 and 'total'."):
-        super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
-
-
 class CharacterSpellNotFoundException(HTTPException):
     """Raised when the character does not have the given spell in their known list."""
 
@@ -54,13 +29,14 @@ class CharacterSpellAlreadyKnownException(HTTPException):
 
 class SpellNotAvailableToCharacterException(HTTPException):
     """
-    Raised when a spell's ``available_classes``/``available_races``
-    restrictions (if any) don't include the character's class/race.
+    Raised when a spell's ``available_classes`` / ``available_subclasses``
+    / ``available_races`` / ``available_subraces`` restrictions (if any)
+    don't include the character's class/subclass/race/subrace.
 
-    A spell with an empty list for either dimension is unrestricted on
-    that dimension (see ``SpellCreate`` for the empty-list-unrestricted
+    A spell with an empty list for a dimension is unrestricted on that
+    dimension (see ``SpellCreate`` for the empty-list-unrestricted
     convention) — this is only raised when at least one dimension is
-    restricted and the character's class/race isn't in it.
+    restricted and the character doesn't match it.
     """
 
     def __init__(self, character_id: int, spell_id: int):
@@ -68,7 +44,9 @@ class SpellNotAvailableToCharacterException(HTTPException):
         self.spell_id = spell_id
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(f"Spell {spell_id} is not available to character {character_id}'s class or race."),
+            detail=(
+                f"Spell {spell_id} is not available to character {character_id}'s class, subclass, race, or subrace."
+            ),
         )
 
 

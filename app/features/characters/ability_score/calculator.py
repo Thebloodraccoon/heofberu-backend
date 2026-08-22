@@ -2,9 +2,10 @@
 Pure calculation of a character's effective ability scores and derived combat stats.
 
 Effective ability scores are the base values plus race/subrace/feat
-bonuses; derived combat stats (hit dice, speed, armor class) are computed
-from the class, race, and equipped armor. Both are pure helpers — no
-database access.
+bonuses; the remaining derived combat stats (hit dice, speed) are read
+from the class and race. Armor class is NOT computed here (or anywhere
+else) — it's a plain editable ``Character.armor_class`` column. Both
+helpers are pure — no database access.
 """
 
 from dataclasses import dataclass
@@ -96,18 +97,6 @@ class CharacterAbilityScoreCalculator:
 # ``Race.speed`` default and the standard 5e default of 30 ft).
 DEFAULT_SPEED = 30
 
-# Unarmored armor class base, per 5e: 10 + Dexterity modifier.
-UNARMORED_AC_BASE = 10
-
-
-@dataclass(frozen=True)
-class ArmorSpec:
-    """The armor-relevant attributes of an equipped armor item."""
-
-    base: int
-    dex_bonus: bool
-    max_dex_bonus: int | None
-
 
 @dataclass(frozen=True)
 class DerivedStats:
@@ -115,32 +104,3 @@ class DerivedStats:
 
     hit_dice: str
     speed: int
-    armor_class: int
-
-
-def compute_armor_class(dex_total: int, armor: ArmorSpec | None) -> int:
-    """
-    Return the character's armor class.
-
-    Unarmored: ``10 + Dexterity modifier``. With armor: the armor's base AC
-    plus the Dexterity modifier when the armor type allows it, capped by the
-    armor's ``max_dex_bonus`` (e.g. scale mail caps the bonus at +2; plate
-    grants no Dexterity bonus at all).
-
-    A negative Dexterity modifier applies as written — a low-Dexterity
-    character in light armor is more vulnerable, just as in 5e.
-    """
-
-    dex_mod = (dex_total - 10) // 2
-
-    if armor is None:
-        return UNARMORED_AC_BASE + dex_mod
-
-    ac = armor.base
-    if armor.dex_bonus:
-        if armor.max_dex_bonus is not None:
-            ac += min(dex_mod, armor.max_dex_bonus)
-        else:
-            ac += dex_mod
-
-    return ac

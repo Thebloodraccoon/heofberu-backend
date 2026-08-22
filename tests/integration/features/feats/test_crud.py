@@ -126,16 +126,17 @@ class TestFeatCrud:
         assert (await client.get(f"/features/{feature_id}")).status_code == 404
 
     async def test_delete_feat_granted_to_character_returns_409(
-        self, client, founder_token, player_token, player, create_class, create_character, create_feat
+        self, client, founder_token, gm_token, player, create_class, create_character, create_feat
     ):
         feat = await create_feat(name="Popular Feat")
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
+        # Feat grants are a GM-panel write.
         add_response = await client.post(
-            f"/characters/{character.id}/feats",
+            f"/characters/{character.id}/gm-panel/feats",
             json={"feat_id": feat.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 
@@ -238,7 +239,7 @@ class TestFeatCrud:
         self,
         client,
         founder_token,
-        player_token,
+        gm_token,
         player,
         create_class,
         create_character,
@@ -250,10 +251,11 @@ class TestFeatCrud:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
+        # Feature grants are a GM-panel write.
         add_response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": benefit.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 

@@ -69,24 +69,28 @@ class SpellCreate(SpellBase):
     """
     Create payload for a spell.
 
-    ``available_classes`` / ``available_races`` are optional. If omitted
-    (or left empty), the spell is unrestricted — available to every class
-    and race. If provided, they're saved together with the spell in a
+    ``available_classes`` / ``available_subclasses`` / ``available_races`` /
+    ``available_subraces`` are optional. If omitted (or left empty), the
+    spell is unrestricted — available to every class, subclass, race, and
+    subrace. If provided, they're saved together with the spell in a
     single transaction, matching how ``RaceCreate`` handles ability bonuses
     and granted skills.
     """
 
     available_classes: list[int] | None = None
+    available_subclasses: list[int] | None = None
     available_races: list[int] | None = None
+    available_subraces: list[int] | None = None
 
 
 class SpellUpdate(BaseModel):
     """
     All fields optional — only provided fields are updated (PATCH semantics).
 
-    Deliberately does NOT include available_classes/available_races: those
-    keep their own PUT endpoints with explicit full-replace semantics, same
-    reasoning as Race's ability-bonuses/granted-skills split.
+    Deliberately does NOT include available_classes/available_subclasses/
+    available_races/available_subraces: those keep their own PUT endpoints
+    with explicit full-replace semantics, same reasoning as Race's
+    ability-bonuses/granted-skills split.
     """
 
     name: str | None = None
@@ -129,8 +133,26 @@ class ClassBriefResponse(BaseModel):
     name: str
 
 
+class SubclassBriefResponse(BaseModel):
+    """Minimal subclass info, embedded in SpellResponse.available_subclasses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
 class RaceBriefResponse(BaseModel):
     """Minimal race info, embedded in SpellResponse.available_races."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
+class SubraceBriefResponse(BaseModel):
+    """Minimal subrace info, embedded in SpellResponse.available_subraces."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -146,17 +168,20 @@ class SpellResponse(SpellBase):
     id: int
     created_by_id: int | None = None
     available_classes: list[ClassBriefResponse] = []
+    available_subclasses: list[SubclassBriefResponse] = []
     available_races: list[RaceBriefResponse] = []
+    available_subraces: list[SubraceBriefResponse] = []
 
 
 class SpellGetAllResponse(BaseModel):
     """
     Lightweight listing row.
 
-    Includes available_classes/available_races so listing/dropdown UI can
-    filter or badge spells by availability without a follow-up call to
-    `GET /spells/{spell_id}`. Still excludes components, description,
-    dice, and other heavier detail fields.
+    Includes available_classes/available_subclasses/available_races/
+    available_subraces so listing/dropdown UI can filter or badge spells
+    by availability without a follow-up call to `GET /spells/{spell_id}`.
+    Still excludes components, description, dice, and other heavier
+    detail fields.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -166,4 +191,6 @@ class SpellGetAllResponse(BaseModel):
     school: SpellSchool
     level: SpellLevel
     available_classes: list[ClassBriefResponse] = []
+    available_subclasses: list[SubclassBriefResponse] = []
     available_races: list[RaceBriefResponse] = []
+    available_subraces: list[SubraceBriefResponse] = []

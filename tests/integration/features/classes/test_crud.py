@@ -307,9 +307,10 @@ class TestClassCrud:
         )
 
         assert response.status_code == 200
-        assert [
-            (entry["item_id"], entry["quantity"]) for entry in response.json()["starting_items"]
-        ] == [(longsword.id, 1), (shield.id, 1)]
+        assert [(entry["item_id"], entry["quantity"]) for entry in response.json()["starting_items"]] == [
+            (longsword.id, 1),
+            (shield.id, 1),
+        ]
 
         fetched = await client.get(f"/classes/{character_class.id}/items")
         assert fetched.status_code == 200

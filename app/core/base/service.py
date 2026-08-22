@@ -63,7 +63,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     Caching: services that should be cached transparently declare
     ``cache_namespaces`` and decorate read methods with
-    ``app.core.cache.use_cache``. Every write here
+    ``app.crud.cache.use_cache``. Every write here
     (:meth:`create`/:meth:`update`/:meth:`delete`) purges those namespaces
     automatically via :meth:`_invalidate_cache`; subclasses with compound
     write methods must call ``self._invalidate_cache()`` themselves.

@@ -74,6 +74,97 @@ class TestSpellCrud:
         assert races_response.status_code == 200
         assert [item["id"] for item in races_response.json()["available_races"]] == [race.id]
 
+    async def test_gm_can_set_available_subclasses_and_subraces(
+        self, client, gm_token, create_spell, create_class, create_race, create_subclass, create_subrace
+    ):
+        spell = await create_spell(name="Restricted Spell")
+        character_class = await create_class(name="Sorcerer", hit_dice="D6", spellcasting_ability="CHA")
+        subclass = await create_subclass(class_id=character_class.id, name="Wild Magic")
+        race = await create_race(name="Elf")
+        subrace = await create_subrace(race_id=race.id, name="High Elf")
+
+        subclasses_response = await client.put(
+            f"/spells/{spell.id}/subclasses",
+            json={"subclass_ids": [subclass.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert subclasses_response.status_code == 200
+        body = subclasses_response.json()
+        assert [item["id"] for item in body["available_subclasses"]] == [subclass.id]
+        # Other dimensions untouched.
+        assert body["available_classes"] == []
+        assert body["available_races"] == []
+
+        subraces_response = await client.put(
+            f"/spells/{spell.id}/subraces",
+            json={"subrace_ids": [subrace.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert subraces_response.status_code == 200
+        body = subraces_response.json()
+        assert [item["id"] for item in body["available_subraces"]] == [subrace.id]
+        assert [item["id"] for item in body["available_subclasses"]] == [subclass.id]
+
+    async def test_set_availability_replaces_previous_list(self, client, gm_token, create_spell, create_race):
+        """Full-replace semantics: a new list drops the previous entries."""
+        spell = await create_spell(name="Replaceable Spell")
+        first_race = await create_race(name="Elf")
+        second_race = await create_race(name="Dwarf")
+
+        await client.put(
+            f"/spells/{spell.id}/races",
+            json={"race_ids": [first_race.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        response = await client.put(
+            f"/spells/{spell.id}/subraces",
+            json={"subrace_ids": []},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 200
+
+        replace_response = await client.put(
+            f"/spells/{spell.id}/races",
+            json={"race_ids": [second_race.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert replace_response.status_code == 200
+        assert [item["id"] for item in replace_response.json()["available_races"]] == [second_race.id]
+
+    async def test_unknown_subclass_or_subrace_id_returns_400(self, client, gm_token, create_spell):
+        spell = await create_spell(name="Picky Spell")
+
+        subclasses_response = await client.put(
+            f"/spells/{spell.id}/subclasses",
+            json={"subclass_ids": [999999]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert subclasses_response.status_code == 400
+
+        subraces_response = await client.put(
+            f"/spells/{spell.id}/subraces",
+            json={"subrace_ids": [999999]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert subraces_response.status_code == 400
+
+    async def test_player_cannot_set_availability(self, client, player_token, create_spell):
+        spell = await create_spell(name="Locked Spell")
+
+        subclasses_response = await client.put(
+            f"/spells/{spell.id}/subclasses",
+            json={"subclass_ids": []},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert subclasses_response.status_code == 403
+
+        subraces_response = await client.put(
+            f"/spells/{spell.id}/subraces",
+            json={"subrace_ids": []},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert subraces_response.status_code == 403
+
     async def test_gm_cannot_delete_spell(self, client, gm_token, create_spell):
         spell = await create_spell(name="Doomed Spell")
 

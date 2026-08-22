@@ -5,8 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models import CharacterFeature, Feature, SourceItem
-from app.models.background_model import Background
+from app.models import Background, CharacterFeature, Feature, SourceItem
 
 
 class BackgroundRepository(BaseRepository[Background]):

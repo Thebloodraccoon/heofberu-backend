@@ -1,4 +1,5 @@
-"""Async DB session FastAPI dependency and its annotated alias.
+"""
+Async DB session FastAPI dependency and its annotated alias.
 
 ``get_db`` yields one session per request; it is the canonical dependency the
 HTTP test client overrides. ``DatabaseDep`` is the typed alias built on it,

@@ -162,9 +162,10 @@ class TestSubraceAbilityBonuses:
         )
 
         assert response.status_code == 200
-        assert [
-            (item["ability"], item["bonus"]) for item in response.json()["ability_bonuses"]
-        ] == [("INT", 1), ("DEX", 1)]
+        assert [(item["ability"], item["bonus"]) for item in response.json()["ability_bonuses"]] == [
+            ("INT", 1),
+            ("DEX", 1),
+        ]
 
     async def test_ability_bonuses_full_replace(self, client, gm_token, create_race, create_subrace):
         race = await create_race(name="Elf")

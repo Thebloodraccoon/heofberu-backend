@@ -78,7 +78,9 @@ class FakeBackgroundRepository(FakeRepository):
             await self.db.commit()
         return row
 
-    async def set_skills(self, background: Background, skills: list[Skill] | None, *, commit: bool = True) -> Background:
+    async def set_skills(
+        self, background: Background, skills: list[Skill] | None, *, commit: bool = True
+    ) -> Background:
         self.set_skills_calls.append((background, skills, commit))
         background.granted_skills = list(skills or [])
         if commit:
@@ -148,9 +150,7 @@ def no_background_invalidate(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_reconcile(monkeypatch):
-    monkeypatch.setattr(
-        "app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock()
-    )
+    monkeypatch.setattr("app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock())
 
 
 def make_crud_service(existing_by_id=None, resolved_skills=None, features=None):

@@ -115,6 +115,19 @@ class LevelUpRequest(BaseModel):
     choice: LevelUpChoice | None = None
 
 
+class CanLevelUpResponse(BaseModel):
+    """
+    Whether the character may take another level-up.
+
+    ``max_level`` is the GM-set cap from ``character_max_levels``;
+    leveling up is possible while ``current_level < max_level``.
+    """
+
+    can_level_up: bool
+    current_level: int
+    max_level: int
+
+
 class ASIIncreaseResponse(BaseModel):
     """A single increment of a recorded ASI choice."""
 

@@ -3,7 +3,7 @@
 from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 
-from app.models.enums import AbilityScoreType, CharacterFeatSourceType, SpellLevelType
+from app.models.enums import CharacterFeatSourceType, SpellLevelType
 from app.settings import settings
 
 
@@ -20,18 +20,6 @@ class CharacterSkillProficiency(settings.Base):  # type: ignore
 
     def __repr__(self):
         return f"<CharacterSkillProficiency(character_id={self.character_id}, skill_id={self.skill_id})>"
-
-
-class CharacterSavingThrowProficiency(settings.Base):  # type: ignore
-    """A character's proficiency in a given saving throw ability."""
-
-    __tablename__ = "character_saving_throw_proficiencies"
-
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
-    ability = Column(AbilityScoreType, primary_key=True)
-
-    def __repr__(self):
-        return f"<CharacterSavingThrowProficiency(character_id={self.character_id}, ability='{self.ability}')>"
 
 
 class CharacterSpellSlot(settings.Base):  # type: ignore

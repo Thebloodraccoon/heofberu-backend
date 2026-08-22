@@ -16,8 +16,13 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
 
     Split out of the old single ``CharacterSpellRepository``, which was
     bound to ``CharacterSpellSlot`` yet also handled known spells — this
-    class owns only slot totals/usage per level. Known spells live in the
+    class owns only slot totals per level. Known spells live in the
     sibling ``CharacterSpellRepository``.
+
+    Totals are written exclusively by :meth:`apply_spell_slot_progression`
+    from the class/level progression table; there is no client-facing
+    write path (no slot spending). The legacy ``used`` column is kept at
+    0 for DB-constraint hygiene only.
     """
 
     def __init__(self, db: AsyncSession):
@@ -33,43 +38,6 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
             )
         )
         return result.scalar_one_or_none()
-
-    async def upsert_spell_slot(
-        self, character_id: int, level: str, total: int | None, used: int | None, *, commit: bool = True
-    ) -> CharacterSpellSlot:
-        """
-        Create or update the spell slot entry for a given level.
-
-        If the entry doesn't exist yet, it's created with the given values
-        (defaulting missing fields to 0). Validation of the used<=total
-        invariant happens in the service before this is called.
-
-        ``commit=False`` flushes instead, leaving the transaction open
-        for callers that need atomicity across multiple writes.
-        """
-
-        slot = await self.get_spell_slot(character_id, level)
-        if slot is None:
-            slot = CharacterSpellSlot(
-                character_id=character_id,
-                spell_level=level,
-                total=total if total is not None else 0,
-                used=used if used is not None else 0,
-            )
-            self.db.add(slot)
-        else:
-            if total is not None:
-                slot.total = total
-            if used is not None:
-                slot.used = used
-
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(slot)
-        else:
-            await self.db.flush()
-
-        return slot
 
     async def get_all_spell_slots(self, character_id: int) -> list[CharacterSpellSlot]:
         """List all of a character's spell slot entries."""
@@ -89,17 +57,17 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
         current class/level).
 
         For each level in ``slots_by_level``: upsert the slot row, setting
-        ``total`` to the given value. ``used`` is left untouched unless it
-        would exceed the new ``total``, in which case it's clamped down to
-        ``total`` (so the ``used <= total`` invariant always holds — this
-        can only ever reduce ``used``, never invent slots as "spent").
+        ``total`` to the given value. The legacy ``used`` column is left
+        untouched unless it would exceed the new ``total``, in which case
+        it's clamped down to ``total`` (so the ``used <= total`` DB
+        invariant always holds).
 
         For any level the character currently has a row for but that is
         *not* present in ``slots_by_level`` (e.g. leveling down, or
         switching to a class that doesn't grant that level): the row's
-        ``total`` is set to 0 and ``used`` is clamped to 0 with it, rather
-        than deleted — this keeps history/ordering stable and matches
-        ``upsert_spell_slot``'s "0 total = no slots" convention elsewhere.
+        ``total`` is set to 0 and ``used`` clamped to 0 with it, rather
+        than deleted — this keeps history/ordering stable ("0 total =
+        no slots").
 
         Levels never granted and not currently present in the character's
         rows are left alone (no zero-row is created for them).
@@ -155,7 +123,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
     Repository for a character's known spells (``character_spells``).
 
     Split out of the old single ``CharacterSpellRepository`` — this
-    class owns only the known-spell rows. Spell slot totals/usage live in
+    class owns only the known-spell rows. Spell slot totals live in
     the sibling ``CharacterSpellSlotRepository``.
     """
 

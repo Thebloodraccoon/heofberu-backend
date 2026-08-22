@@ -2,16 +2,12 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload
 
-from app.constants import ItemType
 from app.core.base.repository import BaseRepository
-from app.features.characters.ability_score.calculator import ArmorSpec
 from app.models import (
     CharacterAbilityScore,
-    CharacterItem,
     Class,
-    Item,
     Race,
 )
 from app.models.character_association_models import CharacterFeat
@@ -36,9 +32,9 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
     (``get_race_bonuses`` / ``get_feat_increases``) — these moved here
     from the old calculator so it could become fully pure (no ``Session``).
 
-    The derived combat stats (hit dice, speed, armor class) load their
-    references (class, race, equipped armor) through the same batch
-    queries, so a listing page costs a constant number of queries.
+    The derived combat stats (hit dice, speed) load their references
+    (class, race) through the same batch queries, so a listing page costs
+    a constant number of queries.
     """
 
     def __init__(self, db: AsyncSession):
@@ -137,42 +133,3 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
 
         result = await self.db.execute(select(Race).where(Race.id.in_(race_ids)))
         return {row.id: row for row in result.scalars().unique().all()}
-
-    async def get_armor_by_character_ids(self, character_ids: list[int]) -> dict[int, list[ArmorSpec]]:
-        """
-        Return ``{character_id: [ArmorSpec, ...]}`` for the characters' *equipped*
-        armor items, ordered by stack id.
-
-        Only items typed ``ARMOR`` with an ``armor_class_base`` count; a
-        character with several equipped armor stacks is a misconfiguration, so
-        callers use the first spec deterministically.
-        """
-
-        if not character_ids:
-            return {}
-
-        result = await self.db.execute(
-            select(CharacterItem)
-            .options(joinedload(CharacterItem.item))
-            .join(Item, CharacterItem.item_id == Item.id)
-            .where(
-                CharacterItem.character_id.in_(character_ids),
-                CharacterItem.is_equipped.is_(True),
-                Item.item_type == ItemType.ARMOR,
-                Item.armor_class_base.is_not(None),
-            )
-            .order_by(CharacterItem.id)
-        )
-        rows = list(result.scalars().unique().all())
-
-        result_dict: dict[int, list[ArmorSpec]] = {}
-        for row in rows:
-            result_dict.setdefault(row.character_id, []).append(
-                ArmorSpec(
-                    base=row.item.armor_class_base,
-                    dex_bonus=row.item.armor_class_dex_bonus,
-                    max_dex_bonus=row.item.armor_class_max_dex_bonus,
-                )
-            )
-
-        return result_dict

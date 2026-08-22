@@ -6,7 +6,7 @@ from app.core.base.cached_service import CachedService
 from app.features.skills.cache import SKILL_CACHE_NAMESPACES
 from app.features.skills.crud.repository import SkillRepository
 from app.features.skills.crud.schemas import SkillCreate, SkillGetAllResponse, SkillResponse, SkillUpdate
-from app.models.skill_model import Skill
+from app.models import Skill
 
 
 class SkillCrudService(CachedService[Skill, SkillCreate, SkillUpdate, SkillResponse, SkillGetAllResponse]):

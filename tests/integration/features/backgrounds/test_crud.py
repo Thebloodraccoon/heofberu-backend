@@ -92,9 +92,7 @@ class TestBackgroundCrud:
         assert fetched.status_code == 200
         assert [entry["item"]["name"] for entry in fetched.json()] == ["Censer"]
 
-    async def test_set_background_starting_items_invalid_item_returns_400(
-        self, client, gm_token, create_background
-    ):
+    async def test_set_background_starting_items_invalid_item_returns_400(self, client, gm_token, create_background):
         background = await create_background(name="Acolyte")
 
         response = await client.put(
@@ -138,7 +136,7 @@ class TestBackgroundCrud:
         self,
         client,
         founder_token,
-        player_token,
+        gm_token,
         player,
         create_class,
         create_character,
@@ -152,10 +150,11 @@ class TestBackgroundCrud:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
+        # Feature grants are a GM-panel write.
         add_response = await client.post(
-            f"/characters/{character.id}/features",
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": shelter.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 

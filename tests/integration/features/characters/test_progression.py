@@ -25,6 +25,22 @@ async def set_race_ability_bonuses(client, gm_token, race, bonuses):
     return race
 
 
+async def level_up_to(client, token, character_id, target_level):
+    """
+    Plain level-ups (default HP gain, no choices) until ``target_level``.
+
+    Only safe while the path never crosses an ASI level (the first is
+    level 4), since those require an explicit choice payload.
+    """
+    for _ in range(target_level - 1):
+        response = await client.post(
+            f"/characters/{character_id}/progression/level-up",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200, response.text
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestRaceChange:
@@ -118,7 +134,11 @@ class TestClassChange:
         assert response.status_code == 200
         body = response.json()
         assert body["class_id"] == caster_class.id
-        slots = {item["spell_level"]: item for item in body["spell_slots"]}
+        spells_response = await client.get(
+            f"/characters/{character['id']}/spells",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        slots = {item["spell_level"]: item for item in spells_response.json()["spell_slots"]}
         assert slots["LEVEL_1"]["total"] == 2
 
     async def test_unknown_class_returns_404(self, client, player, player_token, create_class, create_api_character):
@@ -237,7 +257,7 @@ class TestLevelUp:
         self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1, max_hp=10)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -252,7 +272,7 @@ class TestLevelUp:
 
     async def test_level_up_with_custom_hp_gain(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1, max_hp=10)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -267,7 +287,7 @@ class TestLevelUp:
         self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -281,7 +301,7 @@ class TestLevelUp:
         self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -293,7 +313,8 @@ class TestLevelUp:
 
     async def test_asi_level_requires_a_choice(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        await level_up_to(client, player_token, character["id"], target_level=3)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -307,7 +328,8 @@ class TestLevelUp:
         self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3, strength=14)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, strength=14)
+        await level_up_to(client, player_token, character["id"], target_level=3)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -347,7 +369,8 @@ class TestLevelUp:
         self, client, player, player_token, create_class, create_api_character, create_feat
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Alert")
 
         response = await client.post(
@@ -377,7 +400,8 @@ class TestLevelUp:
         self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        await level_up_to(client, player_token, character["id"], target_level=3)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -388,16 +412,17 @@ class TestLevelUp:
         assert response.status_code == 404
 
     async def test_feat_choice_already_known_returns_409(
-        self, client, player, player_token, create_class, create_api_character, create_feat
+        self, client, player, player_token, gm_token, create_class, create_api_character, create_feat
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Alert")
 
         grant_response = await client.post(
-            f"/characters/{character['id']}/feats",
+            f"/characters/{character['id']}/gm-panel/feats",
             json={"feat_id": feat.id},
-            headers={"Authorization": f"Bearer {player_token}"},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert grant_response.status_code == 201
 
@@ -420,7 +445,8 @@ class TestLevelUp:
         create_feat,
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3, strength=13)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, strength=13)
+        await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
             f"/feats/{feat.id}/ability-score-increases",
@@ -456,7 +482,7 @@ class TestLevelUp:
             2,
             [{"spell_level": "LEVEL_1", "slots": 3}],
         )
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=1)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -465,17 +491,22 @@ class TestLevelUp:
         )
 
         assert response.status_code == 200
-        slots = {item["spell_level"]: item for item in response.json()["spell_slots"]}
+        slots_response = await client.get(
+            f"/characters/{character['id']}/spells",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        slots = {item["spell_level"]: item for item in slots_response.json()["spell_slots"]}
         assert slots["LEVEL_1"]["total"] == 3
 
     async def test_level_up_at_max_level_returns_400(
-        self, client, player, player_token, create_class, create_api_character
+        self, client, player, player_token, create_class, create_character
     ):
+        """Level is capped at 20; a max-level character cannot level up again."""
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=20)
+        character = await create_character(owner_id=player.id, class_id=character_class.id, level=20)
 
         response = await client.post(
-            f"/characters/{character['id']}/progression/level-up",
+            f"/characters/{character.id}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -519,10 +550,10 @@ class TestASIChoices:
         self, client, player, player_token, create_class, create_api_character, create_feat
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, level=3)
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
         feat = await create_feat(name="Alert")
 
-        for class_level in range(4, 9):
+        for class_level in range(2, 9):
             if class_level == 8:
                 payload = {"choice": {"type": "FEAT", "feat_id": feat.id}}
             elif class_level == 4:

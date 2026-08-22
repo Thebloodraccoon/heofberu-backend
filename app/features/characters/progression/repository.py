@@ -27,7 +27,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
     async def add(
         self,
         character_id: int,
-        class_level: int,
+        class_level: int | None,
         choice_type: ASILevelChoice | str,
         *,
         feat_id: int | None = None,
@@ -38,8 +38,10 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         """
         Record one resolved ASI-level choice.
 
-        ``increases`` holds the ASI increments as ``[{"ability": "STR",
-        "amount": 2}]`` (only for ``choice_type == ASI``); ``feat_id`` /
+        ``class_level`` is the ASI class level for level-up resolutions,
+        or ``None`` for a GM adjustment from the GM panel. ``increases``
+        holds the ASI increments as ``[{"ability": "STR", "amount": 2}]``
+        (only for ``choice_type == ASI``); ``feat_id`` /
         ``ability_score_increase_id`` are set for ``FEAT`` choices.
         ``commit=False`` defers the commit for callers wrapping the write
         in a transaction.
@@ -62,3 +64,21 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
             await self.db.flush()
 
         return row
+
+    async def get_choice_by_id(self, character_id: int, choice_id: int) -> CharacterASIChoice | None:
+        """Fetch one choice row by its own id, scoped to the character."""
+
+        result = await self.db.execute(
+            select(CharacterASIChoice).where(
+                CharacterASIChoice.id == choice_id,
+                CharacterASIChoice.character_id == character_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def remove_choice(self, choice: CharacterASIChoice) -> bool:
+        """Delete a choice row (GM adjustment removal; caller reverts the stat bumps)."""
+
+        await self.db.delete(choice)
+        await self.db.commit()
+        return True

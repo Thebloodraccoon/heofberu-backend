@@ -1,4 +1,4 @@
-"""Spell CRUD service with transactional class/race availability setup."""
+"""Spell CRUD service with transactional class/subclass/race/subrace availability setup."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +12,7 @@ from app.features.spells.crud.schemas import (
     SpellResponse,
     SpellUpdate,
 )
-from app.models.spell_model import Spell
+from app.models import Spell
 
 
 class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellGetAllResponse]):
@@ -24,13 +24,14 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
         searchable on ``name``), served as a lightweight ``Page`` cached
         transparently in Redis via ``@use_cache``;
       - a uniqueness check on ``name`` before create/update;
-      - ``create_spell``, which can optionally set class/race availability
-        up front, in the same transaction as the spell itself. An empty
-        (or omitted) list on either side means the spell is
-        unrestricted for that dimension.
+      - ``create_spell``, which can optionally set class/subclass/race/
+        subrace availability up front, in the same transaction as the
+        spell itself. An empty (or omitted) list on any side means the
+        spell is unrestricted for that dimension.
 
-    Class/race availability management (the ``PUT /spells/{spell_id}/classes``
-    /``races`` endpoints) lives in the dedicated ``availability/``
+    Class/subclass/race/subrace availability management (the
+    ``PUT /spells/{spell_id}/classes`` / ``subclasses`` / ``races`` /
+    ``subraces`` endpoints) lives in the dedicated ``availability/``
     subpackage; ``create_spell`` delegates its seeding there via
     :class:`SpellAvailabilityService`.
     """
@@ -51,13 +52,14 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
         """
         Create a spell after checking its name isn't already taken.
 
-        ``spell_data.available_classes`` / ``available_races`` are
-        optional. If supplied, they're set in the *same transaction* as
-        the spell itself, mirroring ``RaceService.create_race``. Every
-        write inside the nested transaction below passes ``commit=False``
-        for the same reason documented there: a plain ``session.commit()``
-        from any of them would commit the entire outer transaction, not
-        just the ``begin_nested()`` SAVEPOINT.
+        ``spell_data.available_classes`` / ``available_subclasses`` /
+        ``available_races`` / ``available_subraces`` are optional. If
+        supplied, they're set in the *same transaction* as the spell
+        itself, mirroring ``RaceService.create_race``. Every write inside
+        the nested transaction below passes ``commit=False`` for the same
+        reason documented there: a plain ``session.commit()`` from any of
+        them would commit the entire outer transaction, not just the
+        ``begin_nested()`` SAVEPOINT.
         """
 
         classes = (
@@ -65,13 +67,30 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
             if spell_data.available_classes
             else None
         )
+        subclasses = (
+            await self.resolve_ids(self.repository.get_subclasses_by_ids, spell_data.available_subclasses, "Subclasses")
+            if spell_data.available_subclasses
+            else None
+        )
         races = (
             await self.resolve_ids(self.repository.get_races_by_ids, spell_data.available_races, "Races")
             if spell_data.available_races
             else None
         )
+        subraces = (
+            await self.resolve_ids(self.repository.get_subraces_by_ids, spell_data.available_subraces, "Subraces")
+            if spell_data.available_subraces
+            else None
+        )
 
-        payload = spell_data.model_dump(exclude={"available_classes", "available_races"})
+        payload = spell_data.model_dump(
+            exclude={
+                "available_classes",
+                "available_subclasses",
+                "available_races",
+                "available_subraces",
+            }
+        )
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)
@@ -79,8 +98,14 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
             if classes:
                 await self._availability.set_classes_for_spell(item, classes, commit=False)
 
+            if subclasses:
+                await self._availability.set_subclasses_for_spell(item, subclasses, commit=False)
+
             if races:
                 await self._availability.set_races_for_spell(item, races, commit=False)
+
+            if subraces:
+                await self._availability.set_subraces_for_spell(item, subraces, commit=False)
 
         await invalidate_spell_cache()
 

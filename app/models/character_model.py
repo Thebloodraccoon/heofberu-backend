@@ -1,7 +1,6 @@
 """ORM model for the D&D 5e character sheet."""
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -12,7 +11,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from app.models.enums import AbilityScoreType
 from app.settings import settings
 from app.settings._common import utcnow
 
@@ -27,26 +25,22 @@ class Character(settings.Base):  # type: ignore
 
     # Basic info
     name = Column(String(200), nullable=False, index=True)
-    image_path = Column(String(500))
     level = Column(Integer, nullable=False, default=1)
 
     class_id = Column(Integer, ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False, index=True)
     subclass_id = Column(Integer, ForeignKey("subclasses.id", ondelete="SET NULL"), nullable=True, index=True)
     race_id = Column(Integer, ForeignKey("races.id", ondelete="SET NULL"), index=True)
     subrace_id = Column(Integer, ForeignKey("subraces.id", ondelete="SET NULL"), nullable=True, index=True)
-    background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="SET NULL"), index=True)
+    background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Combat stats
     current_hp = Column(Integer, nullable=False, default=0)
     max_hp = Column(Integer, nullable=False, default=0)
     temp_hp = Column(Integer, nullable=False, default=0)
-    hit_dice = Column(String(20), nullable=False, default="")
+
     speed = Column(Integer, nullable=False, default=30)
     armor_class = Column(Integer, nullable=False, default=10)
     shield = Column(Integer, nullable=False, default=0)
-    initiative_bonus = Column(Integer, nullable=False, default=0)
-    passive_perception_bonus = Column(Integer, nullable=False, default=0)
-    has_jack_of_all_trades = Column(Boolean, nullable=False, default=False)
 
     # Ability scores
     strength = Column(Integer, nullable=False, default=10)
@@ -56,25 +50,20 @@ class Character(settings.Base):  # type: ignore
     wisdom = Column(Integer, nullable=False, default=10)
     charisma = Column(Integer, nullable=False, default=10)
 
-    # Free-text catch-all for proficiencies not otherwise modeled (tools,
-    # languages, armor/weapon proficiencies) — skills and saving throws are
-    # modeled as relationships below.
-    proficiencies = Column(Text, nullable=False, default="")
-
     # Free text sections
-    traits = Column(Text, nullable=False, default="")
     backstory = Column(Text, nullable=False, default="")
     notes = Column(Text, nullable=False, default="")
+
+    # Personality card free-text fields (5e "Personality" section).
+    personality_traits = Column(Text, nullable=False, default="")
+    ideals = Column(Text, nullable=False, default="")
+    bonds = Column(Text, nullable=False, default="")
+    flaws = Column(Text, nullable=False, default="")
 
     # Currency
     money_gold = Column(Integer, nullable=False, default=0)
     money_silver = Column(Integer, nullable=False, default=0)
     money_copper = Column(Integer, nullable=False, default=0)
-
-    # Spellcasting settings
-    spell_ability = Column(AbilityScoreType, nullable=True)
-    spell_dc_misc_bonus = Column(Integer, nullable=False, default=0)
-    spell_attack_misc_bonus = Column(Integer, nullable=False, default=0)
 
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(
@@ -94,11 +83,6 @@ class Character(settings.Base):  # type: ignore
 
     skill_proficiencies = relationship(
         "CharacterSkillProficiency",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-    saving_throw_proficiencies = relationship(
-        "CharacterSavingThrowProficiency",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )

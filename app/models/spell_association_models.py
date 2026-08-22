@@ -1,4 +1,4 @@
-"""Association tables linking spells to the classes and races that grant them."""
+"""Association tables linking spells to the classes, subclasses, races, and subraces that grant them."""
 
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
@@ -16,6 +16,15 @@ spell_classes = Table(
     Column("class_id", Integer, ForeignKey("classes.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# spells <-> subclasses (which subclasses grant/allow a given spell). Same
+# "empty = unrestricted" convention as spell_classes.
+spell_subclasses = Table(
+    "spell_subclasses",
+    settings.Base.metadata,
+    Column("spell_id", Integer, ForeignKey("spells.id", ondelete="CASCADE"), primary_key=True),
+    Column("subclass_id", Integer, ForeignKey("subclasses.id", ondelete="CASCADE"), primary_key=True),
+)
+
 # spells <-> races (which races grant/allow a given spell, e.g. innate
 # racial spellcasting). Same "empty = unrestricted" convention as spell_classes.
 spell_races = Table(
@@ -23,4 +32,13 @@ spell_races = Table(
     settings.Base.metadata,
     Column("spell_id", Integer, ForeignKey("spells.id", ondelete="CASCADE"), primary_key=True),
     Column("race_id", Integer, ForeignKey("races.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# spells <-> subraces (which subraces grant/allow a given spell). Same
+# "empty = unrestricted" convention as spell_classes.
+spell_subraces = Table(
+    "spell_subraces",
+    settings.Base.metadata,
+    Column("spell_id", Integer, ForeignKey("spells.id", ondelete="CASCADE"), primary_key=True),
+    Column("subrace_id", Integer, ForeignKey("subraces.id", ondelete="CASCADE"), primary_key=True),
 )
