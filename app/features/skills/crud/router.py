@@ -4,9 +4,9 @@ from fastapi import APIRouter, Body, Query
 
 from app.constants import AbilityScore
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.skills.crud.schemas import SkillCreate, SkillGetAllResponse, SkillResponse, SkillUpdate
 from app.features.skills.dependencies import SkillCrudDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -53,6 +53,7 @@ async def get_skills(
 )
 async def get_skill(skill_id: int, skill_service: SkillCrudDep):
     """
+
     Return a single skill by ID, with full detail.
 
     Open endpoint, no authentication required.

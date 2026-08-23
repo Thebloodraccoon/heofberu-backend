@@ -187,14 +187,20 @@ class ItemRarity(str, Enum):
 
 
 class FeatureSourceType(str, Enum):
-    """Origin of a feature: class, subclass, race, subrace, background, feat, other."""
+    """
+    Origin of a feature: class, subclass, race, subrace, background, other.
+
+    FEAT was removed as a feature source — a feat is de facto its own
+    feature (the content lives in the feat's description), so features can
+    no longer be attached to feats. The value remains in the Postgres ENUM
+    type (Postgres cannot drop enum values); it is simply never written.
+    """
 
     CLASS = "CLASS"
     SUBCLASS = "SUBCLASS"
     RACE = "RACE"
     SUBRACE = "SUBRACE"
     BACKGROUND = "BACKGROUND"
-    FEAT = "FEAT"
     OTHER = "OTHER"
 
 

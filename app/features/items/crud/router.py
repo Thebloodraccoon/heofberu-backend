@@ -4,9 +4,9 @@ from fastapi import APIRouter, Body, Query
 
 from app.constants import ItemRarity, ItemType
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.items.crud.schemas import ItemCreate, ItemGetAllResponse, ItemResponse, ItemUpdate
 from app.features.items.dependencies import ItemCrudDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 

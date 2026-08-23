@@ -11,9 +11,10 @@ class Feature(settings.Base):  # type: ignore
     """
     Reference table of discrete rules features: class/subclass features
     (e.g. 'Rage', 'Sneak Attack', 'Extra Attack'), racial and subrace traits,
-    background features, and feat benefits. ``source_type`` + the relevant FK
+    and background features. ``source_type`` + the relevant FK
     indicate where the feature comes from; ``level`` is only meaningful for
-    CLASS / SUBCLASS features.
+    CLASS / SUBCLASS features. Feats grant no features (a feat is de facto
+    its own feature).
     """
 
     __tablename__ = "features"
@@ -31,7 +32,6 @@ class Feature(settings.Base):  # type: ignore
     subrace_id = Column(Integer, ForeignKey("subraces.id", ondelete="CASCADE"), nullable=True, index=True)
 
     background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), nullable=True, index=True)
-    feat_id = Column(Integer, ForeignKey("feats.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # Only relevant when source_type is CLASS or SUBCLASS: the class level at
     # which the feature is gained (e.g. Extra Attack at level 5).
@@ -46,7 +46,6 @@ class Feature(settings.Base):  # type: ignore
     race = relationship("Race", back_populates="features")
     subrace = relationship("Subrace", back_populates="features")
     background = relationship("Background", back_populates="features")
-    feat = relationship("Feat", back_populates="features")
     created_by = relationship("User")
 
     def __repr__(self):

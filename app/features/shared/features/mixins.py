@@ -1,7 +1,7 @@
 """
 Reusable per-source feature CRUD mixin for the reference catalog services.
 
-The race/class/background/feat services each exposed an identical trio
+The race/class/background services each exposed an identical trio
 (``add_feature`` / ``update_feature`` / ``remove_feature``) plus a
 ``list_features`` read that wraps a :class:`NestedFeatureService` call and
 the character-grant reconciliation in one ``_atomic()`` transaction.

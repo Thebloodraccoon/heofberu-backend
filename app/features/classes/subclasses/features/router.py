@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Body
 
-from app.core.security.dependencies import GmUserDep
 from app.features.classes.subclasses.dependencies import SubclassFeaturesDep
 from app.features.classes.subclasses.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -49,6 +49,7 @@ async def add_subclass_feature(
     ),
 ):
     """
+
     Add one feature to a subclass. **GM only.**
 
     The feature is created with ``source_type: SUBCLASS`` and becomes an
@@ -88,6 +89,7 @@ async def update_subclass_feature(
     ),
 ):
     """
+
     Update one feature of a subclass in place. **GM only.**
 
     The feature keeps its id, so character grants and any player notes on
@@ -117,6 +119,7 @@ async def remove_subclass_feature(
     _: GmUserDep,
 ):
     """
+
     Remove one feature from a subclass. **GM only.**
 
     Deletes the feature, cascading away any `CharacterFeature` grants on

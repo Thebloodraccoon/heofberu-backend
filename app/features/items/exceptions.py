@@ -1,14 +1,13 @@
-"""Item-specific HTTP exceptions."""
+"""Item-specific application exceptions."""
 
-from fastapi import HTTPException, status
+from app.core.exceptions import AppError
 
 
-class ItemNotFoundException(HTTPException):
+class ItemNotFoundException(AppError):
     """Raised when an item with the given ID does not exist."""
+
+    status_code = 404
 
     def __init__(self, item_id: int):
         self.item_id = item_id
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item with id {item_id} not found.",
-        )
+        super().__init__(f"Item with id {item_id} not found.")

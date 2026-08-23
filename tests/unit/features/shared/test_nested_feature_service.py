@@ -122,7 +122,6 @@ class TestNestedFeatureService:
         assert service.fk_for(FeatureSourceType.RACE) == "race_id"
         assert service.fk_for(FeatureSourceType.SUBRACE) == "subrace_id"
         assert service.fk_for(FeatureSourceType.BACKGROUND) == "background_id"
-        assert service.fk_for(FeatureSourceType.FEAT) == "feat_id"
         assert service.fk_for(FeatureSourceType.SUBCLASS) == "subclass_id"
 
     async def test_fk_for_raises_for_unsupported_source(self):

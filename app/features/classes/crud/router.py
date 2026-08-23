@@ -3,7 +3,6 @@
 from fastapi import APIRouter, Body, Query
 
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.classes.dependencies import ClassCrudDep
 from app.features.classes.schemas import (
     ClassCreate,
@@ -12,6 +11,7 @@ from app.features.classes.schemas import (
     ClassResponse,
     ClassUpdate,
 )
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 

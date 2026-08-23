@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Request, Response, status
 
-from app.core.security.dependencies import CurrentUserDep, TokenDep
 from app.core.security.token import verify_token
 from app.features.auth.dependencies import AuthServiceDep
 from app.features.auth.schemas import (
@@ -14,6 +13,7 @@ from app.features.auth.schemas import (
     RegisterResponse,
 )
 from app.features.auth.service import REFRESH_COOKIE_NAME
+from app.features.users.security import CurrentUserDep, TokenDep
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 

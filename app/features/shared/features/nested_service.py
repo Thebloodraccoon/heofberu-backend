@@ -40,10 +40,11 @@ from app.models.feature_model import Feature
 
 class NestedFeatureService(NestedCollectionService[Feature, NestedFeatureResponse]):
     """
+
     Per-source feature reads and writes behind the ``nested_features`` cache
     namespace.
 
-    The parent catalog services (race/subrace/class/background/feat) and
+    The parent catalog services (race/subrace/class/background) and
     the class service's subclass feature methods each hold one instance
     (``_features``) and expose it through their own ``add_feature``/
     ``update_feature``/``remove_feature``/``list_features`` methods.

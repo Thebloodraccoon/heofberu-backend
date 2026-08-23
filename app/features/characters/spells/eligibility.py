@@ -36,6 +36,7 @@ class CharacterSpellEligibilityChecker:
 
     async def check(self, character: Character, spell: Spell) -> None:
         """
+
         Raise the appropriate exception if ``character`` may not learn
         ``spell``. Runs the class/race restriction check first, then the
         slot-capacity check — both must pass for a spell to be learnable.

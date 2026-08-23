@@ -2,12 +2,12 @@
 
 from fastapi import APIRouter, Body
 
-from app.core.security.dependencies import GmUserDep
 from app.features.feats.dependencies import FeatAsiDep
 from app.features.feats.schemas import (
     AbilityScoreIncreasesUpdate,
     FeatResponse,
 )
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

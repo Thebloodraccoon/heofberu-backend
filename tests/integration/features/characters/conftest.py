@@ -46,18 +46,28 @@ async def create_api_character(client, login_as, create_user, create_background,
     ):
         if owner is None:
             owner = await create_user()
-        if background_id is None:
-            background_id = (await create_background()).id
+        # ``background_id=False`` omits the field entirely — a character
+        # with no background (for the late-background setup tests).
+        if background_id is False:
+            background_id = None
+            omit_background = True
+        else:
+            if background_id is None:
+                background_id = (await create_background()).id
+            omit_background = False
         token = await login_as(owner)
+        payload = {
+            "name": name,
+            "class_id": class_id,
+            "race_id": race_id,
+            "background_id": background_id,
+            **kwargs,
+        }
+        if omit_background:
+            del payload["background_id"]
         response = await client.post(
             "/characters",
-            json={
-                "name": name,
-                "class_id": class_id,
-                "race_id": race_id,
-                "background_id": background_id,
-                **kwargs,
-            },
+            json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 201, response.text

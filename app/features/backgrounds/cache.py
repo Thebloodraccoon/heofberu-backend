@@ -17,5 +17,6 @@ async def invalidate_background_cache() -> None:
     capability services (crud/features/skills/items) share a single
     invalidation point instead of each re-declaring the namespace tuple.
     """
+
     for namespace in BACKGROUND_CACHE_NAMESPACES:
         await invalidate(namespace)

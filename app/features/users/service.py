@@ -3,7 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
-from app.core.security.password import get_password_hash
+from app.core.security.password import get_password_hash_async
 from app.features.users.exceptions import (
     DefaultUserProtectedException,
     SelfDeletionException,
@@ -57,7 +57,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         user_data = data.model_dump()
         del user_data["password"]
-        user_data["hashed_password"] = get_password_hash(data.password)
+        user_data["hashed_password"] = await get_password_hash_async(data.password)
 
         user = await self.repository.create(user_data)
         return self.response_schema.model_validate(user)

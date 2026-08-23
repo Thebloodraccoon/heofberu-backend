@@ -8,13 +8,13 @@ resolves to ``/characters/{character_id}/gm-panel/items``.
 
 from fastapi import APIRouter, status
 
-from app.core.security.dependencies import CurrentUserDep, GmUserDep
 from app.features.characters.gm_panel.dependencies import GmPanelItemsDep
 from app.features.characters.gm_panel.items.schemas import (
     CharacterItemAdd,
     CharacterItemResponse,
     CharacterItemUpdate,
 )
+from app.features.users.security import CurrentUserDep, GmUserDep
 
 router = APIRouter()
 
@@ -34,6 +34,7 @@ async def get_character_items(
     current_user: CurrentUserDep,
 ):
     """
+
     List every item stack owned by a character. GM can view any
     character's items; players only their own.
     """

@@ -13,5 +13,6 @@ async def invalidate_spell_cache() -> None:
     to a spell — catalog CRUD via ``/spells`` or a class/race availability
     change — must call this after its transaction commits.
     """
+
     for namespace in SPELL_CACHE_NAMESPACES:
         await invalidate(namespace)

@@ -18,6 +18,7 @@ from app.models.subrace_association_models import SubraceAbilityBonus
 
 class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
     """
+
     Repository backing ``CharacterStatsService``: the ``character_ability_scores``
     cache table plus the reference-data queries the derived combat stats need.
 

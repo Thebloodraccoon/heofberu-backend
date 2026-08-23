@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Body
 
-from app.core.security.dependencies import GmUserDep
 from app.features.spells.availability.schemas import (
     ClassAvailabilityUpdate,
     RaceAvailabilityUpdate,
@@ -11,6 +10,7 @@ from app.features.spells.availability.schemas import (
 )
 from app.features.spells.crud.schemas import SpellResponse
 from app.features.spells.dependencies import SpellAvailabilityDep
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

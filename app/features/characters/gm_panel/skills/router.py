@@ -7,10 +7,10 @@ router applies ``/{character_id}/gm-panel``.
 
 from fastapi import APIRouter
 
-from app.core.security.dependencies import GmUserDep
 from app.features.characters.gm_panel.dependencies import GmPanelSkillsDep
 from app.features.characters.gm_panel.skills.schemas import SkillExpertiseUpdate
 from app.features.characters.schemas import SkillProficiencyResponse
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

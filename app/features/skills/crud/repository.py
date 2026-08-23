@@ -28,6 +28,7 @@ class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
         granted by a background (background_skills), or held as a
         proficiency by a character (character_skill_proficiencies).
         """
+
         query = select(
             or_(
                 exists().where(race_skills.c.skill_id == skill_id),

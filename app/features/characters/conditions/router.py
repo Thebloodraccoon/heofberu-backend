@@ -3,13 +3,13 @@
 from fastapi import APIRouter, status
 
 from app.constants import ConditionType
-from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.conditions.schemas import (
     CharacterConditionAdd,
     CharacterConditionResponse,
     CharacterConditionUpdate,
 )
 from app.features.characters.dependencies import CharacterConditionServiceDep
+from app.features.users.security import CurrentUserDep
 
 router = APIRouter(prefix="/{character_id}/conditions", tags=["Character Conditions"])
 

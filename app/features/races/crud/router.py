@@ -4,9 +4,9 @@ from fastapi import APIRouter, Body, Query
 
 from app.constants import RaceSize
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.races.dependencies import RaceCrudDep
 from app.features.races.schemas import RaceCreate, RaceGetAllResponse, RaceResponse, RaceUpdate
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 

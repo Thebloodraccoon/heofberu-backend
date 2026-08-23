@@ -3,21 +3,20 @@ Auto-grant/revoke source-owned features for a character.
 
 A character automatically holds every feature owned by its class
 (CLASS), chosen subclass (SUBCLASS), race (RACE), chosen subrace
-(SUBRACE), background (BACKGROUND) and every currently-granted feat
-(FEAT), filtered by ``level``: ``NULL`` (gained at level 1) or
-``<= character.level``. This module reconciles ``character_features``
-against that target set.
+(SUBRACE) and background (BACKGROUND), filtered by ``level``: ``NULL``
+(gained at level 1) or ``<= character.level``. This module reconciles
+``character_features`` against that target set. Feats grant no features
+(a feat is de facto its own feature).
 
 It is deliberately small and side-effect free (never commits): callers
 wrap it in their own transaction — ``CharacterService.create_character``,
-``CharacterProgressionService`` (level-up, race/class/subclass/subrace change)
+``CharacterProgressionService`` (level-up, subclass/subrace change)
 and ``GmPanelFeatService`` (feat grant/revoke).
 
 Rows it does not own are left untouched: features created manually from
 OTHER sources, and any notes a player wrote on a grant, survive
 reconciliation unless the grant's own feature leaves the auto-granted
-set (e.g. the character changes class, drops a subclass, or loses a
-feat).
+set (e.g. the character changes class or drops a subclass).
 """
 
 from sqlalchemy import or_, select
@@ -27,7 +26,6 @@ from sqlalchemy.orm import selectinload
 from app.constants import FeatureSourceType
 from app.features.characters.cache import invalidate_character_cache
 from app.models import CharacterFeature, Feature
-from app.models.character_association_models import CharacterFeat
 from app.models.character_model import Character
 
 _AUTO_SOURCE_TYPES = (
@@ -36,7 +34,6 @@ _AUTO_SOURCE_TYPES = (
     FeatureSourceType.RACE,
     FeatureSourceType.SUBRACE,
     FeatureSourceType.BACKGROUND,
-    FeatureSourceType.FEAT,
 )
 
 _SOURCE_CHARACTER_FILTER = {
@@ -50,9 +47,10 @@ _SOURCE_CHARACTER_FILTER = {
 
 async def _desired_features(db: AsyncSession, character: Character) -> list[Feature]:
     """
+
     The target feature set for a character: features owned by its class,
-    subclass, race, subrace, background, and every currently-granted feat,
-    all filtered to ``level`` ``NULL`` or ``<= character.level``.
+    subclass, race, subrace, and background, all filtered to ``level``
+    ``NULL`` or ``<= character.level``.
     """
 
     conditions = []
@@ -70,11 +68,6 @@ async def _desired_features(db: AsyncSession, character: Character) -> list[Feat
 
     if character.background_id is not None:
         conditions.append(Feature.background_id == character.background_id)
-
-    result = await db.execute(select(CharacterFeat.feat_id).where(CharacterFeat.character_id == character.id))
-    feat_ids = [feat_id for (feat_id,) in result.all()]
-    if feat_ids:
-        conditions.append(Feature.feat_id.in_(feat_ids))
 
     if not conditions:
         return []
@@ -122,7 +115,7 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
 
     Called by the source replace endpoints (``PUT /{source}/{id}/features``)
     inside their ``_atomic()`` block, so a GM editing a class/race/
-    subrace/background/feat's features reconciles the affected characters'
+    subrace/background's features reconciles the affected characters'
     grants in the same transaction:
 
       - features added to the source are granted to qualifying characters
@@ -134,25 +127,16 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
         row is deleted by the replace helper, so the ``ON DELETE CASCADE``
         clears the grants.
 
-    FEAT resolves through ``CharacterFeat`` grants (the feat id is not a
-    column on ``Character``); every other source filters ``Character`` by
-    its own FK. Never commits — the caller's transaction owns persistence.
+    Each source filters ``Character`` by its own FK. Never commits — the
+    caller's transaction owns persistence.
     """
 
-    if source_type == FeatureSourceType.FEAT:
-        result = await db.execute(
-            select(Character)
-            .join(CharacterFeat, CharacterFeat.character_id == Character.id)
-            .where(CharacterFeat.feat_id == source_id)
-        )
-        characters = list(result.scalars().unique().all())
-    else:
-        source_filter = _SOURCE_CHARACTER_FILTER.get(source_type)
-        if source_filter is None:
-            return
+    source_filter = _SOURCE_CHARACTER_FILTER.get(source_type)
+    if source_filter is None:
+        return
 
-        result = await db.execute(select(Character).where(source_filter(source_id)))
-        characters = list(result.scalars().unique().all())
+    result = await db.execute(select(Character).where(source_filter(source_id)))
+    characters = list(result.scalars().unique().all())
 
     for character in characters:
         await sync_progression_features(db, character)

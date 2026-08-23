@@ -2,7 +2,9 @@
 
 from app.core.cache import invalidate
 
-RACE_CACHE_NAMESPACES = ("races", "nested_features")
+# Character payloads derive ``speed`` live from the race at response time,
+# so a race write must also purge cached character detail payloads.
+RACE_CACHE_NAMESPACES = ("races", "nested_features", "characters")
 
 
 async def invalidate_race_cache() -> None:
@@ -18,5 +20,6 @@ async def invalidate_race_cache() -> None:
     single invalidation point instead of each re-declaring the namespace
     tuple.
     """
+
     for namespace in RACE_CACHE_NAMESPACES:
         await invalidate(namespace)

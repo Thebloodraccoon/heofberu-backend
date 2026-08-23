@@ -1,54 +1,39 @@
-"""Endpoints for character progression: race/class/subclass/subrace change and leveling up."""
+"""Endpoints for character progression: subclass/subrace/background setup, leveling up, rebuild."""
 
 from fastapi import APIRouter
 
-from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterProgressionServiceDep, CharacterServiceDep
 from app.features.characters.progression.schemas import (
+    BackgroundChange,
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
-    ClassChange,
     LevelUpRequest,
-    RaceChange,
     SubclassChange,
     SubraceChange,
 )
 from app.features.characters.schemas import CharacterResponse
+from app.features.users.security import CurrentUserDep
 
 router = APIRouter(tags=["Characters Progression"])
 
 
 @router.patch(
-    "/{character_id}/progression/race",
+    "/{character_id}/progression/background",
     response_model=CharacterResponse,
-    summary="Change a character's race",
-    description="Sets ``race_id`` (null clears it) and re-derives race ability bonuses.",
+    summary="Set a character's background (only while it has none)",
+    responses={
+        404: {"description": "Character or background not found."},
+        409: {"description": "The character already has a background."},
+    },
 )
-async def change_race(
+async def set_background(
     character_id: int,
-    data: RaceChange,
+    data: BackgroundChange,
     progression_service: CharacterProgressionServiceDep,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ) -> CharacterResponse:
-    await progression_service.change_race(character_id, data, current_user)
-    return await character_service.get_character(character_id, current_user)
-
-
-@router.patch(
-    "/{character_id}/progression/class",
-    response_model=CharacterResponse,
-    summary="Change a character's class",
-    description="Replaces the class and re-applies spell slot progression for the current level.",
-)
-async def change_class(
-    character_id: int,
-    data: ClassChange,
-    progression_service: CharacterProgressionServiceDep,
-    character_service: CharacterServiceDep,
-    current_user: CurrentUserDep,
-) -> CharacterResponse:
-    await progression_service.change_class(character_id, data, current_user)
+    await progression_service.set_background(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
 
 
@@ -91,6 +76,29 @@ async def change_subrace(
 ) -> CharacterResponse:
     await progression_service.set_subrace(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
+
+
+@router.post(
+    "/{character_id}/rebuild",
+    response_model=CharacterResponse,
+    summary="Point-rebuild a character (not implemented yet)",
+    responses={
+        501: {"description": "Rebuild is planned but not implemented yet."},
+    },
+)
+async def rebuild_character(
+    character_id: int,
+    progression_service: CharacterProgressionServiceDep,
+    current_user: CurrentUserDep,
+) -> CharacterResponse:
+    """
+    Placeholder for the future point-rebuild: a full class/race swap that
+    resets every derived choice while keeping the character row. Currently
+    always responds with **501 Not Implemented**.
+    """
+
+    await progression_service.request_rebuild(character_id, current_user)
+    raise AssertionError("unreachable — request_rebuild always raises")
 
 
 @router.post(

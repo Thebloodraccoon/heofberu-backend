@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, status
 
-from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.dependencies import CharacterAttackServiceDep
+from app.features.users.security import CurrentUserDep
 
 router = APIRouter(tags=["Characters Attacks"])
 

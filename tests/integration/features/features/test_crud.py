@@ -55,7 +55,6 @@ class TestFeatureCrud:
             ("RACE", "race_id"),
             ("SUBRACE", "subrace_id"),
             ("BACKGROUND", "background_id"),
-            ("FEAT", "feat_id"),
         ],
     )
     async def test_cannot_create_source_owned_feature_directly(
@@ -66,7 +65,6 @@ class TestFeatureCrud:
             "RACE": elf,
             "SUBRACE": await create_subrace(race_id=elf.id),
             "BACKGROUND": await create_background(name="Acolyte"),
-            "FEAT": await create_feat(name="Alert"),
         }
         parent = parent_by_type[source_type]
 
@@ -117,7 +115,7 @@ class TestFeatureCrud:
 
         response = await client.patch(
             f"/features/{feature.id}",
-            json={"source_type": "FEAT"},
+            json={"source_type": "RACE"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 

@@ -7,9 +7,9 @@ router applies ``/{character_id}/gm-panel``.
 
 from fastapi import APIRouter, status
 
-from app.core.security.dependencies import CurrentUserDep, GmUserDep
 from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd, GmAsiChoiceResponse
 from app.features.characters.gm_panel.dependencies import GmPanelAsiDep
+from app.features.users.security import CurrentUserDep, GmUserDep
 
 router = APIRouter()
 
@@ -51,6 +51,7 @@ async def add_character_asi_adjustment(
     current_user: GmUserDep,
 ):
     """
+
     Apply a free-form ±ability change to the character's base scores —
     no class level required and no 20 cap or +2 budget enforced.
 

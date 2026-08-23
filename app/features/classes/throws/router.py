@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Body
 
-from app.core.security.dependencies import GmUserDep
 from app.features.classes.dependencies import ClassThrowsDep
 from app.features.classes.schemas import ClassResponse, SavingThrowsUpdate
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

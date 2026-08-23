@@ -13,7 +13,6 @@ from app.constants import (
     SpellSchool,
 )
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.spells.crud.schemas import (
     SpellCreate,
     SpellGetAllResponse,
@@ -21,6 +20,7 @@ from app.features.spells.crud.schemas import (
     SpellUpdate,
 )
 from app.features.spells.dependencies import SpellCrudDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 

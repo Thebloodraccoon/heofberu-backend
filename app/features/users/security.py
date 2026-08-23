@@ -1,3 +1,12 @@
+"""
+Authentication/authorization dependency providers.
+
+Lives in the ``users`` domain (not ``core``): resolving the current user
+requires the users service, so every dependency arrow points INTO
+``users`` and no layering inversion (core importing a feature) occurs.
+Everything cryptographic stays generic in ``app/core/security/token.py``.
+"""
+
 from typing import Annotated
 
 from fastapi import Depends
@@ -27,6 +36,7 @@ async def get_current_user(
     Validates the token signature/expiry, rejects blacklisted tokens, and
     returns the matching user, raising ``InvalidTokenException`` otherwise.
     """
+
     decoded = verify_token(token, "access")
 
     if await is_token_blacklisted(decoded.jti):

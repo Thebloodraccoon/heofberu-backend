@@ -8,6 +8,7 @@ CHARACTER_CACHE_NAMESPACE = "characters"
 
 async def invalidate_character_cache(character_id: int) -> None:
     """
+
     Purge cached data for one character.
 
     ``GET /characters/{id}`` is cached under the flat key

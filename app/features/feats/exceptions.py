@@ -1,14 +1,13 @@
-"""Feat-specific HTTP exceptions."""
+"""Feat-specific application exceptions."""
 
-from fastapi import HTTPException, status
+from app.core.exceptions import AppError
 
 
-class FeatNotFoundException(HTTPException):
+class FeatNotFoundException(AppError):
     """Raised when a feat with the given ID does not exist."""
+
+    status_code = 404
 
     def __init__(self, feat_id: int):
         self.feat_id = feat_id
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Feat with id {feat_id} not found.",
-        )
+        super().__init__(f"Feat with id {feat_id} not found.")

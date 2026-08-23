@@ -1,6 +1,6 @@
 """Pydantic settings model: loads runtime configuration from the environment."""
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +15,7 @@ class AppSettings(BaseSettings):
     STAGE: str = Field(default="dev", alias="STAGE")
     HOST: str = "0.0.0.0"  # nosec B104
 
-    # JWT
+    # JWT — dev/test may fall back to a well-known default; prod must not.
     JWT_SECRET_KEY: str = Field(default="secret", alias="JWT_SECRET_KEY")
     JWT_ALGORITHM: str = Field(default="HS256", alias="JWT_ALGORITHM")
 
@@ -37,3 +37,16 @@ class AppSettings(BaseSettings):
     CACHE_ENABLED: bool = Field(default=True, alias="CACHE_ENABLED")
     CACHE_TTL_DEFAULT: int = Field(default=86400, alias="CACHE_TTL_DEFAULT")
     CACHE_PREFIX: str = Field(default="cache", alias="CACHE_PREFIX")
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def reject_default_secret_outside_dev(cls, value: str, info) -> str:
+        """Fail startup when a non-dev stage runs with the placeholder secret."""
+
+        stage = info.data.get("STAGE", "dev")
+        if value == "secret" and stage not in ("dev", "test"):
+            raise ValueError(
+                "JWT_SECRET_KEY must be overridden outside dev/test — the default "
+                "'secret' would let anyone forge tokens."
+            )
+        return value

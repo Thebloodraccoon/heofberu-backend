@@ -3,7 +3,6 @@
 from fastapi import APIRouter, Query, status
 
 from app.core.base.service import Page
-from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.dependencies import CharacterServiceDep
 from app.features.characters.schemas import (
@@ -13,6 +12,7 @@ from app.features.characters.schemas import (
     CharacterResponse,
     CharacterUpdate,
 )
+from app.features.users.security import CurrentUserDep
 
 router = APIRouter(tags=["Characters Core"])
 

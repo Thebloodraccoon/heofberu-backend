@@ -88,6 +88,7 @@ class GmPanelAsiService(CharacterSubDomainService):
         choice = await self.asi_repository.get_choice_by_id(character_id, adjustment_id)
         if not choice:
             raise GmAsiAdjustmentNotFoundException(character_id=character_id, adjustment_id=adjustment_id)
+
         if choice.class_level is not None:
             raise LevelTiedAsiChoiceException(
                 character_id=character_id, adjustment_id=adjustment_id, class_level=choice.class_level

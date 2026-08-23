@@ -1,35 +1,32 @@
-"""Character-specific HTTP exceptions."""
+"""Character-specific application exceptions."""
 
-from fastapi import HTTPException, status
+from app.core.exceptions import AppError
 
 
-class CharacterNotFoundException(HTTPException):
+class CharacterNotFoundException(AppError):
     """Raised when a character with the given ID does not exist."""
+
+    status_code = 404
 
     def __init__(self, character_id: int):
         self.character_id = character_id
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Character with id {character_id} not found.",
-        )
+        super().__init__(f"Character with id {character_id} not found.")
 
 
-class CharacterAccessDeniedException(HTTPException):
+class CharacterAccessDeniedException(AppError):
     """Raised when a non-GM user tries to access a character they don't own."""
 
+    status_code = 403
+
     def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this character.",
-        )
+        super().__init__("You do not have access to this character.")
 
 
-class BackgroundNotFoundException(HTTPException):
+class BackgroundNotFoundException(AppError):
     """Raised when a background with the given ID does not exist."""
+
+    status_code = 404
 
     def __init__(self, background_id: int):
         self.background_id = background_id
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Background with id {background_id} not found.",
-        )
+        super().__init__(f"Background with id {background_id} not found.")

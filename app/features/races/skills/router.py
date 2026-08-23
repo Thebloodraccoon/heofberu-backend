@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Body
 
-from app.core.security.dependencies import GmUserDep
 from app.features.races.dependencies import RaceSkillsDep
 from app.features.races.schemas import RaceResponse, SkillsUpdate
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

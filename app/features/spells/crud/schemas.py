@@ -62,6 +62,7 @@ class SpellBase(BaseModel):
     @field_validator("components")
     def validate_unique_components(cls, value):
         """Reject duplicate spell components."""
+
         return _validate_unique_components(value)
 
 
@@ -119,8 +120,10 @@ class SpellUpdate(BaseModel):
     @field_validator("components")
     def validate_unique_components(cls, value):
         """Reject duplicate spell components (skipping the ``None`` PATCH case)."""
+
         if value is None:
             return value
+
         return _validate_unique_components(value)
 
 

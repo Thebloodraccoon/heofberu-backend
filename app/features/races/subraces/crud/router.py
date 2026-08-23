@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Body
 
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.races.subraces.crud.schemas import (
     SubraceBriefResponse,
     SubraceCreate,
@@ -11,6 +10,7 @@ from app.features.races.subraces.crud.schemas import (
     SubraceUpdate,
 )
 from app.features.races.subraces.dependencies import SubraceCrudDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 

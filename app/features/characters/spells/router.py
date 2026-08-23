@@ -2,13 +2,13 @@
 
 from fastapi import APIRouter, status
 
-from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterSpellServiceDep
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
     CharacterSpellsResponse,
 )
+from app.features.users.security import CurrentUserDep
 
 router = APIRouter(tags=["Characters Spells"])
 

@@ -49,18 +49,6 @@ class Feat(settings.Base):  # type: ignore
         passive_deletes=True,
     )
 
-    # FEAT-source features granted by this feat (e.g. Alert's "can't be
-    # surprised while conscious"). Created nested in the same request as
-    # the feat and automatically granted to any character holding it —
-    # see ``sync_progression_features``.
-    features = relationship(
-        "Feature",
-        back_populates="feat",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        order_by="Feature.id",
-    )
-
     created_by = relationship("User")
 
     def __repr__(self):

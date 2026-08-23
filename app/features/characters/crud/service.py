@@ -7,11 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType, UserRole
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
+from app.core.cache.client import cache_prefix
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
-from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.cache import CHARACTER_CACHE_NAMESPACE, invalidate_character_cache
 from app.features.characters.crud.exceptions import (
     InvalidHpUpdateException,
     SkillNotAvailableForClassException,
@@ -182,6 +183,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     async def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
         """
+
         List every feat granted to a character (GM/owner readable).
 
         Grants come from every source — level-up ASI choices and GM-panel
@@ -206,7 +208,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         return [CharacterFeatureResponse.model_validate(grant) for grant in grants]
 
     @use_cache(
-        key_builder=lambda self, character_id, **_: f"cache:characters:{character_id}",
+        key_builder=lambda self, character_id, **_: (f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}"),
     )
     async def _get_character_response(self, character_id: int) -> CharacterResponse:
         """Cached response assembly for a single character (access check is NOT cached)."""
@@ -598,8 +600,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     async def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """
         Public wrapper around :meth:`_apply_spell_slot_progression` for
-        the progression service (class change / level-up), which owns the
-        character's class/level writes.
+        the progression service (level-up), which owns the character's
+        level writes.
 
         ``commit=False`` defers the commit so the caller can wrap the
         re-application in a transaction with the rest of the change.

@@ -1,4 +1,4 @@
-"""Tests for character progression endpoints: race/class change and leveling up."""
+"""Tests for character progression endpoints: late background setup, subclass/subrace setup, leveling up, rebuild stub."""
 
 import pytest
 
@@ -12,17 +12,6 @@ async def set_class_spell_slots(client, gm_token, character_class, class_level, 
     )
     assert response.status_code == 200, response.text
     return character_class
-
-
-async def set_race_ability_bonuses(client, gm_token, race, bonuses):
-    """Replace a race's ability bonuses via the API (GM only)."""
-    response = await client.put(
-        f"/races/{race.id}/ability-bonuses",
-        json={"ability_bonuses": bonuses},
-        headers={"Authorization": f"Bearer {gm_token}"},
-    )
-    assert response.status_code == 200, response.text
-    return race
 
 
 async def level_up_to(client, token, character_id, target_level):
@@ -43,72 +32,65 @@ async def level_up_to(client, token, character_id, target_level):
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestRaceChange:
-    async def test_owner_can_change_race_and_ability_scores_are_recomputed(
-        self, client, player, player_token, gm_token, create_class, create_race, create_api_character
+class TestBackgroundSetup:
+    async def test_owner_can_set_background_when_none_and_grants_follow(
+        self, client, player, player_token, create_class, create_api_character, create_background
     ):
         character_class = await create_class(name="Fighter")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player, dexterity=10)
-        race = await set_race_ability_bonuses(
-            client, gm_token, await create_race(name="Elf"), [{"ability": "DEX", "bonus": 2}]
-        )
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, background_id=False)
+        assert character["background_id"] is None
+
+        background = await create_background(name="Sage")
 
         response = await client.patch(
-            f"/characters/{character['id']}/progression/race",
-            json={"race_id": race.id},
+            f"/characters/{character['id']}/progression/background",
+            json={"background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 200
-        body = response.json()
-        assert body["race_id"] == race.id
-        assert body["ability_scores"]["dexterity_total"] == 12
+        assert response.json()["background_id"] == background.id
 
-    async def test_clearing_race_drops_its_bonuses(
-        self, client, player, player_token, gm_token, create_class, create_race, create_api_character
+    async def test_setting_background_when_already_set_returns_409(
+        self, client, player, player_token, create_class, create_api_character, create_background
     ):
-        character_class = await create_class(name="Fighter")
-        race = await set_race_ability_bonuses(
-            client, gm_token, await create_race(name="Elf"), [{"ability": "DEX", "bonus": 2}]
-        )
-        character, _ = await create_api_character(
-            class_id=character_class.id, owner=player, race_id=race.id, dexterity=10
-        )
-
-        response = await client.patch(
-            f"/characters/{character['id']}/progression/race",
-            json={"race_id": None},
-            headers={"Authorization": f"Bearer {player_token}"},
-        )
-
-        assert response.status_code == 200
-        body = response.json()
-        assert body["race_id"] is None
-        assert body["ability_scores"]["dexterity_total"] == 10
-
-    async def test_unknown_race_returns_404(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        other_background = await create_background(name="Sage")
 
         response = await client.patch(
-            f"/characters/{character['id']}/progression/race",
-            json={"race_id": 999999},
+            f"/characters/{character['id']}/progression/background",
+            json={"background_id": other_background.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 409
+
+    async def test_unknown_background_returns_404(
+        self, client, player, player_token, create_class, create_api_character
+    ):
+        character_class = await create_class(name="Fighter")
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, background_id=False)
+
+        response = await client.patch(
+            f"/characters/{character['id']}/progression/background",
+            json={"background_id": 999999},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 404
 
-    async def test_player_cannot_change_other_players_character_race(
-        self, client, player_token, create_user, create_class, create_character, create_race
+    async def test_player_cannot_set_other_players_character_background(
+        self, client, player_token, create_user, create_class, create_character, create_background
     ):
         character_class = await create_class(name="Fighter")
         other = await create_user(username="other", email="other@example.com")
         character = await create_character(owner_id=other.id, class_id=character_class.id)
-        race = await create_race(name="Elf")
+        background = await create_background(name="Sage")
 
         response = await client.patch(
-            f"/characters/{character.id}/progression/race",
-            json={"race_id": race.id},
+            f"/characters/{character.id}/progression/background",
+            json={"background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -117,53 +99,29 @@ class TestRaceChange:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestClassChange:
-    async def test_owner_can_change_class_and_spell_slots_are_reapplied(
-        self, client, player, player_token, create_caster_class, create_class, create_api_character
+class TestRebuildStub:
+    async def test_rebuild_returns_501_until_implemented(
+        self, client, player, player_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        caster_class = await create_caster_class(name="Wizard")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
-        response = await client.patch(
-            f"/characters/{character['id']}/progression/class",
-            json={"class_id": caster_class.id},
+        response = await client.post(
+            f"/characters/{character['id']}/rebuild",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["class_id"] == caster_class.id
-        spells_response = await client.get(
-            f"/characters/{character['id']}/spells",
-            headers={"Authorization": f"Bearer {player_token}"},
-        )
-        slots = {item["spell_level"]: item for item in spells_response.json()["spell_slots"]}
-        assert slots["LEVEL_1"]["total"] == 2
+        assert response.status_code == 501
 
-    async def test_unknown_class_returns_404(self, client, player, player_token, create_class, create_api_character):
-        character_class = await create_class(name="Fighter")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player)
-
-        response = await client.patch(
-            f"/characters/{character['id']}/progression/class",
-            json={"class_id": 999999},
-            headers={"Authorization": f"Bearer {player_token}"},
-        )
-
-        assert response.status_code == 404
-
-    async def test_player_cannot_change_other_players_character_class(
+    async def test_player_cannot_rebuild_other_players_character(
         self, client, player_token, create_user, create_class, create_character
     ):
         character_class = await create_class(name="Fighter")
         other = await create_user(username="other", email="other@example.com")
         character = await create_character(owner_id=other.id, class_id=character_class.id)
-        new_class = await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
 
-        response = await client.patch(
-            f"/characters/{character.id}/progression/class",
-            json={"class_id": new_class.id},
+        response = await client.post(
+            f"/characters/{character.id}/rebuild",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -269,6 +227,26 @@ class TestLevelUp:
         body = response.json()
         assert body["level"] == 2
         assert body["max_hp"] == 16
+
+    async def test_default_hp_gain_never_drops_below_one(
+        self, client, player, player_token, create_caster_class, create_api_character
+    ):
+        """A d6 class with CON 3 (modifier -4) would compute 3+1-4=0 — the 5e minimum of 1 HP applies."""
+
+        character_class = await create_caster_class(name="Squishy")
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, constitution=3)
+        assert character["max_hp"] == 2  # starting: die faces 6 + (-4), clamped to >= 1
+
+        response = await client.post(
+            f"/characters/{character['id']}/progression/level-up",
+            json={},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["level"] == 2
+        assert body["max_hp"] == 3  # default gain 0 -> clamped to the 1 HP minimum
 
     async def test_level_up_with_custom_hp_gain(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")

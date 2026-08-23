@@ -2,7 +2,11 @@
 
 from app.core.cache import invalidate
 
-CLASS_CACHE_NAMESPACES = ("classes", "nested_features", "nested_items")
+# Character payloads serialize some class data LIVE at response time —
+# ``saving_throw_proficiencies`` comes off ``character.character_class``
+# and hit dice/speed derive from the class — so any class write must also
+# purge the cached character detail payloads, or they go stale until TTL.
+CLASS_CACHE_NAMESPACES = ("classes", "nested_features", "nested_items", "characters")
 
 
 async def invalidate_class_cache() -> None:
@@ -11,14 +15,16 @@ async def invalidate_class_cache() -> None:
 
     ``GET /classes`` and ``GET /classes/{id}`` (``classes``, which also
     embeds the class's features and every subclass), the per-source feature
-    listing (``nested_features``) and the per-source item listing
-    (``nested_items``) are all served from cache. Any write to a class —
-    base fields, primary abilities, saving throws, armor proficiencies,
-    available skills, starting items, spell slots, its own features, or a
-    subclass — must call this after its transaction commits, so the
-    capability services (crud/features/skills/items/armor/throws/
-    progression) share a single invalidation point instead of each
-    re-declaring the namespace tuple.
+    listing (``nested_features``), the per-source item listing
+    (``nested_items``) and the cached character detail payloads
+    (``characters`` — live-derived saves/hit dice) are all served from
+    cache. Any write to a class — base fields, primary abilities, saving
+    throws, armor proficiencies, available skills, starting items, spell
+    slots, its own features, or a subclass — must call this after its
+    transaction commits, so the capability services (crud/features/skills/
+    items/armor/throws/progression) share a single invalidation point
+    instead of each re-declaring the namespace tuple.
     """
+
     for namespace in CLASS_CACHE_NAMESPACES:
         await invalidate(namespace)

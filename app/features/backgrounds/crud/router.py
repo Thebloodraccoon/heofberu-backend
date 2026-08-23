@@ -3,7 +3,6 @@
 from fastapi import APIRouter, Body, Query
 
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.backgrounds.crud.schemas import (
     BackgroundCreate,
     BackgroundFullResponse,
@@ -12,6 +11,7 @@ from app.features.backgrounds.crud.schemas import (
     BackgroundUpdate,
 )
 from app.features.backgrounds.dependencies import BackgroundCrudDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -104,6 +104,7 @@ async def create_background(
     ),
 ):
     """
+
     Create a new background. **GM only.**
 
     `granted_skills` is optional. If provided, it's saved together with
@@ -132,12 +133,14 @@ async def update_background(
     background_id: int, update_data: BackgroundUpdate, background_service: BackgroundCrudDep, _: GmUserDep
 ):
     """
+
     Partially update a background's base fields. **GM only.**
 
     Only fields included in the request body are changed; omitted fields
     are left as-is. Does not touch granted skills — use
     `PUT /backgrounds/{background_id}/skills` for that.
     """
+
     return await background_service.update(background_id, update_data)
 
 
@@ -151,6 +154,7 @@ async def update_background(
 )
 async def delete_background(background_id: int, background_service: BackgroundCrudDep, _: FounderDep):
     """
+
     Delete a background. **Found-father only.**
 
     Also removes its links to granted skills and its features (cascade).

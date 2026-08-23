@@ -1,6 +1,6 @@
 """Business logic for authentication: login, registration, token refresh, logout."""
 
-from fastapi import HTTPException, Response
+from fastapi import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
@@ -9,7 +9,7 @@ from app.core.exceptions import (
     InvalidTokenException,
     RecordAlreadyExistsError,
 )
-from app.core.security.password import get_password_hash, verify_password
+from app.core.security.password import get_password_hash_async, verify_password_async
 from app.core.security.token import (
     DecodedToken,
     blacklist_token,
@@ -18,6 +18,7 @@ from app.core.security.token import (
     is_token_blacklisted,
     verify_refresh_token,
 )
+from app.features.auth.exceptions import AccountAlreadyExistsException
 from app.features.auth.schemas import (
     LoginRequest,
     LoginResponse,
@@ -52,7 +53,7 @@ class AuthService:
         user = await self.user_repo.get_by_email(request.email)
 
         password_hash = str(user.hashed_password) if user else DUMMY_PASSWORD_HASH
-        if not user or not verify_password(request.password, password_hash):
+        if not user or not await verify_password_async(request.password, password_hash):
             raise InvalidCredentialsException()
 
         updated_user = await self.user_repo.update_last_login(user)
@@ -84,15 +85,12 @@ class AuthService:
             "username": request.username,
             "email": request.email,
             "role": UserRole.PLAYER,
-            "hashed_password": get_password_hash(request.password),
+            "hashed_password": await get_password_hash_async(request.password),
         }
         try:
             user = await self.user_repo.create(user_data)
         except RecordAlreadyExistsError:
-            raise HTTPException(
-                status_code=400,
-                detail="An account with this email or username already exists.",
-            )
+            raise AccountAlreadyExistsException() from None
 
         return RegisterResponse(access_token=self._issue_tokens(user.email, response))
 

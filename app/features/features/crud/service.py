@@ -256,11 +256,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         for field, value in fields.items():
             setattr(feature, field, value)
 
-        if commit:
-            await self.repository.db.commit()
-        else:
-            await self.repository.db.flush()
-
+        await self.repository.commit_or_flush(commit=commit)
         return feature
 
     async def delete_feature_for_source(
@@ -293,11 +289,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
 
         await _get_source_feature(self.repository.db, source_type, source_id, feature_id)
         await self.repository.db.execute(delete(Feature).where(Feature.id == feature_id))
-
-        if commit:
-            await self.repository.db.commit()
-        else:
-            await self.repository.db.flush()
+        await self.repository.commit_or_flush(commit=commit)
 
     async def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
         """

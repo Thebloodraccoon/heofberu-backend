@@ -4,7 +4,6 @@ from fastapi import APIRouter, Body, Query
 
 from app.constants import FeatureSourceType
 from app.core.base.service import Page
-from app.core.security.dependencies import GmUserDep
 from app.features.features.crud.schemas import (
     FeatureGetAllResponse,
     FeatureResponse,
@@ -12,6 +11,7 @@ from app.features.features.crud.schemas import (
 )
 from app.features.features.dependencies import FeatureCrudDep
 from app.features.shared.features.schemas import FeatureUpdate
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -71,7 +71,7 @@ async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
     Open endpoint, no authentication required.
 
     Only standalone features are served here — a class/race/background/
-    feat/subclass feature returns 404, since those live under their parent
+    subclass feature returns 404, since those live under their parent
     record.
     """
 
@@ -86,7 +86,7 @@ async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
     responses={
         400: {
             "description": (
-                "source_type/class_id/subclass_id/race_id/background_id/feat_id/level "
+                "source_type/class_id/subclass_id/race_id/background_id/level "
                 "combination is inconsistent — see FeatureBase's validator."
             )
         },
@@ -115,14 +115,14 @@ async def create_feature(
     owned by no parent record, which the GM can then grant to any
     character.
 
-    Class, subclass, race, background and feat features are owned by
+    Class, subclass, race and background features are owned by
     their parent records: they are created through that parent's nested
     ``features`` payload (``POST /races/``, ``POST /classes/``,
-    ``POST /backgrounds/``, ``POST /feats/``, ...) or added one-by-one via
+    ``POST /backgrounds/``, ...) or added one-by-one via
     ``POST /{source}/{id}/features`` — and must NOT be posted here (422).
 
-    None of ``class_id``/``subclass_id``/``race_id``/``background_id``/
-    ``feat_id`` may be set. ``level`` is optional and meaningful for
+    None of ``class_id``/``subclass_id``/``race_id``/``background_id``
+    may be set. ``level`` is optional and meaningful for
     CLASS/SUBCLASS/OTHER features.
     """
 

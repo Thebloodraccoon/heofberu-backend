@@ -47,6 +47,7 @@ class ClassRepository(BaseRepository[Class]):
 
     async def is_in_use(self, class_id: int) -> bool:
         """
+
         Check whether the class is currently assigned to any character
         (characters.class_id), which would block deletion at the DB level
         via ON DELETE RESTRICT.

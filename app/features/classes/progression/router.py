@@ -2,13 +2,13 @@
 
 from fastapi import APIRouter, Body
 
-from app.core.security.dependencies import GmUserDep
 from app.features.classes.dependencies import ClassProgressionDep
 from app.features.classes.schemas import (
     ClassProgressionResponse,
     ClassResponse,
     SpellSlotProgressionUpdate,
 )
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

@@ -11,7 +11,11 @@ from app.features.characters.gm_panel.exceptions import (
 )
 from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
 from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
-from app.features.characters.gm_panel.validation import check_feat_prerequisite, validate_ability_score_increase
+from app.features.characters.gm_panel.validation import (
+    check_feat_prerequisite,
+    validate_ability_score_increase,
+    validate_ability_score_increase_cap,
+)
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.schemas import CharacterFeatResponse
 from app.features.feats.crud.repository import FeatRepository
@@ -30,8 +34,10 @@ class GmPanelFeatService(CharacterSubDomainService):
     table through the same repository, with ``source_type=ASI``.
 
     Feat grant/update/remove refresh the ability-score cache (a feat can
-    carry an ASI choice) and re-sync auto-granted features (a FEAT-source
-    feature rides on its grant) via ``sync_progression_features``.
+    carry an ASI choice) and re-sync auto-granted features via
+    ``sync_progression_features`` (feats themselves grant no features, but
+    the sync keeps the character's other auto-grants consistent with any
+    level changes made alongside the grant).
     """
 
     def __init__(self, db: AsyncSession):
@@ -57,6 +63,9 @@ class GmPanelFeatService(CharacterSubDomainService):
 
         if data.ability_score_increase_id is not None:
             validate_ability_score_increase(feat, data.ability_score_increase_id)
+            await validate_ability_score_increase_cap(
+                feat, data.ability_score_increase_id, character, self.stats_service
+            )
 
         await check_feat_prerequisite(character, feat, self.stats_service)
 
@@ -87,6 +96,9 @@ class GmPanelFeatService(CharacterSubDomainService):
         if data.ability_score_increase_id is not None:
             feat = await self.feat_repository.get_by_id(grant.feat_id)
             validate_ability_score_increase(feat, data.ability_score_increase_id)
+            await validate_ability_score_increase_cap(
+                feat, data.ability_score_increase_id, character, self.stats_service
+            )
 
         updated_grant = await self.feat_grant_repository.set_character_feat_ability_score_increase(
             grant, data.ability_score_increase_id
@@ -97,7 +109,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         return CharacterFeatResponse.model_validate(updated_grant)
 
     async def remove_feat(self, character_id: int, character_feat_id: int, current_user: UserResponse) -> bool:
-        """Revoke a feat from a character (its FEAT-source features drop off with it)."""
+        """Revoke a feat from a character."""
 
         character = await self.get_character_for_user(character_id, current_user)
 

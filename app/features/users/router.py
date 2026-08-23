@@ -5,9 +5,9 @@ from fastapi import APIRouter, Query, status
 from app.constants import UserRole
 from app.core.base.service import Page
 from app.core.exceptions import FoundFatherAccessException
-from app.core.security.dependencies import CurrentUserDep, FounderDep, GmUserDep
 from app.features.users.dependencies import UserServiceDep
 from app.features.users.schemas import UserCreate, UserProfileUpdate, UserResponse, UserUpdate
+from app.features.users.security import CurrentUserDep, FounderDep, GmUserDep
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -69,6 +69,7 @@ async def create_user(user_data: UserCreate, user_service: UserServiceDep, curre
     Assigning a non-player role (``gm`` / ``found_father``) requires the
     current user to be the found father.
     """
+
     if user_data.role != UserRole.PLAYER and current_user.role != UserRole.FOUND_FATHER:
         raise FoundFatherAccessException()
 
