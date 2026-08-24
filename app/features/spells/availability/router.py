@@ -1,6 +1,12 @@
-"""Spell availability endpoints: class/subclass/race/subrace availability management."""
+"""
+Spell availability endpoints: class/subclass/race/subrace availability
+management (query-style ID — the spell is identified by the required
+``spell_id`` query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.spells.availability.schemas import (
     ClassAvailabilityUpdate,
@@ -16,7 +22,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/{spell_id}/classes",
+    "/classes",
     response_model=SpellResponse,
     summary="Replace a spell's available classes",
     responses={
@@ -25,21 +31,24 @@ router = APIRouter()
     },
 )
 async def set_spell_classes(
-    spell_id: int,
+    spell_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        ClassAvailabilityUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Restrict to two classes",
+                    "value": {"class_ids": [2, 5]},
+                },
+                "clear": {
+                    "summary": "Clear restriction — unrestricted for all classes",
+                    "value": {"class_ids": []},
+                },
+            },
+        ),
+    ],
     spell_availability: SpellAvailabilityDep,
     _: GmUserDep,
-    data: ClassAvailabilityUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Restrict to two classes",
-                "value": {"class_ids": [2, 5]},
-            },
-            "clear": {
-                "summary": "Clear restriction — unrestricted for all classes",
-                "value": {"class_ids": []},
-            },
-        },
-    ),
 ):
     """
     Replace the set of classes a spell is available to. **GM only.**
@@ -54,7 +63,7 @@ async def set_spell_classes(
 
 
 @router.put(
-    "/{spell_id}/subclasses",
+    "/subclasses",
     response_model=SpellResponse,
     summary="Replace a spell's available subclasses",
     responses={
@@ -63,21 +72,24 @@ async def set_spell_classes(
     },
 )
 async def set_spell_subclasses(
-    spell_id: int,
+    spell_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SubclassAvailabilityUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Restrict to two subclasses",
+                    "value": {"subclass_ids": [1, 4]},
+                },
+                "clear": {
+                    "summary": "Clear restriction — unrestricted for all subclasses",
+                    "value": {"subclass_ids": []},
+                },
+            },
+        ),
+    ],
     spell_availability: SpellAvailabilityDep,
     _: GmUserDep,
-    data: SubclassAvailabilityUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Restrict to two subclasses",
-                "value": {"subclass_ids": [1, 4]},
-            },
-            "clear": {
-                "summary": "Clear restriction — unrestricted for all subclasses",
-                "value": {"subclass_ids": []},
-            },
-        },
-    ),
 ):
     """
     Replace the set of subclasses a spell is available to. **GM only.**
@@ -92,7 +104,7 @@ async def set_spell_subclasses(
 
 
 @router.put(
-    "/{spell_id}/races",
+    "/races",
     response_model=SpellResponse,
     summary="Replace a spell's available races",
     responses={
@@ -101,21 +113,24 @@ async def set_spell_subclasses(
     },
 )
 async def set_spell_races(
-    spell_id: int,
+    spell_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        RaceAvailabilityUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Restrict to two races (e.g. innate racial spellcasting)",
+                    "value": {"race_ids": [3, 8]},
+                },
+                "clear": {
+                    "summary": "Clear restriction — unrestricted for all races",
+                    "value": {"race_ids": []},
+                },
+            },
+        ),
+    ],
     spell_availability: SpellAvailabilityDep,
     _: GmUserDep,
-    data: RaceAvailabilityUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Restrict to two races (e.g. innate racial spellcasting)",
-                "value": {"race_ids": [3, 8]},
-            },
-            "clear": {
-                "summary": "Clear restriction — unrestricted for all races",
-                "value": {"race_ids": []},
-            },
-        },
-    ),
 ):
     """
     Replace the set of races a spell is available to. **GM only.**
@@ -130,7 +145,7 @@ async def set_spell_races(
 
 
 @router.put(
-    "/{spell_id}/subraces",
+    "/subraces",
     response_model=SpellResponse,
     summary="Replace a spell's available subraces",
     responses={
@@ -139,21 +154,24 @@ async def set_spell_races(
     },
 )
 async def set_spell_subraces(
-    spell_id: int,
+    spell_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SubraceAvailabilityUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Restrict to two subraces",
+                    "value": {"subrace_ids": [2, 6]},
+                },
+                "clear": {
+                    "summary": "Clear restriction — unrestricted for all subraces",
+                    "value": {"subrace_ids": []},
+                },
+            },
+        ),
+    ],
     spell_availability: SpellAvailabilityDep,
     _: GmUserDep,
-    data: SubraceAvailabilityUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Restrict to two subraces",
-                "value": {"subrace_ids": [2, 6]},
-            },
-            "clear": {
-                "summary": "Clear restriction — unrestricted for all subraces",
-                "value": {"subrace_ids": []},
-            },
-        },
-    ),
 ):
     """
     Replace the set of subraces a spell is available to. **GM only.**

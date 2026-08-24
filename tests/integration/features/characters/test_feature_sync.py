@@ -5,7 +5,8 @@ import pytest
 
 async def get_feature_ids(client, character_id, token):
     response = await client.get(
-        f"/characters/{character_id}/features",
+        "/characters/features",
+        params={"character_id": character_id},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -70,7 +71,8 @@ class TestAutoGrantOnLevelUp:
         assert await get_feature_ids(client, character["id"], player_token) == set()
 
         response = await client.post(
-            f"/characters/{character['id']}/progression/level-up",
+            "/characters/progression/level-up",
+            params={"character_id": character["id"]},
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -98,7 +100,8 @@ class TestAutoGrantOnLevelUp:
         assert await get_feature_ids(client, character["id"], player_token) == set()
 
         response = await client.post(
-            f"/characters/{character['id']}/progression/level-up",
+            "/characters/progression/level-up",
+            params={"character_id": character["id"]},
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -118,14 +121,16 @@ class TestAutoGrantOnLevelUp:
 
         # Manual (OTHER-source) grants are a GM-panel write.
         add_response = await client.post(
-            f"/characters/{character['id']}/gm-panel/features",
+            "/characters/gm-panel/features",
+            params={"character_id": character["id"]},
             json={"feature_id": manual.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 
         response = await client.post(
-            f"/characters/{character['id']}/progression/level-up",
+            "/characters/progression/level-up",
+            params={"character_id": character["id"]},
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -149,7 +154,8 @@ class TestAutoRevokeOnChange:
         assert await get_feature_ids(client, character["id"], player_token) == set()
 
         set_response = await client.patch(
-            f"/characters/{character['id']}/progression/subclass",
+            "/characters/progression/subclass",
+            params={"character_id": character["id"]},
             json={"subclass_id": subclass.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -158,7 +164,8 @@ class TestAutoRevokeOnChange:
         assert await get_feature_ids(client, character["id"], player_token) == {improved_critical.id}
 
         clear_response = await client.patch(
-            f"/characters/{character['id']}/progression/subclass",
+            "/characters/progression/subclass",
+            params={"character_id": character["id"]},
             json={"subclass_id": None},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -181,7 +188,8 @@ class TestManualGrantInteractions:
         assert await get_feature_ids(client, character["id"], player_token) == {second_wind.id}
 
         response = await client.post(
-            f"/characters/{character['id']}/gm-panel/features",
+            "/characters/gm-panel/features",
+            params={"character_id": character["id"]},
             json={"feature_id": second_wind.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -238,7 +246,8 @@ class TestRaceBackgroundFeatAutoGrant:
         assert await get_feature_ids(client, character["id"], player_token) == set()
 
         response = await client.patch(
-            f"/characters/{character['id']}/progression/background",
+            "/characters/progression/background",
+            params={"character_id": character["id"]},
             json={"background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -263,7 +272,8 @@ class TestRaceBackgroundFeatAutoGrant:
         assert await get_feature_ids(client, character["id"], gm_token) == set()
 
         add_response = await client.post(
-            f"/characters/{character['id']}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character["id"]},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -297,7 +307,8 @@ class TestRaceBackgroundFeatAutoGrant:
         assert await get_feature_ids(client, character["id"], player_token) == {darkvision.id, shelter.id}
 
         response = await client.post(
-            f"/characters/{character['id']}/progression/level-up",
+            "/characters/progression/level-up",
+            params={"character_id": character["id"]},
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -398,7 +409,8 @@ class TestRaceBackgroundFeatAutoGrant:
         assert await get_feature_ids(client, character["id"], player_token) == {weapon_training.id}
 
         response = await client.patch(
-            f"/characters/{character['id']}/progression/subrace",
+            "/characters/progression/subrace",
+            params={"character_id": character["id"]},
             json={"subrace_id": drow.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )

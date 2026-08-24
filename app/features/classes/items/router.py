@@ -1,6 +1,11 @@
-"""Class starting-items endpoints."""
+"""
+Class starting-items endpoints (query-style ID — the class is identified
+by the required ``class_id`` query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.classes.dependencies import ClassItemsDep
 from app.features.classes.schemas import ClassResponse
@@ -11,19 +16,19 @@ router = APIRouter()
 
 
 @router.get(
-    "/{class_id}/items",
+    "/items",
     response_model=list[SourceItemResponse],
     summary="List a class's starting equipment",
     responses={404: {"description": "No class exists with the given ID."}},
 )
-async def list_class_items(class_id: int, class_service: ClassItemsDep):
+async def list_class_items(class_id: Annotated[int, Query(gt=0)], class_service: ClassItemsDep):
     """Return every starting-equipment entry owned by the class. Open endpoint."""
 
     return await class_service.list_items(class_id)
 
 
 @router.put(
-    "/{class_id}/items",
+    "/items",
     response_model=ClassResponse,
     summary="Replace a class's starting equipment",
     responses={
@@ -32,21 +37,24 @@ async def list_class_items(class_id: int, class_service: ClassItemsDep):
     },
 )
 async def set_class_items(
-    class_id: int,
+    class_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SourceItemsUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two items",
+                    "value": {"items": [{"item_id": 1, "quantity": 1}, {"item_id": 5, "quantity": 2}]},
+                },
+                "clear": {
+                    "summary": "Clear all starting equipment",
+                    "value": {"items": []},
+                },
+            },
+        ),
+    ],
     class_service: ClassItemsDep,
     _: GmUserDep,
-    data: SourceItemsUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with two items",
-                "value": {"items": [{"item_id": 1, "quantity": 1}, {"item_id": 5, "quantity": 2}]},
-            },
-            "clear": {
-                "summary": "Clear all starting equipment",
-                "value": {"items": []},
-            },
-        },
-    ),
 ):
     """
     Replace all starting equipment for a class. **GM only.**

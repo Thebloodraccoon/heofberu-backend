@@ -21,7 +21,8 @@ class TestCharacterAttacks:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         create_response = await client.post(
-            f"/characters/{character.id}/attacks",
+            "/characters/attacks",
+            params={"character_id": character.id},
             json=ATTACK_PAYLOAD,
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -30,7 +31,8 @@ class TestCharacterAttacks:
         attack_id = create_response.json()["id"]
 
         list_response = await client.get(
-            f"/characters/{character.id}/attacks",
+            "/characters/attacks",
+            params={"character_id": character.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -42,14 +44,16 @@ class TestCharacterAttacks:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         attack_response = await client.post(
-            f"/characters/{character.id}/attacks",
+            "/characters/attacks",
+            params={"character_id": character.id},
             json=ATTACK_PAYLOAD,
             headers={"Authorization": f"Bearer {player_token}"},
         )
         attack_id = attack_response.json()["id"]
 
         response = await client.patch(
-            f"/characters/{character.id}/attacks/{attack_id}",
+            "/characters/attacks",
+            params={"character_id": character.id, "attack_id": attack_id},
             json={"name": "Masterwork Longsword"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -62,21 +66,24 @@ class TestCharacterAttacks:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         attack_response = await client.post(
-            f"/characters/{character.id}/attacks",
+            "/characters/attacks",
+            params={"character_id": character.id},
             json=ATTACK_PAYLOAD,
             headers={"Authorization": f"Bearer {player_token}"},
         )
         attack_id = attack_response.json()["id"]
 
         response = await client.delete(
-            f"/characters/{character.id}/attacks/{attack_id}",
+            "/characters/attacks",
+            params={"character_id": character.id, "attack_id": attack_id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 204
         assert (
             await client.get(
-                f"/characters/{character.id}/attacks",
+                "/characters/attacks",
+                params={"character_id": character.id},
                 headers={"Authorization": f"Bearer {player_token}"},
             )
         ).json() == []
@@ -89,7 +96,8 @@ class TestCharacterAttacks:
         character = await create_character(owner_id=other.id, class_id=character_class.id)
 
         response = await client.post(
-            f"/characters/{character.id}/attacks",
+            "/characters/attacks",
+            params={"character_id": character.id},
             json=ATTACK_PAYLOAD,
             headers={"Authorization": f"Bearer {player_token}"},
         )

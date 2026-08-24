@@ -1,6 +1,8 @@
 """Feature CRUD endpoints: standalone (OTHER) listing, get, create, update, delete."""
 
-from fastapi import APIRouter, Body, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.constants import FeatureSourceType
 from app.core.base.service import Page
@@ -23,7 +25,10 @@ router = APIRouter()
 )
 async def get_features(
     feature_service: FeatureCrudDep,
-    search: str | None = None,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the feature's name.",
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
@@ -56,7 +61,7 @@ async def get_features(
 
 
 @router.get(
-    "/{feature_id}",
+    "/{feature_id:int}",
     response_model=FeatureResponse,
     summary="Get a standalone feature by ID",
     responses={
@@ -81,7 +86,7 @@ async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
 @router.post(
     "",
     response_model=FeatureResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a standalone feature",
     responses={
         400: {
@@ -93,20 +98,23 @@ async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
     },
 )
 async def create_feature(
-    feature_service: FeatureCrudDep,
-    _: GmUserDep,
-    feature_data: StandaloneFeatureCreate = Body(
-        openapi_examples={
-            "custom_feature": {
-                "summary": "Standalone homebrew feature",
-                "value": {
-                    "name": "Bond of the Ancient Oath",
-                    "source_type": "OTHER",
-                    "description": "A GM-crafted feature granted to a character at the table.",
+    data: Annotated[
+        StandaloneFeatureCreate,
+        Body(
+            openapi_examples={
+                "custom_feature": {
+                    "summary": "Standalone homebrew feature",
+                    "value": {
+                        "name": "Bond of the Ancient Oath",
+                        "source_type": "OTHER",
+                        "description": "A GM-crafted feature granted to a character at the table.",
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    feature_service: FeatureCrudDep,
+    _: GmUserDep,
 ):
     """
     Create a standalone feature. **GM only.**
@@ -121,16 +129,16 @@ async def create_feature(
     ``POST /backgrounds/``, ...) or added one-by-one via
     ``POST /{source}/{id}/features`` — and must NOT be posted here (422).
 
-    None of ``class_id``/``subclass_id``/``race_id``/``background_id``
-    may be set. ``level`` is optional and meaningful for
+    None of ``class_id``/``subclass_id``/``race_id``/``background_id``/
+    ``feat_id`` may be set. ``level`` is optional and meaningful for
     CLASS/SUBCLASS/OTHER features.
     """
 
-    return await feature_service.create(feature_data)
+    return await feature_service.create(data)
 
 
 @router.patch(
-    "/{feature_id}",
+    "/{feature_id:int}",
     response_model=FeatureResponse,
     summary="Update a standalone feature",
     responses={
@@ -144,7 +152,25 @@ async def create_feature(
         404: {"description": "No feature exists with the given ID."},
     },
 )
-async def update_feature(feature_id: int, update_data: FeatureUpdate, feature_service: FeatureCrudDep, _: GmUserDep):
+async def update_feature(
+    feature_id: int,
+    data: Annotated[
+        FeatureUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the feature and edit its description",
+                    "value": {
+                        "name": "Bond of the Ancient Oath",
+                        "description": "A GM-crafted feature granted to a character at the table.",
+                    },
+                },
+            }
+        ),
+    ],
+    feature_service: FeatureCrudDep,
+    _: GmUserDep,
+):
     """
     Partially update a standalone feature. **GM only.**
 
@@ -161,12 +187,12 @@ async def update_feature(feature_id: int, update_data: FeatureUpdate, feature_se
     rejected with a 400.
     """
 
-    return await feature_service.update_feature(feature_id, update_data)
+    return await feature_service.update_feature(feature_id, data)
 
 
 @router.delete(
-    "/{feature_id}",
-    status_code=204,
+    "/{feature_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a standalone feature",
     responses={
         400: {

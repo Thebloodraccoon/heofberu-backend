@@ -1,11 +1,16 @@
 """
-GM feat-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/feats``.
+GM feat-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/feats``
+(query-style IDs).
 
 The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/{character_id}/gm-panel``.
+router applies ``/gm-panel``. The character is identified by the
+required ``character_id`` query parameter; grant edits/removals
+additionally take ``feat_id`` (the character-feat grant row ID).
 """
 
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.gm_panel.dependencies import GmPanelFeatsDep
 from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
@@ -33,58 +38,96 @@ router = APIRouter()
     },
 )
 async def add_character_feat(
-    character_id: int,
-    data: CharacterFeatAdd,
+    character_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        CharacterFeatAdd,
+        Body(
+            openapi_examples={
+                "plain-feat": {
+                    "summary": "Grant a feat with no ASI choice",
+                    "value": {"feat_id": 12},
+                },
+                "feat-with-asi": {
+                    "summary": "Grant Resilient, applying its +1 CON increase",
+                    "value": {"feat_id": 12, "ability_score_increase_id": 34},
+                },
+            }
+        ),
+    ],
     feat_service: GmPanelFeatsDep,
     current_user: GmUserDep,
 ):
-    """Grant a feat to a character. GM-only endpoint."""
+    """
+    Grant a feat to a character outside any level-up flow. If the feat
+    offers an ability-score increase of its own, pass the matching
+    ``ability_score_increase_id`` to apply it. **GM only.**
+    """
 
     return await feat_service.add_feat(character_id, data, current_user)
 
 
 @router.patch(
-    "/feats/{character_feat_id}",
+    "/feats",
     response_model=CharacterFeatResponse,
     summary="Change a feat grant's ability score increase choice",
     responses={
         400: {"description": "`ability_score_increase_id` doesn't belong to this feat."},
         403: {"description": "You are not a GM."},
         404: {
-            "description": "No character exists with the given ID, or no feat grant exists with the given `character_feat_id`."
+            "description": "No character exists with the given ID, or no feat grant exists with the given `feat_id`."
         },
     },
 )
 async def update_character_feat(
-    character_id: int,
-    character_feat_id: int,
-    data: CharacterFeatUpdate,
+    character_id: Annotated[int, Query(gt=0)],
+    feat_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        CharacterFeatUpdate,
+        Body(
+            openapi_examples={
+                "update": {
+                    "summary": "Point the feat's ASI choice at another increase row",
+                    "value": {"ability_score_increase_id": 35},
+                },
+                "clear": {
+                    "summary": "Clear the feat's ASI choice",
+                    "value": {"ability_score_increase_id": None},
+                },
+            }
+        ),
+    ],
     feat_service: GmPanelFeatsDep,
     current_user: GmUserDep,
 ):
-    """Change or clear the ASI choice for an already-granted feat. GM-only endpoint."""
+    """
+    Change or clear the ability-score increase chosen for an
+    already-granted feat. **GM only.**
+    """
 
-    return await feat_service.update_feat(character_id, character_feat_id, data, current_user)
+    return await feat_service.update_feat(character_id, feat_id, data, current_user)
 
 
 @router.delete(
-    "/feats/{character_feat_id}",
+    "/feats",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke a feat from a character",
     responses={
         403: {"description": "You are not a GM."},
         404: {
-            "description": "No character exists with the given ID, or no feat grant exists with the given `character_feat_id`."
+            "description": "No character exists with the given ID, or no feat grant exists with the given `feat_id`."
         },
     },
 )
 async def remove_character_feat(
-    character_id: int,
-    character_feat_id: int,
+    character_id: Annotated[int, Query(gt=0)],
+    feat_id: Annotated[int, Query(gt=0)],
     feat_service: GmPanelFeatsDep,
     current_user: GmUserDep,
 ):
-    """Revoke a feat from a character. GM-only endpoint."""
+    """
+    Revoke a feat from a character, removing the grant row and any
+    ability-score increase it applied. **GM only.**
+    """
 
-    await feat_service.remove_feat(character_id, character_feat_id, current_user)
+    await feat_service.remove_feat(character_id, feat_id, current_user)
     return None

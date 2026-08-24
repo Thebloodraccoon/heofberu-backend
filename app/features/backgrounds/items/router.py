@@ -1,6 +1,11 @@
-"""Background endpoints: starting-equipment listing and replacement."""
+"""
+Background starting-equipment endpoints (query-style ID — the background
+is identified by the required ``background_id`` query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.backgrounds.crud.schemas import BackgroundResponse
 from app.features.backgrounds.dependencies import BackgroundItemsDep
@@ -11,19 +16,19 @@ router = APIRouter()
 
 
 @router.get(
-    "/{background_id}/items",
+    "/items",
     response_model=list[SourceItemResponse],
     summary="List a background's starting equipment",
     responses={404: {"description": "No background exists with the given ID."}},
 )
-async def list_background_items(background_id: int, background_service: BackgroundItemsDep):
+async def list_background_items(background_id: Annotated[int, Query(gt=0)], background_service: BackgroundItemsDep):
     """Return every starting-equipment entry owned by the background. Open endpoint."""
 
     return await background_service.list_items(background_id)
 
 
 @router.put(
-    "/{background_id}/items",
+    "/items",
     response_model=BackgroundResponse,
     summary="Replace a background's starting equipment",
     responses={
@@ -32,21 +37,24 @@ async def list_background_items(background_id: int, background_service: Backgrou
     },
 )
 async def set_background_items(
-    background_id: int,
+    background_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SourceItemsUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two items",
+                    "value": {"items": [{"item_id": 1, "quantity": 1}, {"item_id": 5, "quantity": 2}]},
+                },
+                "clear": {
+                    "summary": "Clear all starting equipment",
+                    "value": {"items": []},
+                },
+            },
+        ),
+    ],
     background_service: BackgroundItemsDep,
     _: GmUserDep,
-    data: SourceItemsUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with two items",
-                "value": {"items": [{"item_id": 1, "quantity": 1}, {"item_id": 5, "quantity": 2}]},
-            },
-            "clear": {
-                "summary": "Clear all starting equipment",
-                "value": {"items": []},
-            },
-        },
-    ),
 ):
     """
     Replace all starting equipment for a background. **GM only.**

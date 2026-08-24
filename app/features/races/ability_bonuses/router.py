@@ -1,6 +1,12 @@
-"""Race ability-bonus endpoints: full replacement of a race's bonuses."""
+"""
+Race ability-bonus endpoints: full replacement of a race's bonuses
+(query-style ID — the race is identified by the required ``race_id``
+query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.races.dependencies import RaceAbilityBonusesDep
 from app.features.races.schemas import AbilityBonusesUpdate, RaceResponse
@@ -10,7 +16,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/{race_id}/ability-bonuses",
+    "/ability-bonuses",
     response_model=RaceResponse,
     summary="Replace a race's ability bonuses",
     responses={
@@ -18,21 +24,24 @@ router = APIRouter()
     },
 )
 async def set_ability_bonuses(
-    race_id: int,
+    race_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        AbilityBonusesUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two bonuses",
+                    "value": {"ability_bonuses": [{"ability": "DEX", "bonus": 2}, {"ability": "INT", "bonus": 1}]},
+                },
+                "clear": {
+                    "summary": "Clear all bonuses",
+                    "value": {"ability_bonuses": []},
+                },
+            },
+        ),
+    ],
     race_service: RaceAbilityBonusesDep,
     _: GmUserDep,
-    data: AbilityBonusesUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with two bonuses",
-                "value": {"ability_bonuses": [{"ability": "DEX", "bonus": 2}, {"ability": "INT", "bonus": 1}]},
-            },
-            "clear": {
-                "summary": "Clear all bonuses",
-                "value": {"ability_bonuses": []},
-            },
-        },
-    ),
 ):
     """
     Replace all ability score bonuses for a race. **GM only.**

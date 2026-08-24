@@ -1,6 +1,20 @@
-"""Subclass CRUD endpoints: listing, get, create, update, delete."""
+"""
+Subclass CRUD endpoints: listing, get, create, update, delete
+(query-style parent ID).
 
-from fastapi import APIRouter, Body
+The router declares no prefix of its own;
+``app.features.classes.router`` applies the ``/classes`` prefix and
+``app.features.classes.subclasses.router`` the static ``/subclasses``
+prefix — combined, ``""`` resolves to ``/classes/subclasses?class_id=...``.The owning class is identified by the required ``class_id`` query
+parameter. Mutations additionally take the ``subclass_id`` query
+parameter; the detail read keeps the child in the path
+(``GET /{subclass_id}?class_id=...``) to avoid colliding with the
+listing.
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.features.classes.subclasses.crud.schemas import (
     SubclassBriefResponse,
@@ -10,7 +24,7 @@ from app.features.classes.subclasses.crud.schemas import (
     SubclassUpdate,
 )
 from app.features.classes.subclasses.dependencies import SubclassCrudDep
-from app.features.users.security import GmUserDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -21,19 +35,23 @@ router = APIRouter()
     summary="List subclasses for a class",
     responses={404: {"description": "No class exists with the given ID."}},
 )
-async def list_subclasses(class_id: int, class_service: SubclassCrudDep):
+async def list_subclasses(class_id: Annotated[int, Query(gt=0)], class_service: SubclassCrudDep):
     """Return all subclasses for the given class. Open endpoint."""
 
     return await class_service.list_for_class(class_id)
 
 
 @router.get(
-    "/{subclass_id}",
+    "/{subclass_id:int}",
     response_model=SubclassFullResponse,
     summary="Get a subclass by ID",
     responses={404: {"description": "Class or subclass not found."}},
 )
-async def get_subclass(class_id: int, subclass_id: int, class_service: SubclassCrudDep):
+async def get_subclass(
+    subclass_id: int,
+    class_id: Annotated[int, Query(gt=0)],
+    class_service: SubclassCrudDep,
+):
     """Full subclass detail, including its own SUBCLASS-source `features`. Open endpoint."""
 
     return await class_service.get_subclass(class_id, subclass_id)
@@ -42,7 +60,7 @@ async def get_subclass(class_id: int, subclass_id: int, class_service: SubclassC
 @router.post(
     "",
     response_model=SubclassResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a subclass",
     responses={
         404: {"description": "No class exists with the given ID."},
@@ -50,21 +68,24 @@ async def get_subclass(class_id: int, subclass_id: int, class_service: SubclassC
     },
 )
 async def create_subclass(
-    class_id: int,
-    class_service: SubclassCrudDep,
-    _: GmUserDep,
-    data: SubclassCreate = Body(
-        openapi_examples={
-            "champion": {
-                "summary": "Fighter — Champion subclass with features",
-                "value": {
-                    "name": "Champion",
-                    "archetype_group_name": "Martial Archetypes",
-                    "description": "Pushes physical excellence to its limits.",
+    class_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SubclassCreate,
+        Body(
+            openapi_examples={
+                "champion": {
+                    "summary": "Fighter — Champion subclass with features",
+                    "value": {
+                        "name": "Champion",
+                        "archetype_group_name": "Martial Archetypes",
+                        "description": "Pushes physical excellence to its limits.",
+                    },
                 },
-            },
-        }
-    ),
+            }
+        ),
+    ],
+    class_service: SubclassCrudDep,
+    current_user: GmUserDep,
 ):
     """
     Create a subclass for the given class. **GM only.**
@@ -73,17 +94,34 @@ async def create_subclass(
     with the subclass.
     """
 
-    return await class_service.create_subclass(class_id, data, created_by_id=_.id)
+    return await class_service.create_subclass(class_id, data, created_by_id=current_user.id)
 
 
 @router.patch(
-    "/{subclass_id}",
+    "",
     response_model=SubclassResponse,
     summary="Update a subclass",
     responses={404: {"description": "Class or subclass not found."}},
 )
 async def update_subclass(
-    class_id: int, subclass_id: int, data: SubclassUpdate, class_service: SubclassCrudDep, _: GmUserDep
+    class_id: Annotated[int, Query(gt=0)],
+    subclass_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SubclassUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the subclass and edit its description",
+                    "value": {
+                        "name": "Champion",
+                        "description": "Pushes physical excellence to its limits.",
+                    },
+                },
+            }
+        ),
+    ],
+    class_service: SubclassCrudDep,
+    _: GmUserDep,
 ):
     """
     Partially update a subclass's base fields. **GM only.**
@@ -94,13 +132,21 @@ async def update_subclass(
 
 
 @router.delete(
-    "/{subclass_id}",
-    status_code=204,
+    "",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a subclass",
-    responses={404: {"description": "Class or subclass not found."}},
+    responses={
+        403: {"description": "Caller is not the founder."},
+        404: {"description": "Class or subclass not found."},
+    },
 )
-async def delete_subclass(class_id: int, subclass_id: int, class_service: SubclassCrudDep, _: GmUserDep):
-    """Delete a subclass and all its features. **GM only.**"""
+async def delete_subclass(
+    class_id: Annotated[int, Query(gt=0)],
+    subclass_id: Annotated[int, Query(gt=0)],
+    class_service: SubclassCrudDep,
+    _: FounderDep,
+):
+    """Delete a subclass and all its features. **Founder only.**"""
 
     await class_service.delete_subclass(class_id, subclass_id)
     return None

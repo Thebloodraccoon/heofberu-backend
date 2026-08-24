@@ -1,6 +1,14 @@
-"""Character crud endpoints: CRUD, HP updates, and resting."""
+"""
+Character crud endpoints: CRUD, HP updates, and resting.
 
-from fastapi import APIRouter, Query, status
+Top-level resource operations keep the canonical path-ID form
+(``GET/PATCH/DELETE /characters/{character_id}``); character-scoped
+sub-resources use query-style IDs (``/characters/hp?character_id=...``).
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Path, Query, status
 
 from app.core.base.service import Page
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
@@ -14,7 +22,7 @@ from app.features.characters.schemas import (
 )
 from app.features.users.security import CurrentUserDep
 
-router = APIRouter(tags=["Characters Core"])
+router = APIRouter()
 
 
 @router.get(
@@ -55,7 +63,7 @@ async def get_characters(
 
 
 @router.get(
-    "/{character_id}",
+    "/{character_id:int}",
     response_model=CharacterResponse,
     summary="Get a character by ID",
     responses={
@@ -79,7 +87,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
 
 
 @router.get(
-    "/{character_id}/feats",
+    "/feats",
     response_model=list[CharacterFeatResponse],
     summary="List a character's feats",
     responses={
@@ -88,7 +96,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
     },
 )
 async def get_character_feats(
-    character_id: int,
+    character_id: Annotated[int, Query(gt=0)],
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -98,7 +106,7 @@ async def get_character_feats(
 
 
 @router.get(
-    "/{character_id}/features",
+    "/features",
     response_model=list[CharacterFeatureResponse],
     summary="List a character's features",
     responses={
@@ -107,7 +115,7 @@ async def get_character_feats(
     },
 )
 async def get_character_features(
-    character_id: int,
+    character_id: Annotated[int, Query(gt=0)],
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -119,14 +127,57 @@ async def get_character_features(
 @router.post(
     "",
     response_model=CharacterResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a character",
     responses={
         404: {"description": "`class_id`, `race_id`, or `background_id` does not reference an existing record."},
     },
 )
 async def create_character(
-    character_data: CharacterCreate, character_service: CharacterServiceDep, current_user: CurrentUserDep
+    data: Annotated[
+        CharacterCreate,
+        Body(
+            openapi_examples={
+                "fighter": {
+                    "summary": "A sturdy level-1 fighter",
+                    "value": {
+                        "name": "Baldric Ironfist",
+                        "class_id": 1,
+                        "race_id": 2,
+                        "background_id": 3,
+                        "strength": 16,
+                        "dexterity": 12,
+                        "constitution": 14,
+                        "intelligence": 8,
+                        "wisdom": 10,
+                        "charisma": 12,
+                        "skill_ids": [1, 5],
+                        "armor_class": 16,
+                        "shield": 2,
+                        "personality_traits": "Gruff but loyal.",
+                    },
+                },
+                "wizard": {
+                    "summary": "A frail level-1 wizard with a backstory",
+                    "value": {
+                        "name": "Elyse Moonbrook",
+                        "class_id": 5,
+                        "race_id": 1,
+                        "strength": 8,
+                        "dexterity": 14,
+                        "constitution": 12,
+                        "intelligence": 16,
+                        "wisdom": 12,
+                        "charisma": 10,
+                        "backstory": "Expelled from the academy for asking the wrong questions.",
+                        "money_gold": 10,
+                    },
+                },
+            }
+        ),
+    ],
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
 ):
     """
     Create a new character, owned by the caller.
@@ -146,11 +197,11 @@ async def create_character(
     Saving throws are not written — they come from the class on every read.
     """
 
-    return await character_service.create_character(character_data, current_user)
+    return await character_service.create_character(data, current_user)
 
 
 @router.patch(
-    "/{character_id}",
+    "/{character_id:int}",
     response_model=CharacterResponse,
     summary="Update a character",
     responses={
@@ -164,8 +215,26 @@ async def create_character(
     },
 )
 async def update_character(
-    character_id: int,
-    update_data: CharacterUpdate,
+    character_id: Annotated[int, Path()],
+    data: Annotated[
+        CharacterUpdate,
+        Body(
+            openapi_examples={
+                "update": {
+                    "summary": "Rename the character and adjust AC",
+                    "value": {"name": "Baldric of the Ironfist Clan", "armor_class": 18, "shield": 0},
+                },
+                "money-and-notes": {
+                    "summary": "Record loot and a session note",
+                    "value": {
+                        "money_gold": 150,
+                        "money_silver": 25,
+                        "notes": "Owed 20 gp by the innkeeper in Harrowdale.",
+                    },
+                },
+            }
+        ),
+    ],
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -185,11 +254,11 @@ async def update_character(
     them are editable here.
     """
 
-    return await character_service.update_character(character_id, update_data, current_user)
+    return await character_service.update_character(character_id, data, current_user)
 
 
 @router.delete(
-    "/{character_id}",
+    "/{character_id:int}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a character",
     responses={
@@ -209,7 +278,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
 
 
 @router.patch(
-    "/{character_id}/hp",
+    "/hp",
     response_model=CharacterResponse,
     summary="Apply damage/healing or set HP directly",
     responses={
@@ -219,8 +288,22 @@ async def delete_character(character_id: int, character_service: CharacterServic
     },
 )
 async def update_character_hp(
-    character_id: int,
-    data: HpUpdate,
+    character_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        HpUpdate,
+        Body(
+            openapi_examples={
+                "damage": {
+                    "summary": "Take 12 damage (absorbed by temp HP first)",
+                    "value": {"delta": -12},
+                },
+                "set-absolute": {
+                    "summary": "Set current and temporary HP directly",
+                    "value": {"current_hp": 18, "temp_hp": 5},
+                },
+            }
+        ),
+    ],
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -245,7 +328,7 @@ async def update_character_hp(
 
 
 @router.post(
-    "/{character_id}/rest",
+    "/rest",
     response_model=CharacterResponse,
     summary="Take a short or long rest",
     responses={
@@ -255,8 +338,22 @@ async def update_character_hp(
     },
 )
 async def rest_character(
-    character_id: int,
-    data: RestRequest,
+    character_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        RestRequest,
+        Body(
+            openapi_examples={
+                "long-rest": {
+                    "summary": "Take a long rest (full heal, temp HP cleared)",
+                    "value": {"type": "long"},
+                },
+                "short-rest": {
+                    "summary": "Take a short rest (currently a no-op placeholder)",
+                    "value": {"type": "short"},
+                },
+            }
+        ),
+    ],
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):

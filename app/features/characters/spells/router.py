@@ -1,6 +1,15 @@
-"""Character spell endpoints: known spells with class-derived slot totals."""
+"""
+Character spell endpoints: known spells with class-derived slot totals
+(query-style IDs — the character is identified by the required
+``character_id`` query parameter).
 
-from fastapi import APIRouter, status
+The router declares no prefix of its own; ``app.features.characters.router``
+applies the ``/characters`` prefix.
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.dependencies import CharacterSpellServiceDep
 from app.features.characters.spells.schemas import (
@@ -10,11 +19,11 @@ from app.features.characters.spells.schemas import (
 )
 from app.features.users.security import CurrentUserDep
 
-router = APIRouter(tags=["Characters Spells"])
+router = APIRouter()
 
 
 @router.get(
-    "/{character_id}/spells",
+    "/spells",
     response_model=CharacterSpellsResponse,
     summary="List a character's spell slots and known spells",
     responses={
@@ -23,7 +32,9 @@ router = APIRouter(tags=["Characters Spells"])
     },
 )
 async def get_character_spells(
-    character_id: int, spell_service: CharacterSpellServiceDep, current_user: CurrentUserDep
+    character_id: Annotated[int, Query(gt=0)],
+    spell_service: CharacterSpellServiceDep,
+    current_user: CurrentUserDep,
 ):
     """
     List the character's spellcasting picture in one payload: the slot
@@ -40,9 +51,9 @@ async def get_character_spells(
 
 
 @router.post(
-    "/{character_id}/spells",
+    "/spells",
     response_model=CharacterSpellResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Add a spell to a character's known spells",
     responses={
         400: {
@@ -57,8 +68,18 @@ async def get_character_spells(
     },
 )
 async def add_character_spell(
-    character_id: int,
-    data: CharacterSpellAdd,
+    character_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        CharacterSpellAdd,
+        Body(
+            openapi_examples={
+                "add": {
+                    "summary": "Learn the spell with ID 5",
+                    "value": {"spell_id": 5},
+                },
+            }
+        ),
+    ],
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -77,7 +98,7 @@ async def add_character_spell(
 
 
 @router.delete(
-    "/{character_id}/spells/{spell_id}",
+    "/spells",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a spell from a character's known spells",
     responses={
@@ -86,8 +107,8 @@ async def add_character_spell(
     },
 )
 async def remove_character_spell(
-    character_id: int,
-    spell_id: int,
+    character_id: Annotated[int, Query(gt=0)],
+    spell_id: Annotated[int, Query(gt=0)],
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
 ):

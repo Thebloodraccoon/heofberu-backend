@@ -1,11 +1,14 @@
 """
-GM max-level endpoints under ``/gm-panel/max-level``.
+GM max-level endpoints under ``/gm-panel/max-level`` (query-style ID).
 
 The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/{character_id}/gm-panel``.
+router applies ``/gm-panel``. The character is identified by the
+required ``character_id`` query parameter.
 """
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.characters.gm_panel.dependencies import GmPanelLevelDep
 from app.features.characters.gm_panel.level.schemas import CharacterMaxLevelResponse, MaxLevelUpdate
@@ -25,17 +28,26 @@ router = APIRouter()
     },
 )
 async def set_character_max_level(
-    character_id: int,
-    data: MaxLevelUpdate,
+    character_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        MaxLevelUpdate,
+        Body(
+            openapi_examples={
+                "raise": {
+                    "summary": "Raise the cap to level 10",
+                    "value": {"max_level": 10},
+                },
+            }
+        ),
+    ],
     level_service: GmPanelLevelDep,
     current_user: GmUserDep,
-) -> CharacterMaxLevelResponse:
+):
     """
-    Raise the maximum level a character may reach (GM-only).
-
-    The cap can only move up: a value at or below the currently stored
-    maximum — or below the character's current level — is rejected.
-    The character can then level up to it via the progression endpoint.
+    Raise the maximum level a character may reach. The cap can only move
+    up: a value at or below the currently stored maximum — or below the
+    character's current level — is rejected. The character can then level
+    up to it via the progression endpoint. **GM only.**
     """
 
     return await level_service.set_max_level(character_id, data, current_user)
@@ -51,10 +63,10 @@ async def set_character_max_level(
     },
 )
 async def get_character_max_level(
-    character_id: int,
+    character_id: Annotated[int, Query(gt=0)],
     level_service: GmPanelLevelDep,
     current_user: CurrentUserDep,
-) -> CharacterMaxLevelResponse:
+):
     """
     Return the character's current level and the GM-set maximum it may
     reach (GM or owner).

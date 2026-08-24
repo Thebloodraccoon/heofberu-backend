@@ -1,6 +1,18 @@
-"""Class progression endpoints: spell-slot table and full 1-20 progression."""
+"""
+Class progression endpoints: spell-slot table and full 1-20 progression
+(query-style IDs).
 
-from fastapi import APIRouter, Body
+The router declares no prefix of its own;
+``app.features.classes.router`` applies the ``/classes`` prefix —
+combined, ``"/spell-slots"`` resolves to
+``/classes/spell-slots?class_id=...&class_level=...``. The class is
+identified by the required ``class_id`` query parameter; spell-slot
+replacement additionally takes the ``class_level`` query parameter.
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.classes.dependencies import ClassProgressionDep
 from app.features.classes.schemas import (
@@ -14,7 +26,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/{class_id}/spell-slots/{class_level}",
+    "/spell-slots",
     response_model=ClassResponse,
     summary="Replace a class's spell slots at a given class level",
     responses={
@@ -23,28 +35,31 @@ router = APIRouter()
     },
 )
 async def set_class_spell_slots(
-    class_id: int,
-    class_level: int,
-    class_service: ClassProgressionDep,
-    _: GmUserDep,
-    data: SpellSlotProgressionUpdate = Body(
-        openapi_examples={
-            "level_5_wizard": {
-                "summary": "Level 5 Wizard — 3 first-level, 3 second-level, 2 third-level slots",
-                "value": {
-                    "slots": [
-                        {"spell_level": "LEVEL_1", "slots": 3},
-                        {"spell_level": "LEVEL_2", "slots": 3},
-                        {"spell_level": "LEVEL_3", "slots": 2},
-                    ]
+    class_id: Annotated[int, Query(gt=0)],
+    class_level: Annotated[int, Query()],
+    data: Annotated[
+        SpellSlotProgressionUpdate,
+        Body(
+            openapi_examples={
+                "level_5_wizard": {
+                    "summary": "Level 5 Wizard — 3 first-level, 3 second-level, 2 third-level slots",
+                    "value": {
+                        "slots": [
+                            {"spell_level": "LEVEL_1", "slots": 3},
+                            {"spell_level": "LEVEL_2", "slots": 3},
+                            {"spell_level": "LEVEL_3", "slots": 2},
+                        ]
+                    },
+                },
+                "clear": {
+                    "summary": "Clear all slots at this class level",
+                    "value": {"slots": []},
                 },
             },
-            "clear": {
-                "summary": "Clear all slots at this class level",
-                "value": {"slots": []},
-            },
-        },
-    ),
+        ),
+    ],
+    class_service: ClassProgressionDep,
+    _: GmUserDep,
 ):
     """
     Replace the spell slots a class grants at a single `class_level`.
@@ -65,12 +80,12 @@ async def set_class_spell_slots(
 
 
 @router.get(
-    "/{class_id}/progression",
+    "/progression",
     response_model=ClassProgressionResponse,
     summary="Get the full 1-20 progression table",
     responses={404: {"description": "No class exists with the given ID."}},
 )
-async def get_class_progression(class_id: int, class_service: ClassProgressionDep):
+async def get_class_progression(class_id: Annotated[int, Query(gt=0)], class_service: ClassProgressionDep):
     """
     Return the full level 1-20 progression table for a class.
 

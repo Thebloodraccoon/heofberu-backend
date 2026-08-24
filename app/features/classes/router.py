@@ -5,7 +5,8 @@ Each capability sub-router declares no prefix of its own; the ``/classes``
 prefix is applied here via ``include_router(..., prefix=...)`` so
 empty-path routes (``GET ""`` etc.) resolve to ``/classes``. The
 subclasses subdomain mounts under the same prefix:
-``/classes/{class_id}/subclasses/...``. The mounted surface exposes the
+``/classes/subclasses/...`` with the owning class passed as the required
+``class_id`` query parameter. The mounted surface exposes the
 exact same paths as the previous monolithic endpoints package.
 """
 
@@ -29,4 +30,4 @@ router.include_router(items_router, prefix="/classes", tags=["Classes"])
 router.include_router(throws_router, prefix="/classes", tags=["Classes"])
 router.include_router(progression_router, prefix="/classes", tags=["Classes"])
 router.include_router(armor_router, prefix="/classes", tags=["Classes"])
-router.include_router(subclasses_router, prefix="/classes")
+router.include_router(subclasses_router, prefix="/classes", tags=["Subclasses"])

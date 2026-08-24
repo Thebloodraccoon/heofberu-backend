@@ -1,6 +1,11 @@
-"""Class available-skills endpoint."""
+"""
+Class available-skills endpoint (query-style ID — the class is
+identified by the required ``class_id`` query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.classes.dependencies import ClassSkillsDep
 from app.features.classes.schemas import AvailableSkillsUpdate, ClassResponse
@@ -10,7 +15,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/{class_id}/available-skills",
+    "/available-skills",
     response_model=ClassResponse,
     summary="Replace a class's available skills",
     responses={
@@ -19,21 +24,24 @@ router = APIRouter()
     },
 )
 async def set_class_available_skills(
-    class_id: int,
+    class_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        AvailableSkillsUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two skills",
+                    "value": {"skill_ids": [3, 7]},
+                },
+                "clear": {
+                    "summary": "Clear all available skills",
+                    "value": {"skill_ids": []},
+                },
+            },
+        ),
+    ],
     class_service: ClassSkillsDep,
     _: GmUserDep,
-    data: AvailableSkillsUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with two skills",
-                "value": {"skill_ids": [3, 7]},
-            },
-            "clear": {
-                "summary": "Clear all available skills",
-                "value": {"skill_ids": []},
-            },
-        },
-    ),
 ):
     """
     Replace all skills a class may choose proficiencies from. **GM only.**

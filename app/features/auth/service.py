@@ -1,6 +1,7 @@
 """Business logic for authentication: login, registration, token refresh, logout."""
 
 from fastapi import Response
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
@@ -11,12 +12,12 @@ from app.core.exceptions import (
 )
 from app.core.security.password import get_password_hash_async, verify_password_async
 from app.core.security.token import (
-    DecodedToken,
     blacklist_token,
     create_access_token,
     create_refresh_token,
     is_token_blacklisted,
     verify_refresh_token,
+    verify_token,
 )
 from app.features.auth.exceptions import AccountAlreadyExistsException
 from app.features.auth.schemas import (
@@ -38,7 +39,7 @@ REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 # one for an existing account with a wrong password. Without this, an
 # attacker could distinguish "no such account" from "wrong password" by
 # timing alone, and use that to enumerate registered emails.
-DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"
+DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"  # nosec B105 -- not a credential: public constant hash used as a timing-equalizing dummy
 
 
 class AuthService:
@@ -118,23 +119,26 @@ class AuthService:
         return RefreshResponse(access_token=new_access_token)
 
     @staticmethod
-    async def logout(access_token: DecodedToken, refresh_token_str: str | None) -> LogoutResponse:
+    async def logout(
+        access_token: HTTPAuthorizationCredentials | None,
+        refresh_token_str: str | None,
+    ) -> LogoutResponse:
         """
         Revoke the current access token and, if present, the refresh
         token cookie — both immediately unusable rather than left to
         expire naturally.
 
-        ``access_token`` is the already-verified token behind the
-        request — decoded once by ``get_current_user`` (via
-        ``CurrentUserDep``) and again in ``endpoints.logout`` to hand its
-        ``jti``/TTL here; no re-verification happens in this method.
+        ``access_token`` is the raw bearer credentials behind the
+        request; it is verified here (signature, expiry, ``access``
+        type) before its ``jti``/TTL are used for blacklisting.
         ``refresh_token_str`` is read directly from the request cookie; a
         missing/invalid one is tolerated (nothing to revoke, and a user
         who already lost their refresh cookie shouldn't be blocked from
         logging out the access token they do have).
         """
 
-        await blacklist_token(access_token.jti, access_token.remaining_seconds, reason="logout")
+        decoded_access_token = verify_token(access_token, "access")
+        await blacklist_token(decoded_access_token.jti, decoded_access_token.remaining_seconds, reason="logout")
 
         if refresh_token_str:
             try:

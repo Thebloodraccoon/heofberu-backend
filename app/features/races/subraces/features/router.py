@@ -1,6 +1,17 @@
-"""Subrace feature endpoints: per-subrace SUBRACE-source feature CRUD."""
+"""
+Subrace feature endpoints: per-subrace SUBRACE-source feature CRUD
+(query-style IDs).
 
-from fastapi import APIRouter, Body
+The router declares no prefix of its own; ``app.features.races.router``
+applies the ``/races`` prefix and ``app.features.races.subraces.router``
+the static ``/subraces`` prefix — combined, ``"/features"`` resolves to
+``/races/subraces/features?race_id=...&subrace_id=...``. Both the owning
+race and the subrace are identified by required query parameters.
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.features.races.subraces.dependencies import SubraceFeaturesDep
 from app.features.races.subraces.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
@@ -10,40 +21,47 @@ router = APIRouter()
 
 
 @router.get(
-    "/{subrace_id}/features",
+    "/features",
     response_model=list[NestedFeatureResponse],
     summary="List a subrace's features",
     responses={404: {"description": "No subrace exists with the given ID under this race."}},
 )
-async def list_features(race_id: int, subrace_id: int, race_service: SubraceFeaturesDep):
+async def list_features(
+    race_id: Annotated[int, Query(gt=0)],
+    subrace_id: Annotated[int, Query(gt=0)],
+    race_service: SubraceFeaturesDep,
+):
     """Return every feature owned by the subrace (``source_type: SUBRACE``). Open endpoint."""
 
     return await race_service.list_features(race_id, subrace_id)
 
 
 @router.post(
-    "/{subrace_id}/features",
+    "/features",
     response_model=NestedFeatureResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Add a feature to a subrace",
     responses={404: {"description": "No subrace exists with the given ID under this race."}},
 )
 async def add_feature(
-    race_id: int,
-    subrace_id: int,
-    race_service: SubraceFeaturesDep,
-    current_user: GmUserDep,
-    data: NestedFeatureCreate = Body(
-        openapi_examples={
-            "darkvision": {
-                "summary": "Add one feature",
-                "value": {
-                    "name": "Drow Magic",
-                    "description": "Know the dancing lights cantrip.",
+    race_id: Annotated[int, Query(gt=0)],
+    subrace_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        NestedFeatureCreate,
+        Body(
+            openapi_examples={
+                "darkvision": {
+                    "summary": "Add one feature",
+                    "value": {
+                        "name": "Drow Magic",
+                        "description": "Know the dancing lights cantrip.",
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    race_service: SubraceFeaturesDep,
+    current_user: GmUserDep,
 ):
     """
     Add one feature to a subrace. **GM only.**
@@ -59,7 +77,7 @@ async def add_feature(
 
 
 @router.patch(
-    "/{subrace_id}/features/{feature_id}",
+    "/features",
     response_model=NestedFeatureResponse,
     summary="Update one feature of a subrace",
     responses={
@@ -70,22 +88,25 @@ async def add_feature(
     },
 )
 async def update_feature(
-    race_id: int,
-    subrace_id: int,
-    feature_id: int,
-    race_service: SubraceFeaturesDep,
-    _: GmUserDep,
-    data: FeatureUpdate = Body(
-        openapi_examples={
-            "rename": {
-                "summary": "Edit one feature",
-                "value": {
-                    "name": "Drow Magic (Improved)",
-                    "description": "Know the dancing lights and faerie fire cantrips.",
+    race_id: Annotated[int, Query(gt=0)],
+    subrace_id: Annotated[int, Query(gt=0)],
+    feature_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        FeatureUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Edit one feature",
+                    "value": {
+                        "name": "Drow Magic (Improved)",
+                        "description": "Know the dancing lights and faerie fire cantrips.",
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    race_service: SubraceFeaturesDep,
+    _: GmUserDep,
 ):
     """
     Update one feature of a subrace in place. **GM only.**
@@ -100,8 +121,8 @@ async def update_feature(
 
 
 @router.delete(
-    "/{subrace_id}/features/{feature_id}",
-    status_code=204,
+    "/features",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a feature from a subrace",
     responses={
         400: {"description": "The feature belongs to a different subrace."},
@@ -111,9 +132,9 @@ async def update_feature(
     },
 )
 async def remove_feature(
-    race_id: int,
-    subrace_id: int,
-    feature_id: int,
+    race_id: Annotated[int, Query(gt=0)],
+    subrace_id: Annotated[int, Query(gt=0)],
+    feature_id: Annotated[int, Query(gt=0)],
     race_service: SubraceFeaturesDep,
     _: GmUserDep,
 ):

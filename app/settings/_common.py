@@ -119,7 +119,7 @@ def make_get_redis(redis_url: str):
                     try:
                         await state["client"].aclose()
                     except Exception:
-                        pass
+                        pass  # nosec B110 -- best-effort close of a client bound to a dead event loop
                 state["client"] = Redis.from_url(redis_url, decode_responses=True)
                 state["loop"] = current_loop
 

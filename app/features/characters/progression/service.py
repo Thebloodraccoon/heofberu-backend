@@ -93,9 +93,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.stats_service = CharacterStatsService(db)
 
-    async def set_subclass(
-        self, character_id: int, data: SubclassChange, current_user: UserResponse
-    ) -> None:
+    async def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
         """
         Set or clear a character's subclass.
 
@@ -119,9 +117,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         await invalidate_character_cache(character_id)
 
-    async def set_subrace(
-        self, character_id: int, data: SubraceChange, current_user: UserResponse
-    ) -> None:
+    async def set_subrace(self, character_id: int, data: SubraceChange, current_user: UserResponse) -> None:
         """
         Set or clear a character's subrace.
 

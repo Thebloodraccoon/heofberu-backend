@@ -1,6 +1,12 @@
-"""Race skill endpoints: full replacement of a race's granted skills."""
+"""
+Race skill endpoints: full replacement of a race's granted skills
+(query-style ID — the race is identified by the required ``race_id``
+query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.races.dependencies import RaceSkillsDep
 from app.features.races.schemas import RaceResponse, SkillsUpdate
@@ -10,7 +16,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/{race_id}/skills",
+    "/skills",
     response_model=RaceResponse,
     summary="Replace a race's granted skills",
     responses={
@@ -19,21 +25,24 @@ router = APIRouter()
     },
 )
 async def set_skills(
-    race_id: int,
+    race_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SkillsUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two skills",
+                    "value": {"skill_ids": [3, 7]},
+                },
+                "clear": {
+                    "summary": "Clear all granted skills",
+                    "value": {"skill_ids": []},
+                },
+            },
+        ),
+    ],
     race_service: RaceSkillsDep,
     _: GmUserDep,
-    data: SkillsUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with two skills",
-                "value": {"skill_ids": [3, 7]},
-            },
-            "clear": {
-                "summary": "Clear all granted skills",
-                "value": {"skill_ids": []},
-            },
-        },
-    ),
 ):
     """
     Replace all granted skills for a race. **GM only.**

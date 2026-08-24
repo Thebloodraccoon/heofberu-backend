@@ -14,7 +14,8 @@ class TestCharacterItems:
         item = await create_item(name="Longsword")
 
         add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": item.id, "quantity": 2, "is_equipped": True, "notes": "Primary"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -26,7 +27,8 @@ class TestCharacterItems:
         assert add_response.json()["notes"] == "Primary"
 
         list_response = await client.get(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert list_response.status_code == 200
@@ -37,7 +39,8 @@ class TestCharacterItems:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": 999999},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -51,14 +54,16 @@ class TestCharacterItems:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         item = await create_item(name="Longsword")
         add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": item.id, "quantity": 1},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_item_id = add_response.json()["id"]
 
         response = await client.patch(
-            f"/characters/{character.id}/gm-panel/items/{character_item_id}",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id, "item_id": character_item_id},
             json={"quantity": 3, "is_attuned": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -75,21 +80,24 @@ class TestCharacterItems:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         item = await create_item(name="Longsword")
         add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": item.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_item_id = add_response.json()["id"]
 
         response = await client.delete(
-            f"/characters/{character.id}/gm-panel/items/{character_item_id}",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id, "item_id": character_item_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 204
         assert (
             await client.get(
-                f"/characters/{character.id}/gm-panel/items",
+                "/characters/gm-panel/items",
+                params={"character_id": character.id},
                 headers={"Authorization": f"Bearer {player_token}"},
             )
         ).json() == []
@@ -102,12 +110,14 @@ class TestCharacterItems:
         item = await create_item(name="Longsword")
 
         first = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": item.id, "is_equipped": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         second = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": item.id, "is_equipped": False},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -115,7 +125,8 @@ class TestCharacterItems:
         assert first.status_code == 201
         assert second.status_code == 201
         list_response = await client.get(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert len(list_response.json()) == 2
@@ -130,7 +141,8 @@ class TestCharacterItems:
         item = await create_item(name="Longsword")
 
         add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": item.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -144,14 +156,16 @@ class TestCharacterItems:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         item = await create_item(name="Longsword")
         add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id},
             json={"item_id": item.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_item_id = add_response.json()["id"]
 
         response = await client.delete(
-            f"/characters/{character.id}/gm-panel/items/{character_item_id}",
+            "/characters/gm-panel/items",
+            params={"character_id": character.id, "item_id": character_item_id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 

@@ -1,6 +1,11 @@
-"""Class saving-throws endpoint."""
+"""
+Class saving-throws endpoint (query-style ID — the class is identified
+by the required ``class_id`` query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query
 
 from app.features.classes.dependencies import ClassThrowsDep
 from app.features.classes.schemas import ClassResponse, SavingThrowsUpdate
@@ -10,7 +15,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/{class_id}/saving-throws",
+    "/saving-throws",
     response_model=ClassResponse,
     summary="Replace a class's saving throws",
     responses={
@@ -18,21 +23,24 @@ router = APIRouter()
     },
 )
 async def set_class_saving_throws(
-    class_id: int,
+    class_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SavingThrowsUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two saving throws",
+                    "value": {"saving_throws": ["STR", "CON"]},
+                },
+                "clear": {
+                    "summary": "Clear all saving throws",
+                    "value": {"saving_throws": []},
+                },
+            },
+        ),
+    ],
     class_service: ClassThrowsDep,
     _: GmUserDep,
-    data: SavingThrowsUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with two saving throws",
-                "value": {"saving_throws": ["STR", "CON"]},
-            },
-            "clear": {
-                "summary": "Clear all saving throws",
-                "value": {"saving_throws": []},
-            },
-        },
-    ),
 ):
     """
     Replace all saving throw proficiencies for a class. **GM only.**

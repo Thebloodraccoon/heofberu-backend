@@ -9,6 +9,10 @@ from app.features.shared.features.schemas import _validate_source_fk_consistency
 class FeatureBase(BaseModel):
     """Base feature fields, including the source_type/FK consistency rules."""
 
+    # Stale/unknown keys (e.g. the removed FEAT source's feat_id) are rejected with 422,
+    # never silently dropped.
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     source_type: FeatureSourceType
 

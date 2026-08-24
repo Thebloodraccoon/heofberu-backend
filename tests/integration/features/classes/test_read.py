@@ -62,7 +62,7 @@ class TestClassOpenRead:
         await create_subclass(class_id=character_class.id, name="Battle Master")
         await create_subclass(class_id=character_class.id, name="Champion")
 
-        response = await client.get(f"/classes/{character_class.id}/subclasses")
+        response = await client.get("/classes/subclasses", params={"class_id": character_class.id})
 
         assert response.status_code == 200
         assert {item["name"] for item in response.json()} == {"Battle Master", "Champion"}
@@ -72,7 +72,10 @@ class TestClassOpenRead:
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
         await create_feature(name="Improved Critical", source_type="SUBCLASS", subclass_id=subclass.id, level=3)
 
-        response = await client.get(f"/classes/{character_class.id}/subclasses/{subclass.id}/features")
+        response = await client.get(
+            "/classes/subclasses/features",
+            params={"class_id": character_class.id, "subclass_id": subclass.id},
+        )
 
         assert response.status_code == 200
         assert [item["name"] for item in response.json()] == ["Improved Critical"]
@@ -80,4 +83,6 @@ class TestClassOpenRead:
     async def test_get_subclass_404(self, client, create_class):
         character_class = await create_class(name="Fighter")
 
-        assert (await client.get(f"/classes/{character_class.id}/subclasses/999999")).status_code == 404
+        assert (
+            await client.get("/classes/subclasses/999999", params={"class_id": character_class.id})
+        ).status_code == 404

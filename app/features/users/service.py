@@ -2,7 +2,9 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import UserRole
 from app.core.base.service import BaseService
+from app.core.exceptions import FoundFatherAccessException
 from app.core.security.password import get_password_hash_async
 from app.features.users.exceptions import (
     DefaultUserProtectedException,
@@ -46,14 +48,19 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         return self.response_schema.model_validate(user)
 
-    async def create_user(self, data: UserCreate) -> UserResponse:
+    async def create_user(self, data: UserCreate, current_role: UserRole) -> UserResponse:
         """
         Create a user after checking email/username aren't already taken.
+
+        Assigning any non-player role requires the acting user to be the
+        found father (``FoundFatherAccessException`` otherwise).
 
         The plaintext ``password`` is hashed and stored as
         ``hashed_password`` instead of being passed straight to the
         repository, so this bypasses the generic ``super().create(...)``.
         """
+
+        self._ensure_role_change_allowed(data.role != UserRole.PLAYER, current_role)
 
         user_data = data.model_dump()
         del user_data["password"]
@@ -62,13 +69,18 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         user = await self.repository.create(user_data)
         return self.response_schema.model_validate(user)
 
-    async def update_user(self, user_id: int, data: UserUpdate) -> UserResponse:
+    async def update_user(self, user_id: int, data: UserUpdate, current_role: UserRole) -> UserResponse:
         """
         Update a user, re-checking email/username uniqueness if changing.
+
+        Any role edit requires the acting user to be the found father
+        (``FoundFatherAccessException`` otherwise).
 
         Blocked for the seeded default admin user. Also stamps
         ``updated_at``, which the generic ``update`` doesn't do on its own.
         """
+
+        self._ensure_role_change_allowed(data.role is not None, current_role)
 
         user = await self._get_or_404(user_id)
         self._ensure_not_default_user(user)
@@ -110,6 +122,13 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         self._ensure_not_default_user(user)
         return await self.repository.delete(user)
+
+    @staticmethod
+    def _ensure_role_change_allowed(changes_role: bool, current_role: UserRole) -> None:
+        """Raise ``FoundFatherAccessException`` unless the acting user is the found father."""
+
+        if changes_role and current_role != UserRole.FOUND_FATHER:
+            raise FoundFatherAccessException()
 
     @staticmethod
     def _ensure_not_default_user(user: User) -> None:

@@ -155,7 +155,7 @@ class TestFeatureCrud:
 
         assert response.status_code == 400
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
-        fetched = await client.get(f"/classes/{character_class.id}/features")
+        fetched = await client.get("/classes/features", params={"class_id": character_class.id})
         assert [item["name"] for item in fetched.json()] == ["Extra Attack"]
 
     async def test_cannot_delete_source_owned_feature_via_features_crud(
@@ -168,5 +168,5 @@ class TestFeatureCrud:
 
         assert response.status_code == 400
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
-        fetched = await client.get(f"/races/{race.id}/features")
+        fetched = await client.get("/races/features", params={"race_id": race.id})
         assert [item["name"] for item in fetched.json()] == ["Darkvision"]

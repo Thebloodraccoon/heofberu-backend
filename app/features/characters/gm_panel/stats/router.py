@@ -1,11 +1,14 @@
 """
-GM stats-overview endpoint: GET under ``/gm-panel/stats``.
+GM stats-overview endpoint: GET under ``/gm-panel/stats`` (query-style ID).
 
 The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/{character_id}/gm-panel``.
+router applies ``/gm-panel``. The character is identified by the
+required ``character_id`` query parameter.
 """
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from app.features.characters.gm_panel.dependencies import GmPanelStatsDep
 from app.features.characters.gm_panel.stats.schemas import GmCharacterStatsResponse
@@ -24,7 +27,7 @@ router = APIRouter()
     },
 )
 async def get_character_stats(
-    character_id: int,
+    character_id: Annotated[int, Query(gt=0)],
     stats_service: GmPanelStatsDep,
     current_user: CurrentUserDep,
 ):

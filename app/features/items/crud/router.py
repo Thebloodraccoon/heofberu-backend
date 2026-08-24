@@ -1,6 +1,8 @@
 """Item CRUD endpoints: paginated listing, get, create, update, delete."""
 
-from fastapi import APIRouter, Body, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.constants import ItemRarity, ItemType
 from app.core.base.service import Page
@@ -18,9 +20,9 @@ router = APIRouter()
 )
 async def get_items(
     item_service: ItemCrudDep,
-    item_type: ItemType | None = None,
-    rarity: ItemRarity | None = None,
-    search: str | None = None,
+    item_type: ItemType | None = Query(None, description="Exact match on the item's type (e.g. `WEAPON`)."),
+    rarity: ItemRarity | None = Query(None, description="Exact match on the item's rarity (e.g. `UNCOMMON`)."),
+    search: str | None = Query(None, description="Case-insensitive substring match against the item's name."),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
@@ -47,7 +49,7 @@ async def get_items(
 
 
 @router.get(
-    "/{item_id}",
+    "/{item_id:int}",
     response_model=ItemResponse,
     summary="Get an item by ID",
     responses={
@@ -67,68 +69,71 @@ async def get_item(item_id: int, item_service: ItemCrudDep):
 @router.post(
     "",
     response_model=ItemResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create an item",
     responses={
         409: {"description": "An item with this name already exists."},
     },
 )
 async def create_item(
+    data: Annotated[
+        ItemCreate,
+        Body(
+            openapi_examples={
+                "weapon": {
+                    "summary": "Weapon",
+                    "value": {
+                        "name": "Longsword",
+                        "item_type": "WEAPON",
+                        "rarity": "NONE",
+                        "weight": 3,
+                        "cost_gold": 15,
+                        "damage_dice_count": 1,
+                        "damage_dice_type": "D8",
+                        "damage_type": "SLASHING",
+                        "weapon_properties": "VERSATILE",
+                        "description": "A versatile martial melee weapon.",
+                    },
+                },
+                "armor": {
+                    "summary": "Armor",
+                    "value": {
+                        "name": "Chain Mail",
+                        "item_type": "ARMOR",
+                        "rarity": "NONE",
+                        "weight": 55,
+                        "cost_gold": 75,
+                        "armor_class_base": 16,
+                        "armor_class_dex_bonus": False,
+                        "strength_requirement": 13,
+                        "stealth_disadvantage": True,
+                        "description": "Made of interlocking metal rings, chain mail includes a layer of quilted fabric worn underneath to prevent chafing.",
+                    },
+                },
+                "magic_item": {
+                    "summary": "Magic item requiring attunement",
+                    "value": {
+                        "name": "Cloak of Protection",
+                        "item_type": "WONDROUS_ITEM",
+                        "rarity": "UNCOMMON",
+                        "requires_attunement": True,
+                        "weight": 1,
+                        "description": "You gain a +1 bonus to AC and saving throws while wearing this cloak.",
+                    },
+                },
+            },
+        ),
+    ],
     item_service: ItemCrudDep,
     current_user: GmUserDep,
-    item_data: ItemCreate = Body(
-        openapi_examples={
-            "weapon": {
-                "summary": "Weapon",
-                "value": {
-                    "name": "Longsword",
-                    "item_type": "WEAPON",
-                    "rarity": "NONE",
-                    "weight": 3,
-                    "cost_gold": 15,
-                    "damage_dice_count": 1,
-                    "damage_dice_type": "D8",
-                    "damage_type": "SLASHING",
-                    "weapon_properties": "VERSATILE",
-                    "description": "A versatile martial melee weapon.",
-                },
-            },
-            "armor": {
-                "summary": "Armor",
-                "value": {
-                    "name": "Chain Mail",
-                    "item_type": "ARMOR",
-                    "rarity": "NONE",
-                    "weight": 55,
-                    "cost_gold": 75,
-                    "armor_class_base": 16,
-                    "armor_class_dex_bonus": False,
-                    "strength_requirement": 13,
-                    "stealth_disadvantage": True,
-                    "description": "Made of interlocking metal rings, chain mail includes a layer of quilted fabric worn underneath to prevent chafing.",
-                },
-            },
-            "magic_item": {
-                "summary": "Magic item requiring attunement",
-                "value": {
-                    "name": "Cloak of Protection",
-                    "item_type": "WONDROUS_ITEM",
-                    "rarity": "UNCOMMON",
-                    "requires_attunement": True,
-                    "weight": 1,
-                    "description": "You gain a +1 bonus to AC and saving throws while wearing this cloak.",
-                },
-            },
-        },
-    ),
 ):
     """Create a new item. **GM only.**"""
 
-    return await item_service.create_item(item_data, created_by_id=current_user.id)
+    return await item_service.create_item(data, created_by_id=current_user.id)
 
 
 @router.patch(
-    "/{item_id}",
+    "/{item_id:int}",
     response_model=ItemResponse,
     summary="Update an item",
     responses={
@@ -136,7 +141,33 @@ async def create_item(
         409: {"description": "Another item already uses the requested name."},
     },
 )
-async def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemCrudDep, _: GmUserDep):
+async def update_item(
+    item_id: int,
+    data: Annotated[
+        ItemUpdate,
+        Body(
+            openapi_examples={
+                "price-and-weight": {
+                    "summary": "Adjust cost and weight",
+                    "value": {
+                        "cost_gold": 20,
+                        "weight": 4,
+                    },
+                },
+                "make-magic": {
+                    "summary": "Turn the item into an attunement-required magic item",
+                    "value": {
+                        "rarity": "RARE",
+                        "requires_attunement": True,
+                        "description": "You gain a +2 bonus to AC and saving throws while wearing this cloak.",
+                    },
+                },
+            }
+        ),
+    ],
+    item_service: ItemCrudDep,
+    _: GmUserDep,
+):
     """
     Partially update an item. **GM only.**
 
@@ -144,12 +175,12 @@ async def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemC
     are left as-is.
     """
 
-    return await item_service.update(item_id, update_data)
+    return await item_service.update(item_id, data)
 
 
 @router.delete(
-    "/{item_id}",
-    status_code=204,
+    "/{item_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an item",
     responses={
         404: {"description": "No item exists with the given ID."},
@@ -158,7 +189,7 @@ async def update_item(item_id: int, update_data: ItemUpdate, item_service: ItemC
 )
 async def delete_item(item_id: int, item_service: ItemCrudDep, _: FounderDep):
     """
-    Delete an item. **Found-father only.**
+    Delete an item. **Founder only.**
 
     Blocked if the item is still owned by one or more characters (the
     service raises ``RecordInUseError``, mapped to a 409 by the global

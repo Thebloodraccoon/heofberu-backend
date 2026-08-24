@@ -49,7 +49,8 @@ class TestFeatCrud:
         feat = await create_feat(name="Resilient")
 
         response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
+            "/feats/ability-score-increases",
+            params={"feat_id": feat.id},
             json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -82,7 +83,8 @@ class TestFeatCrud:
 
         # Feat grants are a GM-panel write.
         add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

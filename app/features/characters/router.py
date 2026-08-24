@@ -11,9 +11,9 @@ from app.features.characters.spells.router import router as spells_router
 
 router = APIRouter()
 
-router.include_router(core_router, prefix="/characters")
-router.include_router(spells_router, prefix="/characters")
-router.include_router(attacks_router, prefix="/characters")
-router.include_router(gm_panel_router, prefix="/characters")
-router.include_router(conditions_router, prefix="/characters")
-router.include_router(progression_router, prefix="/characters")
+router.include_router(core_router, prefix="/characters", tags=["Characters"])
+router.include_router(spells_router, prefix="/characters", tags=["Characters Spells"])
+router.include_router(attacks_router, prefix="/characters", tags=["Characters Attacks"])
+router.include_router(gm_panel_router, prefix="/characters", tags=["Characters GM Panel"])
+router.include_router(conditions_router, prefix="/characters", tags=["Characters Conditions"])
+router.include_router(progression_router, prefix="/characters", tags=["Characters Progression"])
