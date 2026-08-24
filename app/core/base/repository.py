@@ -93,14 +93,25 @@ class BaseRepository(Generic[ModelType]):
         return [column.key for column in mapper.columns if isinstance(column.type, String | Text)]
 
     def _apply_filters(self, stmt: Any, filters: dict[str, Any] | None) -> Any:
-        """Apply exact-match, AND'd filters for known, non-``None`` keys in ``filters``."""
+        """Apply exact-match, AND'd filters for known, non-``None`` keys in ``filters``.
+
+        A list/tuple/set value means "any of" — the column must match at
+        least one entry (``IN``). Scalars keep plain equality.
+        """
 
         if not filters:
             return stmt
 
         for field, value in filters.items():
-            if hasattr(self.model, field) and value is not None:
-                stmt = stmt.where(getattr(self.model, field) == value)
+            if not hasattr(self.model, field) or value is None:
+                continue
+            column = getattr(self.model, field)
+            if isinstance(value, list | tuple | set):
+                if len(value) == 0:
+                    continue
+                stmt = stmt.where(column.in_(value))
+            else:
+                stmt = stmt.where(column == value)
 
         return stmt
 

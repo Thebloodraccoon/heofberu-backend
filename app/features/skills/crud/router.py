@@ -24,9 +24,9 @@ async def get_skills(
         None,
         description="Case-insensitive substring match against the skill's name and key.",
     ),
-    ability: AbilityScore | None = Query(
+    ability: list[AbilityScore] | None = Query(
         None,
-        description="Exact match on the governing ability score (e.g. `WIS`).",
+        description="Any-of match on the governing ability score (repeat the key: `?ability=WIS&ability=INT`).",
     ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),

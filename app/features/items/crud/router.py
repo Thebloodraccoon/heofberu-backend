@@ -20,8 +20,8 @@ router = APIRouter()
 )
 async def get_items(
     item_service: ItemCrudDep,
-    item_type: ItemType | None = Query(None, description="Exact match on the item's type (e.g. `WEAPON`)."),
-    rarity: ItemRarity | None = Query(None, description="Exact match on the item's rarity (e.g. `UNCOMMON`)."),
+    item_type: list[ItemType] | None = Query(None, description="Any-of match on the item's type (repeat the key: `?item_type=WEAPON&item_type=ARMOR`)."),
+    rarity: list[ItemRarity] | None = Query(None, description="Any-of match on the item's rarity (repeat the key)."),
     search: str | None = Query(None, description="Case-insensitive substring match against the item's name."),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),

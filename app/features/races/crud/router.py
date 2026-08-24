@@ -20,7 +20,7 @@ router = APIRouter()
 )
 async def get_races(
     race_service: RaceCrudDep,
-    race_size: RaceSize | None = Query(None, description="Exact match on the race's size (e.g. `MEDIUM`)."),
+    race_size: list[RaceSize] | None = Query(None, description="Any-of match on the race's size (repeat the key: `?race_size=SMALL&race_size=MEDIUM`)."),
     search: str | None = Query(None, description="Case-insensitive substring match against the race's name."),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -30,7 +30,8 @@ async def get_races(
 
     Open endpoint, no authentication required.
 
-    `race_size` is an exact match (e.g. `race_size=MEDIUM`). `search` is a
+    `race_size` is an any-of match (repeat the key, e.g.
+    `race_size=SMALL&race_size=MEDIUM`). `search` is a
     case-insensitive partial match against the race name; both can be
     combined.
 

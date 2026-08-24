@@ -34,19 +34,19 @@ router = APIRouter()
 )
 async def get_spells(
     spell_service: SpellCrudDep,
-    school: SpellSchool | None = Query(None, description="Exact match on the spell's school (e.g. `EVOCATION`)."),
-    level: SpellLevel | None = Query(None, description="Exact match on the spell level (e.g. `LEVEL_1`, `CANTRIP`)."),
-    cast_time: SpellCastTime | None = Query(None, description="Exact match on casting time (e.g. `ACTION`)."),
-    range_type: SpellRangeType | None = Query(None, description="Exact match on range type (e.g. `RANGED`)."),
-    duration: SpellDuration | None = Query(None, description="Exact match on duration (e.g. `INSTANTANEOUS`)."),
-    attack_type: AttackType | None = Query(None, description="Exact match on attack type (e.g. `RANGED_ATTACK`)."),
-    damage_type: DamageType | None = Query(None, description="Exact match on damage type (e.g. `FIRE`)."),
-    healing_target: HealingTarget | None = Query(None, description="Exact match on healing target (e.g. `HP`)."),
-    is_ritual: bool | None = Query(
-        None, description="Filter to ritual spells (`true`) or non-ritual spells (`false`)."
+    school: list[SpellSchool] | None = Query(None, description="Any-of match on the spell's school (repeat the key: `?school=EVOCATION&school=ILLUSION`)."),
+    level: list[SpellLevel] | None = Query(None, description="Any-of match on the spell level (repeat the key: `?level=CANTRIP&level=LEVEL_1`)."),
+    cast_time: list[SpellCastTime] | None = Query(None, description="Any-of match on casting time (repeat the key)."),
+    range_type: list[SpellRangeType] | None = Query(None, description="Any-of match on range type (repeat the key)."),
+    duration: list[SpellDuration] | None = Query(None, description="Any-of match on duration (repeat the key)."),
+    attack_type: list[AttackType] | None = Query(None, description="Any-of match on attack type (repeat the key)."),
+    damage_type: list[DamageType] | None = Query(None, description="Any-of match on damage type (repeat the key)."),
+    healing_target: list[HealingTarget] | None = Query(None, description="Any-of match on healing target (repeat the key)."),
+    is_ritual: list[bool] | None = Query(
+        None, description="Any-of match: `[true]` ritual spells, `[false]` non-ritual, `[true, false]` both."
     ),
-    is_concentration: bool | None = Query(
-        None, description="Filter to concentration spells (`true`) or non-concentration spells (`false`)."
+    is_concentration: list[bool] | None = Query(
+        None, description="Any-of match: `[true]` concentration spells, `[false]` non-concentration."
     ),
     search: str | None = Query(
         None,
@@ -62,8 +62,10 @@ async def get_spells(
 
     Open endpoint, no authentication required.
 
-    All filters below are exact matches and can be freely combined
-    (AND'd together); `search` is a case-insensitive partial match
+    All filters below are any-of matches (repeat the query key to pass
+    several values, e.g. `?school=EVOCATION&school=ILLUSION`); values
+    within one filter are OR'd, different filters are combined AND'd.
+    `search` is a case-insensitive partial match
     against the spell name, combined with any filters.
 
     - `school` — e.g. `EVOCATION`
