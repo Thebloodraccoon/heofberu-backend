@@ -101,9 +101,7 @@ class SubraceCrudService(
         await self._get_or_404_for_race(race_id, subrace_id)
         return await self.get_by_id(subrace_id)
 
-    async def create_subrace(
-        self, race_id: int, data: SubraceCreate, created_by_id: int | None = None
-    ) -> SubraceResponse:
+    async def create_subrace(self, race_id: int, data: SubraceCreate) -> SubraceResponse:
         """
         Create a subrace under ``race_id``.
 
@@ -116,7 +114,6 @@ class SubraceCrudService(
 
         payload = data.model_dump(exclude={"ability_bonuses", "features"})
         payload["race_id"] = race_id
-        payload["created_by_id"] = created_by_id
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)
@@ -129,7 +126,6 @@ class SubraceCrudService(
                 FeatureSourceType.SUBRACE,
                 item.id,
                 data.features,
-                created_by_id,
                 commit=False,
             )
 

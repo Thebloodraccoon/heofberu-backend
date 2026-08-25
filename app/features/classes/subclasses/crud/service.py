@@ -58,9 +58,7 @@ class SubclassCrudService(
         )
         self._features = NestedFeatureService(db)
 
-    async def create_subclass(
-        self, class_id: int, data: SubclassCreate, created_by_id: int | None = None
-    ) -> SubclassResponse:
+    async def create_subclass(self, class_id: int, data: SubclassCreate) -> SubclassResponse:
         """
         Create a subclass (and its nested features) for an existing class.
         Uses ``_atomic()`` so the subclass row and its features commit together.
@@ -68,7 +66,6 @@ class SubclassCrudService(
 
         payload = data.model_dump(exclude={"features"})
         payload["class_id"] = class_id
-        payload["created_by_id"] = created_by_id
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)

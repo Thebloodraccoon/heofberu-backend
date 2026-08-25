@@ -33,9 +33,7 @@ class SourceFeatureMixin:
         source = await self._get_or_404(source_id)
         return await self._features.list_for_source(self._feature_source_type, source.id)
 
-    async def add_feature(
-        self, source_id: int, data: NestedFeatureCreate, created_by_id: int | None = None
-    ) -> NestedFeatureResponse:
+    async def add_feature(self, source_id: int, data: NestedFeatureCreate) -> NestedFeatureResponse:
         """
         Add one feature to the source (``source_type: <_feature_source_type>``).
 
@@ -49,7 +47,7 @@ class SourceFeatureMixin:
             source,
             self._feature_source_type,
             lambda: self._features.create_feature_for_source(
-                self._feature_source_type, source.id, data, created_by_id, commit=False
+                self._feature_source_type, source.id, data, commit=False
             ),
         )
 

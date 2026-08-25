@@ -56,7 +56,6 @@ def make_class_row(**overrides) -> SimpleNamespace:
         "skill_choice_count": 2,
         "spellcasting_ability": None,
         "description": "",
-        "created_by_id": None,
         "primary_abilities": [],
         "saving_throws": [],
         "armor_proficiencies": [],

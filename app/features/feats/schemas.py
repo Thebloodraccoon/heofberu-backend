@@ -15,6 +15,20 @@ class FeatBase(BaseModel):
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str = ""
 
+    # Minimum character level required to take the feat; NULL when the
+    # feat has no level requirement.
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject out-of-range level requirements when provided."""
+
+        if value is not None and not 1 <= value <= 20:
+            raise ValueError("min_level must be between 1 and 20")
+
+        return value
+
 
 class AbilityScoreIncreaseItem(BaseModel):
     """A single ASI choice granted by a feat, e.g. {"ability": "STR", "amount": 1}."""
@@ -74,6 +88,17 @@ class FeatUpdate(BaseModel):
     prerequisite_ability: AbilityScore | None = None
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str | None = None
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject out-of-range level requirements when provided."""
+
+        if value is not None and not 1 <= value <= 20:
+            raise ValueError("min_level must be between 1 and 20")
+
+        return value
 
 
 class AbilityScoreIncreasesUpdate(BaseModel):
@@ -104,7 +129,6 @@ class FeatResponse(FeatBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_by_id: int | None = None
     ability_score_increases: list[AbilityScoreIncreaseResponse] = []
 
 

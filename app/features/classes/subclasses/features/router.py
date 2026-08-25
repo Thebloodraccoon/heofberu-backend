@@ -76,7 +76,7 @@ async def add_subclass_feature(
     the same transaction. Returns the created feature.
     """
 
-    return await class_service.add_feature(class_id, subclass_id, data, created_by_id=current_user.id)
+    return await class_service.add_feature(class_id, subclass_id, data)
 
 
 @router.patch(

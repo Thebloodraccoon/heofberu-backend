@@ -118,7 +118,6 @@ class RaceResponse(RaceBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_by_id: int | None = None
     ability_bonuses: list[AbilityBonusResponse] = []
     granted_skills: list[SkillResponse] = []
     subraces: list[SubraceBriefResponse] = []

@@ -169,7 +169,6 @@ class SpellResponse(SpellBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_by_id: int | None = None
     available_classes: list[ClassBriefResponse] = []
     available_subclasses: list[SubclassBriefResponse] = []
     available_races: list[RaceBriefResponse] = []

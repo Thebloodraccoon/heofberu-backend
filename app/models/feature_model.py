@@ -39,14 +39,11 @@ class Feature(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False, default="")
 
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
     character_class = relationship("Class")
     subclass = relationship("Subclass", back_populates="features")
     race = relationship("Race", back_populates="features")
     subrace = relationship("Subrace", back_populates="features")
     background = relationship("Background", back_populates="features")
-    created_by = relationship("User")
 
     def __repr__(self):
         return f"<Feature(id={self.id}, name='{self.name}', source_type='{self.source_type}')>"

@@ -64,7 +64,7 @@ async def add_class_feature(
     transaction. Returns the created feature.
     """
 
-    return await class_service.add_feature(class_id, data, created_by_id=current_user.id)
+    return await class_service.add_feature(class_id, data)
 
 
 @router.patch(

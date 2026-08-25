@@ -14,9 +14,8 @@ class CharacterAttackRepository(BaseRepository[Attack]):
 
     Inherits the base ``create`` unchanged — the service injects
     ``character_id`` into the create payload before calling it, mirroring
-    how ``owner_id`` is injected for characters and ``created_by_id`` for
-    races/classes/backgrounds (the old ``create(data, character_id)``
-    signature override is gone).
+    how ``owner_id`` is injected for characters (the old
+    ``create(data, character_id)`` signature override is gone).
     """
 
     def __init__(self, db: AsyncSession):

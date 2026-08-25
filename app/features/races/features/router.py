@@ -65,7 +65,7 @@ async def add_feature(
     ``level`` is not meaningful for race features and must stay ``null``.
     """
 
-    return await race_service.add_feature(race_id, data, created_by_id=current_user.id)
+    return await race_service.add_feature(race_id, data)
 
 
 @router.patch(

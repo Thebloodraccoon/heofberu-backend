@@ -36,7 +36,6 @@ class SubclassResponse(BaseModel):
     name: str
     archetype_group_name: str | None = None
     description: str
-    created_by_id: int | None = None
 
 
 class SubclassBriefResponse(BaseModel):

@@ -1,7 +1,6 @@
 """ORM model for the reference table of equipment and magic items."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, Integer, Numeric, String, Text
 
 from app.models.enums import DamageTypeType, DiceTypeColumn, ItemRarityType, ItemTypeType
 from app.settings import settings
@@ -39,9 +38,6 @@ class Item(settings.Base):  # type: ignore
     stealth_disadvantage = Column(Boolean, nullable=False, default=False)
 
     description = Column(Text, nullable=False, default="")
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    created_by = relationship("User")
 
     def __repr__(self):
         return f"<Item(id={self.id}, name='{self.name}', item_type='{self.item_type}')>"

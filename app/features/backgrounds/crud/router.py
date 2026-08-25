@@ -124,7 +124,7 @@ async def create_background(
     - `PUT /backgrounds/{background_id}/items`
     """
 
-    return await background_service.create_background(data, created_by_id=current_user.id)
+    return await background_service.create_background(data)
 
 
 @router.patch(

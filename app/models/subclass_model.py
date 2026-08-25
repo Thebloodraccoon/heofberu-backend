@@ -29,8 +29,6 @@ class Subclass(settings.Base):  # type: ignore
     archetype_group_name = Column(String(100), nullable=True)
     description = Column(Text, nullable=False, default="")
 
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
     __table_args__ = (
         # A class cannot have two subclasses with the same name.
         UniqueConstraint("class_id", "name", name="uq_subclass_class_id_name"),
@@ -45,7 +43,6 @@ class Subclass(settings.Base):  # type: ignore
         passive_deletes=True,
         order_by="Feature.id",
     )
-    created_by = relationship("User")
 
     def __repr__(self):
         return f"<Subclass(id={self.id}, name='{self.name}', class_id={self.class_id})>"

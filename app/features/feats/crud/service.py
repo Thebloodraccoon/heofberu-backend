@@ -47,13 +47,9 @@ class FeatCrudService(
         )
         self._asi = FeatAsiService(db)
 
-    async def create_feat(self, feat_data: FeatCreate, created_by_id: int | None = None) -> FeatResponse:
+    async def create_feat(self, feat_data: FeatCreate) -> FeatResponse:
         """
         Create a feat after checking its name isn't already taken.
-
-        ``created_by_id`` identifies the GM who created it and is not part
-        of ``FeatCreate`` itself, since it comes from the authenticated
-        user, not client input.
 
         Kept minimal on purpose: only the feat's own scalar fields plus
         ``ability_score_increases`` (a simple child table, not a nested
@@ -63,7 +59,6 @@ class FeatCrudService(
         """
 
         payload = feat_data.model_dump(exclude={"ability_score_increases"})
-        payload["created_by_id"] = created_by_id
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)

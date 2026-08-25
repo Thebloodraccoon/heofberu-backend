@@ -137,7 +137,7 @@ async def create_class(
     - `PUT /classes/{class_id}/starting-items`
     """
 
-    return await class_service.create_class(data, created_by_id=current_user.id)
+    return await class_service.create_class(data)
 
 
 @router.patch(

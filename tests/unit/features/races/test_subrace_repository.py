@@ -15,7 +15,6 @@ def make_subrace(**overrides) -> Subrace:
         "race_id": 1,
         "name": "High Elf",
         "description": "",
-        "created_by_id": None,
         "ability_bonuses": [],
     }
     base.update(overrides)

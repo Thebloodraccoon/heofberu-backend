@@ -302,7 +302,6 @@ class ClassResponse(ClassBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_by_id: int | None = None
     primary_abilities: list[PrimaryAbilityResponse] = []
     saving_throws: list[SavingThrowResponse] = []
     armor_proficiencies: list[ArmorProficiencyResponse] = []

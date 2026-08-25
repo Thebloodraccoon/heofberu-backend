@@ -35,7 +35,6 @@ def make_race(**overrides) -> Race:
         "size": RaceSize.MEDIUM,
         "speed": 30,
         "description": "",
-        "created_by_id": None,
         "ability_bonuses": [],
         "granted_skills": [],
         "subraces": [],
@@ -62,7 +61,6 @@ def make_subrace(**overrides):
         "race_id": 1,
         "name": "High Elf",
         "description": "",
-        "created_by_id": None,
         "ability_bonuses": [],
     }
     base.update(overrides)
@@ -86,7 +84,6 @@ class FakeRaceRepository(FakeRepository):
             size=payload["size"],
             speed=payload["speed"],
             description=payload.get("description", ""),
-            created_by_id=payload.get("created_by_id"),
             ability_bonuses=[],
             granted_skills=[],
             subraces=[],
@@ -158,8 +155,8 @@ class FakeNestedFeatureService:
         self.db = db
         self.created = []
 
-    async def create_features_for_source(self, source_type, source_id, items, created_by_id, *, commit=False):
-        self.created.append((source_type, source_id, items, created_by_id, commit))
+    async def create_features_for_source(self, source_type, source_id, items, *, commit=False):
+        self.created.append((source_type, source_id, items, commit))
 
 
 @pytest.fixture(autouse=True)
@@ -204,14 +201,13 @@ class TestRaceCrudService:
     async def test_create_race_without_nested_capabilities(self):
         service, db = make_crud_service(resolved_skills=None)
 
-        result = await service.create_race(RaceCreate(name="Elf", speed=35), created_by_id=3)
+        result = await service.create_race(RaceCreate(name="Elf", speed=35))
 
         assert result.id == 1
         assert result.name == "Elf"
         assert result.speed == 35
         assert db.commits == 1
-        assert service.repository.created[0].created_by_id == 3
-        assert service._nested_features.created == [(FeatureSourceType.RACE, 1, None, 3, False)]
+        assert service._nested_features.created == [(FeatureSourceType.RACE, 1, None, False)]
         assert service._ability_bonuses.calls == []
         assert service._skills.set_calls == []
 
@@ -225,7 +221,7 @@ class TestRaceCrudService:
             features=[NestedFeatureCreate(name="Keen Senses", description="d")],
         )
 
-        result = await service.create_race(data, created_by_id=7)
+        result = await service.create_race(data)
 
         assert result.id == 1
         assert result.ability_bonuses[0].ability == AbilityScore.DEX
@@ -236,7 +232,7 @@ class TestRaceCrudService:
         assert service._ability_bonuses.calls[0][1] == [{"ability": AbilityScore.DEX, "bonus": 2}]
         assert service._ability_bonuses.calls[0][2] is False
         assert service._skills.set_calls == [(service.repository._rows[1], [skill], False)]
-        assert service._nested_features.created == [(FeatureSourceType.RACE, 1, data.features, 7, False)]
+        assert service._nested_features.created == [(FeatureSourceType.RACE, 1, data.features, False)]
 
     async def test_create_race_rolls_back_when_persist_fails(self):
         service, db = make_crud_service(resolved_skills=None)

@@ -53,8 +53,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     Built on :class:`BaseService`, mirroring ``RaceCrudService`` /
     ``ClassCrudService`` / ``BackgroundCrudService`` / ``SpellCrudService``:
     ``CharacterRepository`` provides the full generic CRUD (no signature
-    overrides), ``owner_id`` is injected into the create payload the same
-    way ``created_by_id`` is for the reference features, and
+    overrides), ``owner_id`` is injected into the create payload, and
     ``_get_or_404`` / ``_atomic`` / ``resolve_ids`` come from the base.
 
     Spell slots, known spells, attacks, and feats each live

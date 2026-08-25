@@ -91,7 +91,7 @@ async def create_subrace(
     every character of this subrace.
     """
 
-    return await race_service.create_subrace(race_id, data, created_by_id=current_user.id)
+    return await race_service.create_subrace(race_id, data)
 
 
 @router.get(

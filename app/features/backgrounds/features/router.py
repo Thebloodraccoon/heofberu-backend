@@ -68,7 +68,7 @@ async def add_background_feature(
     ``null``.
     """
 
-    return await background_service.add_feature(background_id, data, created_by_id=current_user.id)
+    return await background_service.add_feature(background_id, data)
 
 
 @router.patch(

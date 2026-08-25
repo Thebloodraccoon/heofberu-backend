@@ -31,7 +31,6 @@ def make_subrace(**overrides) -> Subrace:
         "race_id": 1,
         "name": "High Elf",
         "description": "",
-        "created_by_id": None,
         "ability_bonuses": [],
     }
     base.update(overrides)
@@ -85,12 +84,12 @@ class FakeNestedFeatureService:
     async def list_for_source(self, source_type, source_id):
         return []
 
-    async def create_features_for_source(self, source_type, source_id, items, created_by_id, *, commit=False):
-        self.created.append((source_type, source_id, items, created_by_id, commit))
+    async def create_features_for_source(self, source_type, source_id, items, *, commit=False):
+        self.created.append((source_type, source_id, items, commit))
         return []
 
-    async def create_feature_for_source(self, source_type, source_id, item, created_by_id, *, commit=False):
-        self.created.append((source_type, source_id, item, created_by_id, commit))
+    async def create_feature_for_source(self, source_type, source_id, item, *, commit=False):
+        self.created.append((source_type, source_id, item, commit))
         return SimpleNamespace(id=1, name=item.name, description=item.description, level=item.level)
 
     async def update_feature_for_source(self, source_type, source_id, feature_id, fields, *, commit=False):
@@ -229,11 +228,11 @@ class TestSubraceCrudService:
             features=[NestedFeatureCreate(name="Keen Senses", description="", level=None)],
         )
 
-        result = await service.create_subrace(1, data, created_by_id=7)
+        result = await service.create_subrace(1, data)
 
         assert result.ability_bonuses[0].ability == AbilityScore.DEX
         assert service._ability_bonuses.calls[0][1] == [{"ability": AbilityScore.DEX, "bonus": 2}]
-        assert service._features.created[0] == (FeatureSourceType.SUBRACE, 1, data.features, 7, False)
+        assert service._features.created[0] == (FeatureSourceType.SUBRACE, 1, data.features, False)
 
     async def test_create_subrace_raises_when_race_missing(self):
         service, _ = make_crud_service(race_exists=False)
@@ -341,11 +340,11 @@ class TestSubraceFeatureService:
         service, db = make_feature_service(existing_by_id={1: subrace})
         data = NestedFeatureCreate(name="Fey Ancestry", description="d", level=None)
 
-        result = await service.add_feature(1, 1, data, created_by_id=7)
+        result = await service.add_feature(1, 1, data)
 
         assert result.id == 1
         assert result.name == "Fey Ancestry"
-        assert service._features.created == [(FeatureSourceType.SUBRACE, 1, data, 7, False)]
+        assert service._features.created == [(FeatureSourceType.SUBRACE, 1, data, False)]
         assert service._features.invalidate_calls == 1
         assert db.commits == 1
 

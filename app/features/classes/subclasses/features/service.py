@@ -53,7 +53,6 @@ class SubclassFeatureService(
         class_id: int,
         subclass_id: int,
         data: NestedFeatureCreate,
-        created_by_id: int | None = None,
     ) -> NestedFeatureResponse:
         """
 
@@ -72,7 +71,6 @@ class SubclassFeatureService(
                 FeatureSourceType.SUBCLASS,
                 subclass.id,
                 data,
-                created_by_id,
                 commit=False,
             ),
         )

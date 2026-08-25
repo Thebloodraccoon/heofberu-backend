@@ -64,7 +64,7 @@ class ClassCrudService(
         self._armor = ClassArmorService(db)
         self.subclasses = SubclassCrudService(db)
 
-    async def create_class(self, class_data: ClassCreate, created_by_id: int | None = None) -> ClassResponse:
+    async def create_class(self, class_data: ClassCreate) -> ClassResponse:
         """
         Create a class with only its own scalar fields and directly-owned
         simple child rows, atomically.
@@ -91,7 +91,6 @@ class ClassCrudService(
                 "available_skills",
             }
         )
-        payload["created_by_id"] = created_by_id
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)

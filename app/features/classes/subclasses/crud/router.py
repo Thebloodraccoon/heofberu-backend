@@ -94,7 +94,7 @@ async def create_subclass(
     with the subclass.
     """
 
-    return await class_service.create_subclass(class_id, data, created_by_id=current_user.id)
+    return await class_service.create_subclass(class_id, data)
 
 
 @router.patch(

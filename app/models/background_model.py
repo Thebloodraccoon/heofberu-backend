@@ -1,6 +1,6 @@
 """ORM model for the reference table of character backgrounds."""
 
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.background_association_models import background_skills
@@ -25,8 +25,6 @@ class Background(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False, default="")
 
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
     features = relationship(
         "Feature",
         back_populates="background",
@@ -46,7 +44,6 @@ class Background(settings.Base):  # type: ignore
         passive_deletes=True,
     )
     characters = relationship("Character", back_populates="background")
-    created_by = relationship("User")
 
     def __repr__(self):
         return f"<Background(id={self.id}, name='{self.name}')>"

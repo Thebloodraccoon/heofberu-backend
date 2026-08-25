@@ -78,29 +78,25 @@ class NestedFeatureService(NestedCollectionService[Feature, NestedFeatureRespons
         source_type: FeatureSourceType,
         source_id: int,
         item: NestedFeatureCreate,
-        created_by_id: int | None,
         *,
         commit: bool = False,
     ) -> Feature:
         """Create a single source-owned feature row (see ``FeatureCrudService``)."""
 
-        return await self._features.create_feature_for_source(
-            source_type, source_id, item, created_by_id, commit=commit
-        )
+        return await self._features.create_feature_for_source(source_type, source_id, item, commit=commit)
 
     async def create_features_for_source(
         self,
         source_type: FeatureSourceType,
         source_id: int,
         items: list[NestedFeatureCreate] | None,
-        created_by_id: int | None,
         *,
         commit: bool = False,
     ) -> list[Feature]:
         """Create several source-owned feature rows (see ``FeatureCrudService``)."""
 
         return await self._features.create_features_for_source(
-            source_type, source_id, items, created_by_id, commit=commit
+            source_type, source_id, items, commit=commit
         )
 
     async def update_feature_for_source(

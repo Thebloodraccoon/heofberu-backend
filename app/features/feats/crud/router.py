@@ -127,7 +127,7 @@ async def create_feat(
     together with the feat in a single transaction.
     """
 
-    return await feat_service.create_feat(data, created_by_id=current_user.id)
+    return await feat_service.create_feat(data)
 
 
 @router.patch(

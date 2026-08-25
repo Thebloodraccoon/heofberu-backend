@@ -29,7 +29,6 @@ def make_background(**overrides) -> Background:
         "bonds_suggestions": "",
         "flaws_suggestions": "",
         "description": "",
-        "created_by_id": None,
         "granted_skills": [],
         "starting_items": [],
     }
@@ -67,7 +66,6 @@ class FakeBackgroundRepository(FakeRepository):
             bonds_suggestions=payload.get("bonds_suggestions", ""),
             flaws_suggestions=payload.get("flaws_suggestions", ""),
             description=payload.get("description", ""),
-            created_by_id=payload.get("created_by_id"),
             granted_skills=[],
             starting_items=[],
         )
@@ -128,8 +126,8 @@ class FakeBackgroundFeaturesService:
         self.list_calls.append(source_id)
         return self.features
 
-    async def create_feature_for_source(self, source_type, source_id, item, created_by_id, *, commit=False):
-        self.create_calls.append((source_type, source_id, item, created_by_id, commit))
+    async def create_feature_for_source(self, source_type, source_id, item, *, commit=False):
+        self.create_calls.append((source_type, source_id, item, commit))
         return SimpleNamespace(id=1, name=item.name, description=item.description, level=item.level)
 
     async def invalidate(self):
@@ -183,12 +181,11 @@ class TestBackgroundCrudService:
     async def test_create_background_without_skills(self):
         service, db = make_crud_service(resolved_skills=None)
 
-        result = await service.create_background(BackgroundCreate(name="Criminal"), created_by_id=3)
+        result = await service.create_background(BackgroundCreate(name="Criminal"))
 
         assert result.id == 1
         assert result.name == "Criminal"
         assert db.commits == 1
-        assert service.repository.created[0].created_by_id == 3
         assert service._skills.resolve_calls == [None]
         assert service._skills.set_calls == []
         assert service._features.list_calls == [1]
@@ -325,11 +322,11 @@ class TestBackgroundFeatureService:
         service, db = make_feature_service(existing_by_id={1: make_background()})
         data = NestedFeatureCreate(name="Steady", description="d")
 
-        result = await service.add_feature(1, data, created_by_id=7)
+        result = await service.add_feature(1, data)
 
         assert result.id == 1
         assert result.name == "Steady"
-        assert service._features.create_calls == [(FeatureSourceType.BACKGROUND, 1, data, 7, False)]
+        assert service._features.create_calls == [(FeatureSourceType.BACKGROUND, 1, data, False)]
         assert service._features.invalidate_calls == 1
         assert db.commits == 1
 

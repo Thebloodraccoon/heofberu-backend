@@ -112,7 +112,7 @@ async def create_race(
     `PUT` calls.
     """
 
-    return await race_service.create_race(data, created_by_id=current_user.id)
+    return await race_service.create_race(data)
 
 
 @router.patch(

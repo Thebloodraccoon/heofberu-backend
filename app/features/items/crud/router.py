@@ -129,7 +129,7 @@ async def create_item(
 ):
     """Create a new item. **GM only.**"""
 
-    return await item_service.create_item(data, created_by_id=current_user.id)
+    return await item_service.create_item(data)
 
 
 @router.patch(

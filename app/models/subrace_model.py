@@ -22,8 +22,6 @@ class Subrace(settings.Base):  # type: ignore
     name = Column(String(100), nullable=False, index=True)
     description = Column(Text, nullable=False, default="")
 
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
     __table_args__ = (UniqueConstraint("race_id", "name", name="uq_subrace_race_id_name"),)
 
     race = relationship("Race", back_populates="subraces")
@@ -39,7 +37,6 @@ class Subrace(settings.Base):  # type: ignore
         passive_deletes=True,
         order_by="Feature.id",
     )
-    created_by = relationship("User")
 
     def __repr__(self):
         return f"<Subrace(id={self.id}, name='{self.name}', race_id={self.race_id})>"
