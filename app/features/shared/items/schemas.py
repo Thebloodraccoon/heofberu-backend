@@ -35,6 +35,7 @@ class SourceItemsUpdate(BaseModel):
     @field_validator("items")
     def validate_unique_item_ids(cls, items):
         """Reject lists containing duplicate item IDs."""
+
         return _validate_unique_item_ids(items)
 
 

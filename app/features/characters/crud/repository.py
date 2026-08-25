@@ -24,8 +24,7 @@ class CharacterRepository(BaseRepository[Character]):
       - ``get_all_by_owner(owner_id)``  ->  base ``get_all`` with the
         ``owner_id`` filter (method deleted, single call site updated).
       - ``create(data, owner_id)``  ->  the service injects ``owner_id``
-        into the payload before calling the base ``create``, mirroring how
-        ``created_by_id`` is injected for races/classes/backgrounds.
+        into the payload before calling the base ``create``.
 
     Eager-loads every relationship ``CharacterResponse`` always
     serializes, via ``default_load_options`` — this prevents the N+1 the

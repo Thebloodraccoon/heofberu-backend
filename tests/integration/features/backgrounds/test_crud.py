@@ -40,7 +40,8 @@ class TestBackgroundCrud:
         skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
 
         response = await client.put(
-            f"/backgrounds/{background.id}/skills",
+            "/backgrounds/skills",
+            params={"background_id": background.id},
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -60,16 +61,17 @@ class TestBackgroundCrud:
         assert response.status_code == 201
         background_id = response.json()["id"]
 
-        assert (await client.get(f"/backgrounds/{background_id}/features")).json() == []
+        assert (await client.get("/backgrounds/features", params={"background_id": background_id})).json() == []
 
         added = await client.post(
-            f"/backgrounds/{background_id}/features",
+            "/backgrounds/features",
+            params={"background_id": background_id},
             json={"name": "Shelter of the Faithful", "description": "Free healing and care at a temple."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
 
-        fetched = await client.get(f"/backgrounds/{background_id}/features")
+        fetched = await client.get("/backgrounds/features", params={"background_id": background_id})
         assert fetched.status_code == 200
         assert [item["name"] for item in fetched.json()] == ["Shelter of the Faithful"]
 
@@ -78,7 +80,8 @@ class TestBackgroundCrud:
         censer = await create_item(name="Censer", item_type="ADVENTURING_GEAR")
 
         response = await client.put(
-            f"/backgrounds/{background.id}/items",
+            "/backgrounds/items",
+            params={"background_id": background.id},
             json={"items": [{"item_id": censer.id, "quantity": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -88,7 +91,7 @@ class TestBackgroundCrud:
             (censer.id, 1)
         ]
 
-        fetched = await client.get(f"/backgrounds/{background.id}/items")
+        fetched = await client.get("/backgrounds/items", params={"background_id": background.id})
         assert fetched.status_code == 200
         assert [entry["item"]["name"] for entry in fetched.json()] == ["Censer"]
 
@@ -96,7 +99,8 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         response = await client.put(
-            f"/backgrounds/{background.id}/items",
+            "/backgrounds/items",
+            params={"background_id": background.id},
             json={"items": [{"item_id": 9999, "quantity": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -107,7 +111,8 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         response = await client.put(
-            f"/backgrounds/{background.id}/items",
+            "/backgrounds/items",
+            params={"background_id": background.id},
             json={"items": []},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -152,7 +157,8 @@ class TestBackgroundCrud:
 
         # Feature grants are a GM-panel write.
         add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/features",
+            "/characters/gm-panel/features",
+            params={"character_id": character.id},
             json={"feature_id": shelter.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -169,7 +175,8 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         response = await client.post(
-            f"/backgrounds/{background.id}/features",
+            "/backgrounds/features",
+            params={"background_id": background.id},
             json={"name": "Shelter of the Faithful"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -180,7 +187,8 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         added = await client.post(
-            f"/backgrounds/{background.id}/features",
+            "/backgrounds/features",
+            params={"background_id": background.id},
             json={"name": "Shelter of the Faithful", "description": "Free healing at a temple."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -189,7 +197,8 @@ class TestBackgroundCrud:
         assert feature["name"] == "Shelter of the Faithful"
 
         updated = await client.patch(
-            f"/backgrounds/{background.id}/features/{feature['id']}",
+            "/backgrounds/features",
+            params={"background_id": background.id, "feature_id": feature["id"]},
             json={"description": "Free healing and care at a shrine."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -199,11 +208,12 @@ class TestBackgroundCrud:
         assert updated_feature["description"] == "Free healing and care at a shrine."
 
         removed = await client.delete(
-            f"/backgrounds/{background.id}/features/{feature['id']}",
+            "/backgrounds/features",
+            params={"background_id": background.id, "feature_id": feature["id"]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get(f"/backgrounds/{background.id}/features")
+        fetched = await client.get("/backgrounds/features", params={"background_id": background.id})
         assert fetched.json() == []
 
     async def test_update_background_feature_of_another_source_returns_400(
@@ -213,7 +223,8 @@ class TestBackgroundCrud:
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
         response = await client.patch(
-            f"/backgrounds/{background.id}/features/{foreign.id}",
+            "/backgrounds/features",
+            params={"background_id": background.id, "feature_id": foreign.id},
             json={"name": "Renamed"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -227,7 +238,8 @@ class TestBackgroundCrud:
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
         response = await client.delete(
-            f"/backgrounds/{background.id}/features/{foreign.id}",
+            "/backgrounds/features",
+            params={"background_id": background.id, "feature_id": foreign.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -236,21 +248,24 @@ class TestBackgroundCrud:
     async def test_background_feature_endpoints_return_404(self, client, gm_token):
         assert (
             await client.post(
-                "/backgrounds/9999/features",
+                "/backgrounds/features",
+                params={"background_id": 9999},
                 json={"name": "Shelter of the Faithful"},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).status_code == 404
         assert (
             await client.patch(
-                "/backgrounds/9999/features/1",
+                "/backgrounds/features",
+                params={"background_id": 9999, "feature_id": 1},
                 json={"name": "Renamed"},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).status_code == 404
         assert (
             await client.delete(
-                "/backgrounds/9999/features/1",
+                "/backgrounds/features",
+                params={"background_id": 9999, "feature_id": 1},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).status_code == 404

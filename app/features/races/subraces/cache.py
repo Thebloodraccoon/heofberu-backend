@@ -7,6 +7,7 @@ SUBRACE_CACHE_NAMESPACES = ("races", "nested_features")
 
 async def invalidate_subrace_cache() -> None:
     """
+
     Purge every cache namespace a subrace read can hit.
 
     ``GET /races`` and ``GET /races/{id}`` (``races``, which also embeds
@@ -17,5 +18,6 @@ async def invalidate_subrace_cache() -> None:
     (crud/features/ability_bonuses) share a single invalidation point
     instead of each re-declaring the namespace tuple.
     """
+
     for namespace in SUBRACE_CACHE_NAMESPACES:
         await invalidate(namespace)

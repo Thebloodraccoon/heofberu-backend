@@ -1,37 +1,45 @@
-"""Subrace ability-bonus endpoints: full replacement of a subrace's bonuses."""
+"""
+Subrace ability-bonus endpoints: full replacement of a subrace's bonuses
+(query-style IDs).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
 
-from app.core.security.dependencies import GmUserDep
+from fastapi import APIRouter, Body, Query
+
 from app.features.races.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceResponse
 from app.features.races.subraces.dependencies import SubraceAbilityBonusesDep
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
 
 @router.put(
-    "/{subrace_id}/ability-bonuses",
+    "/ability-bonuses",
     response_model=SubraceResponse,
     summary="Replace a subrace's ability bonuses",
     responses={404: {"description": "No subrace exists with the given ID under this race."}},
 )
 async def set_ability_bonuses(
-    race_id: int,
-    subrace_id: int,
+    race_id: Annotated[int, Query(gt=0)],
+    subrace_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SubraceAbilityBonusesUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with one bonus",
+                    "value": {"ability_bonuses": [{"ability": "WIS", "bonus": 1}]},
+                },
+                "clear": {
+                    "summary": "Clear all bonuses",
+                    "value": {"ability_bonuses": []},
+                },
+            },
+        ),
+    ],
     race_service: SubraceAbilityBonusesDep,
     _: GmUserDep,
-    data: SubraceAbilityBonusesUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with one bonus",
-                "value": {"ability_bonuses": [{"ability": "WIS", "bonus": 1}]},
-            },
-            "clear": {
-                "summary": "Clear all bonuses",
-                "value": {"ability_bonuses": []},
-            },
-        },
-    ),
 ):
     """
     Replace all ability score bonuses for a subrace. **GM only.**

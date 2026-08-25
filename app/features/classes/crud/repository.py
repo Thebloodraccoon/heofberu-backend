@@ -12,6 +12,7 @@ from app.models import (
     ClassPrimaryAbility,
     ClassSavingThrow,
     ClassSpellSlotProgression,
+    ClassWeaponProficiency,
     SourceItem,
 )
 from app.models.feature_model import Feature
@@ -36,6 +37,7 @@ class ClassRepository(BaseRepository[Class]):
                 selectinload(Class.primary_abilities),
                 selectinload(Class.saving_throws),
                 selectinload(Class.armor_proficiencies),
+                selectinload(Class.weapon_proficiencies),
                 selectinload(Class.starting_items).selectinload(SourceItem.item),
                 selectinload(Class.spell_slot_progression),
                 selectinload(Class.subclasses),
@@ -47,6 +49,7 @@ class ClassRepository(BaseRepository[Class]):
 
     async def is_in_use(self, class_id: int) -> bool:
         """
+
         Check whether the class is currently assigned to any character
         (characters.class_id), which would block deletion at the DB level
         via ON DELETE RESTRICT.
@@ -149,6 +152,25 @@ class ClassRepository(BaseRepository[Class]):
             character_class,
             "class_id",
             [{"armor_type": armor_type} for armor_type in armor_types],
+            commit=commit,
+        )
+
+        return character_class
+
+    async def set_weapon_proficiencies(
+        self, character_class: Class, weapon_categories: list[str], *, commit: bool = True
+    ) -> Class:
+        """
+        Replace all weapon proficiencies for a class with the given list.
+
+        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        """
+
+        await self.replace_child_rows(
+            ClassWeaponProficiency,
+            character_class,
+            "class_id",
+            [{"weapon_category": weapon_category} for weapon_category in weapon_categories],
             commit=commit,
         )
 

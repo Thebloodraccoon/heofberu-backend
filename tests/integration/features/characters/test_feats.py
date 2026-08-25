@@ -12,7 +12,8 @@ class TestCharacterFeats:
         feat = await create_feat(name="Alert")
 
         grant_response = await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -21,7 +22,8 @@ class TestCharacterFeats:
         assert grant_response.json()["feat_id"] == feat.id
 
         list_response = await client.get(
-            f"/characters/{character.id}/feats",
+            "/characters/feats",
+            params={"character_id": character.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert list_response.status_code == 200
@@ -35,13 +37,15 @@ class TestCharacterFeats:
         feat = await create_feat(name="Alert")
 
         await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         response = await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -60,7 +64,8 @@ class TestCharacterFeats:
         )
 
         response = await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -72,7 +77,8 @@ class TestCharacterFeats:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
+            "/feats/ability-score-increases",
+            params={"feat_id": feat.id},
             json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -80,7 +86,8 @@ class TestCharacterFeats:
         asi_id = asi_response.json()["ability_score_increases"][0]["id"]
 
         grant_response = await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id, "ability_score_increase_id": asi_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -94,21 +101,24 @@ class TestCharacterFeats:
         feat = await create_feat(name="Alert")
 
         grant_response = await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_feat_id = grant_response.json()["id"]
 
         response = await client.delete(
-            f"/characters/{character.id}/gm-panel/feats/{character_feat_id}",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id, "feat_id": character_feat_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 204
         assert (
             await client.get(
-                f"/characters/{character.id}/feats",
+                "/characters/feats",
+                params={"character_id": character.id},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json() == []
@@ -121,7 +131,8 @@ class TestCharacterFeats:
         feat = await create_feat(name="Alert")
 
         response = await client.post(
-            f"/characters/{character.id}/gm-panel/feats",
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )

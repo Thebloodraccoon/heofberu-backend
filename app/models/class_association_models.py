@@ -1,8 +1,8 @@
-"""ORM models/tables for class sub-resources: available skills, primary abilities, saving throws, armor proficiencies."""
+"""ORM models/tables for class sub-resources: available skills, primary abilities, saving throws, armor/weapon proficiencies."""
 
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
-from app.models.enums import AbilityScoreType, ArmorProficiencyType
+from app.models.enums import AbilityScoreType, ArmorProficiencyType, WeaponProficiencyType
 from app.settings import settings
 
 # classes <-> skills (skills a class may choose proficiencies from)
@@ -48,3 +48,15 @@ class ClassArmorProficiency(settings.Base):  # type: ignore
 
     def __repr__(self):
         return f"<ClassArmorProficiency(class_id={self.class_id}, armor_type='{self.armor_type}')>"
+
+
+class ClassWeaponProficiency(settings.Base):  # type: ignore
+    """Weapon proficiencies granted by a class, e.g. Fighter -> SIMPLE, MARTIAL."""
+
+    __tablename__ = "class_weapon_proficiencies"
+
+    class_id = Column(Integer, ForeignKey("classes.id", ondelete="CASCADE"), primary_key=True)
+    weapon_category = Column(WeaponProficiencyType, primary_key=True)
+
+    def __repr__(self):
+        return f"<ClassWeaponProficiency(class_id={self.class_id}, weapon_category='{self.weapon_category}')>"

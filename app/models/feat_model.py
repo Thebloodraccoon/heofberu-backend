@@ -35,7 +35,10 @@ class Feat(settings.Base):  # type: ignore
     # prerequisite above; either or both may be set.
     prerequisite_description = Column(Text, nullable=False, default="")
 
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Minimum character level required to take this feat (e.g. level 4+
+    # feats). NULL when the feat has no level requirement; value-range
+    # validation lives in the Pydantic schemas.
+    min_level = Column(Integer, nullable=True)
 
     # Some feats grant an ability score increase as part of their effect
     # (distinct from the ASI a feat is taken in place of). Modeled as
@@ -48,20 +51,6 @@ class Feat(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-
-    # FEAT-source features granted by this feat (e.g. Alert's "can't be
-    # surprised while conscious"). Created nested in the same request as
-    # the feat and automatically granted to any character holding it —
-    # see ``sync_progression_features``.
-    features = relationship(
-        "Feature",
-        back_populates="feat",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        order_by="Feature.id",
-    )
-
-    created_by = relationship("User")
 
     def __repr__(self):
         return f"<Feat(id={self.id}, name='{self.name}')>"

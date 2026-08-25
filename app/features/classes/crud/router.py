@@ -1,9 +1,10 @@
 """Class CRUD endpoints: listing, get, create, update, delete."""
 
-from fastapi import APIRouter, Body, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.classes.dependencies import ClassCrudDep
 from app.features.classes.schemas import (
     ClassCreate,
@@ -12,6 +13,7 @@ from app.features.classes.schemas import (
     ClassResponse,
     ClassUpdate,
 )
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -23,9 +25,12 @@ router = APIRouter()
 )
 async def get_classes(
     class_service: ClassCrudDep,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the class's name.",
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
-    search: str | None = None,
 ):
     """
     Return a paginated list of classes with `id`, `name`, `hit_dice`,
@@ -46,7 +51,7 @@ async def get_classes(
 
 
 @router.get(
-    "/{class_id}",
+    "/{class_id:int}",
     response_model=ClassFullResponse,
     summary="Get a class by ID",
     responses={
@@ -73,7 +78,7 @@ async def get_class(class_id: int, class_service: ClassCrudDep):
 @router.post(
     "",
     response_model=ClassResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a class",
     responses={
         409: {"description": "A class with this name already exists."},
@@ -81,33 +86,36 @@ async def get_class(class_id: int, class_service: ClassCrudDep):
     },
 )
 async def create_class(
+    data: Annotated[
+        ClassCreate,
+        Body(
+            openapi_examples={
+                "fighter": {
+                    "summary": "Non-caster, base fields only",
+                    "value": {
+                        "name": "Fighter",
+                        "hit_dice": "D10",
+                        "spellcasting_ability": None,
+                        "primary_abilities": ["STR"],
+                        "saving_throws": ["STR", "CON"],
+                    },
+                },
+                "wizard": {
+                    "summary": "Full caster, base fields only",
+                    "value": {
+                        "name": "Wizard",
+                        "hit_dice": "D6",
+                        "spellcasting_ability": "INT",
+                        "primary_abilities": ["INT"],
+                        "saving_throws": ["INT", "WIS"],
+                        "available_skills": [3, 7],
+                    },
+                },
+            }
+        ),
+    ],
     class_service: ClassCrudDep,
     current_user: GmUserDep,
-    class_data: ClassCreate = Body(
-        openapi_examples={
-            "fighter": {
-                "summary": "Non-caster, base fields only",
-                "value": {
-                    "name": "Fighter",
-                    "hit_dice": "D10",
-                    "spellcasting_ability": None,
-                    "primary_abilities": ["STR"],
-                    "saving_throws": ["STR", "CON"],
-                },
-            },
-            "wizard": {
-                "summary": "Full caster, base fields only",
-                "value": {
-                    "name": "Wizard",
-                    "hit_dice": "D6",
-                    "spellcasting_ability": "INT",
-                    "primary_abilities": ["INT"],
-                    "saving_throws": ["INT", "WIS"],
-                    "available_skills": [3, 7],
-                },
-            },
-        }
-    ),
 ):
     """
     Create a new class. **GM only.**
@@ -116,9 +124,9 @@ async def create_class(
     `null` for a non-caster class. If non-null, it must also appear in
     `primary_abilities`.
 
-    `primary_abilities`, `saving_throws`, `armor_proficiencies`, and
-    `available_skills` are optional. If provided, they're saved together
-    with the class in a single transaction.
+    `primary_abilities`, `saving_throws`, `armor_proficiencies`,
+    `weapon_proficiencies`, and `available_skills` are optional. If
+    provided, they're saved together with the class in a single transaction.
 
     This endpoint is intentionally minimal: it does NOT accept `features`,
     `subclasses`, `spell_slot_progression`, or `starting_items`. Attach
@@ -129,11 +137,11 @@ async def create_class(
     - `PUT /classes/{class_id}/starting-items`
     """
 
-    return await class_service.create_class(class_data, created_by_id=current_user.id)
+    return await class_service.create_class(data)
 
 
 @router.patch(
-    "/{class_id}",
+    "/{class_id:int}",
     response_model=ClassResponse,
     summary="Update a class's fields",
     responses={
@@ -148,7 +156,32 @@ async def create_class(
         },
     },
 )
-async def update_class(class_id: int, update_data: ClassUpdate, class_service: ClassCrudDep, _: GmUserDep):
+async def update_class(
+    class_id: int,
+    data: Annotated[
+        ClassUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the class and edit its description",
+                    "value": {
+                        "name": "Fighter",
+                        "description": "A master of weapons and armor.",
+                    },
+                },
+                "make-caster": {
+                    "summary": "Set spellcasting ability alongside primary abilities",
+                    "value": {
+                        "primary_abilities": ["STR", "INT"],
+                        "spellcasting_ability": "INT",
+                    },
+                },
+            }
+        ),
+    ],
+    class_service: ClassCrudDep,
+    _: GmUserDep,
+):
     """
     Partially update a class. **GM only.**
 
@@ -166,12 +199,12 @@ async def update_class(class_id: int, update_data: ClassUpdate, class_service: C
     same request to change it alongside `primary_abilities`.
     """
 
-    return await class_service.update_class(class_id, update_data)
+    return await class_service.update_class(class_id, data)
 
 
 @router.delete(
-    "/{class_id}",
-    status_code=204,
+    "/{class_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a class",
     responses={
         404: {"description": "No class exists with the given ID."},
@@ -180,7 +213,7 @@ async def update_class(class_id: int, update_data: ClassUpdate, class_service: C
 )
 async def delete_class(class_id: int, class_service: ClassCrudDep, _: FounderDep):
     """
-    Delete a class. **Found-father only.**
+    Delete a class. **Founder only.**
 
     Also removes its primary abilities, saving throws, and links to
     available skills. Blocked if the class is still assigned to one or

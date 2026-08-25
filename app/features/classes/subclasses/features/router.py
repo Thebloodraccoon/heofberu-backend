@@ -1,52 +1,72 @@
-"""Subclass feature endpoints: per-subclass SUBCLASS-source feature CRUD."""
+"""
+Subclass feature endpoints: per-subclass SUBCLASS-source feature CRUD
+(query-style IDs).
 
-from fastapi import APIRouter, Body
+The router declares no prefix of its own;
+``app.features.classes.router`` applies the ``/classes`` prefix and
+``app.features.classes.subclasses.router`` the static ``/subclasses``
+prefix — combined, ``"/features"`` resolves to
+``/classes/subclasses/features?class_id=...&subclass_id=...``. Both the
+owning class and the subclass are identified by required query
+parameters.
+"""
 
-from app.core.security.dependencies import GmUserDep
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
+
 from app.features.classes.subclasses.dependencies import SubclassFeaturesDep
 from app.features.classes.subclasses.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
 
 @router.get(
-    "/{subclass_id}/features",
+    "/features",
     response_model=list[NestedFeatureResponse],
     summary="List a subclass's features",
     responses={404: {"description": "Class or subclass not found."}},
 )
-async def list_subclass_features(class_id: int, subclass_id: int, class_service: SubclassFeaturesDep):
+async def list_subclass_features(
+    class_id: Annotated[int, Query(gt=0)],
+    subclass_id: Annotated[int, Query(gt=0)],
+    class_service: SubclassFeaturesDep,
+):
     """Return every SUBCLASS-source feature of the subclass. Open endpoint."""
 
     return await class_service.list_features(class_id, subclass_id)
 
 
 @router.post(
-    "/{subclass_id}/features",
+    "/features",
     response_model=NestedFeatureResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Add a feature to a subclass",
     responses={
         404: {"description": "Class or subclass not found."},
     },
 )
 async def add_subclass_feature(
-    class_id: int,
-    subclass_id: int,
-    class_service: SubclassFeaturesDep,
-    _: GmUserDep,
-    data: NestedFeatureCreate = Body(
-        openapi_examples={
-            "improved_critical": {
-                "summary": "Add one subclass feature",
-                "value": {
-                    "name": "Improved Critical",
-                    "level": 3,
-                    "description": "Your weapon attacks score a critical hit on a roll of 19 or 20.",
+    class_id: Annotated[int, Query(gt=0)],
+    subclass_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        NestedFeatureCreate,
+        Body(
+            openapi_examples={
+                "improved_critical": {
+                    "summary": "Add one subclass feature",
+                    "value": {
+                        "name": "Improved Critical",
+                        "level": 3,
+                        "description": "Your weapon attacks score a critical hit on a roll of 19 or 20.",
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    class_service: SubclassFeaturesDep,
+    current_user: GmUserDep,
 ):
     """
     Add one feature to a subclass. **GM only.**
@@ -56,11 +76,11 @@ async def add_subclass_feature(
     the same transaction. Returns the created feature.
     """
 
-    return await class_service.add_feature(class_id, subclass_id, data, created_by_id=_.id)
+    return await class_service.add_feature(class_id, subclass_id, data)
 
 
 @router.patch(
-    "/{subclass_id}/features/{feature_id}",
+    "/features",
     response_model=NestedFeatureResponse,
     summary="Update one feature of a subclass",
     responses={
@@ -69,23 +89,26 @@ async def add_subclass_feature(
     },
 )
 async def update_subclass_feature(
-    class_id: int,
-    subclass_id: int,
-    feature_id: int,
-    class_service: SubclassFeaturesDep,
-    _: GmUserDep,
-    data: FeatureUpdate = Body(
-        openapi_examples={
-            "rename": {
-                "summary": "Edit one feature",
-                "value": {
-                    "name": "Improved Critical (Master)",
-                    "level": 3,
-                    "description": "Your weapon attacks score a critical hit on a roll of 19 or 20.",
+    class_id: Annotated[int, Query(gt=0)],
+    subclass_id: Annotated[int, Query(gt=0)],
+    feature_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        FeatureUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Edit one feature",
+                    "value": {
+                        "name": "Improved Critical (Master)",
+                        "level": 3,
+                        "description": "Your weapon attacks score a critical hit on a roll of 19 or 20.",
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    class_service: SubclassFeaturesDep,
+    _: GmUserDep,
 ):
     """
     Update one feature of a subclass in place. **GM only.**
@@ -101,8 +124,8 @@ async def update_subclass_feature(
 
 
 @router.delete(
-    "/{subclass_id}/features/{feature_id}",
-    status_code=204,
+    "/features",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a feature from a subclass",
     responses={
         400: {"description": "The feature belongs to a different subclass."},
@@ -110,9 +133,9 @@ async def update_subclass_feature(
     },
 )
 async def remove_subclass_feature(
-    class_id: int,
-    subclass_id: int,
-    feature_id: int,
+    class_id: Annotated[int, Query(gt=0)],
+    subclass_id: Annotated[int, Query(gt=0)],
+    feature_id: Annotated[int, Query(gt=0)],
     class_service: SubclassFeaturesDep,
     _: GmUserDep,
 ):

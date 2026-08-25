@@ -1,15 +1,17 @@
 """
 Application exceptions and the standardized error response format.
 
-Defines the ``ErrorResponse`` payload shape plus the auth/access exceptions
-(HTTP-layer) and the feature-agnostic data-layer exceptions that the global
-handlers in ``app/crud/handlers`` map to HTTP responses.
+Defines the ``ErrorResponse`` payload shape and ONE exception regime:
+every application error is a plain :class:`AppError` subclass carrying its
+own ``status_code``/``message`` — services never raise FastAPI's
+``HTTPException``. A single generic handler in ``app/core/handlers``
+maps any ``AppError`` to the standardized JSON envelope; framework-level
+HTTP/Starlette exceptions keep their own handlers.
 """
 
 from datetime import datetime
 from typing import Any
 
-from fastapi import HTTPException
 from starlette import status
 
 
@@ -55,55 +57,69 @@ class ErrorResponse:
         return response
 
 
-class GmAccessException(HTTPException):
+class AppError(Exception):
+    """
+    Base class for every application error (one exception regime).
+
+    Subclasses declare their ``status_code`` (and optionally ``headers``
+    or ``details``) and pass a human-readable message to ``super().__init__``.
+    The generic ``AppError`` handler turns them into the standardized
+    error envelope — feature modules never touch ``fastapi.HTTPException``.
+    """
+
+    status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
+    headers: dict[str, str] | None = None
+
+    def __init__(self, message: str, *, details: Any = None):
+        self.message = message
+        self.details = details
+        super().__init__(message)
+
+
+class GmAccessException(AppError):
     """Raised (403) when a non-GM user tries to access a GM-only endpoint."""
 
+    status_code = status.HTTP_403_FORBIDDEN
+
     def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only game master has access",
-        )
+        super().__init__("Only game master has access")
 
 
-class FoundFatherAccessException(HTTPException):
+class FoundFatherAccessException(AppError):
     """Raised (403) when a non-found-father user tries an action reserved for the found father."""
 
+    status_code = status.HTTP_403_FORBIDDEN
+
     def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the found father has access",
-        )
+        super().__init__("Only the found father has access")
 
 
-class InvalidCredentialsException(HTTPException):
+class InvalidCredentialsException(AppError):
     """Raised (401) when the provided email or password is incorrect."""
 
+    status_code = status.HTTP_401_UNAUTHORIZED
+
     def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
+        super().__init__("Invalid email or password")
 
 
-class InvalidTokenException(HTTPException):
+class InvalidTokenException(AppError):
     """Raised (401) when a token is missing, malformed, expired, or of the wrong type."""
 
+    status_code = status.HTTP_401_UNAUTHORIZED
+
     def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            headers={"WWW-Authenticate": "Bearer"},
-            detail="Could not validate credentials",
-        )
+        super().__init__("Could not validate credentials")
+        self.headers = {"WWW-Authenticate": "Bearer"}
 
 
-class InvalidEmailException(HTTPException):
+class InvalidEmailException(AppError):
     """Raised (400) when a supplied email address fails validation."""
 
+    status_code = status.HTTP_400_BAD_REQUEST
+
     def __init__(self, message: str = "Invalid email address"):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
-        )
+        super().__init__(message)
 
 
 class RecordAlreadyExistsError(Exception):

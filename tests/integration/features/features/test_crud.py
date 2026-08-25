@@ -55,7 +55,6 @@ class TestFeatureCrud:
             ("RACE", "race_id"),
             ("SUBRACE", "subrace_id"),
             ("BACKGROUND", "background_id"),
-            ("FEAT", "feat_id"),
         ],
     )
     async def test_cannot_create_source_owned_feature_directly(
@@ -66,7 +65,6 @@ class TestFeatureCrud:
             "RACE": elf,
             "SUBRACE": await create_subrace(race_id=elf.id),
             "BACKGROUND": await create_background(name="Acolyte"),
-            "FEAT": await create_feat(name="Alert"),
         }
         parent = parent_by_type[source_type]
 
@@ -117,7 +115,7 @@ class TestFeatureCrud:
 
         response = await client.patch(
             f"/features/{feature.id}",
-            json={"source_type": "FEAT"},
+            json={"source_type": "RACE"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -157,7 +155,7 @@ class TestFeatureCrud:
 
         assert response.status_code == 400
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
-        fetched = await client.get(f"/classes/{character_class.id}/features")
+        fetched = await client.get("/classes/features", params={"class_id": character_class.id})
         assert [item["name"] for item in fetched.json()] == ["Extra Attack"]
 
     async def test_cannot_delete_source_owned_feature_via_features_crud(
@@ -170,5 +168,5 @@ class TestFeatureCrud:
 
         assert response.status_code == 400
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
-        fetched = await client.get(f"/races/{race.id}/features")
+        fetched = await client.get("/races/features", params={"race_id": race.id})
         assert [item["name"] for item in fetched.json()] == ["Darkvision"]

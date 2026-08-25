@@ -13,7 +13,8 @@ class TestCharacterSpellSlots:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.get(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -31,7 +32,8 @@ class TestCharacterSpellSlots:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.get(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -47,11 +49,13 @@ class TestCharacterSpellSlots:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         get_response = await client.get(
-            f"/characters/{character['id']}/spell-slots",
+            "/characters/spell-slots",
+            params={"character_id": character["id"]},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         patch_response = await client.patch(
-            f"/characters/{character['id']}/spell-slots",
+            "/characters/spell-slots",
+            params={"character_id": character["id"]},
             json={"level": "LEVEL_1", "used": 1},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -71,7 +75,8 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -87,13 +92,15 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
 
         await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -109,7 +116,8 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -133,14 +141,16 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="Divine Word", school="EVOCATION", level="LEVEL_1")
 
         restriction_response = await client.put(
-            f"/spells/{spell.id}/classes",
+            "/spells/classes",
+            params={"spell_id": spell.id},
             json={"class_ids": [other_class.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert restriction_response.status_code == 200
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -164,14 +174,16 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="School Special", school="EVOCATION", level="LEVEL_1")
 
         restrict_response = await client.put(
-            f"/spells/{spell.id}/subclasses",
+            "/spells/subclasses",
+            params={"spell_id": spell.id},
             json={"subclass_ids": [subclass.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert restrict_response.status_code == 200
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -195,14 +207,16 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="Abjurer Only", school="ABJURATION", level="LEVEL_1")
 
         restrict_response = await client.put(
-            f"/spells/{spell.id}/subclasses",
+            "/spells/subclasses",
+            params={"spell_id": spell.id},
             json={"subclass_ids": [other_subclass.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert restrict_response.status_code == 200
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -228,14 +242,16 @@ class TestCharacterKnownSpells:
         race = await create_race(name="Elf")
         subrace = await create_subrace(race_id=race.id, name="High Elf")
         restrict_response = await client.put(
-            f"/spells/{spell.id}/subraces",
+            "/spells/subraces",
+            params={"spell_id": spell.id},
             json={"subrace_ids": [subrace.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert restrict_response.status_code == 200
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -263,14 +279,16 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="Elven Grace", school="ILLUSION", level="LEVEL_1")
 
         restrict_response = await client.put(
-            f"/spells/{spell.id}/subraces",
+            "/spells/subraces",
+            params={"spell_id": spell.id},
             json={"subrace_ids": [subrace.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert restrict_response.status_code == 200
 
         response = await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -285,13 +303,15 @@ class TestCharacterKnownSpells:
         spell = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
 
         await client.post(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             json={"spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         list_response = await client.get(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert list_response.status_code == 200
@@ -300,13 +320,15 @@ class TestCharacterKnownSpells:
         assert len(body["spell_slots"]) > 0
 
         remove_response = await client.delete(
-            f"/characters/{character['id']}/spells/{spell.id}",
+            "/characters/spells",
+            params={"character_id": character["id"], "spell_id": spell.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert remove_response.status_code == 204
 
         after_response = await client.get(
-            f"/characters/{character['id']}/spells",
+            "/characters/spells",
+            params={"character_id": character["id"]},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert after_response.status_code == 200

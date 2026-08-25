@@ -27,12 +27,12 @@ class FakeFeatureCrudService:
         self.db = db
         self.calls = []
 
-    async def create_feature_for_source(self, source_type, source_id, item, created_by_id, *, commit=False):
-        self.calls.append(("create", source_type, source_id, item, created_by_id, commit))
+    async def create_feature_for_source(self, source_type, source_id, item, *, commit=False):
+        self.calls.append(("create", source_type, source_id, item, commit))
         return SimpleNamespace(id=1, name=item.name, description=item.description, level=item.level)
 
-    async def create_features_for_source(self, source_type, source_id, items, created_by_id, *, commit=False):
-        self.calls.append(("create_many", source_type, source_id, items, created_by_id, commit))
+    async def create_features_for_source(self, source_type, source_id, items, *, commit=False):
+        self.calls.append(("create_many", source_type, source_id, items, commit))
         return [
             SimpleNamespace(id=i, name=item.name, description=item.description, level=item.level)
             for i, item in enumerate((items or []), start=1)
@@ -66,8 +66,8 @@ class FakeNestedFeatures:
         self.list_calls.append((source_type, source_id))
         return []
 
-    async def create_feature_for_source(self, source_type, source_id, item, created_by_id, *, commit=False):
-        self.created.append((source_type, source_id, item, created_by_id, commit))
+    async def create_feature_for_source(self, source_type, source_id, item, *, commit=False):
+        self.created.append((source_type, source_id, item, commit))
         return SimpleNamespace(id=1, name=item.name, description=item.description, level=item.level)
 
     async def update_feature_for_source(self, source_type, source_id, feature_id, fields, *, commit=False):
@@ -122,7 +122,6 @@ class TestNestedFeatureService:
         assert service.fk_for(FeatureSourceType.RACE) == "race_id"
         assert service.fk_for(FeatureSourceType.SUBRACE) == "subrace_id"
         assert service.fk_for(FeatureSourceType.BACKGROUND) == "background_id"
-        assert service.fk_for(FeatureSourceType.FEAT) == "feat_id"
         assert service.fk_for(FeatureSourceType.SUBCLASS) == "subclass_id"
 
     async def test_fk_for_raises_for_unsupported_source(self):
@@ -135,23 +134,19 @@ class TestNestedFeatureService:
         service, _ = make_nested_service()
         data = NestedFeatureCreate(name="Keen Senses", description="d", level=None)
 
-        feature = await service.create_feature_for_source(
-            FeatureSourceType.RACE, 3, data, created_by_id=7, commit=False
-        )
+        feature = await service.create_feature_for_source(FeatureSourceType.RACE, 3, data, commit=False)
 
         assert feature.id == 1
-        assert service._features.calls == [("create", FeatureSourceType.RACE, 3, data, 7, False)]
+        assert service._features.calls == [("create", FeatureSourceType.RACE, 3, data, False)]
 
     async def test_create_features_for_source_delegates_to_feature_crud(self):
         service, _ = make_nested_service()
         data = [NestedFeatureCreate(name="Keen Senses", description="d", level=None)]
 
-        features = await service.create_features_for_source(
-            FeatureSourceType.RACE, 3, data, created_by_id=7, commit=False
-        )
+        features = await service.create_features_for_source(FeatureSourceType.RACE, 3, data, commit=False)
 
         assert [feature.id for feature in features] == [1]
-        assert service._features.calls == [("create_many", FeatureSourceType.RACE, 3, data, 7, False)]
+        assert service._features.calls == [("create_many", FeatureSourceType.RACE, 3, data, False)]
 
     async def test_update_feature_for_source_delegates_to_feature_crud(self):
         service, _ = make_nested_service()
@@ -193,10 +188,10 @@ class TestSourceFeatureMixin:
         service, db = make_race_feature_service(existing_by_id={1: SimpleNamespace(id=1)})
         data = NestedFeatureCreate(name="Fey Ancestry", description="d", level=None)
 
-        result = await service.add_feature(1, data, created_by_id=7)
+        result = await service.add_feature(1, data)
 
         assert result.id == 1
-        assert service._features.created == [(FeatureSourceType.RACE, 1, data, 7, False)]
+        assert service._features.created == [(FeatureSourceType.RACE, 1, data, False)]
         assert service._features.invalidate_calls == 1
         assert db.commits == 1
 

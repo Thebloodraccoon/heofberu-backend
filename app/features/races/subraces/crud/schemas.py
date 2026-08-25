@@ -69,7 +69,6 @@ class SubraceResponse(SubraceBase):
 
     id: int
     race_id: int
-    created_by_id: int | None = None
     ability_bonuses: list[AbilityBonusResponse] = []
 
 

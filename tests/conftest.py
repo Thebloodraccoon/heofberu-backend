@@ -237,7 +237,6 @@ async def create_feature(db_session):
         race_id=None,
         subrace_id=None,
         background_id=None,
-        feat_id=None,
         level=None,
     ):
         feature = Feature(
@@ -248,7 +247,6 @@ async def create_feature(db_session):
             race_id=race_id,
             subrace_id=subrace_id,
             background_id=background_id,
-            feat_id=feat_id,
             level=level,
         )
         db_session.add(feature)

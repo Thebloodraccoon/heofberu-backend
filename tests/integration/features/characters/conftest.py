@@ -13,7 +13,8 @@ async def create_caster_class(client, gm_token, create_class):
         character_class = await create_class(name=name, hit_dice="D6", spellcasting_ability="INT")
         slots = slots or [{"spell_level": "LEVEL_1", "slots": 2}]
         response = await client.put(
-            f"/classes/{character_class.id}/spell-slots/1",
+            "/classes/spell-slots",
+            params={"class_id": character_class.id, "class_level": 1},
             json={"slots": slots},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -46,18 +47,28 @@ async def create_api_character(client, login_as, create_user, create_background,
     ):
         if owner is None:
             owner = await create_user()
-        if background_id is None:
-            background_id = (await create_background()).id
+        # ``background_id=False`` omits the field entirely — a character
+        # with no background (for the late-background setup tests).
+        if background_id is False:
+            background_id = None
+            omit_background = True
+        else:
+            if background_id is None:
+                background_id = (await create_background()).id
+            omit_background = False
         token = await login_as(owner)
+        payload = {
+            "name": name,
+            "class_id": class_id,
+            "race_id": race_id,
+            "background_id": background_id,
+            **kwargs,
+        }
+        if omit_background:
+            del payload["background_id"]
         response = await client.post(
             "/characters",
-            json={
-                "name": name,
-                "class_id": class_id,
-                "race_id": race_id,
-                "background_id": background_id,
-                **kwargs,
-            },
+            json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 201, response.text
@@ -65,7 +76,8 @@ async def create_api_character(client, login_as, create_user, create_background,
 
         if raise_max_level and character["level"] < CHARACTER_MAX_LEVEL:
             raise_response = await client.patch(
-                f"/characters/{character['id']}/gm-panel/max-level",
+                "/characters/gm-panel/max-level",
+                params={"character_id": character["id"]},
                 json={"max_level": CHARACTER_MAX_LEVEL},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )

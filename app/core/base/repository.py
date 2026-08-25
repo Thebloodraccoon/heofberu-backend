@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Generic, Protocol, TypeVar
 
 from sqlalchemy import String, Text, delete, func, inspect, or_, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
@@ -93,14 +93,25 @@ class BaseRepository(Generic[ModelType]):
         return [column.key for column in mapper.columns if isinstance(column.type, String | Text)]
 
     def _apply_filters(self, stmt: Any, filters: dict[str, Any] | None) -> Any:
-        """Apply exact-match, AND'd filters for known, non-``None`` keys in ``filters``."""
+        """Apply exact-match, AND'd filters for known, non-``None`` keys in ``filters``.
+
+        A list/tuple/set value means "any of" — the column must match at
+        least one entry (``IN``). Scalars keep plain equality.
+        """
 
         if not filters:
             return stmt
 
         for field, value in filters.items():
-            if hasattr(self.model, field) and value is not None:
-                stmt = stmt.where(getattr(self.model, field) == value)
+            if not hasattr(self.model, field) or value is None:
+                continue
+            column = getattr(self.model, field)
+            if isinstance(value, list | tuple | set):
+                if len(value) == 0:
+                    continue
+                stmt = stmt.where(column.in_(value))
+            else:
+                stmt = stmt.where(column == value)
 
         return stmt
 
@@ -254,6 +265,23 @@ class BaseRepository(Generic[ModelType]):
             await self.db.rollback()
             raise
 
+    async def commit_or_flush(self, *, commit: bool = True) -> None:
+        """
+        Persist pending changes: commit via the rollback-safe
+        :meth:`_commit_or_rollback` path, or flush when the caller owns the
+        transaction (``commit=False`` inside a ``_atomic()`` block).
+
+        Services doing raw ``setattr`` mutations or bulk executes should end
+        with this instead of hand-rolled ``db.commit()/db.flush()`` — a bare
+        ``commit()`` skips the rollback-on-error guarantee.
+        """
+
+        if commit:
+            async with self._commit_or_rollback():
+                pass
+        else:
+            await self.db.flush()
+
     async def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
         """
         Create a record from ``obj_data`` and return it.
@@ -313,9 +341,10 @@ class BaseRepository(Generic[ModelType]):
 
         If ``check_in_use_on_delete`` was set in ``__init__``, calls
         :meth:`is_in_use` first and raises ``RecordInUseError`` instead of
-        deleting -- plus a ``SQLAlchemyError`` safety net around the actual
+        deleting -- plus an ``IntegrityError`` safety net around the actual
         delete, in case of a race between the check and the delete
-        (relevant when the guarded FK is ``ON DELETE RESTRICT``).
+        (relevant when the guarded FK is ``ON DELETE RESTRICT``). Other
+        database errors propagate untouched.
         """
 
         if self._check_in_use_on_delete and await self.is_in_use(db_obj.id):
@@ -324,7 +353,10 @@ class BaseRepository(Generic[ModelType]):
         try:
             async with self._commit_or_rollback():
                 await self.db.delete(db_obj)
-        except SQLAlchemyError:
+        except IntegrityError:
+            # A RESTRICT-guarded FK tripped between the is_in_use check and
+            # the delete. Any OTHER SQLAlchemyError (deadlock, connectivity,
+            # ...) must NOT be masked as "in use" — let it propagate.
             raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
 
         return True
@@ -405,10 +437,7 @@ class BaseRepository(Generic[ModelType]):
         """
 
         parent_column = getattr(association, "c", None)
-        if parent_column is not None:
-            parent_column = parent_column[parent_fk]
-        else:
-            parent_column = getattr(association, parent_fk)
+        parent_column = parent_column[parent_fk] if parent_column is not None else getattr(association, parent_fk)
 
         await self.db.execute(delete(association).where(parent_column == parent.id))
 

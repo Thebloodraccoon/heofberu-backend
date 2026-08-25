@@ -40,10 +40,11 @@ from app.models.feature_model import Feature
 
 class NestedFeatureService(NestedCollectionService[Feature, NestedFeatureResponse]):
     """
+
     Per-source feature reads and writes behind the ``nested_features`` cache
     namespace.
 
-    The parent catalog services (race/subrace/class/background/feat) and
+    The parent catalog services (race/subrace/class/background) and
     the class service's subclass feature methods each hold one instance
     (``_features``) and expose it through their own ``add_feature``/
     ``update_feature``/``remove_feature``/``list_features`` methods.
@@ -77,29 +78,25 @@ class NestedFeatureService(NestedCollectionService[Feature, NestedFeatureRespons
         source_type: FeatureSourceType,
         source_id: int,
         item: NestedFeatureCreate,
-        created_by_id: int | None,
         *,
         commit: bool = False,
     ) -> Feature:
         """Create a single source-owned feature row (see ``FeatureCrudService``)."""
 
-        return await self._features.create_feature_for_source(
-            source_type, source_id, item, created_by_id, commit=commit
-        )
+        return await self._features.create_feature_for_source(source_type, source_id, item, commit=commit)
 
     async def create_features_for_source(
         self,
         source_type: FeatureSourceType,
         source_id: int,
         items: list[NestedFeatureCreate] | None,
-        created_by_id: int | None,
         *,
         commit: bool = False,
     ) -> list[Feature]:
         """Create several source-owned feature rows (see ``FeatureCrudService``)."""
 
         return await self._features.create_features_for_source(
-            source_type, source_id, items, created_by_id, commit=commit
+            source_type, source_id, items, commit=commit
         )
 
     async def update_feature_for_source(

@@ -13,23 +13,6 @@ class TestDerivedHitDice:
 
         assert character["hit_dice"] == "D10"
 
-    async def test_hit_dice_updates_on_class_change(
-        self, client, player, player_token, create_class, create_api_character
-    ):
-        fighter = await create_class(name="Fighter", hit_dice="D10")
-        wizard = await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
-        character, token = await create_api_character(class_id=fighter.id, owner=player)
-        assert character["hit_dice"] == "D10"
-
-        response = await client.patch(
-            f"/characters/{character['id']}/progression/class",
-            json={"class_id": wizard.id},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-        assert response.status_code == 200
-        assert response.json()["hit_dice"] == "D6"
-
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -52,23 +35,6 @@ class TestDerivedSpeed:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         assert character["speed"] == 30
-
-    async def test_speed_updates_on_race_change(
-        self, client, player, player_token, create_class, create_race, create_api_character
-    ):
-        character_class = await create_class(name="Fighter")
-        race = await create_race(name="Dwarf", speed=25)
-        character, token = await create_api_character(class_id=character_class.id, owner=player)
-        assert character["speed"] == 30
-
-        response = await client.patch(
-            f"/characters/{character['id']}/progression/race",
-            json={"race_id": race.id},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-        assert response.status_code == 200
-        assert response.json()["speed"] == 25
 
 
 @pytest.mark.integration
@@ -131,7 +97,8 @@ class TestEditableArmorClass:
         armor_id = await self._create_armor(client, gm_token, "Scale Mail", base=14, dex_bonus=True, max_dex_bonus=2)
 
         add_response = await client.post(
-            f"/characters/{character['id']}/gm-panel/items",
+            "/characters/gm-panel/items",
+            params={"character_id": character["id"]},
             json={"item_id": armor_id, "is_equipped": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

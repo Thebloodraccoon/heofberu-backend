@@ -73,7 +73,8 @@ class TestCharacterCreate:
         assert response.status_code == 201
         character_id = response.json()["id"]
         spells_response = await client.get(
-            f"/characters/{character_id}/spells",
+            "/characters/spells",
+            params={"character_id": character_id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         slots = {item["spell_level"]: item for item in spells_response.json()["spell_slots"]}
@@ -348,7 +349,8 @@ class TestCharacterHp:
         character = await create_character(owner_id=player.id, class_id=character_class.id, max_hp=20, current_hp=20)
 
         response = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"delta": -5},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -361,7 +363,8 @@ class TestCharacterHp:
         character = await create_character(owner_id=player.id, class_id=character_class.id, max_hp=20, current_hp=10)
 
         response = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"delta": 50},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -374,7 +377,8 @@ class TestCharacterHp:
         character = await create_character(owner_id=player.id, class_id=character_class.id, max_hp=20, current_hp=20)
 
         response = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"current_hp": 8},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -389,7 +393,8 @@ class TestCharacterHp:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"delta": -5, "current_hp": 10},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -405,7 +410,8 @@ class TestCharacterHp:
         )
 
         response = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"delta": -5},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -423,7 +429,8 @@ class TestCharacterHp:
         )
 
         response = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"delta": -7},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -439,7 +446,8 @@ class TestCharacterHp:
         )
 
         response = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"delta": 4},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -457,7 +465,8 @@ class TestCharacterHp:
         )
 
         lower = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"temp_hp": 4},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -465,7 +474,8 @@ class TestCharacterHp:
         assert lower.json()["temp_hp"] == 6
 
         higher = await client.patch(
-            f"/characters/{character.id}/hp",
+            "/characters/hp",
+            params={"character_id": character.id},
             json={"temp_hp": 9},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -497,7 +507,8 @@ class TestCharacterRest:
         assert character_response.json()["current_hp"] == 6
 
         hp_response = await client.patch(
-            f"/characters/{character_id}/hp",
+            "/characters/hp",
+            params={"character_id": character_id},
             json={"delta": -4},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -505,7 +516,8 @@ class TestCharacterRest:
         assert hp_response.json()["current_hp"] == 2
 
         rest_response = await client.post(
-            f"/characters/{character_id}/rest",
+            "/characters/rest",
+            params={"character_id": character_id},
             json={"type": "long"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -515,7 +527,8 @@ class TestCharacterRest:
         assert body["current_hp"] == 6
 
         spells_response = await client.get(
-            f"/characters/{character_id}/spells",
+            "/characters/spells",
+            params={"character_id": character_id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         slots = {item["spell_level"]: item for item in spells_response.json()["spell_slots"]}
@@ -533,7 +546,8 @@ class TestCharacterRest:
         character_id = response.json()["id"]
 
         rest_response = await client.post(
-            f"/characters/{character_id}/rest",
+            "/characters/rest",
+            params={"character_id": character_id},
             json={"type": "short"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -545,7 +559,8 @@ class TestCharacterRest:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            f"/characters/{character.id}/rest",
+            "/characters/rest",
+            params={"character_id": character.id},
             json={"type": "overnight"},
             headers={"Authorization": f"Bearer {player_token}"},
         )

@@ -17,5 +17,6 @@ async def invalidate_subclass_cache() -> None:
     (crud/features) share a single invalidation point instead of each
     re-declaring the namespace tuple.
     """
+
     for namespace in SUBCLASS_CACHE_NAMESPACES:
         await invalidate(namespace)

@@ -65,7 +65,6 @@ class ItemResponse(ItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_by_id: int | None = None
 
 
 class ItemGetAllResponse(BaseModel):

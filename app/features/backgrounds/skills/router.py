@@ -1,17 +1,22 @@
-"""Background endpoints: granted-skill management."""
+"""
+Background granted-skill endpoints (query-style ID — the background is
+identified by the required ``background_id`` query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
 
-from app.core.security.dependencies import GmUserDep
+from fastapi import APIRouter, Body, Query
+
 from app.features.backgrounds.crud.schemas import BackgroundResponse
 from app.features.backgrounds.dependencies import BackgroundSkillsDep
 from app.features.backgrounds.skills.schemas import SkillsUpdate
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
 
 @router.put(
-    "/{background_id}/skills",
+    "/skills",
     response_model=BackgroundResponse,
     summary="Replace a background's granted skills",
     responses={
@@ -20,21 +25,24 @@ router = APIRouter()
     },
 )
 async def set_background_skills(
-    background_id: int,
+    background_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        SkillsUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two skills",
+                    "value": {"skill_ids": [4, 9]},
+                },
+                "clear": {
+                    "summary": "Clear all granted skills",
+                    "value": {"skill_ids": []},
+                },
+            },
+        ),
+    ],
     background_service: BackgroundSkillsDep,
     _: GmUserDep,
-    data: SkillsUpdate = Body(
-        openapi_examples={
-            "replace": {
-                "summary": "Replace with two skills",
-                "value": {"skill_ids": [4, 9]},
-            },
-            "clear": {
-                "summary": "Clear all granted skills",
-                "value": {"skill_ids": []},
-            },
-        },
-    ),
 ):
     """
     Replace all granted skills for a background. **GM only.**

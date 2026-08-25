@@ -3,7 +3,7 @@
 from fastapi import APIRouter, status
 
 from app.core.cache import flush_all
-from app.core.security.dependencies import FounderDep
+from app.features.users.security import FounderDep
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -19,7 +19,12 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
     ),
 )
 async def flush_cache(_: FounderDep) -> None:
-    """Flush the whole Redis cache. **Found-father only.**"""
+    """
+    Flush the whole Redis cache. Founder only.
+
+    Deletes every entry under the app's cache prefix in one sweep; JWT
+    blacklist keys and other non-app Redis data are left untouched.
+    """
 
     await flush_all()
     return None

@@ -1,51 +1,60 @@
-"""Class feature endpoints: per-feature CRUD for CLASS-source features."""
+"""
+Class feature endpoints: per-feature CRUD for CLASS-source features
+(query-style ID — the class is identified by the required ``class_id``
+query parameter).
+"""
 
-from fastapi import APIRouter, Body
+from typing import Annotated
 
-from app.core.security.dependencies import GmUserDep
+from fastapi import APIRouter, Body, Query, status
+
 from app.features.classes.dependencies import ClassFeaturesDep
 from app.features.shared.features.schemas import FeatureUpdate, NestedFeatureCreate, NestedFeatureResponse
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
 
 @router.get(
-    "/{class_id}/features",
+    "/features",
     response_model=list[NestedFeatureResponse],
     summary="List a class's features",
     responses={404: {"description": "No class exists with the given ID."}},
 )
-async def list_class_features(class_id: int, class_service: ClassFeaturesDep):
+async def list_class_features(class_id: Annotated[int, Query(gt=0)], class_service: ClassFeaturesDep):
     """Return every CLASS-source feature of the class. Open endpoint."""
 
     return await class_service.list_features(class_id)
 
 
 @router.post(
-    "/{class_id}/features",
+    "/features",
     response_model=NestedFeatureResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Add a feature to a class",
     responses={
         404: {"description": "No class exists with the given ID."},
     },
 )
 async def add_class_feature(
-    class_id: int,
-    class_service: ClassFeaturesDep,
-    _: GmUserDep,
-    data: NestedFeatureCreate = Body(
-        openapi_examples={
-            "second_wind": {
-                "summary": "Add one class feature",
-                "value": {
-                    "name": "Second Wind",
-                    "level": 1,
-                    "description": "Regain HP as a bonus action.",
+    class_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        NestedFeatureCreate,
+        Body(
+            openapi_examples={
+                "second_wind": {
+                    "summary": "Add one class feature",
+                    "value": {
+                        "name": "Second Wind",
+                        "level": 1,
+                        "description": "Regain HP as a bonus action.",
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    class_service: ClassFeaturesDep,
+    current_user: GmUserDep,
 ):
     """
     Add one feature to a class. **GM only.**
@@ -55,11 +64,11 @@ async def add_class_feature(
     transaction. Returns the created feature.
     """
 
-    return await class_service.add_feature(class_id, data, created_by_id=_.id)
+    return await class_service.add_feature(class_id, data)
 
 
 @router.patch(
-    "/{class_id}/features/{feature_id}",
+    "/features",
     response_model=NestedFeatureResponse,
     summary="Update one feature of a class",
     responses={
@@ -68,22 +77,25 @@ async def add_class_feature(
     },
 )
 async def update_class_feature(
-    class_id: int,
-    feature_id: int,
-    class_service: ClassFeaturesDep,
-    _: GmUserDep,
-    data: FeatureUpdate = Body(
-        openapi_examples={
-            "rename": {
-                "summary": "Edit one feature",
-                "value": {
-                    "name": "Improved Second Wind",
-                    "level": 1,
-                    "description": "Regain more HP as a bonus action.",
+    class_id: Annotated[int, Query(gt=0)],
+    feature_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        FeatureUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Edit one feature",
+                    "value": {
+                        "name": "Improved Second Wind",
+                        "level": 1,
+                        "description": "Regain more HP as a bonus action.",
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    class_service: ClassFeaturesDep,
+    _: GmUserDep,
 ):
     """
     Update one feature of a class in place. **GM only.**
@@ -99,8 +111,8 @@ async def update_class_feature(
 
 
 @router.delete(
-    "/{class_id}/features/{feature_id}",
-    status_code=204,
+    "/features",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a feature from a class",
     responses={
         400: {"description": "The feature belongs to a different class."},
@@ -108,8 +120,8 @@ async def update_class_feature(
     },
 )
 async def remove_class_feature(
-    class_id: int,
-    feature_id: int,
+    class_id: Annotated[int, Query(gt=0)],
+    feature_id: Annotated[int, Query(gt=0)],
     class_service: ClassFeaturesDep,
     _: GmUserDep,
 ):

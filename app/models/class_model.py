@@ -1,6 +1,6 @@
 """ORM model for the reference table of playable classes."""
 
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, and_
+from sqlalchemy import Column, Integer, String, Text, and_
 from sqlalchemy.orm import relationship
 
 from app.constants import FeatureSourceType
@@ -27,8 +27,6 @@ class Class(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False, default="")
 
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
     primary_abilities = relationship(
         "ClassPrimaryAbility",
         cascade="all, delete-orphan",
@@ -41,6 +39,11 @@ class Class(settings.Base):  # type: ignore
     )
     armor_proficiencies = relationship(
         "ClassArmorProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    weapon_proficiencies = relationship(
+        "ClassWeaponProficiency",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -81,7 +84,6 @@ class Class(settings.Base):  # type: ignore
         passive_deletes=True,
     )
     characters = relationship("Character", back_populates="character_class")
-    created_by = relationship("User")
 
     def __repr__(self):
         return f"<Class(id={self.id}, name='{self.name}')>"

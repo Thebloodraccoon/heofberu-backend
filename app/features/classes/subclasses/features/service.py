@@ -18,6 +18,7 @@ class SubclassFeatureService(
     BaseService[Subclass, SubclassCreate, SubclassUpdate, SubclassResponse, None],
 ):
     """
+
     Everything about a subclass's own features.
 
     ``list_features``/``add_feature``/``update_feature``/``remove_feature``
@@ -52,9 +53,9 @@ class SubclassFeatureService(
         class_id: int,
         subclass_id: int,
         data: NestedFeatureCreate,
-        created_by_id: int | None = None,
     ) -> NestedFeatureResponse:
         """
+
         Add one SUBCLASS-source feature to a subclass.
 
         Creates a new feature owned by the subclass, then reconciles the
@@ -70,7 +71,6 @@ class SubclassFeatureService(
                 FeatureSourceType.SUBCLASS,
                 subclass.id,
                 data,
-                created_by_id,
                 commit=False,
             ),
         )
@@ -83,6 +83,7 @@ class SubclassFeatureService(
         update_data: FeatureUpdate,
     ) -> NestedFeatureResponse:
         """
+
         Update one SUBCLASS-source feature of a subclass in place, keeping its id.
 
         The row keeps its id, so character grants and any player notes on
@@ -106,6 +107,7 @@ class SubclassFeatureService(
 
     async def remove_feature(self, class_id: int, subclass_id: int, feature_id: int) -> None:
         """
+
         Remove one SUBCLASS-source feature from a subclass.
 
         The feature row is deleted, cascading its ``character_features``
@@ -125,6 +127,7 @@ class SubclassFeatureService(
 
     async def _mutate_feature(self, subclass: Subclass, mutate) -> NestedFeatureResponse | None:
         """
+
         Run ``mutate`` + character reconciliation in one transaction.
 
         Mirrors ``SourceFeatureMixin._mutate_feature`` (see

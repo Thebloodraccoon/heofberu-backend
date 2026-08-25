@@ -1,9 +1,10 @@
 """Background endpoints: listing, get-by-id, create, update, delete."""
 
-from fastapi import APIRouter, Body, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.backgrounds.crud.schemas import (
     BackgroundCreate,
     BackgroundFullResponse,
@@ -12,6 +13,7 @@ from app.features.backgrounds.crud.schemas import (
     BackgroundUpdate,
 )
 from app.features.backgrounds.dependencies import BackgroundCrudDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -23,9 +25,12 @@ router = APIRouter()
 )
 async def get_backgrounds(
     background_service: BackgroundCrudDep,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the background's name.",
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
-    search: str | None = None,
 ):
     """
     Return a paginated list of backgrounds with only `id`, `name`, and
@@ -47,7 +52,7 @@ async def get_backgrounds(
 
 
 @router.get(
-    "/{background_id}",
+    "/{background_id:int}",
     response_model=BackgroundFullResponse,
     summary="Get a background by ID",
     responses={
@@ -72,7 +77,7 @@ async def get_background(background_id: int, background_service: BackgroundCrudD
 @router.post(
     "",
     response_model=BackgroundResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a background",
     responses={
         409: {"description": "A background with this name already exists."},
@@ -80,28 +85,31 @@ async def get_background(background_id: int, background_service: BackgroundCrudD
     },
 )
 async def create_background(
-    background_service: BackgroundCrudDep,
-    current_user: GmUserDep,
-    background_data: BackgroundCreate = Body(
-        openapi_examples={
-            "minimal": {
-                "summary": "Minimal — base fields only",
-                "value": {"name": "Acolyte"},
-            },
-            "with_skills": {
-                "summary": "With granted skills",
-                "value": {
-                    "name": "Acolyte",
-                    "personality_traits_suggestions": "I idolize a particular hero of my faith.\nI can find common ground between the fiercest enemies.",
-                    "ideals_suggestions": "Tradition. The ancient traditions of worship and sacrifice must be preserved.",
-                    "bonds_suggestions": "I would die to recover an ancient relic of my faith.",
-                    "flaws_suggestions": "I judge others harshly, and myself even more severely.",
-                    "description": "You have spent your life in the service of a temple.",
-                    "granted_skills": [4, 9],
+    data: Annotated[
+        BackgroundCreate,
+        Body(
+            openapi_examples={
+                "minimal": {
+                    "summary": "Minimal — base fields only",
+                    "value": {"name": "Acolyte"},
+                },
+                "with_skills": {
+                    "summary": "With granted skills",
+                    "value": {
+                        "name": "Acolyte",
+                        "personality_traits_suggestions": "I idolize a particular hero of my faith.\nI can find common ground between the fiercest enemies.",
+                        "ideals_suggestions": "Tradition. The ancient traditions of worship and sacrifice must be preserved.",
+                        "bonds_suggestions": "I would die to recover an ancient relic of my faith.",
+                        "flaws_suggestions": "I judge others harshly, and myself even more severely.",
+                        "description": "You have spent your life in the service of a temple.",
+                        "granted_skills": [4, 9],
+                    },
                 },
             },
-        },
-    ),
+        ),
+    ],
+    background_service: BackgroundCrudDep,
+    current_user: GmUserDep,
 ):
     """
     Create a new background. **GM only.**
@@ -116,11 +124,11 @@ async def create_background(
     - `PUT /backgrounds/{background_id}/items`
     """
 
-    return await background_service.create_background(background_data, created_by_id=current_user.id)
+    return await background_service.create_background(data)
 
 
 @router.patch(
-    "/{background_id}",
+    "/{background_id:int}",
     response_model=BackgroundResponse,
     summary="Update a background's base fields",
     responses={
@@ -129,7 +137,23 @@ async def create_background(
     },
 )
 async def update_background(
-    background_id: int, update_data: BackgroundUpdate, background_service: BackgroundCrudDep, _: GmUserDep
+    background_id: int,
+    data: Annotated[
+        BackgroundUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the background and edit its description",
+                    "value": {
+                        "name": "Acolyte of the Dawn",
+                        "description": "You have spent your life in the service of a temple of the Dawnfather.",
+                    },
+                },
+            }
+        ),
+    ],
+    background_service: BackgroundCrudDep,
+    _: GmUserDep,
 ):
     """
     Partially update a background's base fields. **GM only.**
@@ -138,12 +162,13 @@ async def update_background(
     are left as-is. Does not touch granted skills — use
     `PUT /backgrounds/{background_id}/skills` for that.
     """
-    return await background_service.update(background_id, update_data)
+
+    return await background_service.update(background_id, data)
 
 
 @router.delete(
-    "/{background_id}",
-    status_code=204,
+    "/{background_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a background",
     responses={
         404: {"description": "No background exists with the given ID."},
@@ -151,7 +176,7 @@ async def update_background(
 )
 async def delete_background(background_id: int, background_service: BackgroundCrudDep, _: FounderDep):
     """
-    Delete a background. **Found-father only.**
+    Delete a background. **Founder only.**
 
     Also removes its links to granted skills and its features (cascade).
     Characters currently using this background have their `background_id`

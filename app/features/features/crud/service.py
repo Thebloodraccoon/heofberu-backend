@@ -131,7 +131,6 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         source_type: FeatureSourceType,
         source_id: int,
         items: list[NestedFeatureCreate] | None,
-        created_by_id: int | None,
         *,
         commit: bool = False,
     ) -> list[Feature]:
@@ -148,7 +147,6 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
                 ...).
             source_id: ID of the owning record.
             items: Nested feature payloads. ``None`` or empty returns ``[]``.
-            created_by_id: Optional GM id stored on each created feature.
             commit: Pass ``False`` when called from within the caller's
                 ``_atomic()`` block so rows share the parent transaction.
 
@@ -167,7 +165,6 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
                     source_type,
                     source_id,
                     item,
-                    created_by_id,
                     commit=commit,
                 )
             )
@@ -179,7 +176,6 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         source_type: FeatureSourceType,
         source_id: int,
         item: NestedFeatureCreate,
-        created_by_id: int | None,
         *,
         commit: bool = False,
     ) -> Feature:
@@ -193,7 +189,6 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             source_type: Which source the feature belongs to.
             source_id: ID of the owning record.
             item: The feature payload (name/description/level).
-            created_by_id: Optional GM id stored on the created feature.
             commit: Pass ``False`` when called from within the caller's
                 ``_atomic()`` block.
 
@@ -256,11 +251,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         for field, value in fields.items():
             setattr(feature, field, value)
 
-        if commit:
-            await self.repository.db.commit()
-        else:
-            await self.repository.db.flush()
-
+        await self.repository.commit_or_flush(commit=commit)
         return feature
 
     async def delete_feature_for_source(
@@ -293,11 +284,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
 
         await _get_source_feature(self.repository.db, source_type, source_id, feature_id)
         await self.repository.db.execute(delete(Feature).where(Feature.id == feature_id))
-
-        if commit:
-            await self.repository.db.commit()
-        else:
-            await self.repository.db.flush()
+        await self.repository.commit_or_flush(commit=commit)
 
     async def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
         """

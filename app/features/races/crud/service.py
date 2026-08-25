@@ -62,13 +62,9 @@ class RaceCrudService(
         self._ability_bonuses = RaceAbilityBonusService(db)
         self._nested_features = NestedFeatureService(db)
 
-    async def create_race(self, race_data: RaceCreate, created_by_id: int | None = None) -> RaceResponse:
+    async def create_race(self, race_data: RaceCreate) -> RaceResponse:
         """
         Create a race after checking its name isn't already taken.
-
-        ``created_by_id`` identifies the GM who created it (relevant mainly
-        for homebrew races) and is not part of ``RaceCreate`` itself, since
-        it comes from the authenticated user, not client input.
 
         ``race_data.ability_bonuses`` / ``race_data.granted_skills`` /
         ``race_data.features`` are optional. If supplied, they're set in the
@@ -87,7 +83,6 @@ class RaceCrudService(
         skills = await self._skills.resolve_skills(race_data.granted_skills)
 
         payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills", "features"})
-        payload["created_by_id"] = created_by_id
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)
@@ -103,7 +98,6 @@ class RaceCrudService(
                 FeatureSourceType.RACE,
                 item.id,
                 race_data.features,
-                created_by_id,
                 commit=False,
             )
 

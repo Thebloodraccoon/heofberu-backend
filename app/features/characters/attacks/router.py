@@ -1,16 +1,27 @@
-"""Character attack endpoints: listing and CRUD."""
+"""
+Character attack endpoints: listing and CRUD (query-style IDs).
 
-from fastapi import APIRouter, status
+The router declares no prefix of its own;
+``app.features.characters.router`` applies the ``/characters`` prefix —
+combined, ``"/attacks"`` resolves to
+``/characters/attacks?character_id=...``. The character is identified by
+the required ``character_id`` query parameter; per-attack operations
+additionally take the ``attack_id`` query parameter.
+"""
 
-from app.core.security.dependencies import CurrentUserDep
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
+
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.dependencies import CharacterAttackServiceDep
+from app.features.users.security import CurrentUserDep
 
-router = APIRouter(tags=["Characters Attacks"])
+router = APIRouter()
 
 
 @router.get(
-    "/{character_id}/attacks",
+    "/attacks",
     response_model=list[AttackResponse],
     summary="List a character's attacks",
     responses={
@@ -19,7 +30,9 @@ router = APIRouter(tags=["Characters Attacks"])
     },
 )
 async def get_character_attacks(
-    character_id: int, attack_service: CharacterAttackServiceDep, current_user: CurrentUserDep
+    character_id: Annotated[int, Query(gt=0)],
+    attack_service: CharacterAttackServiceDep,
+    current_user: CurrentUserDep,
 ):
     """List all attacks belonging to a character."""
 
@@ -27,9 +40,9 @@ async def get_character_attacks(
 
 
 @router.post(
-    "/{character_id}/attacks",
+    "/attacks",
     response_model=AttackResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Add an attack to a character",
     responses={
         403: {"description": "You do not have access to this character."},
@@ -37,8 +50,42 @@ async def get_character_attacks(
     },
 )
 async def create_character_attack(
-    character_id: int,
-    data: AttackCreate,
+    character_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        AttackCreate,
+        Body(
+            openapi_examples={
+                "melee": {
+                    "summary": "A melee longsword attack",
+                    "value": {
+                        "name": "Longsword",
+                        "attack_type": "MELEE_ATTACK",
+                        "ability": "STR",
+                        "is_proficient": True,
+                        "damage_dice_count": 1,
+                        "damage_dice_type": "D8",
+                        "damage_type": "SLASHING",
+                        "bonus_attack": 1,
+                        "bonus_damage": 2,
+                        "range": "5 ft.",
+                    },
+                },
+                "ranged": {
+                    "summary": "A ranged shortbow attack with notes",
+                    "value": {
+                        "name": "Shortbow",
+                        "attack_type": "RANGED_ATTACK",
+                        "ability": "DEX",
+                        "damage_dice_count": 1,
+                        "damage_dice_type": "D6",
+                        "damage_type": "PIERCING",
+                        "range": "80/320 ft.",
+                        "notes": "Ammunition: 20 arrows.",
+                    },
+                },
+            }
+        ),
+    ],
     attack_service: CharacterAttackServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -48,7 +95,7 @@ async def create_character_attack(
 
 
 @router.patch(
-    "/{character_id}/attacks/{attack_id}",
+    "/attacks",
     response_model=AttackResponse,
     summary="Update an attack",
     responses={
@@ -57,9 +104,23 @@ async def create_character_attack(
     },
 )
 async def update_character_attack(
-    character_id: int,
-    attack_id: int,
-    data: AttackUpdate,
+    character_id: Annotated[int, Query(gt=0)],
+    attack_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        AttackUpdate,
+        Body(
+            openapi_examples={
+                "update": {
+                    "summary": "Switch the attack to DEX and bump its damage bonus",
+                    "value": {"ability": "DEX", "bonus_damage": 3},
+                },
+                "rename-and-note": {
+                    "summary": "Rename the weapon and record a note",
+                    "value": {"name": "Flame-tongued Longsword", "notes": "Deals an extra 1d6 fire when activated."},
+                },
+            }
+        ),
+    ],
     attack_service: CharacterAttackServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -74,7 +135,7 @@ async def update_character_attack(
 
 
 @router.delete(
-    "/{character_id}/attacks/{attack_id}",
+    "/attacks",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an attack",
     responses={
@@ -83,8 +144,8 @@ async def update_character_attack(
     },
 )
 async def delete_character_attack(
-    character_id: int,
-    attack_id: int,
+    character_id: Annotated[int, Query(gt=0)],
+    attack_id: Annotated[int, Query(gt=0)],
     attack_service: CharacterAttackServiceDep,
     current_user: CurrentUserDep,
 ):

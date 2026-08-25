@@ -21,6 +21,7 @@ class ClassSkillService(
     BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None],
 ):
     """
+
     Everything about the skills a class may choose proficiencies from.
 
     Full replacement comes from :class:`SkillsManagerMixin` (pinned to the
@@ -50,6 +51,7 @@ class ClassSkillService(
 
     async def resolve_skills(self, skill_ids: list[int] | None) -> list[Skill] | None:
         """
+
         Resolve ``skill_ids`` to ``Skill`` rows, or ``None`` when absent/empty.
 
         Raises ``RecordIdsInvalidError`` if any id doesn't correspond to an

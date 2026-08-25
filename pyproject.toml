@@ -112,6 +112,7 @@ ignore = [
     "D205",
     "D212",
     "D200",
+    "N818",
 ]
 
 mccabe = { max-complexity = 10 }

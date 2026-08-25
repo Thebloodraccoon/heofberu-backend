@@ -1,6 +1,6 @@
 """ORM model for the reference table of spells."""
 
-from sqlalchemy import ARRAY, Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import ARRAY, Boolean, Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.enums import (
@@ -57,10 +57,6 @@ class Spell(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False)
     higher_levels = Column(Text)
-
-    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    created_by = relationship("User")
 
     available_classes = relationship("Class", secondary=spell_classes)
     available_subclasses = relationship("Subclass", secondary=spell_subclasses)

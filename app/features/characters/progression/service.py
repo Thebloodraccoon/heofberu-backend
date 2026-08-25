@@ -1,23 +1,29 @@
-"""Service for character progression: race/class/subclass/subrace change and leveling up."""
+"""Service for character progression: subclass/subrace/background setup, leveling up, rebuild stub."""
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource
+from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource, FeatureSourceType
+from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.crud.service import CharacterService
+from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.gm_panel.exceptions import CharacterFeatAlreadyKnownException
 from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
 from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
-from app.features.characters.gm_panel.validation import check_feat_prerequisite, validate_ability_score_increase
+from app.features.characters.gm_panel.validation import (
+    check_feat_prerequisite,
+    validate_ability_score_increase,
+    validate_ability_score_increase_cap,
+)
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
+    BackgroundAlreadySetException,
     CharacterAlreadyAtMaxLevelException,
+    CharacterRebuildNotImplementedException,
     InvalidHitPointGainException,
     LevelUpChoiceNotAllowedException,
     LevelUpChoiceRequiredException,
@@ -25,28 +31,35 @@ from app.features.characters.progression.exceptions import (
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.progression.schemas import (
+    BackgroundChange,
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
-    ClassChange,
     LevelUpRequest,
-    RaceChange,
     SubclassChange,
     SubraceChange,
 )
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
+from app.features.classes.exceptions import SubclassNotFoundException
 from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
+from app.features.items.crud.repository import ItemRepository
 from app.features.races.crud.repository import RaceRepository
-from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
+from app.features.races.exceptions import SubraceNotFoundException
 from app.features.users.schemas import UserResponse
+from app.models.character_association_models import CharacterSkillProficiency
+from app.models.character_item_model import CharacterItem
 from app.models.character_model import Character
 
 
 class CharacterProgressionService(CharacterSubDomainService):
     """
-    Character progression: race change, class change, subclass change,
-    subrace change, and leveling up.
+    Character progression: subclass change, subrace change, late background
+    setup, leveling up, and the (stubbed) full rebuild.
+
+    A character's class and race are fixed once chosen: a full swap will be
+    possible only through the point-rebuild endpoint (currently a 501
+    stub). While a slot is still empty, the missing subclass, subrace, or
+    background can still be added afterwards.
 
     Leveling up is the entry point for ability score improvements: an
     ASI level (see ``ASI_LEVELS``) *requires* a ``choice`` in the
@@ -54,12 +67,12 @@ class CharacterProgressionService(CharacterSubDomainService):
     ``character_asi_choices`` for audit and future level-down support.
 
     Source-owned feature grants are kept in sync automatically: every
-    level-up, race change, class change, subclass change, and subrace
-    change reconciles ``character_features`` against the CLASS features
-    of the character's class plus the SUBCLASS features of its subclass,
-    the RACE/SUBRACE features of its race/subrace, its BACKGROUND
-    features, and the FEAT features of every granted feat (see
-    ``sync_progression_features``).
+    level-up, subclass change, subrace change, and background setup
+    reconciles ``character_features`` against the CLASS features of the
+    character's class plus the SUBCLASS features of its subclass, the
+    RACE/SUBRACE features of its race/subrace, its BACKGROUND features,
+    and the FEAT grants themselves (feats grant no features — a feat is
+    de facto its own feature; see ``sync_progression_features``).
 
     Writes are transactional: the level bump, HP gain, ASI/feat grant,
     audit row, feature grants, and spell-slot re-application all happen
@@ -72,85 +85,13 @@ class CharacterProgressionService(CharacterSubDomainService):
         self.character_service = CharacterService(db)
         self.class_repository = ClassRepository(db)
         self.race_repository = RaceRepository(db)
+        self.background_repository = BackgroundRepository(db)
+        self.item_repository = ItemRepository(db)
         self.feat_repository = FeatRepository(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.stats_service = CharacterStatsService(db)
-
-    @asynccontextmanager
-    async def _atomic(self) -> AsyncGenerator[None, None]:
-        """
-        Wrap a set of writes in one transaction: run everything inside a
-        savepoint, then commit on success or roll back (discarding the
-        savepoint) on any exception.
-        """
-
-        db = self.repository.db
-        try:
-            async with db.begin_nested():
-                yield
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
-
-    async def change_race(self, character_id: int, data: RaceChange, current_user: UserResponse) -> None:
-        """
-        Update a character's ``race_id`` (``None`` clears it).
-
-        A subrace that doesn't belong to the new race is cleared along
-        with it (a character can't hold a subrace without a matching
-        race). The new race's features are granted (the old race's
-        auto-granted features revoked) in the same transaction, then the
-        ability score cache is refreshed to re-derive race bonuses.
-        """
-
-        character = await self.get_character_for_user(character_id, current_user)
-        if data.race_id is not None and not await self.race_repository.exists_by_id(data.race_id):
-            raise RaceNotFoundException(race_id=data.race_id)
-
-        async with self._atomic():
-            character.race_id = data.race_id
-
-            if character.subrace_id is not None:
-                if (
-                    data.race_id is None
-                    or await self.race_repository.get_subrace(data.race_id, character.subrace_id) is None
-                ):
-                    character.subrace_id = None
-
-            await sync_progression_features(self.repository.db, character)
-
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
-
-    async def change_class(self, character_id: int, data: ClassChange, current_user: UserResponse) -> None:
-        """
-        Replace a character's class (no multiclassing).
-
-        The current subclass is kept only if it belongs to the new class
-        (otherwise cleared), granted class/subclass features are
-        reconciled to the new class at the current level, and the new
-        class's spell slot progression is re-applied. All of it commits
-        in one transaction.
-        """
-
-        character = await self.get_character_for_user(character_id, current_user)
-        if not await self.class_repository.exists_by_id(data.class_id):
-            raise ClassNotFoundException(class_id=data.class_id)
-
-        async with self._atomic():
-            character.class_id = data.class_id
-
-            if character.subclass_id is not None:
-                if await self.class_repository.get_subclass(data.class_id, character.subclass_id) is None:
-                    character.subclass_id = None
-
-            await sync_progression_features(self.repository.db, character)
-            await self.character_service.reapply_spell_slot_progression(character, commit=False)
-
-        await invalidate_character_cache(character_id)
 
     async def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
         """
@@ -202,6 +143,103 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
+
+    async def set_background(self, character_id: int, data: BackgroundChange, current_user: UserResponse) -> None:
+        """
+        Set a character's background — only while it has none.
+
+        Grants everything a background grants at creation, in one
+        transaction: its features (via ``sync_progression_features``), its
+        granted skills (deduplicated against the proficiencies the
+        character already holds), and its starting equipment (merged into
+        existing stacks). The background is then fixed: re-choosing will
+        only ever be possible through the (future) rebuild endpoint.
+        """
+
+        character = await self.get_character_for_user(character_id, current_user)
+
+        if character.background_id is not None:
+            raise BackgroundAlreadySetException(character_id=character.id, background_id=character.background_id)
+
+        background = await self.background_repository.get_by_id(data.background_id)
+        if background is None:
+            raise BackgroundNotFoundException(background_id=data.background_id)
+
+        async with self._atomic():
+            character.background_id = data.background_id
+
+            await sync_progression_features(self.repository.db, character)
+            await self._grant_background_skills(character, background.granted_skills)
+            await self._grant_background_equipment(character)
+
+        await invalidate_character_cache(character_id)
+
+    async def request_rebuild(self, character_id: int, current_user: UserResponse) -> None:
+        """
+
+        Point-rebuild placeholder.
+
+        A full class/race swap is planned as a single "rebuild" operation
+        that resets every derived choice while keeping the character row.
+        Until it is implemented this raises 501.
+        """
+
+        character = await self.get_character_for_user(character_id, current_user)
+        raise CharacterRebuildNotImplementedException(character_id=character.id)
+
+    async def _grant_background_skills(self, character: Character, granted_skills) -> None:
+        """Add the background's granted skills as proficiency rows, skipping skills the character already has."""
+
+        existing_result = await self.repository.db.execute(
+            select(CharacterSkillProficiency.skill_id).where(CharacterSkillProficiency.character_id == character.id)
+        )
+        existing_ids = {skill_id for (skill_id,) in existing_result.all()}
+
+        for skill in granted_skills:
+            if skill.id not in existing_ids:
+                self.repository.db.add(
+                    CharacterSkillProficiency(
+                        character_id=character.id,
+                        skill_id=skill.id,
+                        is_expertise=False,
+                    )
+                )
+
+        await self.repository.db.flush()
+
+    async def _grant_background_equipment(self, character: Character) -> None:
+        """
+        Grant the background's starting equipment, merging quantities into
+        stacks the character already holds (same aggregation rule as
+        character creation).
+        """
+
+        entries = await self.item_repository.get_source_items_for_sources(
+            [(FeatureSourceType.BACKGROUND, character.background_id)]
+        )
+        if not entries:
+            return
+
+        quantities: dict[int, int] = {}
+        for entry in entries:
+            quantities[entry.item_id] = quantities.get(entry.item_id, 0) + entry.quantity
+
+        existing_result = await self.repository.db.execute(
+            select(CharacterItem).where(
+                CharacterItem.character_id == character.id,
+                CharacterItem.item_id.in_(quantities.keys()),
+            )
+        )
+        existing_items = {row.item_id: row for row in existing_result.scalars().all()}
+
+        for item_id, quantity in quantities.items():
+            stack = existing_items.get(item_id)
+            if stack is not None:
+                stack.quantity += quantity
+            else:
+                self.repository.db.add(CharacterItem(character_id=character.id, item_id=item_id, quantity=quantity))
+
+        await self.repository.db.flush()
 
     async def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
         """
@@ -334,6 +372,9 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         if choice.ability_score_increase_id is not None:
             validate_ability_score_increase(feat, choice.ability_score_increase_id)
+            await validate_ability_score_increase_cap(
+                feat, choice.ability_score_increase_id, character, self.stats_service
+            )
 
         await check_feat_prerequisite(character, feat, self.stats_service)
 
@@ -354,14 +395,18 @@ class CharacterProgressionService(CharacterSubDomainService):
         )
 
     async def _resolve_hp_gain(self, character: Character, requested: int | None) -> int:
-        """Default HP gain is half hit die + 1 + CON modifier; a provided value must fit the die + CON bounds."""
+        """
+        Default HP gain is half hit die + 1 + CON modifier (never less than
+        1 — the 5e minimum of one HP per level); a provided value must fit
+        the die + CON bounds, which are also clamped to at least 1.
+        """
 
         die_sides = await self._class_die_sides(character)
         con_mod = await self._constitution_modifier(character)
         if requested is None:
-            return die_sides // 2 + 1 + con_mod
+            return max(1, die_sides // 2 + 1 + con_mod)
 
-        max_gain = die_sides + con_mod
+        max_gain = max(1, die_sides + con_mod)
         if requested < 1 or requested > max_gain:
             raise InvalidHitPointGainException(minimum=1, maximum=max_gain)
 

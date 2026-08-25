@@ -35,6 +35,6 @@ class TestStandaloneFeatureValidators:
         with pytest.raises(ValidationError, match="created through their parent entities"):
             StandaloneFeatureCreate(name="Extra Attack", source_type="CLASS")
 
-    def test_standalone_create_rejects_source_fk(self):
-        with pytest.raises(ValidationError, match="must not set 'feat_id'"):
+    def test_standalone_create_rejects_removed_feat_fk(self):
+        with pytest.raises(ValidationError, match="feat_id"):
             StandaloneFeatureCreate(name="Bad", source_type="OTHER", feat_id=1)

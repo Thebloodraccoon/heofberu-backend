@@ -1,4 +1,4 @@
-"""Schemas for character progression: race/class/subclass/subrace change and leveling up."""
+"""Schemas for character progression: subclass/subrace/background setup, leveling up, rebuild."""
 
 from typing import Annotated, Literal
 
@@ -10,18 +10,6 @@ from app.constants import AbilityScore, ASILevelChoice
 # (e.g. +2 to one ability, or +1/+1 to two). Individual increments are
 # bounded 1..2 and the total is validated to stay within that budget.
 ASI_TOTAL_BUDGET = 2
-
-
-class RaceChange(BaseModel):
-    """Change a character's race. ``race_id: null`` clears it."""
-
-    race_id: int | None = None
-
-
-class ClassChange(BaseModel):
-    """Change a character's class (full replacement — no multiclassing)."""
-
-    class_id: int
 
 
 class SubclassChange(BaseModel):
@@ -48,6 +36,21 @@ class SubraceChange(BaseModel):
     """
 
     subrace_id: int | None = None
+
+
+class BackgroundChange(BaseModel):
+    """
+
+    Set a character's background — only allowed while the character has
+    none (a background picked at creation can never be swapped).
+
+    Grants everything a background grants at creation: its features (via
+    progression sync), its granted skills (deduplicated against existing
+    proficiencies), and its starting equipment (merged into existing
+    stacks).
+    """
+
+    background_id: int
 
 
 class ASIIncreaseItem(BaseModel):

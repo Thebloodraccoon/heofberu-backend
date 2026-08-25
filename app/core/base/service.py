@@ -15,6 +15,7 @@ from typing import Any, Generic
 
 from pydantic import BaseModel
 from sqlalchemy import inspect
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import TypeVar
 
 from app.core.base.repository import BaseRepository, ModelType
@@ -29,6 +30,26 @@ BeforeUpdateHook = Callable[[ModelType, dict], None]
 
 ItemSchema = TypeVar("ItemSchema", bound=BaseModel)
 ResolvedItem = TypeVar("ResolvedItem")
+
+
+@asynccontextmanager
+async def atomic(db: AsyncSession) -> AsyncGenerator[None, None]:
+    """
+    Wrap a multistep write on ``db`` in a single all-or-nothing transaction.
+
+    Every repository write inside the ``async with`` block MUST pass
+    ``commit=False``. Commits once on success; rolls back and re-raises on
+    any exception. This is the single shared implementation — both
+    ``BaseService._atomic`` and character sub-domain services delegate here.
+    """
+
+    try:
+        async with db.begin_nested():
+            yield
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 class Page(BaseModel, Generic[ItemSchema]):
@@ -257,20 +278,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         See also: ``BaseRepository._commit_or_rollback`` for the single-write
         case — use that (indirectly, via ``commit=True``) when only one
         repository call is involved; use ``_atomic()`` when more than one is.
-
-        Example::
-
-            async with self._atomic():
-                item = await self.repository.create(payload, commit=False)
-                ...
-            await self.repository.db.refresh(item)
         """
 
-        db = self.repository.db
-        try:
-            async with db.begin_nested():
-                yield
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
+        async with atomic(self.repository.db):
+            yield

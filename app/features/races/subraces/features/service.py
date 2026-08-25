@@ -52,7 +52,6 @@ class SubraceFeatureService(
         race_id: int,
         subrace_id: int,
         data: NestedFeatureCreate,
-        created_by_id: int | None = None,
     ) -> NestedFeatureResponse:
         """
         Add one SUBRACE-source feature to a subrace.
@@ -70,7 +69,6 @@ class SubraceFeatureService(
                 FeatureSourceType.SUBRACE,
                 subrace.id,
                 data,
-                created_by_id,
                 commit=False,
             ),
         )

@@ -19,5 +19,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 512M
+          # 4 uvicorn workers + asyncpg/redis pools: 1 CPU / 512M starved the
+          # workers under concurrent load (bcrypt alone costs ~100-300ms CPU).
+          cpus: "2.0"
+          memory: 1G

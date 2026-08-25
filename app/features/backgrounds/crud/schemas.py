@@ -58,7 +58,6 @@ class BackgroundResponse(BackgroundBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_by_id: int | None = None
     granted_skills: list[SkillResponse] = []
     starting_items: list[SourceItemResponse] = []
 

@@ -54,15 +54,9 @@ class BackgroundCrudService(
         self._features = BackgroundFeatureService(db)
         self._skills = BackgroundSkillsService(db)
 
-    async def create_background(
-        self, background_data: BackgroundCreate, created_by_id: int | None = None
-    ) -> BackgroundResponse:
+    async def create_background(self, background_data: BackgroundCreate) -> BackgroundResponse:
         """
         Create a background after checking its name isn't already taken.
-
-        ``created_by_id`` identifies the GM who created it and is not part
-        of ``BackgroundCreate`` itself, since it comes from the
-        authenticated user, not client input.
 
         Kept minimal on purpose: only the background's own scalar fields
         plus ``granted_skills`` (a simple association, not a nested
@@ -78,7 +72,6 @@ class BackgroundCrudService(
         skills = await self._skills.resolve_skills(background_data.granted_skills)
 
         payload = background_data.model_dump(exclude={"granted_skills"})
-        payload["created_by_id"] = created_by_id
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)

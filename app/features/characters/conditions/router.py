@@ -1,21 +1,32 @@
-"""Character condition endpoints: manage active conditions on a character."""
+"""
+Character condition endpoints: manage active conditions on a character
+(query-style IDs).
 
-from fastapi import APIRouter, status
+The router declares no prefix of its own; ``app.features.characters.router``
+applies the ``/characters`` prefix — combined, ``"/conditions"`` resolves
+to ``/characters/conditions?character_id=...``. The character is
+identified by the required ``character_id`` query parameter; per-condition
+operations additionally take the ``condition`` enum as a query parameter.
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.constants import ConditionType
-from app.core.security.dependencies import CurrentUserDep
 from app.features.characters.conditions.schemas import (
     CharacterConditionAdd,
     CharacterConditionResponse,
     CharacterConditionUpdate,
 )
 from app.features.characters.dependencies import CharacterConditionServiceDep
+from app.features.users.security import CurrentUserDep
 
-router = APIRouter(prefix="/{character_id}/conditions", tags=["Character Conditions"])
+router = APIRouter()
 
 
 @router.get(
-    "",
+    "/conditions",
     response_model=list[CharacterConditionResponse],
     summary="List a character's conditions",
     responses={
@@ -24,7 +35,7 @@ router = APIRouter(prefix="/{character_id}/conditions", tags=["Character Conditi
     },
 )
 async def get_character_conditions(
-    character_id: int,
+    character_id: Annotated[int, Query(gt=0)],
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -37,7 +48,7 @@ async def get_character_conditions(
 
 
 @router.post(
-    "",
+    "/conditions",
     response_model=CharacterConditionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Record a condition on a character",
@@ -48,8 +59,26 @@ async def get_character_conditions(
     },
 )
 async def add_character_condition(
-    character_id: int,
-    data: CharacterConditionAdd,
+    character_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        CharacterConditionAdd,
+        Body(
+            openapi_examples={
+                "poisoned": {
+                    "summary": "Poisoned after a spider bite",
+                    "value": {"condition": "POISONED", "source": "Giant spider bite"},
+                },
+                "exhaustion": {
+                    "summary": "Two levels of exhaustion from a forced march",
+                    "value": {
+                        "condition": "EXHAUSTION",
+                        "exhaustion_level": 2,
+                        "source": "Forced march through the pass",
+                    },
+                },
+            }
+        ),
+    ],
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -63,7 +92,7 @@ async def add_character_condition(
 
 
 @router.patch(
-    "/{condition}",
+    "/conditions",
     response_model=CharacterConditionResponse,
     summary="Change a condition's exhaustion level or source",
     responses={
@@ -73,23 +102,37 @@ async def add_character_condition(
     },
 )
 async def update_character_condition(
-    character_id: int,
-    condition: ConditionType,
-    data: CharacterConditionUpdate,
+    character_id: Annotated[int, Query(gt=0)],
+    condition: Annotated[ConditionType, Query()],
+    data: Annotated[
+        CharacterConditionUpdate,
+        Body(
+            openapi_examples={
+                "update": {
+                    "summary": "Raise exhaustion to level 3",
+                    "value": {"exhaustion_level": 3},
+                },
+                "source-only": {
+                    "summary": "Correct the recorded source of the condition",
+                    "value": {"source": "Cursed amulet"},
+                },
+            }
+        ),
+    ],
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):
     """
     Change a condition's ``exhaustion_level`` or ``source``. The
-    condition itself is fixed by the URL path — remove it and re-add if
-    the effect changes.
+    condition itself is fixed by the query parameter — remove it and
+    re-add if the effect changes.
     """
 
     return await character_condition_service.update_condition(character_id, condition, data, current_user)
 
 
 @router.delete(
-    "/{condition}",
+    "/conditions",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a condition from a character",
     responses={
@@ -98,8 +141,8 @@ async def update_character_condition(
     },
 )
 async def remove_character_condition(
-    character_id: int,
-    condition: ConditionType,
+    character_id: Annotated[int, Query(gt=0)],
+    condition: Annotated[ConditionType, Query()],
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):

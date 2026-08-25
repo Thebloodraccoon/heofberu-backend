@@ -1,4 +1,4 @@
-"""Unit tests for character progression schemas (race/class change, ASI/feat choices)."""
+"""Unit tests for character progression schemas (background setup, ASI/feat choices)."""
 
 from pydantic import ValidationError
 import pytest
@@ -6,34 +6,21 @@ import pytest
 from app.features.characters.progression.schemas import (
     ASIChoice,
     ASIIncreaseItem,
+    BackgroundChange,
     CharacterASIChoiceResponse,
-    ClassChange,
     FeatChoice,
     LevelUpRequest,
-    RaceChange,
 )
 
 
 @pytest.mark.unit
-class TestRaceChange:
-    def test_defaults_to_no_race(self):
-        assert RaceChange().race_id is None
+class TestBackgroundChange:
+    def test_accepts_background_id(self):
+        assert BackgroundChange(background_id=5).background_id == 5
 
-    def test_accepts_race_id(self):
-        assert RaceChange(race_id=7).race_id == 7
-
-    def test_accepts_null_race_id(self):
-        assert RaceChange(race_id=None).race_id is None
-
-
-@pytest.mark.unit
-class TestClassChange:
-    def test_accepts_class_id(self):
-        assert ClassChange(class_id=3).class_id == 3
-
-    def test_missing_class_id_is_rejected(self):
+    def test_missing_background_id_is_rejected(self):
         with pytest.raises(ValidationError):
-            ClassChange()
+            BackgroundChange()
 
 
 @pytest.mark.unit

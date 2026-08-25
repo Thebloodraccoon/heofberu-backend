@@ -65,7 +65,7 @@ class TestRaceCrud:
         assert response.status_code == 201
         race_id = response.json()["id"]
 
-        fetched = await client.get(f"/races/{race_id}/features")
+        fetched = await client.get("/races/features", params={"race_id": race_id})
         assert fetched.status_code == 200
         assert [feature["name"] for feature in fetched.json()] == [
             "Darkvision",
@@ -96,7 +96,8 @@ class TestRaceCrud:
         race = await create_race(name="Dragonborn")
 
         response = await client.put(
-            f"/races/{race.id}/ability-bonuses",
+            "/races/ability-bonuses",
+            params={"race_id": race.id},
             json={"ability_bonuses": [{"ability": "STR", "bonus": 2}, {"ability": "CHA", "bonus": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -109,7 +110,8 @@ class TestRaceCrud:
         race = await create_race(name="Blank")
 
         response = await client.put(
-            f"/races/{race.id}/ability-bonuses",
+            "/races/ability-bonuses",
+            params={"race_id": race.id},
             json={"ability_bonuses": []},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -122,7 +124,8 @@ class TestRaceCrud:
         skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
 
         response = await client.put(
-            f"/races/{race.id}/skills",
+            "/races/skills",
+            params={"race_id": race.id},
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -162,7 +165,8 @@ class TestRaceCrud:
         race = await create_race(name="Elf")
 
         response = await client.post(
-            f"/races/{race.id}/features",
+            "/races/features",
+            params={"race_id": race.id},
             json={"name": "Darkvision"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -173,7 +177,8 @@ class TestRaceCrud:
         race = await create_race(name="Elf")
 
         added = await client.post(
-            f"/races/{race.id}/features",
+            "/races/features",
+            params={"race_id": race.id},
             json={"name": "Darkvision", "description": "See in dim light within 60 ft."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -182,7 +187,8 @@ class TestRaceCrud:
         assert feature["name"] == "Darkvision"
 
         updated = await client.patch(
-            f"/races/{race.id}/features/{feature['id']}",
+            "/races/features",
+            params={"race_id": race.id, "feature_id": feature["id"]},
             json={"description": "See in dim light within 120 ft."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -192,11 +198,12 @@ class TestRaceCrud:
         assert updated_feature["description"] == "See in dim light within 120 ft."
 
         removed = await client.delete(
-            f"/races/{race.id}/features/{feature['id']}",
+            "/races/features",
+            params={"race_id": race.id, "feature_id": feature["id"]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get(f"/races/{race.id}/features")
+        fetched = await client.get("/races/features", params={"race_id": race.id})
         assert fetched.json() == []
 
     async def test_update_race_feature_of_another_source_returns_400(
@@ -206,7 +213,8 @@ class TestRaceCrud:
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
         response = await client.patch(
-            f"/races/{race.id}/features/{foreign.id}",
+            "/races/features",
+            params={"race_id": race.id, "feature_id": foreign.id},
             json={"name": "Renamed"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -220,7 +228,8 @@ class TestRaceCrud:
         foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
         response = await client.delete(
-            f"/races/{race.id}/features/{foreign.id}",
+            "/races/features",
+            params={"race_id": race.id, "feature_id": foreign.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -229,21 +238,24 @@ class TestRaceCrud:
     async def test_race_feature_endpoints_return_404(self, client, gm_token):
         assert (
             await client.post(
-                "/races/9999/features",
+                "/races/features",
+                params={"race_id": 9999},
                 json={"name": "Darkvision"},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).status_code == 404
         assert (
             await client.patch(
-                "/races/9999/features/1",
+                "/races/features",
+                params={"race_id": 9999, "feature_id": 1},
                 json={"name": "Renamed"},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).status_code == 404
         assert (
             await client.delete(
-                "/races/9999/features/1",
+                "/races/features",
+                params={"race_id": 9999, "feature_id": 1},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).status_code == 404

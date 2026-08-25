@@ -1,12 +1,14 @@
 """Race CRUD endpoints: paginated listing, get, create, update, delete."""
 
-from fastapi import APIRouter, Body, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.constants import RaceSize
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.races.dependencies import RaceCrudDep
 from app.features.races.schemas import RaceCreate, RaceGetAllResponse, RaceResponse, RaceUpdate
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -18,17 +20,18 @@ router = APIRouter()
 )
 async def get_races(
     race_service: RaceCrudDep,
+    race_size: list[RaceSize] | None = Query(None, description="Any-of match on the race's size (repeat the key: `?race_size=SMALL&race_size=MEDIUM`)."),
+    search: str | None = Query(None, description="Case-insensitive substring match against the race's name."),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
-    race_size: RaceSize | None = None,
-    search: str | None = None,
 ):
     """
     Return a paginated list of races with only `id`, `name`, and `size`.
 
     Open endpoint, no authentication required.
 
-    `race_size` is an exact match (e.g. `race_size=MEDIUM`). `search` is a
+    `race_size` is an any-of match (repeat the key, e.g.
+    `race_size=SMALL&race_size=MEDIUM`). `search` is a
     case-insensitive partial match against the race name; both can be
     combined.
 
@@ -43,7 +46,7 @@ async def get_races(
 
 
 @router.get(
-    "/{race_id}",
+    "/{race_id:int}",
     response_model=RaceResponse,
     summary="Get a race by ID",
     responses={
@@ -64,7 +67,7 @@ async def get_race(race_id: int, race_service: RaceCrudDep):
 @router.post(
     "",
     response_model=RaceResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a race",
     responses={
         409: {"description": "A race with this name already exists."},
@@ -72,30 +75,33 @@ async def get_race(race_id: int, race_service: RaceCrudDep):
     },
 )
 async def create_race(
+    data: Annotated[
+        RaceCreate,
+        Body(
+            openapi_examples={
+                "minimal": {
+                    "summary": "Minimal — base fields only",
+                    "value": {
+                        "name": "Elf",
+                        "size": "MEDIUM",
+                        "speed": 30,
+                    },
+                },
+                "with_bonuses_and_skills": {
+                    "summary": "With ability bonuses and granted skills",
+                    "value": {
+                        "name": "Elf",
+                        "size": "MEDIUM",
+                        "speed": 30,
+                        "ability_bonuses": [{"ability": "DEX", "bonus": 2}],
+                        "granted_skills": [3, 7],
+                    },
+                },
+            },
+        ),
+    ],
     race_service: RaceCrudDep,
     current_user: GmUserDep,
-    race_data: RaceCreate = Body(
-        openapi_examples={
-            "minimal": {
-                "summary": "Minimal — base fields only",
-                "value": {
-                    "name": "Elf",
-                    "size": "MEDIUM",
-                    "speed": 30,
-                },
-            },
-            "with_bonuses_and_skills": {
-                "summary": "With ability bonuses and granted skills",
-                "value": {
-                    "name": "Elf",
-                    "size": "MEDIUM",
-                    "speed": 30,
-                    "ability_bonuses": [{"ability": "DEX", "bonus": 2}],
-                    "granted_skills": [3, 7],
-                },
-            },
-        },
-    ),
 ):
     """
     Create a new race. **GM only.**
@@ -106,11 +112,11 @@ async def create_race(
     `PUT` calls.
     """
 
-    return await race_service.create_race(race_data, created_by_id=current_user.id)
+    return await race_service.create_race(data)
 
 
 @router.patch(
-    "/{race_id}",
+    "/{race_id:int}",
     response_model=RaceResponse,
     summary="Update a race's base fields",
     responses={
@@ -118,7 +124,29 @@ async def create_race(
         409: {"description": "Another race already uses the requested name."},
     },
 )
-async def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceCrudDep, _: GmUserDep):
+async def update_race(
+    race_id: int,
+    data: Annotated[
+        RaceUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the race and edit its description",
+                    "value": {
+                        "name": "Elf",
+                        "description": "Graceful and long-lived, with keen senses.",
+                    },
+                },
+                "change-speed": {
+                    "summary": "Adjust base walking speed",
+                    "value": {"speed": 35},
+                },
+            }
+        ),
+    ],
+    race_service: RaceCrudDep,
+    _: GmUserDep,
+):
     """
     Partially update a race's base fields. **GM only.**
 
@@ -128,12 +156,12 @@ async def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceC
     for those.
     """
 
-    return await race_service.update(race_id, update_data)
+    return await race_service.update(race_id, data)
 
 
 @router.delete(
-    "/{race_id}",
-    status_code=204,
+    "/{race_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a race",
     responses={
         404: {"description": "No race exists with the given ID."},
@@ -142,7 +170,7 @@ async def update_race(race_id: int, update_data: RaceUpdate, race_service: RaceC
 )
 async def delete_race(race_id: int, race_service: RaceCrudDep, _: FounderDep):
     """
-    Delete a race. **Found-father only.**
+    Delete a race. **Founder only.**
 
     Also removes its ability bonuses, granted skills, subraces, and
     features (cascade). Blocked if the race is still assigned to one or

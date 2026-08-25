@@ -1,12 +1,14 @@
 """Skill CRUD endpoints: paginated listing, get, create, update, delete."""
 
-from fastapi import APIRouter, Body, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
 
 from app.constants import AbilityScore
 from app.core.base.service import Page
-from app.core.security.dependencies import FounderDep, GmUserDep
 from app.features.skills.crud.schemas import SkillCreate, SkillGetAllResponse, SkillResponse, SkillUpdate
 from app.features.skills.dependencies import SkillCrudDep
+from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -18,10 +20,16 @@ router = APIRouter()
 )
 async def get_skills(
     skill_service: SkillCrudDep,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the skill's name and key.",
+    ),
+    ability: list[AbilityScore] | None = Query(
+        None,
+        description="Any-of match on the governing ability score (repeat the key: `?ability=WIS&ability=INT`).",
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
-    search: str | None = None,
-    ability: AbilityScore | None = None,
 ):
     """
     Return a paginated list of skills with `id`, `key`, `name`, and
@@ -44,7 +52,7 @@ async def get_skills(
 
 
 @router.get(
-    "/{skill_id}",
+    "/{skill_id:int}",
     response_model=SkillResponse,
     summary="Get a skill by ID",
     responses={
@@ -64,44 +72,47 @@ async def get_skill(skill_id: int, skill_service: SkillCrudDep):
 @router.post(
     "",
     response_model=SkillResponse,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a skill",
     responses={
         409: {"description": "A skill with this key already exists."},
     },
 )
 async def create_skill(
+    data: Annotated[
+        SkillCreate,
+        Body(
+            openapi_examples={
+                "minimal": {
+                    "summary": "Minimal — no description",
+                    "value": {
+                        "key": "STEALTH",
+                        "name": "Stealth",
+                        "ability": "DEX",
+                    },
+                },
+                "full": {
+                    "summary": "Full — with description",
+                    "value": {
+                        "key": "PERCEPTION",
+                        "name": "Perception",
+                        "ability": "WIS",
+                        "description": "Your Wisdom (Perception) check lets you spot, hear, or otherwise detect the presence of something.",
+                    },
+                },
+            },
+        ),
+    ],
     skill_service: SkillCrudDep,
     _: GmUserDep,
-    skill_data: SkillCreate = Body(
-        openapi_examples={
-            "minimal": {
-                "summary": "Minimal — no description",
-                "value": {
-                    "key": "STEALTH",
-                    "name": "Stealth",
-                    "ability": "DEX",
-                },
-            },
-            "full": {
-                "summary": "Full — with description",
-                "value": {
-                    "key": "PERCEPTION",
-                    "name": "Perception",
-                    "ability": "WIS",
-                    "description": "Your Wisdom (Perception) check lets you spot, hear, or otherwise detect the presence of something.",
-                },
-            },
-        },
-    ),
 ):
     """Create a new skill. **GM only.**"""
 
-    return await skill_service.create(skill_data)
+    return await skill_service.create(data)
 
 
 @router.patch(
-    "/{skill_id}",
+    "/{skill_id:int}",
     response_model=SkillResponse,
     summary="Update a skill",
     responses={
@@ -109,7 +120,25 @@ async def create_skill(
         409: {"description": "Another skill already uses the requested key."},
     },
 )
-async def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: SkillCrudDep, _: GmUserDep):
+async def update_skill(
+    skill_id: int,
+    data: Annotated[
+        SkillUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the skill and edit its description",
+                    "value": {
+                        "name": "Perception",
+                        "description": "Your Wisdom (Perception) check lets you spot, hear, or otherwise detect the presence of something.",
+                    },
+                },
+            }
+        ),
+    ],
+    skill_service: SkillCrudDep,
+    _: GmUserDep,
+):
     """
     Partially update a skill. **GM only.**
 
@@ -117,12 +146,12 @@ async def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: S
     are left as-is.
     """
 
-    return await skill_service.update(skill_id, update_data)
+    return await skill_service.update(skill_id, data)
 
 
 @router.delete(
-    "/{skill_id}",
-    status_code=204,
+    "/{skill_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a skill",
     responses={
         404: {"description": "No skill exists with the given ID."},
@@ -131,7 +160,7 @@ async def update_skill(skill_id: int, update_data: SkillUpdate, skill_service: S
 )
 async def delete_skill(skill_id: int, skill_service: SkillCrudDep, _: FounderDep):
     """
-    Delete a skill. **Found-father only.**
+    Delete a skill. **Founder only.**
 
     Blocked if the skill is still referenced by a race, class, background,
     or a character's skill proficiencies (the service raises

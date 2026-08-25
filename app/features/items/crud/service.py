@@ -1,4 +1,4 @@
-"""Item CRUD service with created_by attribution."""
+"""Item CRUD service."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,19 +38,9 @@ class ItemCrudService(CachedService[Item, ItemCreate, ItemUpdate, ItemResponse, 
             get_all_schema=ItemGetAllResponse,
         )
 
-    async def create_item(self, item_data: ItemCreate, created_by_id: int | None = None) -> ItemResponse:
-        """
-        Create an item after checking its name isn't already taken.
+    async def create_item(self, item_data: ItemCreate) -> ItemResponse:
+        """Create an item after checking its name isn't already taken."""
 
-        ``created_by_id`` identifies the GM who created it (relevant
-        mainly for homebrew items) and is not part of ``ItemCreate``
-        itself, since it comes from the authenticated user, not client
-        input.
-        """
-
-        payload = item_data.model_dump()
-        payload["created_by_id"] = created_by_id
-
-        item = await self.repository.create(payload)
+        item = await self.repository.create(item_data.model_dump())
         await invalidate_item_cache()
         return self.response_schema.model_validate(item)

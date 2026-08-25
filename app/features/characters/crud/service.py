@@ -7,11 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType, UserRole
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
+from app.core.cache.client import cache_prefix
+from app.core.exceptions import GmAccessException
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
-from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.cache import CHARACTER_CACHE_NAMESPACE, invalidate_character_cache
 from app.features.characters.crud.exceptions import (
     InvalidHpUpdateException,
     SkillNotAvailableForClassException,
@@ -19,7 +21,9 @@ from app.features.characters.crud.exceptions import (
 )
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
-from app.features.characters.exceptions import BackgroundNotFoundException
+from app.features.characters.exceptions import (
+    BackgroundNotFoundException,
+)
 from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
 from app.features.characters.gm_panel.features.repository import CharacterFeatureRepository
 from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
@@ -52,8 +56,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     Built on :class:`BaseService`, mirroring ``RaceCrudService`` /
     ``ClassCrudService`` / ``BackgroundCrudService`` / ``SpellCrudService``:
     ``CharacterRepository`` provides the full generic CRUD (no signature
-    overrides), ``owner_id`` is injected into the create payload the same
-    way ``created_by_id`` is for the reference features, and
+    overrides), ``owner_id`` is injected into the create payload, and
     ``_get_or_404`` / ``_atomic`` / ``resolve_ids`` come from the base.
 
     Spell slots, known spells, attacks, and feats each live
@@ -133,9 +136,64 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         class. Both are optional and combine with the access scoping.
         """
 
+        owner_id = None if current_user.role in (UserRole.GM, UserRole.FOUND_FATHER) else current_user.id
+        return await self._list_characters(
+            owner_id=owner_id, search=search, class_id=class_id, page=page, size=size
+        )
+
+    async def get_my_characters(
+        self,
+        current_user: UserResponse,
+        *,
+        search: str | None = None,
+        class_id: int | None = None,
+        page: int = 1,
+        size: int = 100,
+    ) -> Page[CharacterResponse]:
+        """
+        Return only the characters owned by the caller — for every role,
+        including GMs (unlike :meth:`get_characters`, which widens the
+        scope for GMs).
+        """
+
+        return await self._list_characters(
+            owner_id=current_user.id, search=search, class_id=class_id, page=page, size=size
+        )
+
+    async def get_all_characters(
+        self,
+        current_user: UserResponse,
+        *,
+        search: str | None = None,
+        class_id: int | None = None,
+        page: int = 1,
+        size: int = 100,
+    ) -> Page[CharacterResponse]:
+        """
+        Return every user's characters. GM-only — anyone else gets a 403.
+        """
+
+        if current_user.role not in (UserRole.GM, UserRole.FOUND_FATHER):
+            raise GmAccessException()
+
+        return await self._list_characters(
+            owner_id=None, search=search, class_id=class_id, page=page, size=size
+        )
+
+    async def _list_characters(
+        self,
+        *,
+        owner_id: int | None,
+        search: str | None,
+        class_id: int | None,
+        page: int,
+        size: int,
+    ) -> Page[CharacterResponse]:
+        """Shared paginated listing behind all three list endpoints."""
+
         filters: dict[str, Any] = {}
-        if current_user.role != UserRole.GM:
-            filters["owner_id"] = current_user.id
+        if owner_id is not None:
+            filters["owner_id"] = owner_id
 
         if class_id is not None:
             filters["class_id"] = class_id
@@ -182,6 +240,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     async def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
         """
+
         List every feat granted to a character (GM/owner readable).
 
         Grants come from every source — level-up ASI choices and GM-panel
@@ -206,7 +265,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         return [CharacterFeatureResponse.model_validate(grant) for grant in grants]
 
     @use_cache(
-        key_builder=lambda self, character_id, **_: f"cache:characters:{character_id}",
+        key_builder=lambda self, character_id, **_: (f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}"),
     )
     async def _get_character_response(self, character_id: int) -> CharacterResponse:
         """Cached response assembly for a single character (access check is NOT cached)."""
@@ -598,8 +657,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     async def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """
         Public wrapper around :meth:`_apply_spell_slot_progression` for
-        the progression service (class change / level-up), which owns the
-        character's class/level writes.
+        the progression service (level-up), which owns the character's
+        level writes.
 
         ``commit=False`` defers the commit so the caller can wrap the
         re-application in a transaction with the rest of the change.

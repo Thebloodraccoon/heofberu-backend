@@ -1,10 +1,12 @@
-"""User-specific HTTP exceptions."""
+"""User-specific application exceptions."""
 
-from fastapi import HTTPException, status
+from app.core.exceptions import AppError
 
 
-class UserNotFoundException(HTTPException):
+class UserNotFoundException(AppError):
     """Raised (404) when a user cannot be found by email/ID."""
+
+    status_code = 404
 
     def __init__(self, email: str | None = None):
         detail = "404 User is not found"
@@ -12,34 +14,31 @@ class UserNotFoundException(HTTPException):
         if email:
             detail = f"User with email {email} is not found."
 
-        super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+        super().__init__(detail)
 
 
-class InvalidPasswordException(HTTPException):
+class InvalidPasswordException(AppError):
     """Raised (400) when a supplied password fails the strength rules."""
 
+    status_code = 400
+
     def __init__(self, message: str = "Invalid password"):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
-        )
+        super().__init__(message)
 
 
-class DefaultUserProtectedException(HTTPException):
+class DefaultUserProtectedException(AppError):
     """Raised (403) when someone tries to update/delete the seeded admin."""
 
+    status_code = 403
+
     def __init__(self, message: str = "The default admin user cannot be updated or deleted."):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=message,
-        )
+        super().__init__(message)
 
 
-class SelfDeletionException(HTTPException):
+class SelfDeletionException(AppError):
     """Raised (403) when a user tries to delete their own account."""
 
+    status_code = 403
+
     def __init__(self, message: str = "You cannot delete your own account."):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=message,
-        )
+        super().__init__(message)

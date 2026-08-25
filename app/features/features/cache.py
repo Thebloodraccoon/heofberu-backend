@@ -16,5 +16,6 @@ async def invalidate_feature_cache() -> None:
     background/feat) already include ``"features"`` in their
     ``cache_namespaces`` for the same reason.
     """
+
     for namespace in FEATURE_CACHE_NAMESPACES:
         await invalidate(namespace)

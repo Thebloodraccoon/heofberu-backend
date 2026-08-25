@@ -3,7 +3,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
-from app.features.shared.features.schemas import NestedFeatureResponse
 
 
 class FeatBase(BaseModel):
@@ -15,6 +14,20 @@ class FeatBase(BaseModel):
     prerequisite_ability: AbilityScore | None = None
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str = ""
+
+    # Minimum character level required to take the feat; NULL when the
+    # feat has no level requirement.
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject out-of-range level requirements when provided."""
+
+        if value is not None and not 1 <= value <= 20:
+            raise ValueError("min_level must be between 1 and 20")
+
+        return value
 
 
 class AbilityScoreIncreaseItem(BaseModel):
@@ -38,6 +51,7 @@ def _validate_unique_asi_abilities(
 
 class FeatCreate(FeatBase):
     """
+
     Create payload for a feat.
 
     ``ability_score_increases`` is optional — a feat can be created
@@ -45,9 +59,6 @@ class FeatCreate(FeatBase):
     supplied up front (e.g. Resilient offers "choose one ability"), same
     "full replace from empty" semantics as ``RaceCreate.ability_bonuses``.
     It's a simple child table, not a nested dependency, so it stays here.
-
-    ``features`` is NOT part of create — attach them afterwards through
-    ``POST /feats/{id}/features``.
     """
 
     ability_score_increases: list[AbilityScoreIncreaseItem] | None = None
@@ -55,6 +66,7 @@ class FeatCreate(FeatBase):
     @field_validator("ability_score_increases")
     def validate_unique_asi_abilities(cls, value):
         """Reject ASI lists containing duplicate abilities."""
+
         if value is None:
             return value
 
@@ -63,6 +75,7 @@ class FeatCreate(FeatBase):
 
 class FeatUpdate(BaseModel):
     """
+
     All fields optional — only provided fields are updated (PATCH semantics).
 
     Deliberately does NOT include ability_score_increases: that keeps its
@@ -75,6 +88,17 @@ class FeatUpdate(BaseModel):
     prerequisite_ability: AbilityScore | None = None
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str | None = None
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject out-of-range level requirements when provided."""
+
+        if value is not None and not 1 <= value <= 20:
+            raise ValueError("min_level must be between 1 and 20")
+
+        return value
 
 
 class AbilityScoreIncreasesUpdate(BaseModel):
@@ -105,7 +129,6 @@ class FeatResponse(FeatBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_by_id: int | None = None
     ability_score_increases: list[AbilityScoreIncreaseResponse] = []
 
 
@@ -116,17 +139,4 @@ class FeatGetAllResponse(BaseModel):
 
     id: int
     name: str
-
-
-class FeatFullResponse(FeatResponse):
-    """
-    Everything about a feat in one payload: base fields and
-    ability_score_increases (inherited from ``FeatResponse``), plus its
-    own FEAT-source ``features``.
-
-    Returned by ``GET /feats/{id}``, cached as a single unit, so a client
-    gets the whole feat — including features, which otherwise live only
-    under ``GET /feats/{id}/features`` — in one cached round-trip.
-    """
-
-    features: list[NestedFeatureResponse] = []
+    min_level: int | None = None

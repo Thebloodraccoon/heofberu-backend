@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import asyncio
+
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -92,14 +94,35 @@ def make_get_db(session_factory: async_sessionmaker[AsyncSession]):
 
 
 def make_get_redis(redis_url: str):
-    """Returns an async context manager that yields a connected Redis client."""
+    """
+    Returns an async context manager that yields a connected Redis client.
+
+    The client is a lazy module-level singleton shared by every caller
+    (cache reads/writes, JWT blacklist, rate limiting): one connection
+    pool per process instead of a fresh TCP connect per operation. The
+    yielded context manager does NOT close the client on exit.
+
+    If the running event loop differs from the loop the singleton was
+    created on (e.g. a new loop per test case), the client is rebuilt —
+    redis-py connections are bound to the loop they first dialed on.
+    """
+
+    lock = asyncio.Lock()
+    state: dict[str, object] = {"client": None, "loop": None}
 
     @asynccontextmanager
     async def get_redis():
-        client = Redis.from_url(redis_url, decode_responses=True)
-        try:
-            yield client
-        finally:
-            await client.aclose()
+        async with lock:
+            current_loop = asyncio.get_running_loop()
+            if state["client"] is None or state["loop"] is not current_loop:
+                if state["client"] is not None:
+                    try:
+                        await state["client"].aclose()
+                    except Exception:
+                        pass  # nosec B110 -- best-effort close of a client bound to a dead event loop
+                state["client"] = Redis.from_url(redis_url, decode_responses=True)
+                state["loop"] = current_loop
+
+        yield state["client"]
 
     return get_redis
