@@ -32,6 +32,10 @@ _ALLOW_LEVEL = (
     FeatureSourceType.OTHER,
 )
 
+# Valid level range for level-gated features (class/subclass abilities).
+_FEATURE_LEVEL_MIN = 1
+_FEATURE_LEVEL_MAX = 20
+
 
 def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict) -> None:
     """
@@ -44,6 +48,9 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
       - SUBRACE    -> subrace_id required, others must be None
       - BACKGROUND -> background_id required, others must be None
       - OTHER      -> none of the five may be set
+
+    Additionally, a CLASS/SUBCLASS feature's ``level`` — when provided —
+    must fall within 1-20.
     """
 
     required_fk = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
@@ -62,8 +69,20 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
                     else f"source_type='{source_type.value}' must not set '{fk_name}'."
                 )
 
-    if source_type not in _ALLOW_LEVEL and values.get("level") is not None:
+    level = values.get("level")
+
+    if source_type not in _ALLOW_LEVEL and level is not None:
         raise ValueError("'level' is only meaningful when source_type is CLASS, SUBCLASS or OTHER.")
+
+    if (
+        source_type in (FeatureSourceType.CLASS, FeatureSourceType.SUBCLASS)
+        and level is not None
+        and not (_FEATURE_LEVEL_MIN <= level <= _FEATURE_LEVEL_MAX)
+    ):
+        raise ValueError(
+            f"'level' for CLASS/SUBCLASS features must be between "
+            f"{_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}."
+        )
 
 
 class NestedFeatureCreate(BaseModel):
@@ -74,7 +93,8 @@ class NestedFeatureCreate(BaseModel):
 
     The owning service injects ``source_type`` and the matching source FK,
     then validates the merged payload through ``FeatureCreate`` so the same
-    consistency rules apply.
+    consistency rules apply (including the 1-20 ``level`` range for
+    CLASS/SUBCLASS features).
     """
 
     name: str
