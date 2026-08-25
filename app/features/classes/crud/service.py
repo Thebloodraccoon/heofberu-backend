@@ -19,6 +19,7 @@ from app.features.classes.schemas import (
 from app.features.classes.skills.service import ClassSkillService
 from app.features.classes.subclasses.crud.service import SubclassCrudService
 from app.features.classes.throws.service import ClassThrowsService
+from app.features.classes.weapons.service import ClassWeaponService
 from app.models.class_model import Class
 
 
@@ -35,8 +36,8 @@ class ClassCrudService(
         :class:`ClassFeatureService` and a brief reference to every
         subclass through ``self.subclasses``, and assembles
         :class:`ClassFullResponse`;
-      - ``create_class`` seeds primary abilities, saving throws, armor
-        proficiencies, and available skills through the dedicated
+      - ``create_class`` seeds primary abilities, saving throws, armor and
+        weapon proficiencies, and available skills through the dedicated
         capability services in the same ``_atomic()`` transaction;
       - subclass CRUD and subclass-feature endpoints delegate to
         ``self.subclasses`` (a :class:`SubclassCrudService`) — see that
@@ -62,6 +63,7 @@ class ClassCrudService(
         self._skills = ClassSkillService(db)
         self._throws = ClassThrowsService(db)
         self._armor = ClassArmorService(db)
+        self._weapons = ClassWeaponService(db)
         self.subclasses = SubclassCrudService(db)
 
     async def create_class(self, class_data: ClassCreate) -> ClassResponse:
@@ -71,8 +73,9 @@ class ClassCrudService(
 
         Within ``_atomic()``:
           1. Insert the ``Class`` row.
-          2. Set primary_abilities, saving_throws, armor_proficiencies,
-             available_skills (through the dedicated capability services).
+          2. Set primary_abilities, saving_throws, armor/weapon
+             proficiencies, available_skills (through the dedicated
+             capability services).
 
         Features, subclasses, spell_slot_progression, and starting_items
         are NOT created here — attach them afterwards through their own
@@ -88,6 +91,7 @@ class ClassCrudService(
                 "primary_abilities",
                 "saving_throws",
                 "armor_proficiencies",
+                "weapon_proficiencies",
                 "available_skills",
             }
         )
@@ -103,6 +107,11 @@ class ClassCrudService(
 
             if class_data.armor_proficiencies:
                 await self._armor.set_armor_proficiencies_for_class(item, class_data.armor_proficiencies, commit=False)
+
+            if class_data.weapon_proficiencies:
+                await self._weapons.set_weapon_proficiencies_for_class(
+                    item, class_data.weapon_proficiencies, commit=False
+                )
 
             if skills:
                 await self._skills.set_skills_for_class(item, skills, commit=False)
@@ -124,13 +133,14 @@ class ClassCrudService(
 
         Checks spellcasting_ability ↔ primary_abilities consistency when
         primary_abilities is changed without an explicit spellcasting_ability.
-        ``primary_abilities``/``saving_throws``/``armor_proficiencies`` are
-        full-replace when set.
+        ``primary_abilities``/``saving_throws``/``armor_proficiencies``/
+        ``weapon_proficiencies`` are full-replace when set.
         """
 
         character_class = await self._get_or_404(class_id)
         fields = update_data.model_dump(
-            exclude_unset=True, exclude={"primary_abilities", "saving_throws", "armor_proficiencies"}
+            exclude_unset=True,
+            exclude={"primary_abilities", "saving_throws", "armor_proficiencies", "weapon_proficiencies"},
         )
 
         if update_data.primary_abilities is not None and update_data.spellcasting_ability is None:
@@ -155,6 +165,11 @@ class ClassCrudService(
         if update_data.armor_proficiencies is not None:
             character_class = await self._armor.set_armor_proficiencies_for_class(
                 character_class, update_data.armor_proficiencies
+            )
+
+        if update_data.weapon_proficiencies is not None:
+            character_class = await self._weapons.set_weapon_proficiencies_for_class(
+                character_class, update_data.weapon_proficiencies
             )
 
         await invalidate_class_cache()

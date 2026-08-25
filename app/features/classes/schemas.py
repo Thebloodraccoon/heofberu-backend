@@ -4,7 +4,7 @@ import math
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel
+from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel, WeaponProficiency
 from app.features.classes.subclasses.crud.schemas import SubclassBriefResponse
 from app.features.shared.features.schemas import NestedFeatureResponse
 from app.features.shared.items.schemas import SourceItemResponse
@@ -35,6 +35,13 @@ def _validate_unique_armor_proficiencies(armor_proficiencies: list[ArmorProficie
         raise ValueError("Duplicate armor proficiencies are not allowed.")
 
     return armor_proficiencies
+
+
+def _validate_unique_weapon_proficiencies(weapon_proficiencies: list[WeaponProficiency]) -> list[WeaponProficiency]:
+    if len(weapon_proficiencies) != len(set(weapon_proficiencies)):
+        raise ValueError("Duplicate weapon proficiencies are not allowed.")
+
+    return weapon_proficiencies
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
@@ -98,8 +105,9 @@ class ClassCreate(ClassBase):
 
     Kept minimal on purpose: only the class's own scalar fields plus its
     directly-owned simple child rows (``primary_abilities``,
-    ``saving_throws``, ``armor_proficiencies``, ``available_skills``) are
-    set here, atomically, alongside the ``Class`` row itself.
+    ``saving_throws``, ``armor_proficiencies``, ``weapon_proficiencies``,
+    ``available_skills``) are set here, atomically, alongside the ``Class``
+    row itself.
 
     Everything with heavier/nested dependencies — ``features``,
     ``subclasses`` (which themselves nest features), ``starting_items``,
@@ -117,6 +125,7 @@ class ClassCreate(ClassBase):
     primary_abilities: list[AbilityScore] = []
     saving_throws: list[AbilityScore] = []
     armor_proficiencies: list[ArmorProficiency] = []
+    weapon_proficiencies: list[WeaponProficiency] = []
     available_skills: list[int] | None = None
 
     @field_validator("primary_abilities")
@@ -130,6 +139,10 @@ class ClassCreate(ClassBase):
     @field_validator("armor_proficiencies")
     def validate_unique_armor_proficiencies(cls, v):
         return _validate_unique_armor_proficiencies(v)
+
+    @field_validator("weapon_proficiencies")
+    def validate_unique_weapon_proficiencies(cls, v):
+        return _validate_unique_weapon_proficiencies(v)
 
     @field_validator("available_skills")
     def validate_unique_available_skills(cls, v):
@@ -157,8 +170,8 @@ class ClassUpdate(BaseModel):
     Does not include ``available_skills`` (dedicated PUT endpoint).
     Does not include ``features`` or ``subclasses`` — manage those through
     their own endpoints to keep replace-vs-patch semantics unambiguous.
-    ``primary_abilities``, ``saving_throws``, and ``armor_proficiencies``
-    are full-replace when set.
+    ``primary_abilities``, ``saving_throws``, ``armor_proficiencies``,
+    and ``weapon_proficiencies`` are full-replace when set.
     """
 
     name: str | None = None
@@ -169,6 +182,7 @@ class ClassUpdate(BaseModel):
     primary_abilities: list[AbilityScore] | None = None
     saving_throws: list[AbilityScore] | None = None
     armor_proficiencies: list[ArmorProficiency] | None = None
+    weapon_proficiencies: list[WeaponProficiency] | None = None
 
     @field_validator("primary_abilities")
     def validate_unique_primary_abilities(cls, v):
@@ -190,6 +204,13 @@ class ClassUpdate(BaseModel):
             return v
 
         return _validate_unique_armor_proficiencies(v)
+
+    @field_validator("weapon_proficiencies")
+    def validate_unique_weapon_proficiencies_update(cls, v):
+        if v is None:
+            return v
+
+        return _validate_unique_weapon_proficiencies(v)
 
     @model_validator(mode="after")
     def validate_spellcasting_ability_is_primary_if_both_set(self):
@@ -225,6 +246,16 @@ class ArmorProficienciesUpdate(BaseModel):
     @field_validator("armor_proficiencies")
     def validate_unique(cls, v):
         return _validate_unique_armor_proficiencies(v)
+
+
+class WeaponProficienciesUpdate(BaseModel):
+    """Full replacement list of weapon proficiencies for a class."""
+
+    weapon_proficiencies: list[WeaponProficiency]
+
+    @field_validator("weapon_proficiencies")
+    def validate_unique(cls, v):
+        return _validate_unique_weapon_proficiencies(v)
 
 
 class AvailableSkillsUpdate(BaseModel):
@@ -284,6 +315,14 @@ class ArmorProficiencyResponse(BaseModel):
     armor_type: ArmorProficiency
 
 
+class WeaponProficiencyResponse(BaseModel):
+    """A class's weapon proficiency, as returned in responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    weapon_category: WeaponProficiency
+
+
 class SkillResponse(BaseModel):
     """Brief skill representation embedded in class responses."""
 
@@ -305,6 +344,7 @@ class ClassResponse(ClassBase):
     primary_abilities: list[PrimaryAbilityResponse] = []
     saving_throws: list[SavingThrowResponse] = []
     armor_proficiencies: list[ArmorProficiencyResponse] = []
+    weapon_proficiencies: list[WeaponProficiencyResponse] = []
     available_skills: list[SkillResponse] = []
     starting_items: list[SourceItemResponse] = []
     spell_slot_progression: list[SpellSlotProgressionResponse] = []

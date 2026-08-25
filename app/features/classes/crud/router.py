@@ -124,9 +124,9 @@ async def create_class(
     `null` for a non-caster class. If non-null, it must also appear in
     `primary_abilities`.
 
-    `primary_abilities`, `saving_throws`, `armor_proficiencies`, and
-    `available_skills` are optional. If provided, they're saved together
-    with the class in a single transaction.
+    `primary_abilities`, `saving_throws`, `armor_proficiencies`,
+    `weapon_proficiencies`, and `available_skills` are optional. If
+    provided, they're saved together with the class in a single transaction.
 
     This endpoint is intentionally minimal: it does NOT accept `features`,
     `subclasses`, `spell_slot_progression`, or `starting_items`. Attach

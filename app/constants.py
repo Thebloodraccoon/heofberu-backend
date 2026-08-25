@@ -213,6 +213,13 @@ class ArmorProficiency(str, Enum):
     SHIELD = "SHIELD"
 
 
+class WeaponProficiency(str, Enum):
+    """Weapon categories a class grants proficiency in (5e-style)."""
+
+    SIMPLE = "SIMPLE"
+    MARTIAL = "MARTIAL"
+
+
 class ASILevelChoice(str, Enum):
     """What a character chose at a class level that grants an Ability Score Improvement."""
 

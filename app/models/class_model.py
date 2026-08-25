@@ -42,6 +42,11 @@ class Class(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    weapon_proficiencies = relationship(
+        "ClassWeaponProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     available_skills = relationship(
         "Skill",
         secondary=class_available_skills,

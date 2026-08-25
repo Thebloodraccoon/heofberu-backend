@@ -12,6 +12,7 @@ from app.features.classes.items.service import ClassItemsService
 from app.features.classes.progression.service import ClassProgressionService
 from app.features.classes.skills.service import ClassSkillService
 from app.features.classes.throws.service import ClassThrowsService
+from app.features.classes.weapons.service import ClassWeaponService
 
 
 def get_class_crud_service(db: DatabaseDep) -> ClassCrudService:
@@ -57,6 +58,15 @@ def get_class_armor_service(db: DatabaseDep) -> ClassArmorService:
 
 
 ClassArmorDep = Annotated[ClassArmorService, Depends(get_class_armor_service)]
+
+
+def get_class_weapon_service(db: DatabaseDep) -> ClassWeaponService:
+    """Get the class weapon-proficiencies service instance."""
+
+    return ClassWeaponService(db)
+
+
+ClassWeaponsDep = Annotated[ClassWeaponService, Depends(get_class_weapon_service)]
 
 
 def get_class_throws_service(db: DatabaseDep) -> ClassThrowsService:

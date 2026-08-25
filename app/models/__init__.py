@@ -22,6 +22,7 @@ from app.models.class_association_models import (  # noqa: F401
     ClassArmorProficiency,
     ClassPrimaryAbility,
     ClassSavingThrow,
+    ClassWeaponProficiency,
     class_available_skills,
 )
 

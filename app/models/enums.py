@@ -28,6 +28,7 @@ from app.constants import (
     SpellRangeType,
     SpellSchool,
     UserRole,
+    WeaponProficiency,
 )
 
 # Each of these creates/uses a native PostgreSQL ENUM type (via SQLAlchemy's
@@ -51,6 +52,7 @@ ItemTypeType = SAEnum(ItemType, name="item_type", create_type=False)
 ItemRarityType = SAEnum(ItemRarity, name="item_rarity", create_type=False)
 FeatureSourceTypeType = SAEnum(FeatureSourceType, name="feature_source_type", create_type=False)
 ArmorProficiencyType = SAEnum(ArmorProficiency, name="armor_proficiency", create_type=False)
+WeaponProficiencyType = SAEnum(WeaponProficiency, name="weapon_proficiency", create_type=False)
 ASILevelChoiceType = SAEnum(ASILevelChoice, name="asi_choice", create_type=False)
 CharacterFeatSourceType = SAEnum(CharacterFeatSource, name="character_feat_source", create_type=False)
 ConditionTypeType = SAEnum(ConditionType, name="condition_type", create_type=False)
