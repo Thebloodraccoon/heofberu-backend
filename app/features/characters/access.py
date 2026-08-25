@@ -30,7 +30,7 @@ def check_character_access(character: Character, current_user: UserResponse) -> 
     GM can access any character. Players can only access their own.
     """
 
-    if current_user.role == UserRole.GM:
+    if current_user.role in (UserRole.GM, UserRole.FOUND_FATHER):
         return
 
     if character.owner_id != current_user.id:

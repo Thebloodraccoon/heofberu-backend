@@ -139,3 +139,4 @@ class FeatGetAllResponse(BaseModel):
 
     id: int
     name: str
+    min_level: int | None = None

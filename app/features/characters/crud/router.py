@@ -20,7 +20,7 @@ from app.features.characters.schemas import (
     CharacterResponse,
     CharacterUpdate,
 )
-from app.features.users.security import CurrentUserDep
+from app.features.users.security import CurrentUserDep, GmUserDep
 
 router = APIRouter()
 
@@ -60,6 +60,72 @@ async def get_characters(
     """
 
     return await character_service.get_characters(current_user, search=search, class_id=class_id, page=page, size=size)
+
+
+@router.get(
+    "/mine",
+    response_model=Page[CharacterResponse],
+    summary="List the current user's characters",
+)
+async def get_my_characters(
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the character's name.",
+    ),
+    class_id: int | None = Query(
+        None,
+        description="Filter to characters of this class.",
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+):
+    """
+    Return only the characters owned by the caller — regardless of role
+    (a GM calling this sees their own characters, not everyone's).
+
+    Same filters and ``{items, total, page, size}`` envelope as
+    `GET /characters`.
+    """
+
+    return await character_service.get_my_characters(
+        current_user, search=search, class_id=class_id, page=page, size=size
+    )
+
+
+@router.get(
+    "/all",
+    response_model=Page[CharacterResponse],
+    summary="List every user's characters",
+    responses={
+        403: {"description": "Caller is not a GM."},
+    },
+)
+async def get_all_characters(
+    character_service: CharacterServiceDep,
+    gm_user: GmUserDep,
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the character's name.",
+    ),
+    class_id: int | None = Query(
+        None,
+        description="Filter to characters of this class.",
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+):
+    """
+    Return every character of every user. GM-only.
+
+    Same filters and ``{items, total, page, size}`` envelope as
+    `GET /characters`.
+    """
+
+    return await character_service.get_all_characters(
+        gm_user, search=search, class_id=class_id, page=page, size=size
+    )
 
 
 @router.get(
