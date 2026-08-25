@@ -1,9 +1,9 @@
-"""ORM model for the reference table of discrete rules features."""
+"""ORM models for the reference table of discrete rules features."""
 
 from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
-from app.models.enums import FeatureSourceTypeType
+from app.models.enums import AbilityScoreType, FeatureSourceTypeType
 from app.settings import settings
 
 
@@ -45,5 +45,45 @@ class Feature(settings.Base):  # type: ignore
     subrace = relationship("Subrace", back_populates="features")
     background = relationship("Background", back_populates="features")
 
+    # Fixed ability-score effects granted while this feature is on a
+    # character (e.g. Primal Champion: STR +4 with cap 24). Purely
+    # automatic — no player choice involved; counted by the ability-score
+    # calculator for as long as the feature grant exists.
+    ability_increases = relationship(
+        "FeatureAbilityIncrease",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="FeatureAbilityIncrease.id",
+    )
+
     def __repr__(self):
         return f"<Feature(id={self.id}, name='{self.name}', source_type='{self.source_type}')>"
+
+
+class FeatureAbilityIncrease(settings.Base):  # type: ignore
+    """
+    A fixed ability-score effect of a Feature, applied automatically for
+    every character the feature is granted to (via ``character_features``).
+
+    ``amount`` is added to the effective total (may be negative). When
+    ``new_cap`` is set it RAISES (never lowers) that ability's maximum
+    score above the standard 20 — e.g. Primal Champion's "max 24 for STR
+    and CON" is modeled as two rows with ``amount=4, new_cap=24``.
+    """
+
+    __tablename__ = "feature_ability_increases"
+
+    id = Column(Integer, primary_key=True)
+    feature_id = Column(Integer, ForeignKey("features.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    ability = Column(AbilityScoreType, nullable=False)
+    amount = Column(Integer, nullable=False)
+    new_cap = Column(Integer, nullable=True)
+
+    feature = relationship("Feature", back_populates="ability_increases")
+
+    def __repr__(self):
+        return (
+            f"<FeatureAbilityIncrease(feature_id={self.feature_id}, "
+            f"ability='{self.ability}', amount={self.amount}, new_cap={self.new_cap})>"
+        )

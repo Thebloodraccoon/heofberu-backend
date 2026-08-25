@@ -37,7 +37,6 @@ class TestClassCrud:
                 "name": "Wizard",
                 "hit_dice": "D6",
                 "spellcasting_ability": "INT",
-                "primary_abilities": ["INT"],
                 "saving_throws": ["INT", "WIS"],
                 "available_skills": [skill.id],
             },
@@ -47,7 +46,6 @@ class TestClassCrud:
         assert response.status_code == 201
         body = response.json()
         assert body["spellcasting_ability"] == "INT"
-        assert body["primary_abilities"] == [{"ability": "INT"}]
         assert body["saving_throws"] == [{"ability": "INT"}, {"ability": "WIS"}]
         assert [item["id"] for item in body["available_skills"]] == [skill.id]
 
@@ -139,14 +137,17 @@ class TestClassCrud:
         assert fetched.status_code == 200
         assert [item["name"] for item in fetched.json()] == ["Improved Critical"]
 
-    async def test_create_class_spellcasting_ability_not_primary_returns_400(self, client, gm_token):
+    async def test_create_class_spellcasting_ability_stands_alone(self, client, gm_token):
+        """`primary_abilities` was removed — spellcasting_ability no longer needs to be 'primary'."""
+
         response = await client.post(
             "/classes",
-            json={"name": "Bad Caster", "hit_dice": "D8", "spellcasting_ability": "CHA"},
+            json={"name": "Sorcerer", "hit_dice": "D6", "spellcasting_ability": "CHA"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        assert response.json()["spellcasting_ability"] == "CHA"
 
     async def test_create_duplicate_class_name_returns_400(self, client, gm_token, create_class):
         await create_class(name="Fighter")
@@ -170,9 +171,9 @@ class TestClassCrud:
         assert response.status_code == 200
         assert response.json()["name"] == "New Name"
 
-    async def test_update_primary_abilities_dropping_spellcasting_ability_returns_400(
-        self, client, gm_token, create_class
-    ):
+    async def test_update_ignores_removed_primary_abilities_field(self, client, gm_token, create_class):
+        """`primary_abilities` was removed from the model — stale keys are ignored, not applied."""
+
         character_class = await create_class(name="Wizard", spellcasting_ability="INT")
 
         response = await client.patch(
@@ -181,7 +182,8 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert "primary_abilities" not in response.json()
 
     async def test_gm_can_replace_saving_throws(self, client, gm_token, create_class):
         character_class = await create_class(name="Dexy")

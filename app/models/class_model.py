@@ -27,11 +27,6 @@ class Class(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False, default="")
 
-    primary_abilities = relationship(
-        "ClassPrimaryAbility",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
     saving_throws = relationship(
         "ClassSavingThrow",
         cascade="all, delete-orphan",

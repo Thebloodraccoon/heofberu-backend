@@ -91,7 +91,9 @@ class TestGmPanelStats:
         )
 
         assert response.status_code == 200
-        assert response.json()["strength"] == {"base": 16, "total": 16}
+        # Base stays at the originally entered value; the counted
+        # adjustment lives in the ASI-choice log and lifts only the total.
+        assert response.json()["strength"] == {"base": 14, "total": 16}
 
 
 @pytest.mark.integration
@@ -150,7 +152,8 @@ class TestGmPanelAsiAdjustments:
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json()
-        assert stats["strength"]["base"] == 13
+        # Deleting the log row reverts the total; the base was never touched.
+        assert stats["strength"] == {"base": 13, "total": 13}
 
         listed = await client.get(
             "/characters/gm-panel/asi",
@@ -158,6 +161,19 @@ class TestGmPanelAsiAdjustments:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert listed.json() == []
+
+    async def test_adjustment_above_cap_returns_400(self, client, gm, gm_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=19)
+
+        response = await client.post(
+            "/characters/gm-panel/asi",
+            params={"character_id": character.id},
+            json={"increases": [{"ability": "STR", "amount": 2}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
 
     async def test_duplicate_ability_in_increases_returns_422(
         self, client, gm, gm_token, create_class, create_character

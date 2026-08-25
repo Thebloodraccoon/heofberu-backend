@@ -77,7 +77,6 @@ async def create_subclass(
                     "summary": "Fighter — Champion subclass with features",
                     "value": {
                         "name": "Champion",
-                        "archetype_group_name": "Martial Archetypes",
                         "description": "Pushes physical excellence to its limits.",
                     },
                 },

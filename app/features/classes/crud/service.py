@@ -7,7 +7,6 @@ from app.core.cache import use_cache
 from app.features.classes.armor.service import ClassArmorService
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES, invalidate_class_cache
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.exceptions import SpellcastingAbilityNotPrimaryException
 from app.features.classes.features.service import ClassFeatureService
 from app.features.classes.schemas import (
     ClassCreate,
@@ -36,8 +35,8 @@ class ClassCrudService(
         :class:`ClassFeatureService` and a brief reference to every
         subclass through ``self.subclasses``, and assembles
         :class:`ClassFullResponse`;
-      - ``create_class`` seeds primary abilities, saving throws, armor and
-        weapon proficiencies, and available skills through the dedicated
+      - ``create_class`` seeds saving throws, armor and weapon
+        proficiencies, and available skills through the dedicated
         capability services in the same ``_atomic()`` transaction;
       - subclass CRUD and subclass-feature endpoints delegate to
         ``self.subclasses`` (a :class:`SubclassCrudService`) — see that
@@ -73,9 +72,8 @@ class ClassCrudService(
 
         Within ``_atomic()``:
           1. Insert the ``Class`` row.
-          2. Set primary_abilities, saving_throws, armor/weapon
-             proficiencies, available_skills (through the dedicated
-             capability services).
+          2. Set saving_throws, armor/weapon proficiencies,
+             available_skills (through the dedicated capability services).
 
         Features, subclasses, spell_slot_progression, and starting_items
         are NOT created here — attach them afterwards through their own
@@ -88,7 +86,6 @@ class ClassCrudService(
 
         payload = class_data.model_dump(
             exclude={
-                "primary_abilities",
                 "saving_throws",
                 "armor_proficiencies",
                 "weapon_proficiencies",
@@ -98,9 +95,6 @@ class ClassCrudService(
 
         async with self._atomic():
             item = await self.repository.create(payload, commit=False)
-
-            if class_data.primary_abilities:
-                await self.repository.set_primary_abilities(item, class_data.primary_abilities, commit=False)
 
             if class_data.saving_throws:
                 await self._throws.set_saving_throws_for_class(item, class_data.saving_throws, commit=False)
@@ -131,33 +125,18 @@ class ClassCrudService(
         """
         Partially update a class (PATCH semantics).
 
-        Checks spellcasting_ability ↔ primary_abilities consistency when
-        primary_abilities is changed without an explicit spellcasting_ability.
-        ``primary_abilities``/``saving_throws``/``armor_proficiencies``/
-        ``weapon_proficiencies`` are full-replace when set.
+        ``saving_throws``/``armor_proficiencies``/``weapon_proficiencies``
+        are full-replace when set.
         """
 
         character_class = await self._get_or_404(class_id)
         fields = update_data.model_dump(
             exclude_unset=True,
-            exclude={"primary_abilities", "saving_throws", "armor_proficiencies", "weapon_proficiencies"},
+            exclude={"saving_throws", "armor_proficiencies", "weapon_proficiencies"},
         )
-
-        if update_data.primary_abilities is not None and update_data.spellcasting_ability is None:
-            current = character_class.spellcasting_ability
-            if current is not None and current not in update_data.primary_abilities:
-                raise SpellcastingAbilityNotPrimaryException(
-                    spellcasting_ability=current,
-                    primary_abilities=update_data.primary_abilities,
-                )
 
         if fields:
             character_class = await self.repository.update(character_class, fields)
-
-        if update_data.primary_abilities is not None:
-            character_class = await self.repository.set_primary_abilities(
-                character_class, update_data.primary_abilities
-            )
 
         if update_data.saving_throws is not None:
             character_class = await self._throws.set_saving_throws_for_class(character_class, update_data.saving_throws)
@@ -168,7 +147,7 @@ class ClassCrudService(
             )
 
         if update_data.weapon_proficiencies is not None:
-            character_class = await self._weapons.set_weapon_proficiencies_for_class(
+            await self._weapons.set_weapon_proficiencies_for_class(
                 character_class, update_data.weapon_proficiencies
             )
 
@@ -184,15 +163,14 @@ class ClassCrudService(
         Return everything about a class in one payload — this overrides
         ``BaseService.get_by_id`` (which only returns bare ``ClassResponse``
         fields via a plain ``model_validate``) so ``GET /classes/{id}``
-        itself is the full picture: base fields, primary abilities/saving
+        itself is the full picture: base fields, saving
         throws/armor proficiencies/available skills/starting items/spell
         slots, CLASS-source ``features``, and a brief reference to every
         ``subclass`` (the full per-subclass picture — its own
         SUBCLASS-source features — lives on
         ``GET /classes/{id}/subclasses/{subclass_id}``).
 
-        Any write that touches this class (base fields, primary
-        abilities/throws/proficiencies/skills, features, subclasses,
+        Any write that touches this class (base fields, throws/proficiencies/skills, features, subclasses,
         subclass features, starting items, spell slots) invalidates the
         ``classes`` namespace via ``cache_namespaces`` /
         :func:`invalidate_class_cache` — the same blunt, whole-namespace

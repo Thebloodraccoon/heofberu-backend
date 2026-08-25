@@ -14,7 +14,6 @@ class SubclassCreate(BaseModel):
     """
 
     name: str
-    archetype_group_name: str | None = None
     description: str = ""
 
 
@@ -22,7 +21,6 @@ class SubclassUpdate(BaseModel):
     """All fields optional — PATCH semantics. Does not touch features."""
 
     name: str | None = None
-    archetype_group_name: str | None = None
     description: str | None = None
 
 
@@ -34,7 +32,6 @@ class SubclassResponse(BaseModel):
     id: int
     class_id: int
     name: str
-    archetype_group_name: str | None = None
     description: str
 
 

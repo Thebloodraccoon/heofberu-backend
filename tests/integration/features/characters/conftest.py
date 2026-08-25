@@ -25,15 +25,16 @@ async def create_caster_class(client, gm_token, create_class):
 
 
 @pytest_asyncio.fixture
-async def create_api_character(client, login_as, create_user, create_background, gm_token):
+async def create_api_character(client, login_as, create_user, create_background, create_feat, gm_token):
     """
     Create a character via the API and return the created payload + owner token.
 
-    Characters are created with their GM-set level-up cap seeded at 1; by
-    default this fixture raises it to ``CHARACTER_MAX_LEVEL`` (20) via the
-    GM panel so tests that level up freely keep working. Pass
-    ``raise_max_level=False`` to keep the raw level-1 cap (used by the
-    max-level system's own tests).
+    A mandatory origin feat is created and attached automatically; pass
+    ``origin_feat=`` (a feat row) to use a specific one. Characters are
+    created with their GM-set level-up cap seeded at 1; by default this
+    fixture raises it to ``CHARACTER_MAX_LEVEL`` (20) via the GM panel so
+    tests that level up freely keep working. Pass ``raise_max_level=False``
+    to keep the raw level-1 cap (used by the max-level system's own tests).
     """
 
     async def _create_api_character(
@@ -43,6 +44,7 @@ async def create_api_character(client, login_as, create_user, create_background,
         race_id=None,
         background_id=None,
         raise_max_level=True,
+        origin_feat=None,
         **kwargs,
     ):
         if owner is None:
@@ -56,12 +58,15 @@ async def create_api_character(client, login_as, create_user, create_background,
             if background_id is None:
                 background_id = (await create_background()).id
             omit_background = False
+        if origin_feat is None:
+            origin_feat = await create_feat(name=f"Origin Feat for {name}")
         token = await login_as(owner)
         payload = {
             "name": name,
             "class_id": class_id,
             "race_id": race_id,
             "background_id": background_id,
+            "feat_id": origin_feat.id,
             **kwargs,
         }
         if omit_background:

@@ -1,4 +1,4 @@
-"""Class repository: base CRUD plus abilities/throws/spell-slot/subclass management."""
+"""Class repository: base CRUD plus throws/spell-slot/subclass management."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,6 @@ from app.models import (
     Character,
     Class,
     ClassArmorProficiency,
-    ClassPrimaryAbility,
     ClassSavingThrow,
     ClassSpellSlotProgression,
     ClassWeaponProficiency,
@@ -34,7 +33,6 @@ class ClassRepository(BaseRepository[Class]):
             db,
             default_load_options=[
                 selectinload(Class.available_skills),
-                selectinload(Class.primary_abilities),
                 selectinload(Class.saving_throws),
                 selectinload(Class.armor_proficiencies),
                 selectinload(Class.weapon_proficiencies),
@@ -99,33 +97,11 @@ class ClassRepository(BaseRepository[Class]):
 
         return character_class
 
-    async def set_primary_abilities(
-        self, character_class: Class, abilities: list[str], *, commit: bool = True
-    ) -> Class:
-        """
-        Replace all primary abilities for a class with the given list.
-
-        ``commit`` lets callers that need atomicity across multiple writes
-        (e.g. creating a class + its primary abilities + its saving throws
-        together) defer the commit and flush instead, without duplicating
-        this method.
-        """
-
-        await self.replace_child_rows(
-            ClassPrimaryAbility,
-            character_class,
-            "class_id",
-            [{"ability": ability} for ability in abilities],
-            commit=commit,
-        )
-
-        return character_class
-
     async def set_saving_throws(self, character_class: Class, abilities: list[str], *, commit: bool = True) -> Class:
         """
         Replace all saving throw proficiencies for a class with the given list.
 
-        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        See ``set_saving_throws`` for the meaning of ``commit=False``.
         """
 
         await self.replace_child_rows(
@@ -144,7 +120,7 @@ class ClassRepository(BaseRepository[Class]):
         """
         Replace all armor proficiencies for a class with the given list.
 
-        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        See ``set_saving_throws`` for the meaning of ``commit=False``.
         """
 
         await self.replace_child_rows(
@@ -163,7 +139,7 @@ class ClassRepository(BaseRepository[Class]):
         """
         Replace all weapon proficiencies for a class with the given list.
 
-        See ``set_primary_abilities`` for the meaning of ``commit=False``.
+        See ``set_saving_throws`` for the meaning of ``commit=False``.
         """
 
         await self.replace_child_rows(

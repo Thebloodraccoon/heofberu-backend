@@ -218,7 +218,7 @@ class TestSubraceCrudService:
         assert result.name == "Drow"
         assert db.commits == 1
         assert service.repository.created
-        assert service._features.created == [(FeatureSourceType.SUBRACE, 1, None, None, False)]
+        assert service._features.created == [(FeatureSourceType.SUBRACE, 1, None, False)]
 
     async def test_create_subrace_with_bonuses_and_features(self):
         service, db = make_crud_service(race_exists=True)

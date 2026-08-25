@@ -2,10 +2,12 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import AbilityScore
 from app.features.characters.ability_score.calculator import (
     DEFAULT_SPEED,
     CharacterAbilityScoreCalculator,
     DerivedStats,
+    resolve_ability_caps,
 )
 from app.features.characters.ability_score.repository import CharacterStatsRepository
 from app.models import Character, CharacterAbilityScore
@@ -68,23 +70,43 @@ class CharacterStatsService:
         to the cache table.
 
         Loads the source bonus rows (race + subrace bonuses + feat ASI
-        choices) and feeds them to the pure
-        :class:`CharacterAbilityScoreCalculator`. Used by read-only
-        callers that need "what would the current scores be" — e.g. the
-        feat prerequisite check, which must be based on fresh data even
-        if the cache is stale.
+        choices + counted ASI-choice log increases) and feeds them to
+        the pure :class:`CharacterAbilityScoreCalculator`. Used by
+        read-only callers that need "what would the current scores be" —
+        e.g. the feat prerequisite check, which must be based on fresh
+        data even if the cache is stale.
         """
 
         race_bonuses = await self.repository.get_race_bonuses(character.race_id)
         subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
         feat_increases = await self.repository.get_feat_increases(character.id)
-        return self.calculator.compute(character, race_bonuses, subrace_bonuses, feat_increases)
+        asi_increases = await self.repository.get_asi_increases(character.id)
+        feature_increases = await self.repository.get_feature_increases(character.id)
+        return self.calculator.compute(
+            character, race_bonuses, subrace_bonuses, feat_increases, asi_increases, feature_increases
+        )
 
-    async def refresh(self, character: Character) -> CharacterAbilityScore:
-        """Recompute effective ability scores for ``character`` and persist them."""
+    async def resolve_ability_caps(self, character: Character) -> dict[AbilityScore, int]:
+        """
+        Resolve each ability's maximum score for ``character``: the
+        standard 20 raised by any granted feature effect carrying a
+        ``new_cap`` (e.g. 24 for STR/CON under Primal Champion). Computed
+        fresh from the current feature grants — used by every cap check
+        (level-up ASI, GM ±adjustments, feat ASI choices).
+        """
+
+        feature_increases = await self.repository.get_feature_increases(character.id)
+        return resolve_ability_caps(feature_increases)
+
+    async def refresh(self, character: Character, *, commit: bool = True) -> CharacterAbilityScore:
+        """
+        Recompute effective ability scores for ``character`` and persist
+        them. ``commit=False`` defers persistence to the caller's
+        transaction (bulk refreshes inside a source reconciliation).
+        """
 
         totals = await self.compute(character)
-        return await self.repository.upsert(character.id, totals)
+        return await self.repository.upsert(character.id, totals, commit=commit)
 
     async def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
         """

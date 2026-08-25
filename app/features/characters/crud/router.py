@@ -218,6 +218,8 @@ async def create_character(
                         "wisdom": 10,
                         "charisma": 12,
                         "skill_ids": [1, 5],
+                        "feat_id": 7,
+                        "ability_score_increase_id": None,
                         "armor_class": 16,
                         "shield": 2,
                         "personality_traits": "Gruff but loyal.",
@@ -236,6 +238,7 @@ async def create_character(
                         "wisdom": 12,
                         "charisma": 10,
                         "backstory": "Expelled from the academy for asking the wrong questions.",
+                        "feat_id": 12,
                         "money_gold": 10,
                     },
                 },
@@ -256,11 +259,14 @@ async def create_character(
     must reference an existing class; `race_id`/`background_id` are
     optional but, if provided, must reference existing records.
 
-    On creation: `skill_ids` are validated against the class's available
-    skills and merged with the background's and the race's granted skills;
-    the class's level-1 spell slot progression is applied immediately, so
-    a caster already has spell slot totals without any follow-up call.
-    Saving throws are not written — they come from the class on every read.
+    On creation: `feat_id` is MANDATORY — every character takes one origin
+    feat (when it offers ability-score increases, an explicit
+    `ability_score_increase_id` is required). `skill_ids` are validated
+    against the class's available skills and merged with the background's
+    and the race's granted skills; the class's level-1 spell slot
+    progression is applied immediately, so a caster already has spell slot
+    totals without any follow-up call. Saving throws are not written —
+    they come from the class on every read.
     """
 
     return await character_service.create_character(data, current_user)

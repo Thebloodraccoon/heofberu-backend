@@ -9,9 +9,12 @@ class GmAsiIncreaseItem(BaseModel):
     """
     One free-form ability adjustment applied by a GM.
 
-    Unlike the level-up ASI there is no +1..+2 budget and no 20 cap:
-    amounts may be negative (lowering an ability) or arbitrarily large.
+    Unlike the level-up ASI there is no +1..+2 budget: amounts may be
+    negative (lowering an ability) or arbitrarily large. The 20 cap is
+    enforced by the service, not the schema.
     """
+
+    model_config = ConfigDict(from_attributes=True)
 
     ability: AbilityScore
     amount: int
@@ -31,14 +34,14 @@ class GmAsiChoiceAdd(BaseModel):
 
 
 class GmAsiChoiceResponse(BaseModel):
-    """A recorded GM ASI adjustment (``character_asi_choices`` row with no class level)."""
+    """
+    A recorded GM ASI adjustment (``character_asi_choices`` row with no
+    class level). ``increases`` serializes the typed
+    ``CharacterASIChoiceIncrease`` child rows.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     character_id: int
     increases: list[GmAsiIncreaseItem] = Field(default_factory=list)
-
-    @field_validator("increases", mode="before")
-    def _increases_none_to_empty(cls, v):
-        return v if v is not None else []

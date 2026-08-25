@@ -38,6 +38,24 @@ class InvalidAbilityScoreIncreaseException(AppError):
         )
 
 
+class FeatAsiChoiceRequiredException(AppError):
+    """
+    Raised when granting (or taking at level-up) a feat that offers
+    ability-score increases without picking one — the choice must be
+    explicit so the granted points are never silently lost.
+    """
+
+    status_code = 422
+
+    def __init__(self, feat_id: int, choices: int):
+        self.feat_id = feat_id
+        self.choices = choices
+        super().__init__(
+            f"Feat {feat_id} offers {choices} ability score increase option(s); "
+            "an `ability_score_increase_id` must be chosen explicitly."
+        )
+
+
 class FeatPrerequisiteNotMetException(AppError):
     """Raised when a character doesn't meet a feat's ability-score prerequisite."""
 

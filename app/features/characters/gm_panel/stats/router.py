@@ -33,9 +33,10 @@ async def get_character_stats(
 ):
     """
     Return each of the six abilities as `{base, total}`: the ORIGINAL
-    base value (player entry plus level-up/GM bumps) next to its COMPUTED
-    effective total (base + race/subrace/feat bonuses), freshly
-    calculated — never read from the possibly-stale cache.
+    base value (player entry at creation, never mutated) next to its
+    COMPUTED effective total (base + race/subrace/feat bonuses + counted
+    ASI-choice log increases), freshly calculated — never read from the
+    possibly-stale cache.
     """
 
     return await stats_service.get_stats(character_id, current_user)

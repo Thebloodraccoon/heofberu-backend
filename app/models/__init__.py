@@ -4,7 +4,7 @@ from app.models.background_association_models import background_skills  # noqa: 
 # Background and its associations.
 from app.models.background_model import Background  # noqa: F401
 from app.models.character_ability_score_model import CharacterAbilityScore  # noqa: F401
-from app.models.character_asi_choice_model import CharacterASIChoice  # noqa: F401
+from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease  # noqa: F401
 from app.models.character_association_models import (  # noqa: F401
     CharacterFeat,
     CharacterSkillProficiency,
@@ -20,7 +20,6 @@ from app.models.character_model import Character  # noqa: F401
 from app.models.character_spell_model import CharacterSpell  # noqa: F401
 from app.models.class_association_models import (  # noqa: F401
     ClassArmorProficiency,
-    ClassPrimaryAbility,
     ClassSavingThrow,
     ClassWeaponProficiency,
     class_available_skills,

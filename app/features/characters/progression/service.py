@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource, FeatureSourceType
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, TOTAL_FIELD_BY_ABILITY
+from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
@@ -18,6 +18,7 @@ from app.features.characters.gm_panel.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
     validate_ability_score_increase_cap,
+    validate_asi_choice_required,
 )
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
@@ -64,7 +65,9 @@ class CharacterProgressionService(CharacterSubDomainService):
     Leveling up is the entry point for ability score improvements: an
     ASI level (see ``ASI_LEVELS``) *requires* a ``choice`` in the
     request, and the resolved ASI-or-feat is recorded in
-    ``character_asi_choices`` for audit and future level-down support.
+    ``character_asi_choices`` — the counted source of the improvement
+    points (the base columns stay untouched) as well as the audit trail
+    that makes a future level-down a plain row deletion.
 
     Source-owned feature grants are kept in sync automatically: every
     level-up, subclass change, subrace change, and background setup
@@ -101,6 +104,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         current class — otherwise ``SubclassNotFoundException``.
         Setting a subclass grants its features at or below the current
         level; clearing it revokes that subclass's auto-granted features.
+        The ability-score cache is refreshed because granted features can
+        carry fixed ability effects.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -115,6 +120,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             character.subclass_id = data.subclass_id
             await sync_progression_features(self.repository.db, character)
 
+        await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
 
     async def set_subrace(self, character_id: int, data: SubraceChange, current_user: UserResponse) -> None:
@@ -153,7 +159,9 @@ class CharacterProgressionService(CharacterSubDomainService):
         granted skills (deduplicated against the proficiencies the
         character already holds), and its starting equipment (merged into
         existing stacks). The background is then fixed: re-choosing will
-        only ever be possible through the (future) rebuild endpoint.
+        only ever be possible through the (future) rebuild endpoint. The
+        ability-score cache is refreshed because granted features can
+        carry fixed ability effects.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -172,6 +180,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             await self._grant_background_skills(character, background.granted_skills)
             await self._grant_background_equipment(character)
 
+        await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
 
     async def request_rebuild(self, character_id: int, current_user: UserResponse) -> None:
@@ -326,26 +335,31 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def _apply_asi(self, character: Character, increases, class_level: int) -> None:
         """
-        Apply an Ability Score Improvement: validate against the 20 cap
-        using the character's *effective* scores, then bump the base
-        columns and record the choice.
+        Apply an Ability Score Improvement: validate against the
+        ability's effective cap (20 by default, raised by feature effects
+        such as Primal Champion) using the character's *effective*
+        scores, then record the choice.
+
+        The base ability columns are NOT touched — the increments live
+        only in the ``character_asi_choices`` log (as typed child rows)
+        and are counted from there by the ability-score calculator. This
+        keeps the base columns at their originally entered values (easy
+        rebuild) and makes a future level-down a plain row deletion.
         """
 
         totals = await self.stats_service.compute(character)
+        caps = await self.stats_service.resolve_ability_caps(character)
         for item in increases:
             total_field = TOTAL_FIELD_BY_ABILITY[item.ability]
             current_total = totals[total_field]
+            cap = caps[item.ability]
 
-            if current_total + item.amount > ABILITY_SCORE_CAP:
+            if current_total + item.amount > cap:
                 raise AbilityScoreCapExceededException(
                     ability=item.ability.value,
                     current_total=current_total,
                     requested=current_total + item.amount,
                 )
-
-        for item in increases:
-            base_field = BASE_FIELD_BY_ABILITY[item.ability]
-            setattr(character, base_field, getattr(character, base_field) + item.amount)
 
         await self.asi_repository.add(
             character.id,
@@ -375,6 +389,10 @@ class CharacterProgressionService(CharacterSubDomainService):
             await validate_ability_score_increase_cap(
                 feat, choice.ability_score_increase_id, character, self.stats_service
             )
+        else:
+            # Same rule as the GM grant: a feat offering ASI options must
+            # be taken with an explicit choice — never silently without.
+            validate_asi_choice_required(feat, choice.ability_score_increase_id)
 
         await check_feat_prerequisite(character, feat, self.stats_service)
 

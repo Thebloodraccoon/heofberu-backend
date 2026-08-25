@@ -10,8 +10,11 @@ from app.models import (
     Class,
     Race,
 )
+from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 from app.models.character_association_models import CharacterFeat
+from app.models.character_feature_model import CharacterFeature
 from app.models.feat_model import FeatAbilityScoreIncrease
+from app.models.feature_model import FeatureAbilityIncrease
 from app.models.race_association_models import RaceAbilityBonus
 from app.models.subrace_association_models import SubraceAbilityBonus
 
@@ -96,12 +99,50 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         )
         return list(result.scalars().unique().all())
 
-    async def upsert(self, character_id: int, totals: dict) -> CharacterAbilityScore:
+    async def get_asi_increases(self, character_id: int) -> list[CharacterASIChoiceIncrease]:
+        """
+        Fetch the counted increments of the character's ASI-choice log:
+        every ``CharacterASIChoiceIncrease`` whose parent choice has
+        ``applied_to_base == False`` (level-up ASIs and GM ±adjustments
+        recorded after the log-based rework). Legacy rows — pre-rework
+        choices whose points were folded into the base columns — are
+        excluded here so their points don't apply twice.
+        """
+
+        result = await self.db.execute(
+            select(CharacterASIChoiceIncrease)
+            .join(CharacterASIChoice, CharacterASIChoice.id == CharacterASIChoiceIncrease.character_asi_choice_id)
+            .where(
+                CharacterASIChoice.character_id == character_id,
+                CharacterASIChoice.applied_to_base.is_(False),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_feature_increases(self, character_id: int) -> list[FeatureAbilityIncrease]:
+        """
+        Fetch the fixed ability-score effects of every feature currently
+        granted to the character (``character_features``), e.g. Primal
+        Champion's +4 STR/CON rows. Purely automatic — no choice log
+        involved; the effect applies exactly while the grant exists.
+        """
+
+        result = await self.db.execute(
+            select(FeatureAbilityIncrease)
+            .join(CharacterFeature, CharacterFeature.feature_id == FeatureAbilityIncrease.feature_id)
+            .where(CharacterFeature.character_id == character_id)
+        )
+        return list(result.scalars().all())
+
+    async def upsert(self, character_id: int, totals: dict, *, commit: bool = True) -> CharacterAbilityScore:
         """
         Create or update the cached effective ability scores for a
         character. ``totals`` keys are ``strength_total``,
         ``dexterity_total``, ``constitution_total``,
         ``intelligence_total``, ``wisdom_total``, ``charisma_total``.
+
+        ``commit=False`` flushes instead — for bulk refreshes running
+        inside a caller's transaction (e.g. source reconciliation).
         """
 
         cache = await self.get_by_character_id(character_id)
@@ -112,8 +153,11 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             for field, value in totals.items():
                 setattr(cache, field, value)
 
-        await self.db.commit()
-        await self.db.refresh(cache)
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(cache)
+        else:
+            await self.db.flush()
 
         return cache
 

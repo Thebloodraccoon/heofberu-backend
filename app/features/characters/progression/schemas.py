@@ -89,9 +89,10 @@ class FeatChoice(BaseModel):
     """
     Level-up choice taking a feat instead of the Ability Score Improvement.
 
-    ``ability_score_increase_id`` is optional, mirroring the manual feat
-    grant: if the chosen feat offers an ASI of its own (e.g. Resilient),
-    pass the id of the specific ``FeatAbilityScoreIncrease`` row to apply.
+    ``ability_score_increase_id`` is required when the chosen feat offers
+    ASI options of its own (e.g. Resilient) — pass the id of the specific
+    ``FeatAbilityScoreIncrease`` row to apply; the service rejects a feat
+    with options taken without one.
     """
 
     type: Literal["FEAT"] = "FEAT"
@@ -134,23 +135,26 @@ class CanLevelUpResponse(BaseModel):
 class ASIIncreaseResponse(BaseModel):
     """A single increment of a recorded ASI choice."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     ability: AbilityScore
     amount: int
 
 
 class CharacterASIChoiceResponse(BaseModel):
-    """A recorded ASI-level resolution for a character."""
+    """
+    A recorded ASI-level resolution for a character. ``increases``
+    serializes the typed ``CharacterASIChoiceIncrease`` child rows
+    (empty for FEAT-type choices, whose stat effect flows through the
+    granted feat).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     character_id: int
-    class_level: int
+    class_level: int | None = None
     choice_type: ASILevelChoice
     feat_id: int | None = None
     ability_score_increase_id: int | None = None
     increases: list[ASIIncreaseResponse] = Field(default_factory=list)
-
-    @field_validator("increases", mode="before")
-    def _increases_none_to_empty(cls, v):
-        return v if v is not None else []

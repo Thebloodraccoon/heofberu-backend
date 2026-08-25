@@ -13,9 +13,10 @@ class AbilityScoreView(BaseModel):
 class GmCharacterStatsResponse(BaseModel):
     """
     GM view of a character's six abilities: the ORIGINAL base values
-    (what the player entered plus level-up/GM bumps on the base columns)
-    alongside the COMPUTED effective totals (base + race/subrace/feat
-    bonuses), freshly calculated — never the stale cache.
+    (what the player entered at creation — never mutated) alongside the
+    COMPUTED effective totals (base + race/subrace/feat bonuses + counted
+    ASI-choice log increases), freshly calculated — never the stale
+    cache.
     """
 
     strength: AbilityScoreView

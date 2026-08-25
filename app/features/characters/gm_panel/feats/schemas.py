@@ -10,13 +10,21 @@ from pydantic import BaseModel
 
 
 class CharacterFeatAdd(BaseModel):
-    """Grant a feat to a character. ability_score_increase_id is optional."""
+    """
+    Grant a feat to a character. ``ability_score_increase_id`` is
+    optional for feats without ASI options and REQUIRED for feats that
+    offer them (the service rejects the grant otherwise).
+    """
 
     feat_id: int
     ability_score_increase_id: int | None = None
 
 
 class CharacterFeatUpdate(BaseModel):
-    """Change (or clear) the ASI choice on an already-granted feat."""
+    """
+    Change the ASI choice on an already-granted feat; a feat offering
+    ASI options must always keep one (clearing is rejected by the
+    service).
+    """
 
     ability_score_increase_id: int | None = None

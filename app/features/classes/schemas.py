@@ -2,7 +2,7 @@
 
 import math
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel, WeaponProficiency
 from app.features.classes.subclasses.crud.schemas import SubclassBriefResponse
@@ -14,13 +14,6 @@ def _proficiency_bonus(class_level: int) -> int:
     """Return the proficiency bonus for a given class level (1-20)."""
 
     return math.ceil(class_level / 4) + 1
-
-
-def _validate_unique_primary_abilities(primary_abilities: list[AbilityScore]) -> list[AbilityScore]:
-    if len(primary_abilities) != len(set(primary_abilities)):
-        raise ValueError("Duplicate primary abilities are not allowed.")
-
-    return primary_abilities
 
 
 def _validate_unique_saving_throws(saving_throws: list[AbilityScore]) -> list[AbilityScore]:
@@ -104,8 +97,8 @@ class ClassCreate(ClassBase):
     Create payload for a class.
 
     Kept minimal on purpose: only the class's own scalar fields plus its
-    directly-owned simple child rows (``primary_abilities``,
-    ``saving_throws``, ``armor_proficiencies``, ``weapon_proficiencies``,
+    directly-owned simple child rows (``saving_throws``,
+    ``armor_proficiencies``, ``weapon_proficiencies``,
     ``available_skills``) are set here, atomically, alongside the ``Class``
     row itself.
 
@@ -117,20 +110,12 @@ class ClassCreate(ClassBase):
       - ``POST /classes/{id}/subclasses``
       - ``PUT /classes/{id}/starting-items``
       - ``PUT /classes/{id}/spell-slots/{class_level}``
-
-    If ``spellcasting_ability`` is set (non-null) it must appear in
-    ``primary_abilities``.
     """
 
-    primary_abilities: list[AbilityScore] = []
     saving_throws: list[AbilityScore] = []
     armor_proficiencies: list[ArmorProficiency] = []
     weapon_proficiencies: list[WeaponProficiency] = []
     available_skills: list[int] | None = None
-
-    @field_validator("primary_abilities")
-    def validate_unique_primary_abilities(cls, v):
-        return _validate_unique_primary_abilities(v)
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws(cls, v):
@@ -151,17 +136,6 @@ class ClassCreate(ClassBase):
 
         return _validate_unique_skill_ids(v)
 
-    @model_validator(mode="after")
-    def validate_spellcasting_ability_is_primary(self):
-        """Ensure a non-null ``spellcasting_ability`` is also a primary ability."""
-
-        if self.spellcasting_ability is not None and self.spellcasting_ability not in self.primary_abilities:
-            raise ValueError(
-                f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
-            )
-
-        return self
-
 
 class ClassUpdate(BaseModel):
     """
@@ -170,8 +144,8 @@ class ClassUpdate(BaseModel):
     Does not include ``available_skills`` (dedicated PUT endpoint).
     Does not include ``features`` or ``subclasses`` — manage those through
     their own endpoints to keep replace-vs-patch semantics unambiguous.
-    ``primary_abilities``, ``saving_throws``, ``armor_proficiencies``,
-    and ``weapon_proficiencies`` are full-replace when set.
+    ``saving_throws``, ``armor_proficiencies`` and ``weapon_proficiencies``
+    are full-replace when set.
     """
 
     name: str | None = None
@@ -179,17 +153,9 @@ class ClassUpdate(BaseModel):
     skill_choice_count: int | None = None
     spellcasting_ability: AbilityScore | None = None
     description: str | None = None
-    primary_abilities: list[AbilityScore] | None = None
     saving_throws: list[AbilityScore] | None = None
     armor_proficiencies: list[ArmorProficiency] | None = None
     weapon_proficiencies: list[WeaponProficiency] | None = None
-
-    @field_validator("primary_abilities")
-    def validate_unique_primary_abilities(cls, v):
-        if v is None:
-            return v
-
-        return _validate_unique_primary_abilities(v)
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws_update(cls, v):
@@ -211,21 +177,6 @@ class ClassUpdate(BaseModel):
             return v
 
         return _validate_unique_weapon_proficiencies(v)
-
-    @model_validator(mode="after")
-    def validate_spellcasting_ability_is_primary_if_both_set(self):
-        """Ensure a non-null ``spellcasting_ability`` is primary when both are provided."""
-
-        if (
-            self.spellcasting_ability is not None
-            and self.primary_abilities is not None
-            and self.spellcasting_ability not in self.primary_abilities
-        ):
-            raise ValueError(
-                f"spellcasting_ability '{self.spellcasting_ability}' must also appear in primary_abilities."
-            )
-
-        return self
 
 
 class SavingThrowsUpdate(BaseModel):
@@ -291,14 +242,6 @@ class SpellSlotProgressionResponse(BaseModel):
     slots: int
 
 
-class PrimaryAbilityResponse(BaseModel):
-    """A class's primary ability score, as returned in responses."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    ability: AbilityScore
-
-
 class SavingThrowResponse(BaseModel):
     """A class's saving throw proficiency, as returned in responses."""
 
@@ -341,7 +284,6 @@ class ClassResponse(ClassBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    primary_abilities: list[PrimaryAbilityResponse] = []
     saving_throws: list[SavingThrowResponse] = []
     armor_proficiencies: list[ArmorProficiencyResponse] = []
     weapon_proficiencies: list[WeaponProficiencyResponse] = []
@@ -393,8 +335,8 @@ class ClassProgressionResponse(BaseModel):
 
 class ClassFullResponse(ClassResponse):
     """
-    Everything about a class in one payload: base fields, primary
-    abilities/saving throws/armor proficiencies/available skills/starting
+    Everything about a class in one payload: base fields,
+    saving throws/armor proficiencies/available skills/starting
     items/spell slots (all inherited from ``ClassResponse``), plus
     CLASS-source ``features`` and a brief reference to each subclass
     (``SubclassBriefResponse``). The full per-subclass picture (its own

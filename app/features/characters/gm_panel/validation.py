@@ -1,9 +1,9 @@
 """Shared validation helpers for GM feat-grant operations on a character."""
 
-from app.constants import ABILITY_SCORE_CAP
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.gm_panel.exceptions import (
+    FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,
     InvalidAbilityScoreIncreaseException,
 )
@@ -24,19 +24,33 @@ def validate_ability_score_increase(feat: Feat, ability_score_increase_id: int) 
         raise InvalidAbilityScoreIncreaseException(feat_id=feat.id, ability_score_increase_id=ability_score_increase_id)
 
 
+def validate_asi_choice_required(feat: Feat, ability_score_increase_id: int | None) -> None:
+    """
+    A feat offering ability-score increase options MUST be taken with an
+    explicit choice: raise ``FeatAsiChoiceRequiredException`` when such a
+    feat is granted/taken with no ``ability_score_increase_id``, so its
+    points can never be silently lost.
+    """
+
+    if ability_score_increase_id is None and feat.ability_score_increases:
+        raise FeatAsiChoiceRequiredException(feat_id=feat.id, choices=len(feat.ability_score_increases))
+
+
 async def validate_ability_score_increase_cap(
     feat: Feat, ability_score_increase_id: int, character: Character, stats_service: CharacterStatsService
 ) -> None:
     """
     Raise ``AbilityScoreCapExceededException`` if applying the selected
     ``FeatAbilityScoreIncrease`` would push the character's effective
-    score above the 20 cap.
+    score above the ability's cap.
 
-    Mirrors the level-up ASI check (``CharacterProgressionService._apply_asi``):
-    the cap is validated against *effective* totals (base + race/subrace +
-    already-granted feat increases), computed fresh rather than read from
-    the cache table. The GM panel's free-form ±ASI endpoint deliberately
-    bypasses this — only structured feat ASI choices are capped.
+    Mirrors the level-up ASI check (``CharacterProgressionService._apply_asi``)
+    and the GM panel's ±adjustment check (``GmPanelAsiService``): every
+    structured source of points validates against *effective* totals
+    (base + race/subrace + feat increases + counted ASI log + feature
+    effects) and the per-ability cap (20 by default, raised by feature
+    ``new_cap`` effects such as Primal Champion), computed fresh rather
+    than read from the cache table.
     """
 
     increase = next((i for i in feat.ability_score_increases if i.id == ability_score_increase_id), None)
@@ -44,11 +58,12 @@ async def validate_ability_score_increase_cap(
         return
 
     totals = await stats_service.compute(character)
+    caps = await stats_service.resolve_ability_caps(character)
     total_field = TOTAL_FIELD_BY_ABILITY[increase.ability]
     current_total = totals[total_field]
     requested = current_total + increase.amount
 
-    if requested > ABILITY_SCORE_CAP:
+    if requested > caps[increase.ability]:
         raise AbilityScoreCapExceededException(
             ability=increase.ability.value,
             current_total=current_total,

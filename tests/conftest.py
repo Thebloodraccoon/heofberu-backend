@@ -174,13 +174,11 @@ async def create_subclass(db_session):
     async def _create_subclass(
         class_id,
         name="Champion",
-        archetype_group_name=None,
         description="",
     ):
         subclass = Subclass(
             class_id=class_id,
             name=name,
-            archetype_group_name=archetype_group_name,
             description=description,
         )
         db_session.add(subclass)

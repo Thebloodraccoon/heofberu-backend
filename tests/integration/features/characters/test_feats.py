@@ -95,6 +95,62 @@ class TestCharacterFeats:
         assert grant_response.status_code == 201
         assert grant_response.json()["ability_score_increase_id"] == asi_id
 
+    async def test_grant_feat_with_asi_options_without_choice_returns_422(
+        self, client, gm, gm_token, create_class, create_character, create_feat
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
+        feat = await create_feat(name="Resilient")
+        await client.put(
+            "/feats/ability-score-increases",
+            params={"feat_id": feat.id},
+            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        response = await client.post(
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_grant_feat_with_asi_writes_audit_row(
+        self, client, gm, gm_token, create_class, create_character, create_feat
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
+        feat = await create_feat(name="Resilient")
+        asi_response = await client.put(
+            "/feats/ability-score-increases",
+            params={"feat_id": feat.id},
+            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        asi_id = asi_response.json()["ability_score_increases"][0]["id"]
+
+        await client.post(
+            "/characters/gm-panel/feats",
+            params={"character_id": character.id},
+            json={"feat_id": feat.id, "ability_score_increase_id": asi_id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        audit_response = await client.get(
+            "/characters/progression/asi-choices",
+            params={"character_id": character.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert audit_response.status_code == 200
+        choices = audit_response.json()
+        assert len(choices) == 1
+        assert choices[0]["choice_type"] == "FEAT"
+        assert choices[0]["class_level"] is None
+        assert choices[0]["feat_id"] == feat.id
+        assert choices[0]["ability_score_increase_id"] == asi_id
+
     async def test_revoke_feat(self, client, gm, gm_token, create_class, create_character, create_feat):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)

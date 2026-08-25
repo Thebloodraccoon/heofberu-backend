@@ -40,6 +40,8 @@ class FakeCacheRepository:
         race_bonuses=None,
         subrace_bonuses=None,
         feat_increases=None,
+        asi_increases=None,
+        feature_increases=None,
         classes=None,
         races=None,
     ):
@@ -47,6 +49,8 @@ class FakeCacheRepository:
         self.race_bonuses = race_bonuses or []
         self.subrace_bonuses = subrace_bonuses or []
         self.feat_increases = feat_increases or []
+        self.asi_increases = asi_increases or []
+        self.feature_increases = feature_increases or []
         self.classes = classes or {}
         self.races = races or {}
         self.get_by_calls = []
@@ -54,6 +58,8 @@ class FakeCacheRepository:
         self.get_race_bonus_calls = []
         self.get_subrace_bonus_calls = []
         self.get_feat_increase_calls = []
+        self.get_asi_increase_calls = []
+        self.get_feature_increase_calls = []
         self.upsert_calls = []
         self.get_classes_calls = []
         self.get_races_calls = []
@@ -78,9 +84,17 @@ class FakeCacheRepository:
         self.get_feat_increase_calls.append(character_id)
         return self.feat_increases
 
-    async def upsert(self, character_id, totals):
+    async def get_asi_increases(self, character_id):
+        self.get_asi_increase_calls.append(character_id)
+        return self.asi_increases
+
+    async def get_feature_increases(self, character_id):
+        self.get_feature_increase_calls.append(character_id)
+        return self.feature_increases
+
+    async def upsert(self, character_id, totals, *, commit=True):
         await self.get_by_character_id(character_id)
-        self.upsert_calls.append((character_id, totals))
+        self.upsert_calls.append((character_id, totals, commit))
         return self.cache_row
 
     async def get_classes(self, class_ids):
@@ -118,7 +132,52 @@ class TestCharacterStatsService:
         assert fake.get_race_bonus_calls == [5]
         assert fake.get_subrace_bonus_calls == [7]
         assert fake.get_feat_increase_calls == [1]
+        assert fake.get_asi_increase_calls == [1]
+        assert fake.get_feature_increase_calls == [1]
         assert fake.upsert_calls == []
+
+    async def test_compute_counts_asi_log_increases(self):
+        fake_kwargs = {
+            "asi_increases": [SimpleNamespace(ability=AbilityScore.STR, amount=2)],
+        }
+        service, fake = make_service(**fake_kwargs)
+
+        totals = await service.compute(make_character())
+
+        # Base STR 14 + 2 counted log points (base columns stay untouched).
+        assert totals["strength_total"] == 16
+        assert fake.get_asi_increase_calls == [1]
+
+    async def test_compute_counts_feature_effects_and_floors_at_one(self):
+        service, _ = make_service(
+            feature_increases=[
+                SimpleNamespace(ability=AbilityScore.STR, amount=4, new_cap=None),
+                SimpleNamespace(ability=AbilityScore.INT, amount=-20, new_cap=None),
+            ]
+        )
+
+        totals = await service.compute(make_character())
+
+        # Base STR 14 + 4 from the feature effect; INT 8 - 20 floors at 1.
+        assert totals["strength_total"] == 18
+        assert totals["intelligence_total"] == 1
+
+    async def test_resolve_ability_caps_raises_cap_via_feature_effects(self):
+        service, fake = make_service(
+            feature_increases=[
+                SimpleNamespace(ability=AbilityScore.STR, amount=4, new_cap=24),
+                SimpleNamespace(ability=AbilityScore.CON, amount=4, new_cap=24),
+                SimpleNamespace(ability=AbilityScore.WIS, amount=1, new_cap=18),
+            ]
+        )
+
+        caps = await service.resolve_ability_caps(make_character())
+
+        assert caps[AbilityScore.STR] == 24
+        assert caps[AbilityScore.CON] == 24
+        # A new_cap below the standard 20 is ignored, never lowers.
+        assert caps[AbilityScore.WIS] == 20
+        assert caps[AbilityScore.DEX] == 20
 
     async def test_compute_without_race_queries_race_bonuses_as_none(self):
         service, fake = make_service()
@@ -177,6 +236,7 @@ class TestCharacterStatsService:
                     "wisdom_total": 9,
                     "charisma_total": 11,
                 },
+                True,
             )
         ]
         assert fake.get_subrace_bonus_calls == [None]

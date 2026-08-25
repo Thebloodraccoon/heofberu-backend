@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
+from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.cache import invalidate_character_cache
 from app.models import CharacterFeature, Feature
 from app.models.character_model import Character
@@ -138,6 +139,34 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
     result = await db.execute(select(Character).where(source_filter(source_id)))
     characters = list(result.scalars().unique().all())
 
+    stats_service = CharacterStatsService(db)
     for character in characters:
         await sync_progression_features(db, character)
+        # Feature grants can carry fixed ability effects — refresh the
+        # stat cache in the caller's transaction (never commits here).
+        await stats_service.refresh(character, commit=False)
         await invalidate_character_cache(character.id)
+
+
+async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> None:
+    """
+    Refresh the ability-score caches of every character currently granted
+    ``feature``. Called after a GM edits the feature's fixed
+    ability-increase effects (``PUT /features/ability-increases``) so the
+    granted characters' totals follow immediately instead of waiting for
+    the per-character self-heal on the next detail fetch.
+
+    Never commits — the caller's transaction owns persistence.
+    """
+
+    result = await db.execute(
+        select(CharacterFeature.character_id).where(CharacterFeature.feature_id == feature_id)
+    )
+    character_ids = list(result.scalars().all())
+    if not character_ids:
+        return
+
+    characters = await db.execute(select(Character).where(Character.id.in_(character_ids)))
+    stats_service = CharacterStatsService(db)
+    for character in characters.scalars().all():
+        await stats_service.refresh(character, commit=False)

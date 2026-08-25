@@ -83,9 +83,16 @@ class TestCharacterUpdate:
 @pytest.mark.unit
 class TestCharacterCreate:
     def _payload(self, **overrides):
-        payload = {"name": "Grog", "class_id": 1}
+        payload = {"name": "Grog", "class_id": 1, "feat_id": 5}
         payload.update(overrides)
         return payload
+
+    def test_feat_id_is_required(self):
+        """The origin feat is mandatory at creation."""
+        payload = {"name": "Grog", "class_id": 1}
+
+        with pytest.raises(ValidationError):
+            CharacterCreate(**payload)
 
     def test_level_is_not_client_settable(self):
         """Every character starts at level 1; level is not part of the create payload."""
