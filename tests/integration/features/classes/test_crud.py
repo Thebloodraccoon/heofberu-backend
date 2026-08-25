@@ -311,6 +311,81 @@ class TestClassCrud:
 
         assert response.status_code == 403
 
+    async def test_gm_can_create_class_with_weapon_proficiencies(self, client, gm_token):
+        response = await client.post(
+            "/classes",
+            json={
+                "name": "Fighter",
+                "hit_dice": "D10",
+                "spellcasting_ability": None,
+                "weapon_proficiencies": ["SIMPLE", "MARTIAL"],
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        assert [item["weapon_category"] for item in response.json()["weapon_proficiencies"]] == [
+            "SIMPLE",
+            "MARTIAL",
+        ]
+
+    async def test_gm_can_set_weapon_proficiencies(self, client, gm_token, create_class):
+        character_class = await create_class(name="Wizard")
+
+        response = await client.put(
+            "/classes/weapon-proficiencies",
+            params={"class_id": character_class.id},
+            json={"weapon_proficiencies": ["SIMPLE"]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert [item["weapon_category"] for item in response.json()["weapon_proficiencies"]] == ["SIMPLE"]
+
+    async def test_set_weapon_proficiencies_is_full_replace(self, client, gm_token, create_class):
+        character_class = await create_class(name="Fighter")
+
+        await client.put(
+            "/classes/weapon-proficiencies",
+            params={"class_id": character_class.id},
+            json={"weapon_proficiencies": ["SIMPLE", "MARTIAL"]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        response = await client.put(
+            "/classes/weapon-proficiencies",
+            params={"class_id": character_class.id},
+            json={"weapon_proficiencies": ["MARTIAL"]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert [item["weapon_category"] for item in response.json()["weapon_proficiencies"]] == ["MARTIAL"]
+
+    async def test_set_weapon_proficiencies_duplicate_returns_422(self, client, gm_token, create_class):
+        character_class = await create_class(name="Clumsy")
+
+        response = await client.put(
+            "/classes/weapon-proficiencies",
+            params={"class_id": character_class.id},
+            json={"weapon_proficiencies": ["SIMPLE", "SIMPLE"]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_player_cannot_set_weapon_proficiencies(self, client, player_token, create_class):
+        character_class = await create_class(name="Fighter")
+
+        response = await client.put(
+            "/classes/weapon-proficiencies",
+            params={"class_id": character_class.id},
+            json={"weapon_proficiencies": ["MARTIAL"]},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
     async def test_gm_can_set_class_starting_items(self, client, gm_token, create_class, create_item):
         character_class = await create_class(name="Fighter")
         longsword = await create_item(name="Longsword", item_type="WEAPON")
