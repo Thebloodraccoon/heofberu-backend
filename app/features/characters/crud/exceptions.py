@@ -5,7 +5,6 @@ from app.core.exceptions import AppError
 
 class InvalidHpUpdateException(AppError):
     """
-
     Raised when an HP update request is malformed (e.g. mixes delta with
     absolute values, or provides neither).
     """

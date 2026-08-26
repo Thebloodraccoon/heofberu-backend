@@ -48,7 +48,6 @@ _SOURCE_CHARACTER_FILTER = {
 
 async def _desired_features(db: AsyncSession, character: Character) -> list[Feature]:
     """
-
     The target feature set for a character: features owned by its class,
     subclass, race, subrace, and background, all filtered to ``level``
     ``NULL`` or ``<= character.level``.

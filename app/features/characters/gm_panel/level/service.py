@@ -29,15 +29,19 @@ class GmPanelLevelService(CharacterSubDomainService):
     async def set_max_level(
         self, character_id: int, data: MaxLevelUpdate, current_user: UserResponse
     ) -> CharacterMaxLevelResponse:
-        """Raise a character's maximum allowed level; lowering is never allowed."""
+        """
+        Raise a character's maximum allowed level; lowering is never allowed.
+
+        Characters always get a max-level row at creation (and via the
+        migration backfill); a missing row is treated defensively as
+        capped at the character's current level and seeded on the spot
+        rather than failing the request.
+        """
 
         character = await self.get_character_for_user(character_id, current_user)
 
         row = await self.max_level_repository.get_by_character_id(character_id)
         if row is None:
-            # Defensive: characters always get a row at creation (and via
-            # migration backfill); treat a missing row as capped at the
-            # character's current level rather than failing the request.
             row = await self.max_level_repository.create_for_character(character_id, character.level)
 
         if data.max_level < character.level:

@@ -9,23 +9,23 @@ from app.settings._common import utcnow
 
 
 class UserRepository(BaseRepository[User]):
-    """Repository for the essence of User."""
+    """User persistence: generic CRUD plus email/username lookups and last-login stamping."""
 
     def __init__(self, db: AsyncSession):
         super().__init__(User, db, search_fields=["username", "email"], unique_fields=["username", "email"])
 
     async def get_by_email(self, email: str) -> User | None:
-        """Obtaining a user by email."""
+        """Return the user with this exact email address, or ``None``."""
 
         return await self.db.scalar(select(User).where(User.email == email))
 
     async def get_by_username(self, username: str) -> User | None:
-        """Obtaining a user by username."""
+        """Return the user with this exact username, or ``None``."""
 
         return await self.db.scalar(select(User).where(User.username == username))
 
     async def update_last_login(self, user: User) -> User:
-        """Update user's last login timestamp."""
+        """Stamp ``user.last_login`` with the current UTC time, commit, and return the refreshed user."""
 
         user.last_login = utcnow()  # type: ignore
         await self.db.commit()

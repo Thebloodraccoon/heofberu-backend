@@ -21,9 +21,7 @@ from app.features.characters.crud.exceptions import (
 )
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
-from app.features.characters.exceptions import (
-    BackgroundNotFoundException,
-)
+from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
 from app.features.characters.gm_panel.features.repository import CharacterFeatureRepository
 from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository

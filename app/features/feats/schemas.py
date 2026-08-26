@@ -51,7 +51,6 @@ def _validate_unique_asi_abilities(
 
 class FeatCreate(FeatBase):
     """
-
     Create payload for a feat.
 
     ``ability_score_increases`` is optional — a feat can be created
@@ -75,7 +74,6 @@ class FeatCreate(FeatBase):
 
 class FeatUpdate(BaseModel):
     """
-
     All fields optional — only provided fields are updated (PATCH semantics).
 
     Deliberately does NOT include ability_score_increases: that keeps its

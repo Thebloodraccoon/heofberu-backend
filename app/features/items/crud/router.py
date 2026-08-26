@@ -20,7 +20,10 @@ router = APIRouter()
 )
 async def get_items(
     item_service: ItemCrudDep,
-    item_type: list[ItemType] | None = Query(None, description="Any-of match on the item's type (repeat the key: `?item_type=WEAPON&item_type=ARMOR`)."),
+    item_type: list[ItemType] | None = Query(
+        None,
+        description="Any-of match on the item's type (repeat the key: `?item_type=WEAPON&item_type=ARMOR`).",
+    ),
     rarity: list[ItemRarity] | None = Query(None, description="Any-of match on the item's rarity (repeat the key)."),
     search: str | None = Query(None, description="Case-insensitive substring match against the item's name."),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
@@ -107,7 +110,10 @@ async def create_item(
                         "armor_class_dex_bonus": False,
                         "strength_requirement": 13,
                         "stealth_disadvantage": True,
-                        "description": "Made of interlocking metal rings, chain mail includes a layer of quilted fabric worn underneath to prevent chafing.",
+                        "description": (
+                            "Made of interlocking metal rings, chain mail includes a layer of quilted "
+                            "fabric worn underneath to prevent chafing."
+                        ),
                     },
                 },
                 "magic_item": {

@@ -16,8 +16,7 @@ class ClassThrowsService(BaseService[Class, ClassCreate, ClassUpdate, ClassRespo
     ``set_saving_throws`` is the public full-replace write; the
     ``commit=False`` variant is shared with ``create_class``/``update_class``
     so saving throws seed in the same transaction as the class row. Any
-    write purges the ``classes``, ``nested_features`` and ``nested_items``
-    namespaces.
+    write purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES`.
     """
 
     repository: ClassRepository

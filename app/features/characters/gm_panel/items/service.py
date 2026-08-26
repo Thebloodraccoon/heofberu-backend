@@ -61,11 +61,11 @@ class GmPanelItemService(CharacterSubDomainService):
 
         stack = await self.character_item_repository.add_character_item(
             character_id,
-            data.item_id,
-            data.quantity,
-            data.is_equipped,
-            data.is_attuned,
-            data.notes,
+            item_id=data.item_id,
+            quantity=data.quantity,
+            is_equipped=data.is_equipped,
+            is_attuned=data.is_attuned,
+            notes=data.notes,
         )
         await invalidate_character_cache(character_id)
 

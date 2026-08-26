@@ -15,7 +15,6 @@ class FeatureNotFoundException(AppError):
 
 class InvalidFeatureSourceException(AppError):
     """
-
     Raised when a feature's source_type/class_id/subclass_id/race_id/
     background_id/level combination is inconsistent (e.g.
     source_type=RACE but race_id is missing).
@@ -29,7 +28,6 @@ class InvalidFeatureSourceException(AppError):
 
 class FeatureNotOwnedException(AppError):
     """
-
     Raised when a feature replace payload references a feature id that does
     not belong to the source record being replaced (e.g. a race replace
     lists a feature owned by a different race).

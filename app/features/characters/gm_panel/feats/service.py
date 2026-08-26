@@ -25,6 +25,8 @@ from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models.character_association_models import CharacterFeat
+from app.models.character_model import Character
+from app.models.feat_model import Feat
 
 
 class GmPanelFeatService(CharacterSubDomainService):
@@ -58,7 +60,14 @@ class GmPanelFeatService(CharacterSubDomainService):
     async def add_feat(
         self, character_id: int, data: CharacterFeatAdd, current_user: UserResponse
     ) -> CharacterFeatResponse:
-        """Grant a feat to a character."""
+        """
+        Grant a feat to a character outside any level-up flow.
+
+        A feat offering ASI options must come with an explicit choice.
+        The grant and its ``character_asi_choices`` audit row (no class
+        level — GM grants are level-independent) commit atomically,
+        together with the auto-granted feature re-sync.
+        """
 
         character = await self.get_character_for_user(character_id, current_user)
 
@@ -70,32 +79,22 @@ class GmPanelFeatService(CharacterSubDomainService):
         if existing:
             raise CharacterFeatAlreadyKnownException(character_id=character_id, feat_id=data.feat_id)
 
-        validate_asi_choice_required(feat, data.ability_score_increase_id)
-        if data.ability_score_increase_id is not None:
-            validate_ability_score_increase(feat, data.ability_score_increase_id)
-            await validate_ability_score_increase_cap(
-                feat, data.ability_score_increase_id, character, self.stats_service
-            )
-
+        await self._validate_asi_choice(feat, data.ability_score_increase_id, character)
         await check_feat_prerequisite(character, feat, self.stats_service)
 
-        grant = await self.feat_grant_repository.add_character_feat(
-            character_id, data.feat_id, data.ability_score_increase_id, commit=False
-        )
-
-        # Audit: record the resolved choice in the character's ASI log
-        # (no class level — GM grants are level-independent).
-        await self.asi_repository.add(
-            character.id,
-            None,
-            ASILevelChoice.FEAT,
-            feat_id=data.feat_id,
-            ability_score_increase_id=data.ability_score_increase_id,
-            commit=False,
-        )
-
-        await sync_progression_features(self.repository.db, character)
-        await self.repository.db.commit()
+        async with self._atomic():
+            grant = await self.feat_grant_repository.add_character_feat(
+                character_id, data.feat_id, data.ability_score_increase_id, commit=False
+            )
+            await self.asi_repository.add(
+                character.id,
+                None,
+                ASILevelChoice.FEAT,
+                feat_id=data.feat_id,
+                ability_score_increase_id=data.ability_score_increase_id,
+                commit=False,
+            )
+            await sync_progression_features(self.repository.db, character)
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
@@ -116,12 +115,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         grant = await self._get_feat_grant_or_404(character_id, character_feat_id)
 
         feat = await self.feat_repository.get_by_id(grant.feat_id)
-        validate_asi_choice_required(feat, data.ability_score_increase_id)
-        if data.ability_score_increase_id is not None:
-            validate_ability_score_increase(feat, data.ability_score_increase_id)
-            await validate_ability_score_increase_cap(
-                feat, data.ability_score_increase_id, character, self.stats_service
-            )
+        await self._validate_asi_choice(feat, data.ability_score_increase_id, character)
 
         updated_grant = await self.feat_grant_repository.set_character_feat_ability_score_increase(
             grant, data.ability_score_increase_id
@@ -145,6 +139,22 @@ class GmPanelFeatService(CharacterSubDomainService):
         await invalidate_character_cache(character_id)
 
         return result
+
+    async def _validate_asi_choice(
+        self, feat: Feat, ability_score_increase_id: int | None, character: Character
+    ) -> None:
+        """
+        Validate the ASI choice carried by a grant write: a feat offering
+        ASI options requires an explicit choice, the choice must belong
+        to the feat, and applying it must respect the ability's cap.
+        """
+
+        validate_asi_choice_required(feat, ability_score_increase_id)
+        if ability_score_increase_id is not None:
+            validate_ability_score_increase(feat, ability_score_increase_id)
+            await validate_ability_score_increase_cap(
+                feat, ability_score_increase_id, character, self.stats_service
+            )
 
     async def _get_feat_grant_or_404(self, character_id: int, character_feat_id: int) -> CharacterFeat:
         """Fetch a feat grant scoped to the character, or raise ``CharacterFeatNotFoundException``."""

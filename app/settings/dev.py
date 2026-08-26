@@ -24,7 +24,7 @@ engine = create_async_engine(
     pool_recycle=3600,
     pool_pre_ping=True,
     pool_timeout=30,
-    echo=True,  # SQL-лог включён в dev
+    echo=True,  # SQL logging on in dev
 )
 
 SessionLocal = make_async_session_factory(engine)

@@ -22,11 +22,8 @@ from app.features.classes.weapons.service import ClassWeaponService
 from app.models.class_model import Class
 
 
-class ClassCrudService(
-    CachedService[Class, ClassCreate, ClassUpdate, ClassResponse, ClassGetAllResponse],
-):
+class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassResponse, ClassGetAllResponse]):
     """
-
     Class catalog CRUD built on :class:`CachedService`.
 
     The capability services are composed explicitly in ``__init__`` (no

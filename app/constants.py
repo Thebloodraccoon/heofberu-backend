@@ -292,7 +292,7 @@ ON_DELETE_RESTRICT = "RESTRICT"
 
 
 def create_enum_constraint(field_name: str, values: list, nullable: bool = True) -> str:
-    """Creates a line for CheckContraint with ENUM values."""
+    """Creates a line for CheckConstraint with ENUM values."""
 
     values_str = ", ".join(repr(v) for v in values)
 
@@ -303,7 +303,7 @@ def create_enum_constraint(field_name: str, values: list, nullable: bool = True)
 
 
 def create_range_constraint(field_name: str, min_val: int, max_val: int, nullable: bool = True) -> str:
-    """Creates a line for CheckContraint with a numerical range."""
+    """Creates a line for CheckConstraint with a numerical range."""
 
     constraint = f"({field_name} >= {min_val} AND {field_name} <= {max_val})"
 

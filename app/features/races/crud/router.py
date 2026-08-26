@@ -20,7 +20,10 @@ router = APIRouter()
 )
 async def get_races(
     race_service: RaceCrudDep,
-    race_size: list[RaceSize] | None = Query(None, description="Any-of match on the race's size (repeat the key: `?race_size=SMALL&race_size=MEDIUM`)."),
+    race_size: list[RaceSize] | None = Query(
+        None,
+        description="Any-of match on the race's size (repeat the key: `?race_size=SMALL&race_size=MEDIUM`).",
+    ),
     search: str | None = Query(None, description="Case-insensitive substring match against the race's name."),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),

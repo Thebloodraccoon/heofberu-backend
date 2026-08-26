@@ -40,7 +40,6 @@ from app.models.feature_model import Feature
 
 class NestedFeatureService(NestedCollectionService[Feature, NestedFeatureResponse]):
     """
-
     Per-source feature reads and writes behind the ``nested_features`` cache
     namespace.
 
@@ -95,9 +94,7 @@ class NestedFeatureService(NestedCollectionService[Feature, NestedFeatureRespons
     ) -> list[Feature]:
         """Create several source-owned feature rows (see ``FeatureCrudService``)."""
 
-        return await self._features.create_features_for_source(
-            source_type, source_id, items, commit=commit
-        )
+        return await self._features.create_features_for_source(source_type, source_id, items, commit=commit)
 
     async def update_feature_for_source(
         self,

@@ -72,14 +72,14 @@ class GmPanelAsiService(CharacterSubDomainService):
                     requested=current_total + item.amount,
                 )
 
-        row = await self.asi_repository.add(
-            character.id,
-            None,
-            ASILevelChoice.ASI,
-            increases=[{"ability": item.ability.value, "amount": item.amount} for item in data.increases],
-            commit=False,
-        )
-        await self.repository.db.commit()
+        async with self._atomic():
+            row = await self.asi_repository.add(
+                character.id,
+                None,
+                ASILevelChoice.ASI,
+                increases=[{"ability": item.ability.value, "amount": item.amount} for item in data.increases],
+                commit=False,
+            )
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)

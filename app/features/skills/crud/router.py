@@ -97,10 +97,13 @@ async def create_skill(
                         "key": "PERCEPTION",
                         "name": "Perception",
                         "ability": "WIS",
-                        "description": "Your Wisdom (Perception) check lets you spot, hear, or otherwise detect the presence of something.",
+                        "description": (
+                            "Your Wisdom (Perception) check lets you spot, hear, or otherwise detect "
+                            "the presence of something."
+                        ),
                     },
                 },
-            },
+            }
         ),
     ],
     skill_service: SkillCrudDep,
@@ -130,7 +133,10 @@ async def update_skill(
                     "summary": "Rename the skill and edit its description",
                     "value": {
                         "name": "Perception",
-                        "description": "Your Wisdom (Perception) check lets you spot, hear, or otherwise detect the presence of something.",
+                        "description": (
+                            "Your Wisdom (Perception) check lets you spot, hear, or otherwise detect "
+                            "the presence of something."
+                        ),
                     },
                 },
             }

@@ -39,7 +39,6 @@ _FEATURE_LEVEL_MAX = 20
 
 def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict) -> None:
     """
-
     Enforce that exactly the FK matching ``source_type`` is set, and the
     others are left empty:
       - CLASS      -> class_id required, others must be None
@@ -58,16 +57,15 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
     for fk_name in _ALL_SOURCE_FKS:
         fk_value = values.get(fk_name)
 
-        if fk_name == required_fk:
-            if fk_value is None:
-                raise ValueError(f"source_type='{source_type.value}' requires '{fk_name}' to be set.")
-        else:
-            if fk_value is not None:
-                raise ValueError(
-                    f"source_type='{source_type.value}' must not set '{fk_name}' (only '{required_fk}' applies)."
-                    if required_fk
-                    else f"source_type='{source_type.value}' must not set '{fk_name}'."
-                )
+        if fk_name == required_fk and fk_value is None:
+            raise ValueError(f"source_type='{source_type.value}' requires '{fk_name}' to be set.")
+
+        if fk_name != required_fk and fk_value is not None:
+            raise ValueError(
+                f"source_type='{source_type.value}' must not set '{fk_name}' (only '{required_fk}' applies)."
+                if required_fk
+                else f"source_type='{source_type.value}' must not set '{fk_name}'."
+            )
 
     level = values.get("level")
 
@@ -87,7 +85,6 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
 
 class NestedFeatureCreate(BaseModel):
     """
-
     A feature embedded in a parent create payload (race, subrace, class,
     background, subclass).
 
@@ -115,7 +112,6 @@ class NestedFeatureResponse(BaseModel):
 
 class FeatureUpdate(BaseModel):
     """
-
     All fields optional — PATCH semantics.
 
     ``source_type`` and its FK (``class_id``/``subclass_id``/``race_id``/

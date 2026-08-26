@@ -40,7 +40,6 @@ class SubraceChange(BaseModel):
 
 class BackgroundChange(BaseModel):
     """
-
     Set a character's background — only allowed while the character has
     none (a background picked at creation can never be swapped).
 

@@ -118,7 +118,6 @@ class CharacterItemNotFoundException(AppError):
 
 class SkillProficiencyNotFoundException(AppError):
     """
-
     Raised when the character has no proficiency row for the given skill —
     expertise can only be toggled on an existing proficiency.
     """
@@ -133,7 +132,6 @@ class SkillProficiencyNotFoundException(AppError):
 
 class LevelTiedAsiChoiceException(AppError):
     """
-
     Raised when attempting to remove an ASI choice that is tied to a
     class level — those are managed by the level-up endpoint, not the GM
     panel (only free-form GM adjustments, ``class_level IS NULL``, can be
@@ -154,7 +152,6 @@ class LevelTiedAsiChoiceException(AppError):
 
 class MaxLevelCanOnlyIncreaseException(AppError):
     """
-
     Raised when a GM attempts to lower (or keep) a character's maximum
     allowed level — the cap can only ever move up.
     """
@@ -172,7 +169,6 @@ class MaxLevelCanOnlyIncreaseException(AppError):
 
 class MaxLevelBelowCharacterLevelException(AppError):
     """
-
     Raised when a GM attempts to set a maximum level below the
     character's current level.
     """

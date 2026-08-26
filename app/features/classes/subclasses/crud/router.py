@@ -5,7 +5,8 @@ Subclass CRUD endpoints: listing, get, create, update, delete
 The router declares no prefix of its own;
 ``app.features.classes.router`` applies the ``/classes`` prefix and
 ``app.features.classes.subclasses.router`` the static ``/subclasses``
-prefix — combined, ``""`` resolves to ``/classes/subclasses?class_id=...``.The owning class is identified by the required ``class_id`` query
+prefix — combined, ``""`` resolves to ``/classes/subclasses?class_id=...``. The owning class is
+identified by the required ``class_id`` query
 parameter. Mutations additionally take the ``subclass_id`` query
 parameter; the detail read keeps the child in the path
 (``GET /{subclass_id}?class_id=...``) to avoid colliding with the

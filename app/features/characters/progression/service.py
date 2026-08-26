@@ -32,9 +32,11 @@ from app.features.characters.progression.exceptions import (
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.progression.schemas import (
+    ASIIncreaseItem,
     BackgroundChange,
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
+    FeatChoice,
     LevelUpRequest,
     SubclassChange,
     SubraceChange,
@@ -185,7 +187,6 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def request_rebuild(self, character_id: int, current_user: UserResponse) -> None:
         """
-
         Point-rebuild placeholder.
 
         A full class/race swap is planned as a single "rebuild" operation
@@ -333,7 +334,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         row = await self.max_level_repository.get_by_character_id(character_id)
         return row.max_level if row is not None else min(character_level, ABILITY_SCORE_CAP)
 
-    async def _apply_asi(self, character: Character, increases, class_level: int) -> None:
+    async def _apply_asi(self, character: Character, increases: list[ASIIncreaseItem], class_level: int) -> None:
         """
         Apply an Ability Score Improvement: validate against the
         ability's effective cap (20 by default, raised by feature effects
@@ -369,7 +370,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             commit=False,
         )
 
-    async def _apply_feat(self, character: Character, choice, class_level: int) -> None:
+    async def _apply_feat(self, character: Character, choice: FeatChoice, class_level: int) -> None:
         """
         Apply a feat-as-ASI: validate the feat exists, isn't already
         known, has a valid ASI pick (if any) and the prerequisite is met,

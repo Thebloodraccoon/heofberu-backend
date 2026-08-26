@@ -23,8 +23,8 @@ class ClassItemsService(
     which delegates the writes to the shared :class:`NestedSourceItemService`
     engine; the generic CRUD machinery (``_get_or_404``/``_get_response``/
     ``_invalidate_cache``) comes from :class:`BaseService`. Any write
-    purges the ``classes``, ``nested_features`` and ``nested_items``
-    namespaces via ``cache_namespaces``.
+    purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES` via
+    ``cache_namespaces``.
     """
 
     repository: ClassRepository

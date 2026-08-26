@@ -42,7 +42,7 @@ class CharacterSpellService(CharacterSubDomainService):
     one, remove the old one and add the new one — that frees up the slot
     it was occupying.
 
-    Uses three repositories:
+    Collaborators:
       - the inherited ``CharacterSubDomainService`` — access control only
         (fetching the owning character to check GM/owner permission).
       - ``CharacterSpellSlotRepository`` — the ``character_spell_slots``
@@ -51,6 +51,7 @@ class CharacterSpellService(CharacterSubDomainService):
         spell rows.
       - ``SpellRepository`` — looking up the reference spell when adding
         a known spell.
+
     Eligibility rules (class/race restrictions, slot capacity) are
     delegated to ``CharacterSpellEligibilityChecker``.
     """

@@ -151,7 +151,9 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
             else None
         )
         subclasses = (
-            await self.resolve_ids(self.repository.get_subclasses_by_ids, spell_data.available_subclasses, "Subclasses")
+            await self.resolve_ids(
+                self.repository.get_subclasses_by_ids, spell_data.available_subclasses, "Subclasses"
+            )
             if spell_data.available_subclasses
             else None
         )

@@ -83,7 +83,9 @@ async def add_feature(
     responses={
         400: {"description": "The feature belongs to a different subrace, or the update is invalid."},
         404: {
-            "description": "No subrace exists with the given ID under this race, or no feature exists with the given ID."
+            "description": (
+                "No subrace exists with the given ID under this race, or no feature exists with the given ID."
+            )
         },
     },
 )
@@ -127,7 +129,9 @@ async def update_feature(
     responses={
         400: {"description": "The feature belongs to a different subrace."},
         404: {
-            "description": "No subrace exists with the given ID under this race, or no feature exists with the given ID."
+            "description": (
+                "No subrace exists with the given ID under this race, or no feature exists with the given ID."
+            )
         },
     },
 )

@@ -71,7 +71,9 @@ class SubraceCrudService(
         """Return every subrace belonging to ``race_id``, without their ability bonuses."""
 
         await self._ensure_race_exists(race_id)
-        return [SubraceBriefResponse.model_validate(sr) for sr in await self.repository.list_for_race(race_id)]
+        return [
+            SubraceBriefResponse.model_validate(subrace) for subrace in await self.repository.list_for_race(race_id)
+        ]
 
     @use_cache(key_builder=lambda self, item_id: f"{cache_prefix()}:races:subrace:get_by_id:{item_id}")
     async def get_by_id(self, item_id: int) -> SubraceFullResponse:
