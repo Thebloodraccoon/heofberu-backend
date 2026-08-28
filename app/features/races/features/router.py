@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.get(
-    "{race_id:int}/features",
+    "/{race_id:int}/features",
     response_model=list[NestedFeatureResponse],
     summary="List a race's features",
     responses={404: {"description": "No race exists with the given ID."}},

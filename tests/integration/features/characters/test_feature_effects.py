@@ -10,8 +10,7 @@ from app.models.character_asi_choice_model import CharacterASIChoice, CharacterA
 
 async def set_feature_effects(client, gm_token, feature_id, increases):
     response = await client.put(
-        "/features/ability-increases",
-        params={"feature_id": feature_id},
+        f"/features/{feature_id}/ability-increases",
         json={"ability_increases": increases},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
@@ -25,8 +24,7 @@ async def get_strength_total(client, character_id, token):
 
 async def get_total(client, character_id, token, ability):
     response = await client.get(
-        "/characters/gm-panel/stats",
-        params={"character_id": character_id},
+        f"/characters/{character_id}/gm-panel/stats",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -35,8 +33,7 @@ async def get_total(client, character_id, token, ability):
 
 async def grant_feature(client, gm_token, character_id, feature_id):
     response = await client.post(
-        "/characters/gm-panel/features",
-        params={"character_id": character_id},
+        f"/characters/{character_id}/gm-panel/features",
         json={"feature_id": feature_id},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
@@ -46,8 +43,7 @@ async def grant_feature(client, gm_token, character_id, feature_id):
 
 async def adjust_asi(client, gm_token, character_id, increases):
     return await client.post(
-        "/characters/gm-panel/asi",
-        params={"character_id": character_id},
+        f"/characters/{character_id}/gm-panel/asi",
         json={"increases": increases},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
@@ -76,8 +72,7 @@ class TestFeatureEffectsInTotals:
         assert await get_strength_total(client, character["id"], token) == 15
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -110,8 +105,7 @@ class TestFeatureEffectsInTotals:
         assert await get_strength_total(client, character["id"], token) == 12
 
         response = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/subclass",
             json={"subclass_id": battlemaster.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -132,8 +126,8 @@ class TestFeatureEffectsInTotals:
         assert await get_total(client, character.id, gm_token, "charisma") == 7  # 10 - 3
 
         remove = await client.delete(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id, "feature_id": grant["id"]},
+            f"/characters/{character.id}/gm-panel/features",
+            params={"feature_id": grant["id"]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert remove.status_code == 204
@@ -166,8 +160,7 @@ class TestFeatureEffectsInTotals:
 
         for _ in range(2):  # level 1 -> 3
             response = await client.post(
-                "/characters/progression/level-up",
-                params={"character_id": character["id"]},
+                f"/characters/{character['id']}/progression/level-up",
                 json={},
                 headers={"Authorization": f"Bearer {player_token}"},
             )
@@ -188,8 +181,7 @@ class TestFeatureEffectsInTotals:
         assert character["max_hp"] == 14
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={},  # default average: half die (5) + 1 + CON mod (4) = 10
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -240,15 +232,13 @@ class TestPerAbilityCap:
         # Feat with an ASI choice (+1 STR).
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
-            "/feats/ability-score-increases",
-            params={"feat_id": feat.id},
+            f"/feats/{feat.id}/ability-score-increases",
             json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         feat_asi_id = asi_response.json()["ability_score_increases"][0]["id"]
         grant_response = await client.post(
-            "/characters/gm-panel/feats",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/feats",
             json={"feat_id": feat.id, "ability_score_increase_id": feat_asi_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

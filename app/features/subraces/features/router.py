@@ -27,4 +27,4 @@ async def list_features(
 ):
     """Return every feature owned by the subrace (``source_type: SUBRACE``). Open endpoint."""
 
-    return await race_service.list_features()
+    return await race_service.list_features(subrace_id)

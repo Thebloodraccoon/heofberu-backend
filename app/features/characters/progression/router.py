@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.patch(
-    "{character_id:int}/progression/background",
+    "/{character_id:int}/progression/background",
     response_model=CharacterResponse,
     summary="Set a character's background (only while it has none)",
     responses={
@@ -66,7 +66,7 @@ async def set_background(
 
 
 @router.patch(
-    "{character_id:int}/progression/subclass",
+    "/{character_id:int}/progression/subclass",
     response_model=CharacterResponse,
     summary="Set or clear a character's subclass",
     responses={
@@ -105,7 +105,7 @@ async def change_subclass(
 
 
 @router.patch(
-    "{character_id:int}/progression/subrace",
+    "/{character_id:int}/progression/subrace",
     response_model=CharacterResponse,
     summary="Set or clear a character's subrace",
     responses={
@@ -144,7 +144,7 @@ async def change_subrace(
 
 
 @router.post(
-    "{character_id:int}/rebuild",
+    "/{character_id:int}/rebuild",
     response_model=CharacterResponse,
     summary="Point-rebuild a character (not implemented yet)",
     responses={
@@ -168,7 +168,7 @@ async def rebuild_character(
 
 
 @router.post(
-    "{character_id:int}/progression/level-up",
+    "/{character_id:int}/progression/level-up",
     response_model=CharacterResponse,
     summary="Level a character up",
     responses={
@@ -222,7 +222,7 @@ async def level_up(
 
 
 @router.get(
-    "{character_id:int}/progression/can-level-up",
+    "/{character_id:int}/progression/can-level-up",
     response_model=CanLevelUpResponse,
     summary="Check whether a character can level up",
     responses={
@@ -243,7 +243,7 @@ async def can_level_up(
 
 
 @router.get(
-    "{character_id:int}/progression/asi-choices",
+    "/{character_id:int}/progression/asi-choices",
     response_model=list[CharacterASIChoiceResponse],
     summary="List a character's resolved ASI-level choices",
     responses={

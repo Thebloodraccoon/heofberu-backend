@@ -31,7 +31,7 @@ from app.features.characters.gm_panel.stats.router import router as stats_router
 
 router = APIRouter()
 
-router.include_router(feats_router, prefix="/{character_id:int}gm-panel")
+router.include_router(feats_router, prefix="/{character_id:int}/gm-panel")
 router.include_router(features_router, prefix="/{character_id:int}/gm-panel")
 router.include_router(items_router, prefix="/{character_id:int}/gm-panel")
 router.include_router(asi_router, prefix="/{character_id:int}/gm-panel")

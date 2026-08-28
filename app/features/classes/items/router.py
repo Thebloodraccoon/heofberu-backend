@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get(
-    "{class_id:int}/items",
+    "/{class_id:int}/items",
     response_model=list[SourceItemResponse],
     summary="List a class's starting equipment",
     responses={404: {"description": "No class exists with the given ID."}},
@@ -33,7 +33,7 @@ async def list_class_items(class_id: int, class_service: ClassItemsDep):
 
 
 @router.put(
-    "{class_id:int}/items",
+    "/{class_id:int}/items",
     response_model=ClassResponse,
     summary="Replace a class's starting equipment",
     responses={
@@ -73,7 +73,7 @@ async def set_class_items(
 
 
 @router.get(
-    "{class_id:int}/choice-groups",
+    "/{class_id:int}/choice-groups",
     response_model=ChoiceGroupsResponse,
     summary="List a class's starting-equipment choice groups",
     responses={404: {"description": "No class exists with the given ID."}},
@@ -95,7 +95,7 @@ async def list_class_choice_groups(
 
 
 @router.put(
-    "{class_id:int}/choice-groups",
+    "/{class_id:int}/choice-groups",
     response_model=ChoiceGroupsResponse,
     summary="Replace a class's starting-equipment choice groups",
     responses={

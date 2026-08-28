@@ -8,8 +8,7 @@ import pytest
 
 async def level_up(client, character_id, token, payload=None):
     return await client.post(
-        "/characters/progression/level-up",
-        params={"character_id": character_id},
+        f"/characters/{character_id}/progression/level-up",
         json=payload or {},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -17,8 +16,7 @@ async def level_up(client, character_id, token, payload=None):
 
 async def get_stats(client, character_id, token):
     response = await client.get(
-        "/characters/gm-panel/stats",
-        params={"character_id": character_id},
+        f"/characters/{character_id}/gm-panel/stats",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -58,8 +56,7 @@ class TestNoOriginFeat:
 
         feats = (
             await client.get(
-                "/characters/feats",
-                params={"character_id": character["id"]},
+                f"/characters/{character['id']}/feats",
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json()
@@ -67,8 +64,7 @@ class TestNoOriginFeat:
 
         choices = (
             await client.get(
-                "/characters/progression/asi-choices",
-                params={"character_id": character["id"]},
+                f"/characters/{character['id']}/progression/asi-choices",
                 headers={"Authorization": f"Bearer {player_token}"},
             )
         ).json()
@@ -130,8 +126,8 @@ class TestFullJourneyToLevelFive:
 
         async def set_slots(level, slots):
             response = await client.put(
-                "/classes/spell-slots",
-                params={"class_id": wizard_class.id, "class_level": level},
+                f"/classes/{wizard_class.id}/spell-slots",
+                params={"class_level": level},
                 json={"slots": [{"spell_level": "LEVEL_1", "slots": slots}]},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
@@ -142,8 +138,7 @@ class TestFullJourneyToLevelFive:
 
         async def slots_total():
             spells_response = await client.get(
-                "/characters/spells",
-                params={"character_id": character["id"]},
+                f"/characters/{character['id']}/spells",
                 headers={"Authorization": f"Bearer {token}"},
             )
             items = {item["spell_level"]: item for item in spells_response.json()["spell_slots"]}
@@ -166,8 +161,7 @@ class TestFullJourneyToLevelFive:
         assert blocked.status_code == 400
 
         raised = await client.patch(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/max-level",
             json={"max_level": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -207,16 +201,14 @@ class TestScoreBoundaries:
 
         # Reach the cap through GM adjustments instead.
         ok = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert ok.status_code == 201  # 18 + 2 = 20 <= 20
 
         over = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -232,8 +224,7 @@ class TestScoreBoundaries:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, charisma=3)
 
         response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "CHA", "amount": -10}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -250,8 +241,7 @@ class TestScoreBoundaries:
         ids = []
         for amount in (2, 3):
             response = await client.post(
-                "/characters/gm-panel/asi",
-                params={"character_id": character.id},
+                f"/characters/{character.id}/gm-panel/asi",
                 json={"increases": [{"ability": "STR", "amount": amount}]},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
@@ -261,8 +251,8 @@ class TestScoreBoundaries:
         assert (await get_stats(client, character.id, gm_token))["strength"]["total"] == 15
 
         removed = await client.delete(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id, "adjustment_id": ids[0]},
+            f"/characters/{character.id}/gm-panel/asi",
+            params={"adjustment_id": ids[0]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
@@ -287,8 +277,7 @@ class TestLateSetupGrants:
         champion = await create_subclass(class_id=character_class.id, name="Champion")
         trait = await create_feature(name="Champion Trait", source_type="SUBCLASS", subclass_id=champion.id, level=None)
         await client.put(
-            "/features/ability-increases",
-            params={"feature_id": trait.id},
+            f"/features/{trait.id}/ability-increases",
             json={"ability_increases": [{"ability": "STR", "amount": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -296,8 +285,7 @@ class TestLateSetupGrants:
         character, token = await create_api_character(class_id=character_class.id, owner=player, strength=10)
 
         response = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/subclass",
             json={"subclass_id": champion.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -314,16 +302,14 @@ class TestLateSetupGrants:
         character, token = await create_api_character(class_id=character_class.id, owner=player, background_id=False)
 
         response = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/background",
             json={"background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert response.status_code == 200
 
         second = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/background",
             json={"background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -337,8 +323,7 @@ class TestLateSetupGrants:
         assert character["max_hp"] == 12
 
         damaged = await client.patch(
-            "/characters/hp",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/hp",
             json={"delta": -7},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -346,8 +331,7 @@ class TestLateSetupGrants:
         assert damaged.json()["current_hp"] == 5
 
         rested = await client.post(
-            "/characters/rest",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/rest",
             json={"type": "long"},
             headers={"Authorization": f"Bearer {player_token}"},
         )

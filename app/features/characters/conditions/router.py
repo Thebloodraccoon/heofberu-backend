@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.get(
-    "{character_id:int}/conditions",
+    "/{character_id:int}/conditions",
     response_model=list[CharacterConditionResponse],
     summary="List a character's conditions",
     responses={
@@ -48,7 +48,7 @@ async def get_character_conditions(
 
 
 @router.post(
-    "{character_id:int}/conditions",
+    "/{character_id:int}/conditions",
     response_model=CharacterConditionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Record a condition on a character",
@@ -92,7 +92,7 @@ async def add_character_condition(
 
 
 @router.patch(
-    "{character_id:int}/conditions",
+    "/{character_id:int}/conditions",
     response_model=CharacterConditionResponse,
     summary="Change a condition's exhaustion level or source",
     responses={
@@ -132,7 +132,7 @@ async def update_character_condition(
 
 
 @router.delete(
-    "{character_id:int}/conditions",
+    "/{character_id:int}/conditions",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a condition from a character",
     responses={

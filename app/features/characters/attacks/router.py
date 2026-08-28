@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get(
-    "{character_id:int}/attacks",
+    "/{character_id:int}/attacks",
     response_model=list[AttackResponse],
     summary="List a character's attacks",
     responses={
@@ -40,7 +40,7 @@ async def get_character_attacks(
 
 
 @router.post(
-    "{character_id:int}/attacks",
+    "/{character_id:int}/attacks",
     response_model=AttackResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Add an attack to a character",
@@ -95,7 +95,7 @@ async def create_character_attack(
 
 
 @router.patch(
-    "{character_id:int}/attacks/{attack_id:int}",
+    "/{character_id:int}/attacks/{attack_id:int}",
     response_model=AttackResponse,
     summary="Update an attack",
     responses={
@@ -135,7 +135,7 @@ async def update_character_attack(
 
 
 @router.delete(
-    "{character_id:int}/attacks/{attack_id:int}",
+    "/{character_id:int}/attacks/{attack_id:int}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an attack",
     responses={

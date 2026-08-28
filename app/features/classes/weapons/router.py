@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.put(
-    "{class_id:int}/weapon-proficiencies",
+    "/{class_id:int}/weapon-proficiencies",
     response_model=ClassResponse,
     summary="Replace a class's weapon proficiencies",
     responses={

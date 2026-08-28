@@ -10,8 +10,7 @@ import pytest
 
 async def feature_ids(client, character_id, token):
     response = await client.get(
-        "/characters/features",
-        params={"character_id": character_id},
+        f"/characters/{character_id}/features",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200, response.text
@@ -100,8 +99,7 @@ class TestSourceEditReconciliation:
         feature_id = add_response.json()["id"]
 
         increases_response = await client.put(
-            "/features/ability-increases",
-            params={"feature_id": feature_id},
+            f"/features/{feature_id}/ability-increases",
             json={"ability_increases": [{"ability": "INT", "amount": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

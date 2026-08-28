@@ -108,8 +108,8 @@ class TestFullCatalogPicture:
         assert created.json()["spell_slot_progression"] == []
 
         slots_response = await client.put(
-            "/classes/spell-slots",
-            params={"class_id": character_class_id, "class_level": 1},
+            f"/classes/{character_class_id}/spell-slots",
+            params={"class_level": 1},
             json={"slots": [{"spell_level": "CANTRIP", "slots": 4}, {"spell_level": "LEVEL_1", "slots": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -129,9 +129,8 @@ class TestFullCatalogPicture:
         assert feature_response.status_code == 201
 
         subclass_response = await client.post(
-            "/classes/subclasses",
-            params={"class_id": character_class_id},
-            json={"name": "Draconic Bloodline"},
+            "/subclasses",
+            json={"name": "Draconic Bloodline", "class_id": character_class_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert subclass_response.status_code == 201
@@ -159,8 +158,8 @@ class TestFullCatalogPicture:
         character_class_id = created.json()["id"]
 
         slots_response = await client.put(
-            "/classes/spell-slots",
-            params={"class_id": character_class_id, "class_level": 1},
+            f"/classes/{character_class_id}/spell-slots",
+            params={"class_level": 1},
             json={"slots": [{"spell_level": "CANTRIP", "slots": 2}, {"spell_level": "LEVEL_1", "slots": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -176,8 +175,7 @@ class TestFullCatalogPicture:
         character = char_response.json()
 
         spells_response = await client.get(
-            "/characters/spells",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/spells",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert spells_response.status_code == 200

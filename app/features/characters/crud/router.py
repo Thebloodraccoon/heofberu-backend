@@ -151,7 +151,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
 
 
 @router.get(
-    "{character_id:int}/feats",
+    "/{character_id:int}/feats",
     response_model=list[CharacterFeatResponse],
     summary="List a character's feats",
     responses={
@@ -170,7 +170,7 @@ async def get_character_feats(
 
 
 @router.get(
-    "{character_id:int}/features",
+    "/{character_id:int}/features",
     response_model=list[CharacterFeatureResponse],
     summary="List a character's features",
     responses={
@@ -348,7 +348,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
 
 
 @router.patch(
-    "{character_id:int}/hp",
+    "/{character_id:int}/hp",
     response_model=CharacterResponse,
     summary="Apply damage/healing or set HP directly",
     responses={
@@ -398,7 +398,7 @@ async def update_character_hp(
 
 
 @router.post(
-    "{character_id:int}/rest",
+    "/{character_id:int}/rest",
     response_model=CharacterResponse,
     summary="Take a short or long rest",
     responses={

@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.put(
-    "{feat_id:int}/ability-score-increases",
+    "/{feat_id:int}/ability-score-increases",
     response_model=FeatResponse,
     summary="Replace a feat's ability score increase choices",
     responses={

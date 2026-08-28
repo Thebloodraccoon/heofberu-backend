@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 @router.get(
-    "{character_id:int}/spells",
+    "/{character_id:int}/spells",
     response_model=CharacterSpellsResponse,
     summary="List a character's spell slots and known spells",
     responses={
@@ -51,7 +51,7 @@ async def get_character_spells(
 
 
 @router.post(
-    "{character_id:int}/spells",
+    "/{character_id:int}/spells",
     response_model=CharacterSpellResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Add a spell to a character's known spells",
@@ -98,7 +98,7 @@ async def add_character_spell(
 
 
 @router.delete(
-    "{character_id:int}/spells",
+    "/{character_id:int}/spells",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a spell from a character's known spells",
     responses={

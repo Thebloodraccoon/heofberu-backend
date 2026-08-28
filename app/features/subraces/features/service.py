@@ -41,4 +41,5 @@ class SubraceFeatureService(
     async def list_features(self, subrace_id: int) -> list[NestedFeatureResponse]:
         """Return every SUBRACE-source feature of the subrace (cached)."""
 
+        await self._get_or_404(subrace_id)
         return await self._features.list_for_source(FeatureSourceType.SUBRACE, subrace_id)

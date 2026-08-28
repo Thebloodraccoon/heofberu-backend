@@ -13,8 +13,7 @@ class TestGmPanelMaxHp:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, max_hp=20, current_hp=20)
 
         response = await client.patch(
-            "/characters/gm-panel/max-hp",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/max-hp",
             json={"max_hp": 12},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -28,8 +27,7 @@ class TestGmPanelMaxHp:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, max_hp=10, current_hp=7)
 
         response = await client.patch(
-            "/characters/gm-panel/max-hp",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/max-hp",
             json={"max_hp": 18},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -43,8 +41,7 @@ class TestGmPanelMaxHp:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.patch(
-            "/characters/gm-panel/max-hp",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/max-hp",
             json={"max_hp": 30},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -60,8 +57,7 @@ class TestGmPanelStats:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=14, dexterity=10)
 
         response = await client.get(
-            "/characters/gm-panel/stats",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/stats",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -77,16 +73,14 @@ class TestGmPanelStats:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=14)
 
         add_response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 
         response = await client.get(
-            "/characters/gm-panel/stats",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/stats",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -104,8 +98,7 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
 
         add_response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={
                 "increases": [
                     {"ability": "STR", "amount": 2},
@@ -119,8 +112,7 @@ class TestGmPanelAsiAdjustments:
         assert {item["ability"]: item["amount"] for item in adjustment["increases"]} == {"STR": 2, "DEX": -1}
 
         list_response = await client.get(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert list_response.status_code == 200
@@ -131,24 +123,22 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
 
         add_response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 3}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         adjustment_id = add_response.json()["id"]
 
         remove_response = await client.delete(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id, "adjustment_id": adjustment_id},
+            f"/characters/{character.id}/gm-panel/asi",
+            params={"adjustment_id": adjustment_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert remove_response.status_code == 204
 
         stats = (
             await client.get(
-                "/characters/gm-panel/stats",
-                params={"character_id": character.id},
+                f"/characters/{character.id}/gm-panel/stats",
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json()
@@ -156,8 +146,7 @@ class TestGmPanelAsiAdjustments:
         assert stats["strength"] == {"base": 13, "total": 13}
 
         listed = await client.get(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert listed.json() == []
@@ -167,8 +156,7 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=19)
 
         response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -182,8 +170,7 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={
                 "increases": [
                     {"ability": "STR", "amount": 1},
@@ -200,8 +187,7 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 5}]},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -222,8 +208,8 @@ class TestGmPanelSkillExpertise:
         await db_session.commit()
 
         on_response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -239,8 +225,8 @@ class TestGmPanelSkillExpertise:
         assert proficiencies[skill.id]["is_expertise"] is True
 
         off_response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": False},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -257,8 +243,8 @@ class TestGmPanelSkillExpertise:
         await db_session.commit()
 
         response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -274,8 +260,8 @@ class TestGmPanelSkillExpertise:
         skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
 
         response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

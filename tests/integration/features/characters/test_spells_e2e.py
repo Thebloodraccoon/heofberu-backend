@@ -9,8 +9,7 @@ import pytest
 
 async def add_spell(client, character_id, spell_id, token):
     return await client.post(
-        "/characters/spells",
-        params={"character_id": character_id},
+        f"/characters/{character_id}/spells",
         json={"spell_id": spell_id},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -26,8 +25,7 @@ class TestSpellsPayloadShape:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.get(
-            "/characters/spells",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/spells",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -50,8 +48,7 @@ class TestSpellsPayloadShape:
         assert add_response.status_code == 201
 
         list_response = await client.get(
-            "/characters/spells",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/spells",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         body = list_response.json()
@@ -99,8 +96,8 @@ class TestPerLevelKnownSpellCaps:
         assert over_cap.status_code == 400
 
         remove_response = await client.delete(
-            "/characters/spells",
-            params={"character_id": character["id"], "spell_id": missile.id},
+            f"/characters/{character['id']}/spells",
+            params={"spell_id": missile.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert remove_response.status_code == 204
@@ -109,8 +106,7 @@ class TestPerLevelKnownSpellCaps:
         assert swap.status_code == 201
 
         list_response = await client.get(
-            "/characters/spells",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/spells",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert sorted(entry["spell_id"] for entry in list_response.json()["spells"]) == [charm.id, shield.id]
@@ -152,14 +148,12 @@ class TestAvailabilityDimensionsAreAnded:
         spell = await create_spell(name="Elven Missile", school="EVOCATION", level="LEVEL_1")
 
         class_response = await client.put(
-            "/spells/classes",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/classes",
             json={"class_ids": [character_class.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         subrace_response = await client.put(
-            "/spells/subraces",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subraces",
             json={"subrace_ids": [subrace.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -192,14 +186,12 @@ class TestAvailabilityDimensionsAreAnded:
         spell = await create_spell(name="Elven Grace", school="ILLUSION", level="LEVEL_1")
 
         class_response = await client.put(
-            "/spells/classes",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/classes",
             json={"class_ids": [character_class.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         race_response = await client.put(
-            "/spells/races",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/races",
             json={"race_ids": [other_race.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -227,8 +219,7 @@ class TestAvailabilityDimensionsAreAnded:
         spell = await create_spell(name="Divine Word", school="EVOCATION", level="LEVEL_1")
 
         restrict_response = await client.put(
-            "/spells/classes",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/classes",
             json={"class_ids": [other_class.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -254,8 +245,7 @@ class TestAvailabilityDimensionsAreAnded:
         spell = await create_spell(name="School Special", school="EVOCATION", level="LEVEL_1")
 
         restrict_response = await client.put(
-            "/spells/subclasses",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subclasses",
             json={"subclass_ids": [subclass.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.features.characters.gm_panel import CharacterItemNotFoundException
-from app.features.characters.gm_panel import CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.gm_panel.exceptions import CharacterItemNotFoundException
+from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.gm_panel.items.service import GmPanelItemService
 from app.features.items.exceptions import ItemNotFoundException
 from tests.unit.fakes import FakeAsyncSession, FakeRepository

@@ -83,8 +83,7 @@ class TestBackgroundCrud:
         censer = await create_item(name="Censer", item_type="ADVENTURING_GEAR")
 
         response = await client.put(
-            "/backgrounds/items",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/items",
             json={"items": [{"item_id": censer.id, "quantity": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -94,7 +93,7 @@ class TestBackgroundCrud:
             (censer.id, 1)
         ]
 
-        fetched = await client.get("/backgrounds/items", params={"background_id": background.id})
+        fetched = await client.get(f"/backgrounds/{background.id}/items")
         assert fetched.status_code == 200
         assert [entry["item"]["name"] for entry in fetched.json()] == ["Censer"]
 
@@ -102,8 +101,7 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         response = await client.put(
-            "/backgrounds/items",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/items",
             json={"items": [{"item_id": 9999, "quantity": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -114,8 +112,7 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         response = await client.put(
-            "/backgrounds/items",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/items",
             json={"items": []},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -160,8 +157,7 @@ class TestBackgroundCrud:
 
         # Feature grants are a GM-panel write.
         add_response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": shelter.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -217,5 +213,5 @@ class TestBackgroundCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get("/backgrounds/features", params={"background_id": background.id})
+        fetched = await client.get(f"/backgrounds/{background.id}/features")
         assert fetched.json() == []

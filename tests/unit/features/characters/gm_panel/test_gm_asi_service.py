@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import AbilityScore, ASILevelChoice
-from app.features.characters.gm_panel import GmAsiChoiceAdd, GmAsiIncreaseItem
-from app.features.characters.gm_panel import GmPanelAsiService
-from app.features.characters.gm_panel import (
+from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd, GmAsiIncreaseItem
+from app.features.characters.gm_panel.asi.service import GmPanelAsiService
+from app.features.characters.gm_panel.exceptions import (
     GmAsiAdjustmentNotFoundException,
     LevelTiedAsiChoiceException,
 )

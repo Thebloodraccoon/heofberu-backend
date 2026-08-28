@@ -5,8 +5,7 @@ import pytest
 
 async def set_increases(client, gm_token, feature_id, increases):
     return await client.put(
-        "/features/ability-increases",
-        params={"feature_id": feature_id},
+        f"/features/{feature_id}/ability-increases",
         json={"ability_increases": increases},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
@@ -19,8 +18,7 @@ class TestFeatureAbilityIncreasesCrud:
         feature = await create_feature(name="Plain Feature")
 
         response = await client.get(
-            "/features/ability-increases",
-            params={"feature_id": feature.id},
+            f"/features/{feature.id}/ability-increases",
         )
 
         assert response.status_code == 200
@@ -96,6 +94,6 @@ class TestFeatureAbilityIncreasesCrud:
     async def test_read_is_open(self, client, create_feature):
         feature = await create_feature(name="Open Read")
 
-        response = await client.get("/features/ability-increases", params={"feature_id": feature.id})
+        response = await client.get(f"/features/{feature.id}/ability-increases")
 
         assert response.status_code == 200

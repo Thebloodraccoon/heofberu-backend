@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.get(
-    "{feature_id:int}/ability-increases",
+    "/{feature_id:int}/ability-increases",
     response_model=FeatureAbilityIncreasesResponse,
     summary="List a feature's fixed ability-score increases",
     responses={
@@ -35,7 +35,7 @@ async def get_feature_ability_increases(
 
 
 @router.put(
-    "{feature_id:int}/ability-increases",
+    "/{feature_id:int}/ability-increases",
     response_model=FeatureAbilityIncreasesResponse,
     summary="Replace a feature's fixed ability-score increases",
     responses={

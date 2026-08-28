@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.features.characters.gm_panel import (
+from app.features.characters.gm_panel.exceptions import (
     MaxLevelBelowCharacterLevelException,
     MaxLevelCanOnlyIncreaseException,
 )
-from app.features.characters.gm_panel import MaxLevelUpdate
+from app.features.characters.gm_panel.level.schemas import MaxLevelUpdate
 from app.features.characters.gm_panel.level.service import GmPanelLevelService
 from app.models.character_model import Character
 from tests.unit.fakes import FakeAsyncSession

@@ -11,8 +11,7 @@ class TestCharacterConditions:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         add_response = await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "POISONED", "source": "Giant Spider bite"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -22,8 +21,7 @@ class TestCharacterConditions:
         assert add_response.json()["source"] == "Giant Spider bite"
 
         list_response = await client.get(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert list_response.status_code == 200
@@ -36,8 +34,7 @@ class TestCharacterConditions:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "EXHAUSTION"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -49,8 +46,7 @@ class TestCharacterConditions:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "EXHAUSTION", "exhaustion_level": 2},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -65,8 +61,7 @@ class TestCharacterConditions:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "POISONED", "exhaustion_level": 2},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -80,8 +75,7 @@ class TestCharacterConditions:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "SNOOZING"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -93,15 +87,13 @@ class TestCharacterConditions:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         response = await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -112,15 +104,14 @@ class TestCharacterConditions:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "EXHAUSTION", "exhaustion_level": 1},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         response = await client.patch(
-            "/characters/conditions",
-            params={"character_id": character.id, "condition": "EXHAUSTION"},
+            f"/characters/{character.id}/conditions",
+            params={"condition": "EXHAUSTION"},
             json={"exhaustion_level": 4},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -134,15 +125,14 @@ class TestCharacterConditions:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         response = await client.patch(
-            "/characters/conditions",
-            params={"character_id": character.id, "condition": "POISONED"},
+            f"/characters/{character.id}/conditions",
+            params={"condition": "POISONED"},
             json={"exhaustion_level": 2},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -153,23 +143,21 @@ class TestCharacterConditions:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         response = await client.delete(
-            "/characters/conditions",
-            params={"character_id": character.id, "condition": "POISONED"},
+            f"/characters/{character.id}/conditions",
+            params={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 204
         assert (
             await client.get(
-                "/characters/conditions",
-                params={"character_id": character.id},
+                f"/characters/{character.id}/conditions",
                 headers={"Authorization": f"Bearer {player_token}"},
             )
         ).json() == []
@@ -182,8 +170,7 @@ class TestCharacterConditions:
         character = await create_character(owner_id=other.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/conditions",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/conditions",
             json={"condition": "POISONED"},
             headers={"Authorization": f"Bearer {player_token}"},
         )

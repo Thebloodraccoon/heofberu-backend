@@ -66,8 +66,8 @@ class TestFullCharacterLifecycle:
 
         for class_level in (1, 8):
             slots_response = await client.put(
-                "/classes/spell-slots",
-                params={"class_id": battle_mage["id"], "class_level": class_level},
+                f"/classes/{battle_mage['id']}/spell-slots",
+                params={"class_level": class_level},
                 json={"slots": [{"spell_level": "CANTRIP", "slots": 2}, {"spell_level": "LEVEL_1", "slots": 2}]},
                 headers=gm_headers,
             )
@@ -90,9 +90,8 @@ class TestFullCharacterLifecycle:
         shield_spell = await create_spell(name="Shield", school="ABJURATION", level="LEVEL_1")
 
         subclass_response = await client.post(
-            "/classes/subclasses",
-            params={"class_id": battle_mage["id"]},
-            json={"name": "War Magic"},
+            "/subclasses",
+            json={"name": "War Magic", "class_id": battle_mage["id"]},
             headers=gm_headers,
         )
         assert subclass_response.status_code == 201
@@ -121,8 +120,7 @@ class TestFullCharacterLifecycle:
         # POST /characters seeds the GM-set level-up cap at the starting
         # level; raise it so this scenario can level up to 8 freely.
         cap_response = await client.patch(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/gm-panel/max-level",
             json={"max_level": 20},
             headers=gm_headers,
         )
@@ -141,8 +139,7 @@ class TestFullCharacterLifecycle:
 
         for spell in (fire_bolt, light, shield_spell):
             learn_response = await client.post(
-                "/characters/spells",
-                params={"character_id": character_id},
+                f"/characters/{character_id}/spells",
                 json={"spell_id": spell.id},
                 headers=player_headers,
             )
@@ -150,8 +147,7 @@ class TestFullCharacterLifecycle:
 
         extra_cantrip = await create_spell(name="Mage Hand", school="CONJURATION", level="CANTRIP")
         blocked_response = await client.post(
-            "/characters/spells",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/spells",
             json={"spell_id": extra_cantrip.id},
             headers=player_headers,
         )
@@ -159,8 +155,7 @@ class TestFullCharacterLifecycle:
 
         async def level_up(payload=None):
             return await client.post(
-                "/characters/progression/level-up",
-                params={"character_id": character_id},
+                f"/characters/{character_id}/progression/level-up",
                 json=payload or {},
                 headers=player_headers,
             )
@@ -201,13 +196,13 @@ class TestFullCharacterLifecycle:
         assert eighth.json()["max_hp"] == 61
 
         feats_response = await client.get(
-            "/characters/feats", params={"character_id": character_id}, headers=player_headers
+            f"/characters/{character_id}/feats", headers=player_headers
         )
         assert feats_response.status_code == 200
         assert sorted(entry["feat"]["name"] for entry in feats_response.json()) == ["Slasher"]
 
         choices_response = await client.get(
-            "/characters/progression/asi-choices", params={"character_id": character_id}, headers=player_headers
+            f"/characters/{character_id}/progression/asi-choices", headers=player_headers
         )
         assert choices_response.status_code == 200
         choices = choices_response.json()
@@ -221,8 +216,7 @@ class TestFullCharacterLifecycle:
         assert {item["ability"]: item["amount"] for item in asi_choice[0]["increases"]} == {"STR": 1, "CON": 1}
 
         subclass_patch = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/progression/subclass",
             json={"subclass_id": war_magic["id"]},
             headers=player_headers,
         )
@@ -230,8 +224,7 @@ class TestFullCharacterLifecycle:
         assert subclass_patch.json()["subclass_id"] == war_magic["id"]
 
         subrace_patch = await client.patch(
-            "/characters/progression/subrace",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/progression/subrace",
             json={"subrace_id": subrace.id},
             headers=player_headers,
         )
@@ -239,8 +232,7 @@ class TestFullCharacterLifecycle:
         assert subrace_patch.json()["subrace_id"] == subrace.id
 
         background_patch = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/progression/background",
             json={"background_id": background.id},
             headers=player_headers,
         )
@@ -248,16 +240,14 @@ class TestFullCharacterLifecycle:
         assert background_patch.json()["background_id"] == background.id
 
         second_background = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/progression/background",
             json={"background_id": background.id},
             headers=player_headers,
         )
         assert second_background.status_code == 409
 
         grant_response = await client.post(
-            "/characters/gm-panel/feats",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/gm-panel/feats",
             json={"feat_id": resilient["id"], "ability_score_increase_id": resilient_asi_id},
             headers=gm_headers,
         )
@@ -265,14 +255,12 @@ class TestFullCharacterLifecycle:
         assert grant_response.json()["feat"]["name"] == "Resilient"
 
         str_boost = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 3}]},
             headers=gm_headers,
         )
         wis_drop = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/gm-panel/asi",
             json={"increases": [{"ability": "WIS", "amount": -1}]},
             headers=gm_headers,
         )
@@ -280,22 +268,19 @@ class TestFullCharacterLifecycle:
         assert wis_drop.status_code == 201
 
         over_cap = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 1}]},
             headers=gm_headers,
         )
         assert over_cap.status_code == 400
 
         equip_sword = await client.post(
-            "/characters/gm-panel/items",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/gm-panel/items",
             json={"item_id": longsword.id, "quantity": 1, "is_equipped": True},
             headers=gm_headers,
         )
         add_potions = await client.post(
-            "/characters/gm-panel/items",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/gm-panel/items",
             json={"item_id": potion.id, "quantity": 5},
             headers=gm_headers,
         )
@@ -305,8 +290,8 @@ class TestFullCharacterLifecycle:
         assert add_potions.json()["quantity"] == 5
 
         expertise_on = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character_id, "skill_id": skill.id},
+            f"/characters/{character_id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers=gm_headers,
         )
@@ -335,7 +320,7 @@ class TestFullCharacterLifecycle:
         assert proficiencies[skill.id]["is_expertise"] is True
 
         stats_response = await client.get(
-            "/characters/gm-panel/stats", params={"character_id": character_id}, headers=gm_headers
+            f"/characters/{character_id}/gm-panel/stats", headers=gm_headers
         )
         assert stats_response.status_code == 200
         stats = stats_response.json()
@@ -343,7 +328,7 @@ class TestFullCharacterLifecycle:
         assert stats["wisdom"] == {"base": 10, "total": 9}
 
         spells_response = await client.get(
-            "/characters/spells", params={"character_id": character_id}, headers=player_headers
+            f"/characters/{character_id}/spells", headers=player_headers
         )
         assert spells_response.status_code == 200
         spell_body = spells_response.json()
@@ -354,7 +339,7 @@ class TestFullCharacterLifecycle:
         assert sorted(entry["spell"]["name"] for entry in spell_body["spells"]) == ["Fire Bolt", "Light", "Shield"]
 
         items_response = await client.get(
-            "/characters/gm-panel/items", params={"character_id": character_id}, headers=gm_headers
+            f"/characters/{character_id}/gm-panel/items", headers=gm_headers
         )
         assert items_response.status_code == 200
         stacks = {entry["item_id"]: entry for entry in items_response.json()}

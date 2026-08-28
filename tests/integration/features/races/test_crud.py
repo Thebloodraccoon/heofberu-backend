@@ -65,7 +65,7 @@ class TestRaceCrud:
         assert response.status_code == 201
         race_id = response.json()["id"]
 
-        fetched = await client.get("/races/features", params={"race_id": race_id})
+        fetched = await client.get(f"/races/{race_id}/features")
         assert fetched.status_code == 200
         assert [feature["name"] for feature in fetched.json()] == [
             "Darkvision",
@@ -96,8 +96,7 @@ class TestRaceCrud:
         race = await create_race(name="Dragonborn")
 
         response = await client.put(
-            "/races/ability-bonuses",
-            params={"race_id": race.id},
+            f"/races/{race.id}/ability-bonuses",
             json={"ability_bonuses": [{"ability": "STR", "bonus": 2}, {"ability": "CHA", "bonus": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -110,8 +109,7 @@ class TestRaceCrud:
         race = await create_race(name="Blank")
 
         response = await client.put(
-            "/races/ability-bonuses",
-            params={"race_id": race.id},
+            f"/races/{race.id}/ability-bonuses",
             json={"ability_bonuses": []},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -124,8 +122,7 @@ class TestRaceCrud:
         skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
 
         response = await client.put(
-            "/races/skills",
-            params={"race_id": race.id},
+            f"/races/{race.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -205,7 +202,7 @@ class TestRaceCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get("/races/features", params={"race_id": race.id})
+        fetched = await client.get(f"/races/{race.id}/features")
         assert fetched.json() == []
 
     async def test_gm_can_set_level_on_race_feature(self, client, gm_token, create_race):

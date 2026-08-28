@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.put(
-    "{class_id:int}/saving-throws",
+    "/{class_id:int}/saving-throws",
     response_model=ClassResponse,
     summary="Replace a class's saving throws",
     responses={

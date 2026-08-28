@@ -160,7 +160,7 @@ class TestFeatureCrud:
 
         assert response.status_code == 200
         assert response.json()["name"] == "Renamed"
-        fetched = await client.get("/classes/features", params={"class_id": character_class.id})
+        fetched = await client.get(f"/classes/{character_class.id}/features")
         assert [item["name"] for item in fetched.json()] == ["Renamed"]
 
     async def test_gm_can_delete_source_owned_feature_via_features_crud(
@@ -173,7 +173,7 @@ class TestFeatureCrud:
 
         assert response.status_code == 204
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
-        fetched = await client.get("/races/features", params={"race_id": race.id})
+        fetched = await client.get(f"/races/{race.id}/features")
         assert fetched.json() == []
 
     async def test_cannot_clear_level_on_class_feature(self, client, gm_token, create_class, create_feature):

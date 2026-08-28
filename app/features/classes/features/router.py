@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.get(
-    "{class_id:int}/features",
+    "/{class_id:int}/features",
     response_model=list[NestedFeatureResponse],
     summary="List a class's features",
     responses={404: {"description": "No class exists with the given ID."}},

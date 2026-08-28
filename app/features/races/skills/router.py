@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.put(
-    "{race_id:int}/skills",
+    "/{race_id:int}/skills",
     response_model=RaceResponse,
     summary="Replace a race's granted skills",
     responses={

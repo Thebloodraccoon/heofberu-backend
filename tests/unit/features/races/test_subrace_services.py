@@ -14,10 +14,9 @@ from app.constants import AbilityScore, FeatureSourceType
 from app.core.exceptions import RecordNotFoundError
 from app.features.features.crud.schemas import NestedFeatureCreate
 from app.features.races.ability_bonuses.schemas import AbilityBonusItem
-from app.features.races.exceptions import SubraceNotFoundException
 from app.features.subraces.ability_bonuses.service import SubraceAbilityBonusService
 from app.features.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceCreate, SubraceUpdate
-from app.features.subraces import SubraceCrudService
+from app.features.subraces.crud.service import SubraceCrudService
 from app.features.subraces.features.service import SubraceFeatureService
 from app.models.subrace_association_models import SubraceAbilityBonus
 from app.models.subrace_model import Subrace
@@ -55,6 +54,16 @@ class FakeSubraceRepository(FakeRepository):
         self.set_bonuses_calls = []
         self.list_calls = []
 
+    async def create(self, payload, *, commit=True):
+        row = Subrace(**payload)
+        row.id = self._next_id
+        self._next_id += 1
+        self._rows[row.id] = row
+        self.created.append(row)
+        if commit:
+            await self.db.commit()
+        return row
+
     async def list_for_race(self, race_id: int):
         self.list_calls.append(race_id)
         return [subrace for subrace in self._rows.values() if subrace.race_id == race_id]
@@ -76,9 +85,10 @@ class FakeFeatures:
     def __init__(self, db):
         self.db = db
         self.created = []
+        self.list_return = []
 
     async def list_for_source(self, source_type, source_id):
-        return []
+        return self.list_return
 
     async def create_features_for_source(self, source_type, source_id, items, *, commit=False):
         self.created.append((source_type, source_id, items, commit))
@@ -108,8 +118,8 @@ def no_redis_invalidate(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_subrace_invalidate(monkeypatch):
-    monkeypatch.setattr("app.features.races.subraces.crud.service.invalidate_subrace_cache", AsyncMock())
-    monkeypatch.setattr("app.features.races.subraces.ability_bonuses.service.invalidate_subrace_cache", AsyncMock())
+    monkeypatch.setattr("app.features.subraces.crud.service.invalidate_subrace_cache", AsyncMock())
+    monkeypatch.setattr("app.features.subraces.ability_bonuses.service.invalidate_subrace_cache", AsyncMock())
 
 
 @pytest.fixture(autouse=True)
@@ -161,32 +171,26 @@ class TestSubraceCrudService:
         with pytest.raises(RecordNotFoundError):
             await service.list_for_race(99)
 
-    async def test_get_subrace_returns_serialized_row(self):
+    async def test_get_by_id_returns_full_response_with_features(self):
         subrace = make_subrace(ability_bonuses=[SubraceAbilityBonus(subrace_id=1, ability=AbilityScore.DEX, bonus=2)])
         service, _ = make_crud_service(existing_by_id={1: subrace})
 
-        result = await service.get_subrace(1, 1)
+        result = await service.get_by_id(1)
 
         assert result.id == 1
         assert result.ability_bonuses[0].ability == AbilityScore.DEX
         assert result.ability_bonuses[0].bonus == 2
 
-    async def test_get_subrace_raises_when_subrace_missing(self):
+    async def test_get_by_id_raises_when_subrace_missing(self):
         service, _ = make_crud_service(existing_by_id={})
 
-        with pytest.raises(SubraceNotFoundException):
-            await service.get_subrace(1, 99)
-
-    async def test_get_subrace_raises_when_subrace_belongs_to_other_race(self):
-        service, _ = make_crud_service(existing_by_id={1: make_subrace(id=1, race_id=1)})
-
-        with pytest.raises(SubraceNotFoundException):
-            await service.get_subrace(2, 1)
+        with pytest.raises(RecordNotFoundError):
+            await service.get_by_id(99)
 
     async def test_create_subrace_without_nested_capabilities(self):
         service, db = make_crud_service(race_exists=True)
 
-        result = await service.create_subrace(1, SubraceCreate(name="Drow", description="Underdark elf"))
+        result = await service.create_subrace(SubraceCreate(name="Drow", race_id=1, description="Underdark elf"))
 
         assert result.id == 1
         assert result.race_id == 1
@@ -199,11 +203,12 @@ class TestSubraceCrudService:
         service, db = make_crud_service(race_exists=True)
         data = SubraceCreate(
             name="High Elf",
+            race_id=1,
             ability_bonuses=[AbilityBonusItem(ability=AbilityScore.DEX, bonus=2)],
             features=[NestedFeatureCreate(name="Keen Senses", description="", level=None)],
         )
 
-        result = await service.create_subrace(1, data)
+        result = await service.create_subrace(data)
 
         assert result.ability_bonuses[0].ability == AbilityScore.DEX
         assert service._ability_bonuses.calls[0][1] == [{"ability": AbilityScore.DEX, "bonus": 2}]
@@ -213,7 +218,7 @@ class TestSubraceCrudService:
         service, _ = make_crud_service(race_exists=False)
 
         with pytest.raises(RecordNotFoundError):
-            await service.create_subrace(99, SubraceCreate(name="Drow"))
+            await service.create_subrace(SubraceCreate(name="Drow", race_id=99))
 
     async def test_create_subrace_rolls_back_when_persist_fails(self):
         service, db = make_crud_service(race_exists=True)
@@ -227,7 +232,7 @@ class TestSubraceCrudService:
         service.repository.create = boom
 
         with pytest.raises(Boom):
-            await service.create_subrace(1, SubraceCreate(name="Drow"))
+            await service.create_subrace(SubraceCreate(name="Drow", race_id=1))
 
         assert db.rollbacks == 1
 
@@ -235,32 +240,32 @@ class TestSubraceCrudService:
         subrace = make_subrace(id=1)
         service, db = make_crud_service(existing_by_id={1: subrace})
 
-        result = await service.update_subrace(1, 1, SubraceUpdate(name="Wood Elf"))
+        result = await service.update(1, SubraceUpdate(name="Wood Elf"))
 
         assert result.name == "Wood Elf"
         assert subrace.name == "Wood Elf"
         assert db.commits >= 1
 
-    async def test_update_subrace_raises_when_subrace_belongs_to_other_race(self):
-        service, _ = make_crud_service(existing_by_id={1: make_subrace(id=1, race_id=1)})
+    async def test_update_subrace_raises_when_subrace_missing(self):
+        service, _ = make_crud_service(existing_by_id={})
 
-        with pytest.raises(SubraceNotFoundException):
-            await service.update_subrace(2, 1, SubraceUpdate(name="Wood Elf"))
+        with pytest.raises(RecordNotFoundError):
+            await service.update(1, SubraceUpdate(name="Wood Elf"))
 
-    async def test_delete_subrace_deletes_scoped_row(self):
+    async def test_delete_subrace_deletes_row(self):
         subrace = make_subrace(id=1)
         service, _ = make_crud_service(existing_by_id={1: subrace})
 
-        result = await service.delete_subrace(1, 1)
+        result = await service.delete(1)
 
-        assert result is None
+        assert result is True
         assert service.repository.deleted == [subrace]
 
-    async def test_delete_subrace_raises_when_subrace_belongs_to_other_race(self):
-        service, _ = make_crud_service(existing_by_id={1: make_subrace(id=1, race_id=1)})
+    async def test_delete_subrace_raises_when_subrace_missing(self):
+        service, _ = make_crud_service(existing_by_id={})
 
-        with pytest.raises(SubraceNotFoundException):
-            await service.delete_subrace(2, 1)
+        with pytest.raises(RecordNotFoundError):
+            await service.delete(99)
 
 
 @pytest.mark.unit
@@ -271,21 +276,20 @@ class TestSubraceAbilityBonusService:
         service, db = make_ability_bonus_service(existing_by_id={1: subrace})
         data = SubraceAbilityBonusesUpdate(ability_bonuses=[AbilityBonusItem(ability=AbilityScore.INT, bonus=1)])
 
-        result = await service.set_ability_bonuses(1, 1, data)
+        result = await service.set_ability_bonuses(1, data)
 
         assert result.ability_bonuses[0].ability == AbilityScore.INT
         assert result.ability_bonuses[0].bonus == 1
         assert service.repository.set_bonuses_calls[0][0] is subrace
         assert service.repository.set_bonuses_calls[0][1] == [{"ability": AbilityScore.INT, "bonus": 1}]
-        assert service.repository.set_bonuses_calls[0][2] is True
         assert db.commits == 1
 
     async def test_set_ability_bonuses_raises_when_subrace_missing(self):
         service, _ = make_ability_bonus_service(existing_by_id={})
         data = SubraceAbilityBonusesUpdate(ability_bonuses=[AbilityBonusItem(ability=AbilityScore.INT, bonus=1)])
 
-        with pytest.raises(SubraceNotFoundException):
-            await service.set_ability_bonuses(1, 99, data)
+        with pytest.raises(RecordNotFoundError):
+            await service.set_ability_bonuses(99, data)
 
     async def test_set_ability_bonuses_for_subrace_delegates_without_commit(self):
         subrace = make_subrace(id=1)
@@ -303,16 +307,8 @@ class TestSubraceAbilityBonusService:
 @pytest.mark.asyncio
 class TestSubraceFeatureService:
     async def test_list_features_delegates_to_feature_crud(self):
-        subrace = make_subrace(id=1)
-        service, _ = make_feature_service(existing_by_id={1: subrace})
+        service, _ = make_feature_service(existing_by_id={1: make_subrace()})
 
-        result = await service.list_features(1, 1)
+        result = await service.list_features(1)
 
         assert result == []
-
-    async def test_list_features_raises_when_subrace_belongs_to_other_race(self):
-        subrace = make_subrace(id=1, race_id=1)
-        service, _ = make_feature_service(existing_by_id={1: subrace})
-
-        with pytest.raises(SubraceNotFoundException):
-            await service.list_features(2, 1)

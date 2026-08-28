@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.put(
-    "{class_id:int}/spell-slots",
+    "/{class_id:int}/spell-slots",
     response_model=ClassResponse,
     summary="Replace a class's spell slots at a given class level",
     responses={
@@ -80,7 +80,7 @@ async def set_class_spell_slots(
 
 
 @router.get(
-    "{class_id:int}/progression",
+    "/{class_id:int}/progression",
     response_model=ClassProgressionResponse,
     summary="Get the full 1-20 progression table",
     responses={404: {"description": "No class exists with the given ID."}},

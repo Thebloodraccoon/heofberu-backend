@@ -10,8 +10,8 @@ import pytest
 
 async def set_slots(client, gm_token, class_id, class_level, slots):
     return await client.put(
-        "/classes/spell-slots",
-        params={"class_id": class_id, "class_level": class_level},
+        f"/classes/{class_id}/spell-slots",
+        params={"class_level": class_level},
         json={"slots": slots},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
@@ -75,7 +75,7 @@ class TestSpellSlotReplacement:
         )
         assert seeded.status_code == 200
 
-        response = await client.get("/classes/progression", params={"class_id": character_class.id})
+        response = await client.get(f"/classes/{character_class.id}/progression")
         assert response.status_code == 200
         body = response.json()
         assert body["class_id"] == character_class.id
@@ -134,8 +134,8 @@ class TestSpellSlotValidation:
         character_class = await create_class(name="Wizard", spellcasting_ability="INT")
 
         response = await client.put(
-            "/classes/spell-slots",
-            params={"class_id": character_class.id, "class_level": 1},
+            f"/classes/{character_class.id}/spell-slots",
+            params={"class_level": 1},
             json={"slots": [{"spell_level": "LEVEL_1", "slots": 9}]},
             headers={"Authorization": f"Bearer {player_token}"},
         )

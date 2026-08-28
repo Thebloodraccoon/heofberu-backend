@@ -153,8 +153,7 @@ class TestCreationBackgroundSkills:
         await set_available_skills(db_session, character_class, chosen)
         background = await create_background(name="Acolyte")
         put_response = await client.put(
-            "/backgrounds/skills",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/skills",
             json={"skill_ids": [granted.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -190,8 +189,7 @@ class TestCreationBackgroundSkills:
         skill = await create_skill(key="RELIGION", name="Religion", ability="INT")
         background = await create_background(name="Acolyte")
         put_response = await client.put(
-            "/backgrounds/skills",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -274,8 +272,7 @@ class TestCreationSavingThrows:
     async def test_saving_throws_come_from_the_class(self, client, gm_token, player_token, create_class):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         put_response = await client.put(
-            "/classes/saving-throws",
-            params={"class_id": character_class.id},
+            f"/classes/{character_class.id}/saving-throws",
             json={"saving_throws": ["STR", "CON"]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -312,8 +309,7 @@ class TestCreationRaceSkills:
         skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
         race = await create_race(name="Elf")
         put_response = await client.put(
-            "/races/skills",
-            params={"race_id": race.id},
+            f"/races/{race.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -355,8 +351,7 @@ class TestCreationRaceSkills:
 
         background = await create_background(name="Acolyte")
         put_bg = await client.put(
-            "/backgrounds/skills",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/skills",
             json={"skill_ids": [granted.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -364,8 +359,7 @@ class TestCreationRaceSkills:
 
         race = await create_race(name="Elf")
         put_race = await client.put(
-            "/races/skills",
-            params={"race_id": race.id},
+            f"/races/{race.id}/skills",
             json={"skill_ids": [chosen.id, racial.id]},  # `chosen` overlaps with the class choice
             headers={"Authorization": f"Bearer {gm_token}"},
         )
