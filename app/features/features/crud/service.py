@@ -1,30 +1,39 @@
-"""Feature CRUD service: standalone CRUD plus per-source feature management."""
+"""Feature CRUD service: the one central owner of every feature write and read."""
 
-from typing import Any
-
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base.cached_service import CachedService
+from app.core.cache import invalidate
+from app.features.characters.progression.feature_sync import reconcile_characters_for_source
 from app.features.features.cache import FEATURE_CACHE_NAMESPACES, invalidate_feature_cache
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.crud.schemas import (
+    _FEATURE_LEVEL_MAX,
+    _FEATURE_LEVEL_MIN,
+    _REQUIRED_FK_BY_SOURCE_TYPE,
     FeatureCreate,
     FeatureGetAllResponse,
     FeatureResponse,
-)
-from app.features.features.exceptions import (
-    FeatureNotFoundException,
-    FeatureNotOwnedException,
-    InvalidFeatureSourceException,
-)
-from app.features.shared.features.schemas import (
-    _REQUIRED_FK_BY_SOURCE_TYPE,
     FeatureUpdate,
     NestedFeatureCreate,
+    NestedFeatureResponse,
 )
+from app.features.features.exceptions import InvalidFeatureSourceException
 from app.models.feature_model import Feature
+
+# The per-catalog cache namespace holding that catalog's own feature list.
+# A central feature write purges the blocking catalog's list namespace (and
+# only that one) so its cached ``GET /{source}/features`` goes stale.
+SOURCE_FEATURE_LIST_NAMESPACE: dict[FeatureSourceType, str | None] = {
+    FeatureSourceType.CLASS: "class_features",
+    FeatureSourceType.SUBCLASS: "subclass_features",
+    FeatureSourceType.RACE: "race_features",
+    FeatureSourceType.SUBRACE: "subrace_features",
+    FeatureSourceType.BACKGROUND: "background_features",
+    FeatureSourceType.OTHER: None,
+}
 
 
 def _get_fk_name(source_type: FeatureSourceType) -> str:
@@ -39,55 +48,37 @@ def _get_fk_name(source_type: FeatureSourceType) -> str:
     return fk_name
 
 
-async def _get_source_feature(
-    db: AsyncSession,
-    source_type: FeatureSourceType,
-    source_id: int,
-    feature_id: int,
-) -> Feature:
-    """
-    Fetch a feature by id and verify it is owned by ``source_id``.
-
-    Raises:
-        FeatureNotFoundException: no feature exists with ``feature_id``
-            (404).
-        FeatureNotOwnedException: the feature exists but belongs to a
-            different source record (400).
-    """
-
-    fk_name = _get_fk_name(source_type)
-    result = await db.execute(select(Feature).where(Feature.id == feature_id))
-    feature = result.scalar_one_or_none()
-
-    if feature is None:
-        raise FeatureNotFoundException(feature_id)
-
-    if getattr(feature, fk_name) != source_id:
-        raise FeatureNotOwnedException(source_type.value, source_id, feature_id)
-
-    return feature
-
-
 class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureGetAllResponse]):
     """
-    Feature-specific CRUD service built on :class:`CachedService`.
+    The single feature service. Everything about features — standalone
+    (OTHER) or owned by a class/subclass/race/subrace/background — is
+    created, read, updated and deleted through this one class, served by
+    the centralized ``/features`` endpoints.
 
-    Encapsulates every feature operation in one place:
-
-    - per-source management (``create_feature_for_source``,
-      ``create_features_for_source``, ``update_feature_for_source``,
-      ``delete_feature_for_source``) — used by the race/subrace/class/
-      background/feat services and their per-feature endpoints;
-    - standalone (OTHER) CRUD served by ``/features/`` — listing is pinned
-      to OTHER, ``get_by_id`` only returns OTHER features, and create/
-      update/delete reject source-owned features;
-    - update restrictions: ``source_type`` and its FK are immutable, and
-      ``level`` on a non-CLASS/SUBCLASS/OTHER feature is rejected.
-
-    Listing and detail reads are cached via ``@use_cache`` under the
-    ``features`` namespace. The parent services (race/subrace/class/
-    background/feat) invalidate this namespace too when their feature
-    lists change.
+    - create/update/delete accept ANY ``source_type`` (no more
+      standalone-only guard): ``POST /features`` pins the parent FK via the
+      ``FeatureCreate`` consistency validator, ``PATCH``/``DELETE`` work on
+      the row by id.
+    - ``list_for_source`` is a plain read (no cache of its own): each parent
+      catalog caches its own feature LIST under a dedicated namespace
+      (``race_features``/``subrace_features``/``class_features``/
+      ``subclass_features``/``background_features``); a feature write here
+      invalidates the owning catalog's list namespace via
+      :data:`SOURCE_FEATURE_LIST_NAMESPACE` plus the shared ``features``
+      namespace (cached ``GET /features`` and ``GET /features/{id}``).
+    - ``create_feature_for_source``/``create_features_for_source`` remain for
+      seeding nested ``features`` inside a parent create payload; they run
+      inside the caller's ``_atomic()`` transaction (``commit=False``) and
+      the caller invalidates its own namespaces.
+    - ``level`` is mandatory for CLASS/SUBCLASS features (1-20) and optional
+      for every other source type.
+    - ``create``/``update_feature``/``delete`` for a source-owned feature
+      (CLASS/SUBCLASS/RACE/SUBRACE/BACKGROUND) reconcile affected characters'
+      auto-granted ``character_features`` in the same transaction via
+      ``reconcile_characters_for_source`` — a feature added to a class is
+      granted to its characters, a level raise revokes it below the new
+      level, a delete removes its grants and refreshes the characters' stat
+      caches.
     """
 
     repository: FeatureRepository
@@ -101,30 +92,85 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             get_all_schema=FeatureGetAllResponse,
         )
 
-    async def get_standalone(self, feature_id: int) -> FeatureResponse:
+    async def _purge_feature_cache(self, source_type: FeatureSourceType) -> None:
         """
-        Fetch a single feature, but only standalone (OTHER) ones.
+        Purge every cached read a feature write can hit.
 
-        Source-owned features (class/subclass/race/subrace/background/feat)
-        are managed through their parent record and are not served by
-        ``/features/`` — a request for one returns 404, as if it did not
-        exist through this endpoint.
+        ``invalidate_feature_cache`` clears the shared ``features``
+        namespace (feature list + by-id detail). If the feature belongs to a
+        parent record, the owning catalog's feature-list cache
+        (``race_features`` etc.) is purged too — only that catalog, so a
+        feature write never nukes its neighbors' caches.
         """
 
-        feature = await self.get_by_id(feature_id)
-        if feature.source_type != FeatureSourceType.OTHER:
-            raise FeatureNotFoundException(feature_id)
+        await invalidate_feature_cache()
 
-        return feature
+        list_namespace = SOURCE_FEATURE_LIST_NAMESPACE[source_type]
+        if list_namespace is not None:
+            await invalidate(list_namespace)
 
-    def _require_standalone(self, feature: Feature) -> None:
-        """Reject CRUD on a source-owned feature via ``/features/``."""
+    async def list_for_source(self, source_type: FeatureSourceType, source_id: int) -> list[NestedFeatureResponse]:
+        """
+        Return every ``Feature`` row owned by ``source_id`` (ordered by id).
 
-        if feature.source_type != FeatureSourceType.OTHER:
-            raise InvalidFeatureSourceException(
-                "Only standalone (OTHER) features can be managed through /features/; "
-                "class/subclass/race/subrace/background/feat features are managed through their parent records."
-            )
+        Uncached on purpose: the parent catalogs cache their own feature
+        LISTS under their dedicated namespaces, and this uncached read also
+        feeds their ``get_by_id`` full responses (which are cached at the
+        catalog level), so caching here would double-cache every row.
+
+        Raises:
+            ValueError: ``source_type`` has no source FK (OTHER).
+        """
+
+        fk_name = _get_fk_name(source_type)
+        result = await self.repository.db.execute(
+            select(Feature).where(getattr(Feature, fk_name) == source_id).order_by(Feature.id)
+        )
+        rows = result.scalars().all()
+        return [NestedFeatureResponse.model_validate(row) for row in rows]
+
+    def _source_fk_value(self, source_type: FeatureSourceType, item: FeatureCreate | Feature) -> int | None:
+        """The owning source's id for a feature (``None`` for OTHER-only features)."""
+
+        if source_type is FeatureSourceType.OTHER:
+            return None
+
+        return getattr(item, _get_fk_name(source_type))
+
+    async def _reconcile_characters(self, source_type: FeatureSourceType, source_id: int | None) -> None:
+        """
+        Reconcile auto-granted character features after a source-owned feature write.
+
+        Runs in the caller's open transaction (never commits here): characters
+        of the owning class/subclass/race/subrace/background gain newly added
+        features, lose revokes below their level, and their stat caches are
+        refreshed (features can carry fixed ability-score effects). OTHER
+        features are never auto-granted, so they need no reconciliation.
+        """
+
+        if source_id is None:
+            return
+
+        await reconcile_characters_for_source(self.repository.db, source_type, source_id)
+
+    async def create(self, create_data: FeatureCreate) -> FeatureResponse:
+        """
+        Create a feature of any source type.
+
+        The ``FeatureCreate`` validator pins the source FK for source-owned
+        features (CLASS → class_id, ...) and enforces the level rules
+        (mandatory 1-20 for CLASS/SUBCLASS). A source-owned feature is
+        granted to the owning record's characters in the same transaction.
+        """
+
+        item = await self.repository.create(create_data.model_dump(), commit=False)
+        await self._reconcile_characters(
+            create_data.source_type, self._source_fk_value(create_data.source_type, create_data)
+        )
+        await self.repository.commit_or_flush()
+        await self._purge_feature_cache(create_data.source_type)
+
+        return self.response_schema.model_validate(item)
 
     async def create_features_for_source(
         self,
@@ -137,7 +183,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Create ``Feature`` rows attached to a source record inside an open transaction.
 
-        Called by race/subrace/class/background/feat/subclass create
+        Called by race/subrace/class/subclass/background create
         services so a client can supply features up front in the same
         request that creates the source.
 
@@ -182,8 +228,9 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Create a single ``Feature`` row attached to a source record.
 
-        Used by the per-feature add endpoints (``POST /{source}/{id}/features``)
-        and by :meth:`create_features_for_source` (nested create payloads).
+        Used by :meth:`create_features_for_source` (nested create payloads).
+        No cache invalidation happens here — the caller owns its transaction
+        and purges its own namespaces after commit.
 
         Args:
             source_type: Which source the feature belongs to.
@@ -200,142 +247,82 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         payload = item.model_dump()
         payload["source_type"] = source_type
         payload[fk_name] = source_id
-        feature = FeatureCreate(**payload)  # re-runs source_type/FK consistency validator
+        feature = FeatureCreate(**payload)  # re-runs source_type/FK/level consistency validator
 
         return await self.repository.create(feature.model_dump(), commit=commit)
 
-    async def update_feature_for_source(
-        self,
-        source_type: FeatureSourceType,
-        source_id: int,
-        feature_id: int,
-        fields: dict[str, Any],
-        *,
-        commit: bool = False,
-    ) -> Feature:
+    def _validate_level_update(self, feature: Feature, fields: dict) -> None:
         """
-        Update one source-owned feature in place, keeping its id.
+        Reject ``level`` patches that would break the level rules.
 
-        Only ``name``, ``level`` and ``description`` are
-        editable (``FeatureUpdate`` forbids anything else). Because the row
-        keeps its id, ``character_features`` grants and any player notes on
-        them survive. Setting a non-``None`` ``level`` on a non-CLASS/
-        SUBCLASS/OTHER feature is rejected.
-
-        Args:
-            source_type: Which source the feature belongs to.
-            source_id: ID of the owning record.
-            feature_id: ID of the feature to update.
-            fields: ``FeatureUpdate``-validated partial fields (exclude_unset).
-            commit: Pass ``False`` when called from within the caller's
-                ``_atomic()`` block.
-
-        Raises:
-            FeatureNotFoundException: no feature exists with ``feature_id``.
-            FeatureNotOwnedException: the feature belongs to a different source.
-            InvalidFeatureSourceException: ``level`` set on a source type where
-                it is meaningless.
+        A CLASS/SUBCLASS feature's ``level`` is mandatory: it can be changed
+        (within 1-20) but never cleared. For every other source type
+        ``level`` stays optional and may be set or cleared freely.
         """
 
-        feature = await _get_source_feature(self.repository.db, source_type, source_id, feature_id)
+        if "level" not in fields:
+            return
 
-        if (
-            "level" in fields
-            and fields["level"] is not None
-            and source_type not in (FeatureSourceType.CLASS, FeatureSourceType.SUBCLASS, FeatureSourceType.OTHER)
+        level = fields["level"]
+
+        if level is None and feature.source_type in (
+            FeatureSourceType.CLASS,
+            FeatureSourceType.SUBCLASS,
         ):
             raise InvalidFeatureSourceException(
-                "'level' is only meaningful when source_type is CLASS, SUBCLASS or OTHER."
+                "CLASS/SUBCLASS features require 'level' — it can only be changed, not cleared."
             )
+
+        if feature.source_type in (FeatureSourceType.CLASS, FeatureSourceType.SUBCLASS) and not (
+            _FEATURE_LEVEL_MIN <= level <= _FEATURE_LEVEL_MAX
+        ):
+            raise InvalidFeatureSourceException(
+                f"'level' for CLASS/SUBCLASS features must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}."
+            )
+
+    async def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
+        """
+        Update a feature of any source type, keeping its id.
+
+        ``source_type`` and its FK can't change — ownership is permanent.
+        Only ``name``, ``level`` and ``description`` are editable. A
+        CLASS/SUBCLASS feature's ``level`` is mandatory (1-20): it may be
+        changed but never cleared; for other source types ``level`` is
+        optional. A ``level`` change (or any edit) re-reconciles the owning
+        record's characters in the same transaction.
+        """
+
+        feature = await self._get_or_404(feature_id)
+        fields = update_data.model_dump(exclude_unset=True)
+
+        self._validate_level_update(feature, fields)
+
+        source_type = feature.source_type
+        source_id = self._source_fk_value(source_type, feature)
 
         for field, value in fields.items():
             setattr(feature, field, value)
 
-        await self.repository.commit_or_flush(commit=commit)
-        return feature
+        await self._reconcile_characters(source_type, source_id)
+        await self.repository.commit_or_flush()
+        await self._purge_feature_cache(source_type)
 
-    async def delete_feature_for_source(
-        self,
-        source_type: FeatureSourceType,
-        source_id: int,
-        feature_id: int,
-        *,
-        commit: bool = False,
-    ) -> None:
-        """
-        Delete one source-owned feature, cascading its ``character_features``
-        grants away.
-
-        Uses a bulk delete (bypassing the ORM unit of work) so any loaded
-        ``CharacterFeature`` grants are not nulled out by the session — the
-        DB-level ON DELETE CASCADE on ``features.id`` removes them.
-
-        Args:
-            source_type: Which source the feature belongs to.
-            source_id: ID of the owning record.
-            feature_id: ID of the feature to delete.
-            commit: Pass ``False`` when called from within the caller's
-                ``_atomic()`` block.
-
-        Raises:
-            FeatureNotFoundException: no feature exists with ``feature_id``.
-            FeatureNotOwnedException: the feature belongs to a different source.
-        """
-
-        await _get_source_feature(self.repository.db, source_type, source_id, feature_id)
-        await self.repository.db.execute(delete(Feature).where(Feature.id == feature_id))
-        await self.repository.commit_or_flush(commit=commit)
-
-    async def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
-        """
-        Update a standalone (OTHER) feature.
-
-        Source-owned features (class/race/background/feat/subclass) cannot
-        be edited through ``/features/`` — use the parent's per-feature
-        endpoints. ``source_type`` and its FK can't change — ownership is
-        permanent. Only ``name``, ``level`` and ``description`` are
-        editable. Setting a non-``None`` ``level`` on
-        a feature that isn't CLASS/SUBCLASS/OTHER is rejected with a 400
-        (level is only meaningful for class, subclass and standalone
-        features).
-        """
-
-        feature = await self._get_or_404(feature_id)
-        self._require_standalone(feature)
-        fields = update_data.model_dump(exclude_unset=True)
-
-        if (
-            "level" in fields
-            and fields["level"] is not None
-            and feature.source_type
-            not in (
-                FeatureSourceType.CLASS,
-                FeatureSourceType.SUBCLASS,
-                FeatureSourceType.OTHER,
-            )
-        ):
-            raise InvalidFeatureSourceException(
-                "'level' is only meaningful when source_type is CLASS, SUBCLASS or OTHER."
-            )
-
-        updated_feature = await self.repository.update(feature, fields)
-        await invalidate_feature_cache()
-
-        return self.response_schema.model_validate(updated_feature)
+        return self.response_schema.model_validate(feature)
 
     async def delete(self, feature_id: int) -> bool:
         """
-        Delete a standalone (OTHER) feature, cascading away any
-        ``CharacterFeature`` grants on it.
-
-        Source-owned features are deleted through their parent's per-feature
-        endpoints instead.
+        Delete a feature of any source type, cascading away any
+        ``CharacterFeature`` grants on it and refreshing the affected
+        characters' grants/stat caches.
         """
 
         feature = await self._get_or_404(feature_id)
+        source_type = feature.source_type
+        source_id = self._source_fk_value(source_type, feature)
 
-        self._require_standalone(feature)
         result = await self.repository.delete(feature)
-        await invalidate_feature_cache()
+        await self._reconcile_characters(source_type, source_id)
+        await self.repository.commit_or_flush()
+        await self._purge_feature_cache(source_type)
 
         return result

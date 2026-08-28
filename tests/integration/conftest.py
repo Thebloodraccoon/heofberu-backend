@@ -12,10 +12,10 @@ via Alembic (``migrations/env.py`` stays sync, driving psycopg2).
 
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
-from sqlalchemy import text  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from redis.asyncio import Redis  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
 from app.settings import settings  # noqa: E402
 

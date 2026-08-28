@@ -123,9 +123,8 @@ class TestClassCrud:
         subclass_id = created.json()["id"]
 
         added = await client.post(
-            "/classes/subclasses/features",
-            params={"class_id": character_class.id, "subclass_id": subclass_id},
-            json={"name": "Improved Critical", "level": 3},
+            "/features",
+            json={"name": "Improved Critical", "level": 3, "source_type": "SUBCLASS", "subclass_id": subclass_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
@@ -524,9 +523,12 @@ class TestClassCrud:
             {"name": "Remarkable Athlete", "level": 7},
         ]:
             added = await client.post(
-                "/classes/subclasses/features",
-                params={"class_id": character_class.id, "subclass_id": subclass_id},
-                json=feature,
+                "/features",
+                json={
+                    **feature,
+                    "source_type": "SUBCLASS",
+                    "subclass_id": subclass_id,
+                },
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
             assert added.status_code == 201
@@ -589,9 +591,8 @@ class TestClassCrud:
         character_class = await create_class(name="Fighter")
 
         response = await client.post(
-            "/classes/features",
-            params={"class_id": character_class.id},
-            json={"name": "Second Wind"},
+            "/features",
+            json={"name": "Second Wind", "source_type": "CLASS", "class_id": character_class.id, "level": 1},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -601,9 +602,14 @@ class TestClassCrud:
         character_class = await create_class(name="Fighter")
 
         added = await client.post(
-            "/classes/features",
-            params={"class_id": character_class.id},
-            json={"name": "Second Wind", "level": 1, "description": "Regain HP as a bonus action."},
+            "/features",
+            json={
+                "name": "Second Wind",
+                "level": 1,
+                "description": "Regain HP as a bonus action.",
+                "source_type": "CLASS",
+                "class_id": character_class.id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
@@ -612,8 +618,7 @@ class TestClassCrud:
         assert feature["level"] == 1
 
         updated = await client.patch(
-            "/classes/features",
-            params={"class_id": character_class.id, "feature_id": feature["id"]},
+            f"/features/{feature['id']}",
             json={"description": "Regain more HP as a bonus action.", "level": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -623,68 +628,10 @@ class TestClassCrud:
         assert updated_feature["level"] == 2
         assert updated_feature["description"] == "Regain more HP as a bonus action."
 
-        removed = await client.delete(
-            "/classes/features",
-            params={"class_id": character_class.id, "feature_id": feature["id"]},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
+        removed = await client.delete(f"/features/{feature['id']}", headers={"Authorization": f"Bearer {gm_token}"})
         assert removed.status_code == 204
         fetched = await client.get("/classes/features", params={"class_id": character_class.id})
         assert fetched.json() == []
-
-    async def test_update_class_feature_of_another_source_returns_400(
-        self, client, gm_token, create_class, create_feature
-    ):
-        character_class = await create_class(name="Fighter")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.patch(
-            "/classes/features",
-            params={"class_id": character_class.id, "feature_id": foreign.id},
-            json={"name": "Renamed"},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_remove_class_feature_of_another_source_returns_400(
-        self, client, gm_token, create_class, create_feature
-    ):
-        character_class = await create_class(name="Fighter")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.delete(
-            "/classes/features",
-            params={"class_id": character_class.id, "feature_id": foreign.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_class_feature_endpoints_return_404(self, client, gm_token):
-        assert (
-            await client.post(
-                "/classes/features",
-                params={"class_id": 9999},
-                json={"name": "Second Wind"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.patch(
-                "/classes/features",
-                params={"class_id": 9999, "feature_id": 1},
-                json={"name": "Renamed"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.delete(
-                "/classes/features",
-                params={"class_id": 9999, "feature_id": 1},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
 
     async def test_update_class_feature_preserves_grants_and_removal_cascades_deletes(
         self, client, gm_token, create_user, create_character, db_session
@@ -704,9 +651,8 @@ class TestClassCrud:
             {"name": "Extra Attack", "description": "Attack twice.", "level": 5},
         ]:
             added = await client.post(
-                "/classes/features",
-                params={"class_id": class_id},
-                json=feature,
+                "/features",
+                json={**feature, "source_type": "CLASS", "class_id": class_id},
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
             assert added.status_code == 201
@@ -727,16 +673,14 @@ class TestClassCrud:
         await db_session.commit()
 
         response = await client.patch(
-            "/classes/features",
-            params={"class_id": class_id, "feature_id": features["Extra Attack"]["id"]},
+            f"/features/{features['Extra Attack']['id']}",
             json={"level": 11},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert response.status_code == 200
         assert (
             await client.delete(
-                "/classes/features",
-                params={"class_id": class_id, "feature_id": features["Second Wind"]["id"]},
+                f"/features/{features['Second Wind']['id']}",
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).status_code == 204
@@ -762,9 +706,8 @@ class TestClassCrud:
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
 
         response = await client.post(
-            "/classes/subclasses/features",
-            params={"class_id": character_class.id, "subclass_id": subclass.id},
-            json={"name": "Improved Critical"},
+            "/features",
+            json={"name": "Improved Critical", "source_type": "SUBCLASS", "subclass_id": subclass.id, "level": 3},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -777,9 +720,14 @@ class TestClassCrud:
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
 
         added = await client.post(
-            "/classes/subclasses/features",
-            params={"class_id": character_class.id, "subclass_id": subclass.id},
-            json={"name": "Improved Critical", "level": 3, "description": "Crit on 19-20."},
+            "/features",
+            json={
+                "name": "Improved Critical",
+                "level": 3,
+                "description": "Crit on 19-20.",
+                "source_type": "SUBCLASS",
+                "subclass_id": subclass.id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
@@ -788,12 +736,7 @@ class TestClassCrud:
         assert feature["level"] == 3
 
         updated = await client.patch(
-            "/classes/subclasses/features",
-            params={
-                "class_id": character_class.id,
-                "subclass_id": subclass.id,
-                "feature_id": feature["id"],
-            },
+            f"/features/{feature['id']}",
             json={"description": "Your weapon attacks score a critical hit on a roll of 19 or 20."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -802,76 +745,10 @@ class TestClassCrud:
         assert updated_feature["id"] == feature["id"]
         assert updated_feature["description"] == "Your weapon attacks score a critical hit on a roll of 19 or 20."
 
-        removed = await client.delete(
-            "/classes/subclasses/features",
-            params={
-                "class_id": character_class.id,
-                "subclass_id": subclass.id,
-                "feature_id": feature["id"],
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
+        removed = await client.delete(f"/features/{feature['id']}", headers={"Authorization": f"Bearer {gm_token}"})
         assert removed.status_code == 204
         fetched = await client.get(
             "/classes/subclasses/features",
             params={"class_id": character_class.id, "subclass_id": subclass.id},
         )
         assert fetched.json() == []
-
-    async def test_update_subclass_feature_of_another_source_returns_400(
-        self, client, gm_token, create_class, create_subclass, create_feature
-    ):
-        character_class = await create_class(name="Fighter")
-        subclass = await create_subclass(class_id=character_class.id, name="Champion")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.patch(
-            "/classes/subclasses/features",
-            params={"class_id": character_class.id, "subclass_id": subclass.id, "feature_id": foreign.id},
-            json={"name": "Renamed"},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_remove_subclass_feature_of_another_source_returns_400(
-        self, client, gm_token, create_class, create_subclass, create_feature
-    ):
-        character_class = await create_class(name="Fighter")
-        subclass = await create_subclass(class_id=character_class.id, name="Champion")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.delete(
-            "/classes/subclasses/features",
-            params={"class_id": character_class.id, "subclass_id": subclass.id, "feature_id": foreign.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_subclass_feature_endpoints_return_404(self, client, gm_token, create_class):
-        character_class = await create_class(name="Fighter")
-
-        assert (
-            await client.post(
-                "/classes/subclasses/features",
-                params={"class_id": character_class.id, "subclass_id": 9999},
-                json={"name": "Improved Critical"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.patch(
-                "/classes/subclasses/features",
-                params={"class_id": character_class.id, "subclass_id": 9999, "feature_id": 1},
-                json={"name": "Renamed"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.delete(
-                "/classes/subclasses/features",
-                params={"class_id": character_class.id, "subclass_id": 9999, "feature_id": 1},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404

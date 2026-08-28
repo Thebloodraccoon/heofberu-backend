@@ -32,7 +32,7 @@ router = APIRouter()
     },
 )
 async def add_character_feature(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         CharacterFeatureAdd,
         Body(
@@ -67,7 +67,7 @@ async def add_character_feature(
     },
 )
 async def update_character_feature(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     feature_id: Annotated[int, Query(gt=0)],
     data: Annotated[
         CharacterFeatureUpdate,
@@ -103,7 +103,7 @@ async def update_character_feature(
     },
 )
 async def remove_character_feature(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     feature_id: Annotated[int, Query(gt=0)],
     feature_service: GmPanelFeaturesDep,
     current_user: GmUserDep,

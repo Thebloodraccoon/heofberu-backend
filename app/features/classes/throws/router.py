@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/saving-throws",
+    "{class_id:int}/saving-throws",
     response_model=ClassResponse,
     summary="Replace a class's saving throws",
     responses={
@@ -23,7 +23,7 @@ router = APIRouter()
     },
 )
 async def set_class_saving_throws(
-    class_id: Annotated[int, Query(gt=0)],
+    class_id: int,
     data: Annotated[
         SavingThrowsUpdate,
         Body(

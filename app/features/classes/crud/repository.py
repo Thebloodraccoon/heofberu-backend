@@ -15,6 +15,7 @@ from app.models import (
     SourceItem,
 )
 from app.models.feature_model import Feature
+from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 from app.models.subclass_model import Subclass
 
 
@@ -37,6 +38,9 @@ class ClassRepository(BaseRepository[Class]):
                 selectinload(Class.armor_proficiencies),
                 selectinload(Class.weapon_proficiencies),
                 selectinload(Class.starting_items).selectinload(SourceItem.item),
+                selectinload(Class.starting_choice_groups)
+                .selectinload(SourceItemChoiceGroup.options)
+                .selectinload(SourceItemChoiceOption.item),
                 selectinload(Class.spell_slot_progression),
                 selectinload(Class.subclasses),
             ],

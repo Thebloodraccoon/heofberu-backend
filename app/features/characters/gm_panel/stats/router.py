@@ -27,7 +27,7 @@ router = APIRouter()
     },
 )
 async def get_character_stats(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     stats_service: GmPanelStatsDep,
     current_user: CurrentUserDep,
 ):

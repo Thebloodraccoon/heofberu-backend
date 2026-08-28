@@ -249,9 +249,8 @@ class TestSubraceFeatures:
         subrace = await create_subrace(race_id=race.id, name="High Elf")
 
         response = await client.post(
-            "/races/subraces/features",
-            params={"race_id": race.id, "subrace_id": subrace.id},
-            json={"name": "Elf Weapon Training"},
+            "/features",
+            json={"name": "Elf Weapon Training", "source_type": "SUBRACE", "subrace_id": subrace.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -262,9 +261,13 @@ class TestSubraceFeatures:
         subrace = await create_subrace(race_id=race.id, name="High Elf")
 
         added = await client.post(
-            "/races/subraces/features",
-            params={"race_id": race.id, "subrace_id": subrace.id},
-            json={"name": "Elf Weapon Training", "description": "Proficiency with longswords."},
+            "/features",
+            json={
+                "name": "Elf Weapon Training",
+                "description": "Proficiency with longswords.",
+                "source_type": "SUBRACE",
+                "subrace_id": subrace.id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
@@ -273,8 +276,7 @@ class TestSubraceFeatures:
         assert feature["level"] is None
 
         updated = await client.patch(
-            "/races/subraces/features",
-            params={"race_id": race.id, "subrace_id": subrace.id, "feature_id": feature["id"]},
+            f"/features/{feature['id']}",
             json={"description": "Proficiency with longswords and shortswords."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -282,8 +284,7 @@ class TestSubraceFeatures:
         assert updated.json()["description"] == "Proficiency with longswords and shortswords."
 
         removed = await client.delete(
-            "/races/subraces/features",
-            params={"race_id": race.id, "subrace_id": subrace.id, "feature_id": feature["id"]},
+            f"/features/{feature['id']}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
@@ -291,76 +292,18 @@ class TestSubraceFeatures:
             await client.get("/races/subraces/features", params={"race_id": race.id, "subrace_id": subrace.id})
         ).json() == []
 
-    async def test_add_subrace_feature_with_level_returns_422(self, client, gm_token, create_race, create_subrace):
+    async def test_gm_can_add_subrace_feature_with_level(self, client, gm_token, create_race, create_subrace):
         race = await create_race(name="Elf")
         subrace = await create_subrace(race_id=race.id, name="High Elf")
 
         response = await client.post(
-            "/races/subraces/features",
-            params={"race_id": race.id, "subrace_id": subrace.id},
-            json={"name": "Elf Weapon Training", "level": 3},
+            "/features",
+            json={"name": "Elf Weapon Training", "source_type": "SUBRACE", "subrace_id": subrace.id, "level": 3},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
-
-    async def test_update_subrace_feature_of_another_source_returns_400(
-        self, client, gm_token, create_race, create_subrace, create_feature
-    ):
-        race = await create_race(name="Elf")
-        subrace = await create_subrace(race_id=race.id, name="High Elf")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.patch(
-            "/races/subraces/features",
-            params={"race_id": race.id, "subrace_id": subrace.id, "feature_id": foreign.id},
-            json={"name": "Renamed"},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_remove_subrace_feature_of_another_source_returns_400(
-        self, client, gm_token, create_race, create_subrace, create_feature
-    ):
-        race = await create_race(name="Elf")
-        subrace = await create_subrace(race_id=race.id, name="High Elf")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.delete(
-            "/races/subraces/features",
-            params={"race_id": race.id, "subrace_id": subrace.id, "feature_id": foreign.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_subrace_feature_endpoints_return_404(self, client, gm_token, create_race):
-        race = await create_race(name="Elf")
-
-        assert (
-            await client.post(
-                "/races/subraces/features",
-                params={"race_id": race.id, "subrace_id": 9999},
-                json={"name": "Elf Weapon Training"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.patch(
-                "/races/subraces/features",
-                params={"race_id": race.id, "subrace_id": 9999, "feature_id": 1},
-                json={"name": "Renamed"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.delete(
-                "/races/subraces/features",
-                params={"race_id": race.id, "subrace_id": 9999, "feature_id": 1},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
+        assert response.status_code == 201
+        assert response.json()["level"] == 3
 
     async def test_subrace_features_scoped_to_race(self, client, gm_token, create_race, create_subrace):
         elf = await create_race(name="Elf")

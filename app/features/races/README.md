@@ -1,7 +1,7 @@
 # Races Feature
 
 The `/races` catalog: race CRUD plus per-capability subpackages (features,
-skills, ability bonuses) and the self-contained `subraces/` subdomain.
+skills, ability bonuses) and the self-contained `../subraces/` subdomain.
 
 ## Layout
 
@@ -13,7 +13,7 @@ races/
 ├── exceptions.py        # RaceNotFoundException, SubraceNotFoundException
 ├── schemas.py           # race create/update/response schemas
 ├── crud/                # race catalog CRUD (CachedService) + create-time seeding
-├── features/            # per-race RACE-source feature endpoints
+├── features/            # read-only cached RACE-source feature list
 ├── skills/              # granted-skill full replacement (PUT /skills)
 ├── ability_bonuses/     # ability-bonus primitives shared with subraces + PUT /ability-bonuses
 └── subraces/            # nested-entity subdomain, mounted at the static /races/subraces prefix
@@ -23,7 +23,7 @@ races/
 
 `RaceCrudService` extends `CachedService` and composes the other capabilities
 explicitly in `__init__` (no mixin MRO): `_skills`, `_ability_bonuses`,
-`_nested_features`. Endpoints are the standard set — paginated listing
+`_features` (a `FeatureCrudService` for nested-seed + read delegation). Endpoints are the standard set — paginated listing
 (`GET /races`), detail read (`GET /races/{id}`), `POST`/`PATCH`/`DELETE`
 (GM / GM / Founder).
 
@@ -45,24 +45,26 @@ source-specific bits:
 
 | Capability | Service | Composes | Adds |
 |---|---|---|---|
-| features | `RaceFeatureService` | `SourceFeatureMixin` | pins `_feature_source_type=RACE` |
+| features | `RaceFeatureService` | `FeatureCrudService` (delegation) | `@use_cache()` list under `race_features`, pinned `_feature_source_type=RACE` |
 | skills | `RaceSkillService` | `SkillsManagerMixin` | nothing source-specific beyond the repository |
 | ability_bonuses | `RaceAbilityBonusService` | plain `BaseService` | full-replace write |
 
-The mixin engine owns feature CRUD with character-grant reconciliation
-(`SourceFeatureMixin`), skill-id resolution and granted-skill replacement
-(`SkillsManagerMixin`); the catalog layers pin the source type and purge
-cache after commit. All query-style writes identify the race by the required
-`race_id` query parameter (`PUT /races/skills?race_id=...`,
-`PATCH /races/features?race_id=...&feature_id=...`).
+The feature engine (any-source create/update/delete + character-grant
+reconciliation) is centralized in `app/features/features/crud/service.py`;
+each catalog keeps only a cached read LIST. `SkillsManagerMixin` covers
+skill-id resolution and granted-skill replacement. All query-style writes
+identify the race by the required `class_id` query parameter
+(`PUT /races/skills?race_id=...`); feature writes go through the central
+`POST /features` / `PATCH`/`DELETE /features/{id}` with
+`source_type=RACE&race_id=...` in the body.
 
-## Subraces subdomain (`subraces/`)
+## Subraces subdomain (`../subraces/`)
 
 A self-contained capability-oriented subpackage for the second entity a race
 owns, mounted by `races/router.py` under a STATIC `/races/subraces` prefix:
 
 - **Parent-scoped query params**: every endpoint takes the owning race as the
-  required `race_id` query parameter; mutations additionally take
+  required `class_id` query parameter; mutations additionally take
   `subrace_id=`. Only the DETAIL READ keeps the child in the path —
   `GET /races/subraces/{subrace_id}?race_id=...` — so it cannot collide with
   the listing (`GET /races/subraces?race_id=...`).
@@ -77,9 +79,10 @@ owns, mounted by `races/router.py` under a STATIC `/races/subraces` prefix:
   features, PATCH, DELETE (Founder; characters keep their rows but lose
   `subrace_id`). A missing parent race 404s on create/list via
   `_ensure_race_exists`.
-- **`features/`** — `SubraceFeatureService` re-implements `_mutate_feature`
-  for its own source type (SUBRACE) because its source lookup goes through
-  `_get_or_404_for_race` instead of the shared mixin's plain `_get_or_404`.
+- **`features/`** — `SubraceFeatureService`: read-only cached list
+  (`@use_cache()` under `subrace_features`), resolving the source through
+  `_get_or_404_for_race` and delegating to the central
+  `FeatureCrudService.list_for_source`.
 - **`ability_bonuses/`** — `SubraceAbilityBonusService`: full-replace write,
   plus the `commit=False` variant used by `create_subrace`.
 
@@ -89,13 +92,17 @@ Two single-point helpers, called by every write AFTER its transaction
 commits:
 
 - `races/cache.py:invalidate_race_cache()` — purges
-  `("races", "nested_features", "characters")`. `characters` is included
-  because character payloads derive `speed` live from the race.
-- `subraces/cache.py:invalidate_subrace_cache()` — purges
-  `("races", "nested_features")`: subraces (and their features/bonuses) are
-  embedded in cached race responses, so any subrace write must invalidate
-  the race reads too.
+  `("races", "race_features", "features", "characters")`. `characters` is
+  included because race features are auto-granted to characters and
+  character payloads derive `speed` live from the race.
+- `../subraces/cache.py:invalidate_subrace_cache()` — purges
+  `("races", "subrace_features", "features")`: subraces (and their
+  features) are embedded in cached race responses, so any subrace write
+  must invalidate the race reads too.
 
 The crud services declare `cache_namespaces = RACE_CACHE_NAMESPACES` /
 `SUBRACE_CACHE_NAMESPACES` for their inherited cached reads; capability
-services call the invalidation helpers explicitly post-commit.
+services call the invalidation helpers explicitly post-commit. The
+sub-race feature list namespace (`race_features`/`subrace_features`) is
+also purged directly by the central `FeatureCrudService._purge_feature_cache`
+whenever a feature write touches that source.

@@ -159,9 +159,7 @@ class TestFeatureEffectsInTotals:
         """A feature gated behind level 3 applies its effect the moment the level is reached."""
 
         character_class = await create_class(name="Fighter")
-        late_boon = await create_feature(
-            name="Late Boon", source_type="CLASS", class_id=character_class.id, level=3
-        )
+        late_boon = await create_feature(name="Late Boon", source_type="CLASS", class_id=character_class.id, level=3)
         await set_feature_effects(client, gm_token, late_boon.id, [{"ability": "CON", "amount": 2}])
         character, token = await create_api_character(class_id=character_class.id, owner=player, constitution=10)
         assert await get_total(client, character["id"], token, "constitution") == 10
@@ -183,9 +181,7 @@ class TestFeatureEffectsInTotals:
         """The level-up CON modifier is derived from the EFFECTIVE total, feature effects included."""
 
         character_class = await create_class(name="Fighter", hit_dice="D10")
-        toughness = await create_feature(
-            name="Toughness", source_type="CLASS", class_id=character_class.id, level=None
-        )
+        toughness = await create_feature(name="Toughness", source_type="CLASS", class_id=character_class.id, level=None)
         await set_feature_effects(client, gm_token, toughness.id, [{"ability": "CON", "amount": 4}])
         # Effective CON = 14 + 4 = 18 -> modifier +4; starting max HP = die faces 10 + 4.
         character, token = await create_api_character(class_id=character_class.id, owner=player, constitution=14)
@@ -205,7 +201,9 @@ class TestFeatureEffectsInTotals:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestPerAbilityCap:
-    async def test_new_cap_allows_adjustments_above_twenty(self, client, gm_token, gm, create_class, create_feature, create_character):
+    async def test_new_cap_allows_adjustments_above_twenty(
+        self, client, gm_token, gm, create_class, create_feature, create_character
+    ):
         character_class = await create_class(name="Barbarian")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=18)
         primal_champion = await create_feature(name="Primal Champion", source_type="OTHER")
@@ -224,9 +222,7 @@ class TestPerAbilityCap:
         over_response = await adjust_asi(client, gm_token, character.id, [{"ability": "STR", "amount": 1}])
         assert over_response.status_code == 400  # 25 > 24
 
-    async def test_other_abilities_still_capped_at_twenty(
-        self, client, gm_token, gm, create_class, create_character
-    ):
+    async def test_other_abilities_still_capped_at_twenty(self, client, gm_token, gm, create_class, create_character):
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, dexterity=10)
 
@@ -274,9 +270,7 @@ class TestPerAbilityCap:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestLegacyGrandfatheredChoices:
-    async def test_legacy_row_is_not_counted(
-        self, db_session, client, gm_token, gm, create_class, create_character
-    ):
+    async def test_legacy_row_is_not_counted(self, db_session, client, gm_token, gm, create_class, create_character):
         """
         Pre-rework rows had their points baked into the base columns and
         carry applied_to_base=True — the calculator must not count them
@@ -298,9 +292,7 @@ class TestLegacyGrandfatheredChoices:
 
         assert await get_strength_total(client, character.id, gm_token) == 16
 
-    async def test_counted_row_applies_once(
-        self, db_session, client, gm_token, gm, create_class, create_character
-    ):
+    async def test_counted_row_applies_once(self, db_session, client, gm_token, gm, create_class, create_character):
         """A modern row (applied_to_base=False) IS counted."""
 
         character_class = await create_class(name="Fighter")

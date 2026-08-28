@@ -1,68 +1,45 @@
-"""Background feature service: per-source feature CRUD, atomic with character reconciliation."""
-
-from collections.abc import Awaitable, Callable
-from typing import Any
+"""Background feature service: read-only, cached listing for BACKGROUND-source features."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
-from app.features.backgrounds.cache import invalidate_background_cache
+from app.core.cache import use_cache
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.backgrounds.crud.schemas import BackgroundCreate, BackgroundResponse, BackgroundUpdate
-from app.features.shared.features.mixins import SourceFeatureMixin
-from app.features.shared.features.nested_service import NestedFeatureService
-from app.features.shared.features.schemas import NestedFeatureResponse
+from app.features.features.crud.schemas import NestedFeatureResponse
+from app.features.features.crud.service import FeatureCrudService
 from app.models import Background
 
 
 class BackgroundFeatureService(
-    SourceFeatureMixin,
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
 ):
     """
-    Everything about a background's own features.
+    Read-only service for a background's BACKGROUND-source features.
 
-    ``list_features``/``add_feature``/``update_feature``/``remove_feature``
-    come from :class:`SourceFeatureMixin`, which owns the row-level
-    source-ownership rules, the source existence check (``_get_or_404``),
-    and the ``_atomic()`` transaction that also runs character-grant
-    reconciliation. The generic CRUD machinery comes from
-    :class:`BaseService`.
-
-    The one background-specific bit the shared engine deliberately does
-    not do: a feature write also purges the ``backgrounds`` cache
-    namespace, because ``BackgroundFullResponse`` embeds ``features``
-    (see :meth:`_mutate_feature`).
+    Write endpoints have been removed — features are managed centrally
+    through the features catalog. This service only provides the cached
+    ``list_features`` for the ``GET /backgrounds/features?background_id=...``
+    read endpoint: the list is cached under the dedicated
+    ``background_features`` namespace, which the central feature writes
+    invalidate (only for this background's list) via ``FeatureCrudService``.
     """
 
     repository: BackgroundRepository
 
-    _feature_source_type = FeatureSourceType.BACKGROUND
+    cache_namespaces = ("background_features",)
 
     def __init__(self, db: AsyncSession):
         super().__init__(
             repository=BackgroundRepository(db),
             response_schema=BackgroundResponse,
         )
-        self._features = NestedFeatureService(db)
+        self._features = FeatureCrudService(db)
 
-    async def _mutate_feature(
-        self,
-        source: Any,
-        source_type: FeatureSourceType,
-        mutate: Callable[[], Awaitable[Any]],
-    ) -> NestedFeatureResponse | None:
-        """
-        Run the shared feature write + character reconciliation, then purge
-        the ``backgrounds`` cache namespace too.
+    @use_cache()
+    async def list_features(self, source_id: int) -> list[NestedFeatureResponse]:
+        """Return every BACKGROUND-source feature of the background (cached)."""
 
-        ``BackgroundFullResponse`` (``GET /backgrounds/{id}``) embeds the
-        background's ``features`` under the ``backgrounds`` namespace, so a
-        feature write must invalidate it in addition to the
-        ``nested_features`` purge the shared mixin already does.
-        """
-
-        response = await super()._mutate_feature(source, source_type, mutate)
-        await invalidate_background_cache()
-        return response
+        await self._get_or_404(source_id)
+        return await self._features.list_for_source(FeatureSourceType.BACKGROUND, source_id)

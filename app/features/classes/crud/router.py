@@ -113,7 +113,7 @@ async def create_class(
         ),
     ],
     class_service: ClassCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """
     Create a new class. **GM only.**
@@ -126,12 +126,7 @@ async def create_class(
     with the class in a single transaction.
 
     This endpoint is intentionally minimal: it does NOT accept `features`,
-    `subclasses`, `spell_slot_progression`, or `starting_items`. Attach
-    those afterwards through their own endpoints:
-    - `POST /classes/{class_id}/features`
-    - `POST /classes/{class_id}/subclasses`
-    - `PUT /classes/{class_id}/spell-slots/{class_level}`
-    - `PUT /classes/{class_id}/starting-items`
+    `subclasses`, `spell_slot_progression`, or `starting_items`.
     """
 
     return await class_service.create_class(data)

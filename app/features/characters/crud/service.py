@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ASILevelChoice, CharacterFeatSource, FeatureSourceType, UserRole
+from app.constants import FeatureSourceType, UserRole
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
@@ -25,12 +25,6 @@ from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
 from app.features.characters.gm_panel.features.repository import CharacterFeatureRepository
 from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
-from app.features.characters.gm_panel.validation import (
-    check_feat_prerequisite,
-    validate_ability_score_increase,
-    validate_ability_score_increase_cap,
-    validate_asi_choice_required,
-)
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.schemas import (
@@ -45,8 +39,6 @@ from app.features.characters.schemas import (
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
 from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
-from app.features.feats.crud.repository import FeatRepository
-from app.features.feats.exceptions import FeatNotFoundException
 from app.features.items.crud.repository import ItemRepository
 from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
@@ -121,7 +113,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.feature_grant_repository = CharacterFeatureRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
-        self.feat_repository = FeatRepository(db)
         self.stats_service = CharacterStatsService(db)
 
     async def get_characters(
@@ -146,9 +137,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
 
         owner_id = None if current_user.role in (UserRole.GM, UserRole.FOUND_FATHER) else current_user.id
-        return await self._list_characters(
-            owner_id=owner_id, search=search, class_id=class_id, page=page, size=size
-        )
+        return await self._list_characters(owner_id=owner_id, search=search, class_id=class_id, page=page, size=size)
 
     async def get_my_characters(
         self,
@@ -185,9 +174,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         if current_user.role not in (UserRole.GM, UserRole.FOUND_FATHER):
             raise GmAccessException()
 
-        return await self._list_characters(
-            owner_id=None, search=search, class_id=class_id, page=page, size=size
-        )
+        return await self._list_characters(owner_id=None, search=search, class_id=class_id, page=page, size=size)
 
     async def _list_characters(
         self,
@@ -274,7 +261,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         return [CharacterFeatureResponse.model_validate(grant) for grant in grants]
 
     @use_cache(
-        key_builder=lambda self, character_id, **_: (f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}"),
+        key_builder=lambda self, character_id, **_: f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}",
     )
     async def _get_character_response(self, character_id: int) -> CharacterResponse:
         """Cached response assembly for a single character (access check is NOT cached)."""
@@ -351,7 +338,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             if race is not None:
                 race_skill_ids = [skill.id for skill in race.granted_skills]
 
-        payload = character_data.model_dump(exclude={"skill_ids", "feat_id", "ability_score_increase_id"})
+        payload = character_data.model_dump(exclude={"skill_ids"})
         payload["owner_id"] = current_user.id
         payload["level"] = 1
         payload["temp_hp"] = 0
@@ -362,12 +349,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             # The GM-set level-up cap starts at the character's starting
             # level: it cannot level up until a GM raises its maximum.
             await self.max_level_repository.create_for_character(character.id, character.level, commit=False)
-
-            # Mandatory origin feat: validated (existence, explicit ASI
-            # choice when the feat offers options, cap, prerequisite),
-            # granted as source ORIGIN and audited BEFORE the HP math so
-            # its ability effects count into starting hit points.
-            await self._grant_origin_feat(character, character_data)
 
             await self._apply_skill_proficiencies(
                 character, chosen_skill_ids, background_skill_ids, race_skill_ids, commit=False
@@ -393,46 +374,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         await invalidate_character_cache(character.id)
 
         return await self._to_response(character, refresh=True)
-
-    async def _grant_origin_feat(self, character: Character, character_data: CharacterCreate) -> None:
-        """
-        Validate and grant the MANDATORY origin feat chosen at creation.
-
-        Same rules as the GM grant and the level-up path: the feat must
-        exist; when it offers ability-score increase options an explicit
-        ``ability_score_increase_id`` is required (never silently without);
-        the choice must respect the ability's effective cap and the feat's
-        prerequisite. The grant carries ``source_type=ORIGIN`` and is
-        audited in ``character_asi_choices`` with no class level.
-        """
-
-        feat = await self.feat_repository.get_by_id(character_data.feat_id)
-        if feat is None:
-            raise FeatNotFoundException(feat_id=character_data.feat_id)
-
-        validate_asi_choice_required(feat, character_data.ability_score_increase_id)
-        if character_data.ability_score_increase_id is not None:
-            validate_ability_score_increase(feat, character_data.ability_score_increase_id)
-            await validate_ability_score_increase_cap(
-                feat, character_data.ability_score_increase_id, character, self.stats_service
-            )
-        await check_feat_prerequisite(character, feat, self.stats_service)
-
-        await self.feat_grant_repository.add_character_feat(
-            character.id,
-            character_data.feat_id,
-            character_data.ability_score_increase_id,
-            source_type=CharacterFeatSource.ORIGIN,
-            commit=False,
-        )
-        await self.asi_repository.add(
-            character.id,
-            None,
-            ASILevelChoice.FEAT,
-            feat_id=character_data.feat_id,
-            ability_score_increase_id=character_data.ability_score_increase_id,
-            commit=False,
-        )
 
     @staticmethod
     def _validate_chosen_skills(skill_ids: list[int], character_class: Class) -> list[int]:

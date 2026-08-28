@@ -8,7 +8,7 @@ import pytest
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, AbilityScore, ASILevelChoice, CharacterFeatSource, UserRole
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.gm_panel.exceptions import (
+from app.features.characters.gm_panel import (
     CharacterFeatAlreadyKnownException,
     FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,
@@ -202,7 +202,9 @@ class FakeASIRepository:
         increases=None,
         commit=True,
     ):
-        self.add_calls.append((character_id, class_level, choice_type, feat_id, ability_score_increase_id, increases, commit))
+        self.add_calls.append(
+            (character_id, class_level, choice_type, feat_id, ability_score_increase_id, increases, commit)
+        )
         return SimpleNamespace(id=len(self.add_calls))
 
 
@@ -216,7 +218,21 @@ class FakeMaxLevelRepository:
         return self.row
 
 
-def make_service(character=None, *, max_level_row=None, class_row=None, subclass_row=None, subrace_row=None, background=None, feat=None, known_feat_ids=(), asi_choices=None, item_entries=None, totals=None, caps=None):
+def make_service(
+    character=None,
+    *,
+    max_level_row=None,
+    class_row=None,
+    subclass_row=None,
+    subrace_row=None,
+    background=None,
+    feat=None,
+    known_feat_ids=(),
+    asi_choices=None,
+    item_entries=None,
+    totals=None,
+    caps=None,
+):
     character = character or make_character()
     db = FakeAsyncSession()
     service = CharacterProgressionService(db)
@@ -434,7 +450,9 @@ class TestLevelUpFeat:
 
     @staticmethod
     def plain_feat():
-        return SimpleNamespace(id=12, ability_score_increases=[], prerequisite_ability=None, prerequisite_minimum_score=None)
+        return SimpleNamespace(
+            id=12, ability_score_increases=[], prerequisite_ability=None, prerequisite_minimum_score=None
+        )
 
     async def test_valid_feat_grants_grant_and_audit_row_as_asi_source(self):
         feat = self.plain_feat()

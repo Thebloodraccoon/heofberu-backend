@@ -68,7 +68,8 @@ class TestPerLevelKnownSpellCaps:
     ):
         """A CANTRIP progression row caps known cantrips exactly like a leveled row."""
         character_class = await create_caster_class(
-            name="Cantrip Wizard", slots=[{"spell_level": "CANTRIP", "slots": 1}, {"spell_level": "LEVEL_1", "slots": 2}]
+            name="Cantrip Wizard",
+            slots=[{"spell_level": "CANTRIP", "slots": 1}, {"spell_level": "LEVEL_1", "slots": 2}],
         )
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
         first = await create_spell(name="Fire Bolt", school="EVOCATION", level="CANTRIP")
@@ -209,7 +210,15 @@ class TestAvailabilityDimensionsAreAnded:
         assert response.status_code == 400
 
     async def test_empty_dimension_is_unrestricted_while_others_still_apply(
-        self, client, player, player_token, gm_token, create_caster_class, create_api_character, create_spell, create_class
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        create_caster_class,
+        create_api_character,
+        create_spell,
+        create_class,
     ):
         """Subclass/race/subraces lists are empty (unrestricted); the class restriction alone decides."""
         character_class = await create_caster_class(name="Wizard")
@@ -229,7 +238,15 @@ class TestAvailabilityDimensionsAreAnded:
         assert response.status_code == 400
 
     async def test_subclass_restriction_blocks_character_without_subclass(
-        self, client, player, player_token, gm_token, create_caster_class, create_api_character, create_spell, create_subclass
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        create_caster_class,
+        create_api_character,
+        create_spell,
+        create_subclass,
     ):
         character_class = await create_caster_class(name="Wizard")
         subclass = await create_subclass(class_id=character_class.id, name="Evoker")

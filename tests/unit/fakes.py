@@ -141,3 +141,9 @@ class FakeRepository:
     async def delete(self, db_obj):
         self.deleted.append(db_obj)
         return True
+
+    async def commit_or_flush(self, *, commit: bool = True):
+        if commit:
+            await self.db.commit()
+        else:
+            await self.db.flush()

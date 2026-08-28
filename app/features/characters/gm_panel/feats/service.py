@@ -152,9 +152,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         validate_asi_choice_required(feat, ability_score_increase_id)
         if ability_score_increase_id is not None:
             validate_ability_score_increase(feat, ability_score_increase_id)
-            await validate_ability_score_increase_cap(
-                feat, ability_score_increase_id, character, self.stats_service
-            )
+            await validate_ability_score_increase_cap(feat, ability_score_increase_id, character, self.stats_service)
 
     async def _get_feat_grant_or_404(self, character_id: int, character_feat_id: int) -> CharacterFeat:
         """Fetch a feat grant scoped to the character, or raise ``CharacterFeatNotFoundException``."""

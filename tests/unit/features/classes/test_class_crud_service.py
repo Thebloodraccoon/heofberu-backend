@@ -212,7 +212,9 @@ class TestClassCrudServiceCreate:
     async def test_create_class_minimal_skips_capability_services(self, invalidated):
         service, db = make_crud_service()
 
-        result = await service.create_class(ClassCreate(name="Fighter", hit_dice=DiceType.D10, spellcasting_ability=None))
+        result = await service.create_class(
+            ClassCreate(name="Fighter", hit_dice=DiceType.D10, spellcasting_ability=None)
+        )
 
         assert result.name == "Fighter"
         assert service._skills.resolve_calls == [None]
@@ -310,4 +312,4 @@ class TestClassCrudServiceUpdate:
 class TestClassCacheNamespaces:
     def test_cache_namespaces_match_shared_constant(self):
         assert ClassCrudService.cache_namespaces == CLASS_CACHE_NAMESPACES
-        assert set(CLASS_CACHE_NAMESPACES) == {"classes", "nested_features", "nested_items", "characters"}
+        assert set(CLASS_CACHE_NAMESPACES) == {"classes", "class_features", "features", "nested_items", "characters"}

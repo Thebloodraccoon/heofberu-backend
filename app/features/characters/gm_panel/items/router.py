@@ -35,7 +35,7 @@ router = APIRouter()
     },
 )
 async def get_character_items(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     item_service: GmPanelItemsDep,
     current_user: CurrentUserDep,
 ):
@@ -58,7 +58,7 @@ async def get_character_items(
     },
 )
 async def add_character_item(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         CharacterItemAdd,
         Body(
@@ -99,7 +99,7 @@ async def add_character_item(
     },
 )
 async def update_character_item(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     item_id: Annotated[int, Query(gt=0)],
     data: Annotated[
         CharacterItemUpdate,
@@ -140,7 +140,7 @@ async def update_character_item(
     },
 )
 async def remove_character_item(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     item_id: Annotated[int, Query(gt=0)],
     item_service: GmPanelItemsDep,
     current_user: GmUserDep,

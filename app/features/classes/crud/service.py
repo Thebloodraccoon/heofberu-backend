@@ -16,7 +16,7 @@ from app.features.classes.schemas import (
     ClassUpdate,
 )
 from app.features.classes.skills.service import ClassSkillService
-from app.features.classes.subclasses.crud.service import SubclassCrudService
+from app.features.subclasses.crud.service import SubclassCrudService
 from app.features.classes.throws.service import ClassThrowsService
 from app.features.classes.weapons.service import ClassWeaponService
 from app.models.class_model import Class
@@ -144,9 +144,7 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
             )
 
         if update_data.weapon_proficiencies is not None:
-            await self._weapons.set_weapon_proficiencies_for_class(
-                character_class, update_data.weapon_proficiencies
-            )
+            await self._weapons.set_weapon_proficiencies_for_class(character_class, update_data.weapon_proficiencies)
 
         await invalidate_class_cache()
         response = await self._get_response(class_id)

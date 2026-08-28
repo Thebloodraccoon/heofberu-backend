@@ -10,8 +10,9 @@ A character automatically holds every feature owned by its class
 
 It is deliberately small and side-effect free (never commits): callers
 wrap it in their own transaction — ``CharacterService.create_character``,
-``CharacterProgressionService`` (level-up, subclass/subrace change)
-and ``GmPanelFeatService`` (feat grant/revoke).
+``CharacterProgressionService`` (level-up, subclass/subrace change),
+``GmPanelFeatService`` (feat grant/revoke) and the central
+``FeatureCrudService`` (feature create/edit/delete).
 
 Rows it does not own are left untouched: features created manually from
 OTHER sources, and any notes a player wrote on a grant, survive
@@ -113,10 +114,10 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
     Re-run :func:`sync_progression_features` for every character affected
     by a change to a source's feature set.
 
-    Called by the source replace endpoints (``PUT /{source}/{id}/features``)
-    inside their ``_atomic()`` block, so a GM editing a class/race/
-    subrace/background's features reconciles the affected characters'
-    grants in the same transaction:
+    Called by the central ``FeatureCrudService``'s ``create``,
+    ``update_feature`` and ``delete`` in the caller's transaction, so a GM
+    adding/editing/removing a class/race/subrace/background feature
+    reconciles the affected characters' grants in the same transaction:
 
       - features added to the source are granted to qualifying characters
         (level-gated by :func:`_desired_features`);
@@ -124,8 +125,8 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
         below the new level (the row survives, so the DB cascade alone
         wouldn't clean the grant);
       - features dropped from the source are removed — their ``Feature``
-        row is deleted by the replace helper, so the ``ON DELETE CASCADE``
-        clears the grants.
+        row is deleted by ``FeatureCrudService.delete``, so the
+        ``ON DELETE CASCADE`` clears the grants.
 
     Each source filters ``Character`` by its own FK. Never commits — the
     caller's transaction owns persistence.
@@ -158,9 +159,7 @@ async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> No
     Never commits — the caller's transaction owns persistence.
     """
 
-    result = await db.execute(
-        select(CharacterFeature.character_id).where(CharacterFeature.feature_id == feature_id)
-    )
+    result = await db.execute(select(CharacterFeature.character_id).where(CharacterFeature.feature_id == feature_id))
     character_ids = list(result.scalars().all())
     if not character_ids:
         return

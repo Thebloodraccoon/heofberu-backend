@@ -40,8 +40,7 @@ class TestBackgroundCrud:
         skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
 
         response = await client.put(
-            "/backgrounds/skills",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -61,17 +60,21 @@ class TestBackgroundCrud:
         assert response.status_code == 201
         background_id = response.json()["id"]
 
-        assert (await client.get("/backgrounds/features", params={"background_id": background_id})).json() == []
+        assert (await client.get(f"/backgrounds/{background_id}/features")).json() == []
 
         added = await client.post(
-            "/backgrounds/features",
-            params={"background_id": background_id},
-            json={"name": "Shelter of the Faithful", "description": "Free healing and care at a temple."},
+            "/features",
+            json={
+                "name": "Shelter of the Faithful",
+                "description": "Free healing and care at a temple.",
+                "source_type": "BACKGROUND",
+                "background_id": background_id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
 
-        fetched = await client.get("/backgrounds/features", params={"background_id": background_id})
+        fetched = await client.get(f"/backgrounds/{background_id}/features")
         assert fetched.status_code == 200
         assert [item["name"] for item in fetched.json()] == ["Shelter of the Faithful"]
 
@@ -175,9 +178,8 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         response = await client.post(
-            "/backgrounds/features",
-            params={"background_id": background.id},
-            json={"name": "Shelter of the Faithful"},
+            "/features",
+            json={"name": "Shelter of the Faithful", "source_type": "BACKGROUND", "background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -187,9 +189,13 @@ class TestBackgroundCrud:
         background = await create_background(name="Acolyte")
 
         added = await client.post(
-            "/backgrounds/features",
-            params={"background_id": background.id},
-            json={"name": "Shelter of the Faithful", "description": "Free healing at a temple."},
+            "/features",
+            json={
+                "name": "Shelter of the Faithful",
+                "description": "Free healing at a temple.",
+                "source_type": "BACKGROUND",
+                "background_id": background.id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
@@ -197,8 +203,7 @@ class TestBackgroundCrud:
         assert feature["name"] == "Shelter of the Faithful"
 
         updated = await client.patch(
-            "/backgrounds/features",
-            params={"background_id": background.id, "feature_id": feature["id"]},
+            f"/features/{feature['id']}",
             json={"description": "Free healing and care at a shrine."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -208,64 +213,9 @@ class TestBackgroundCrud:
         assert updated_feature["description"] == "Free healing and care at a shrine."
 
         removed = await client.delete(
-            "/backgrounds/features",
-            params={"background_id": background.id, "feature_id": feature["id"]},
+            f"/features/{feature['id']}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
         fetched = await client.get("/backgrounds/features", params={"background_id": background.id})
         assert fetched.json() == []
-
-    async def test_update_background_feature_of_another_source_returns_400(
-        self, client, gm_token, create_background, create_feature
-    ):
-        background = await create_background(name="Acolyte")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.patch(
-            "/backgrounds/features",
-            params={"background_id": background.id, "feature_id": foreign.id},
-            json={"name": "Renamed"},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_remove_background_feature_of_another_source_returns_400(
-        self, client, gm_token, create_background, create_feature
-    ):
-        background = await create_background(name="Acolyte")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.delete(
-            "/backgrounds/features",
-            params={"background_id": background.id, "feature_id": foreign.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_background_feature_endpoints_return_404(self, client, gm_token):
-        assert (
-            await client.post(
-                "/backgrounds/features",
-                params={"background_id": 9999},
-                json={"name": "Shelter of the Faithful"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.patch(
-                "/backgrounds/features",
-                params={"background_id": 9999, "feature_id": 1},
-                json={"name": "Renamed"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.delete(
-                "/backgrounds/features",
-                params={"background_id": 9999, "feature_id": 1},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404

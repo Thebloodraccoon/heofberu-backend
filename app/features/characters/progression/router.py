@@ -11,7 +11,7 @@ identified by the required ``character_id`` query parameter.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.characters.dependencies import CharacterProgressionServiceDep, CharacterServiceDep
 from app.features.characters.progression.schemas import (
@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.patch(
-    "/progression/background",
+    "{character_id:int}/progression/background",
     response_model=CharacterResponse,
     summary="Set a character's background (only while it has none)",
     responses={
@@ -39,7 +39,7 @@ router = APIRouter()
     },
 )
 async def set_background(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         BackgroundChange,
         Body(
@@ -66,16 +66,16 @@ async def set_background(
 
 
 @router.patch(
-    "/progression/subclass",
+    "{character_id:int}/progression/subclass",
     response_model=CharacterResponse,
     summary="Set or clear a character's subclass",
     responses={
         403: {"description": "You do not have access to this character."},
-        404: {"description": ("Character not found, or the subclass does not belong to the character's class.")},
+        404: {"description": "Character not found, or the subclass does not belong to the character's class."},
     },
 )
 async def change_subclass(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         SubclassChange,
         Body(
@@ -105,16 +105,16 @@ async def change_subclass(
 
 
 @router.patch(
-    "/progression/subrace",
+    "{character_id:int}/progression/subrace",
     response_model=CharacterResponse,
     summary="Set or clear a character's subrace",
     responses={
         403: {"description": "You do not have access to this character."},
-        404: {"description": ("Character not found, or the subrace does not belong to the character's race.")},
+        404: {"description": "Character not found, or the subrace does not belong to the character's race."},
     },
 )
 async def change_subrace(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         SubraceChange,
         Body(
@@ -144,7 +144,7 @@ async def change_subrace(
 
 
 @router.post(
-    "/rebuild",
+    "{character_id:int}/rebuild",
     response_model=CharacterResponse,
     summary="Point-rebuild a character (not implemented yet)",
     responses={
@@ -154,7 +154,7 @@ async def change_subrace(
     },
 )
 async def rebuild_character(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     progression_service: CharacterProgressionServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -168,7 +168,7 @@ async def rebuild_character(
 
 
 @router.post(
-    "/progression/level-up",
+    "{character_id:int}/progression/level-up",
     response_model=CharacterResponse,
     summary="Level a character up",
     responses={
@@ -185,7 +185,7 @@ async def rebuild_character(
     },
 )
 async def level_up(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         LevelUpRequest,
         Body(
@@ -222,7 +222,7 @@ async def level_up(
 
 
 @router.get(
-    "/progression/can-level-up",
+    "{character_id:int}/progression/can-level-up",
     response_model=CanLevelUpResponse,
     summary="Check whether a character can level up",
     responses={
@@ -231,7 +231,7 @@ async def level_up(
     },
 )
 async def can_level_up(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     progression_service: CharacterProgressionServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -243,7 +243,7 @@ async def can_level_up(
 
 
 @router.get(
-    "/progression/asi-choices",
+    "{character_id:int}/progression/asi-choices",
     response_model=list[CharacterASIChoiceResponse],
     summary="List a character's resolved ASI-level choices",
     responses={
@@ -252,7 +252,7 @@ async def can_level_up(
     },
 )
 async def get_asi_choices(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     progression_service: CharacterProgressionServiceDep,
     current_user: CurrentUserDep,
 ):

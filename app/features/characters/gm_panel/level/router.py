@@ -28,7 +28,7 @@ router = APIRouter()
     },
 )
 async def set_character_max_level(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         MaxLevelUpdate,
         Body(
@@ -63,7 +63,7 @@ async def set_character_max_level(
     },
 )
 async def get_character_max_level(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     level_service: GmPanelLevelDep,
     current_user: CurrentUserDep,
 ):

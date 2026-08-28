@@ -7,24 +7,25 @@ from app.core.base.service import BaseService
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES
 from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.schemas import ClassCreate, ClassResponse, ClassUpdate
-from app.features.shared.items.mixins import SourceItemManagerMixin
+from app.features.shared.items.mixins import ChoiceGroupManagerMixin, SourceItemManagerMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
 from app.models.class_model import Class
 
 
 class ClassItemsService(
+    ChoiceGroupManagerMixin,
     SourceItemManagerMixin,
     BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None],
 ):
     """
-    Everything about a class's starting equipment.
+    Everything about a class's starting equipment: flat items + choice groups.
 
-    ``list_items``/``set_items`` come from :class:`SourceItemManagerMixin`,
-    which delegates the writes to the shared :class:`NestedSourceItemService`
-    engine; the generic CRUD machinery (``_get_or_404``/``_get_response``/
-    ``_invalidate_cache``) comes from :class:`BaseService`. Any write
-    purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES` via
-    ``cache_namespaces``.
+    ``list_items``/``set_items`` come from :class:`SourceItemManagerMixin`;
+    ``list_choice_groups``/``set_choice_groups`` come from
+    :class:`ChoiceGroupManagerMixin`; the generic CRUD machinery
+    (``_get_or_404``/``_get_response``/``_invalidate_cache``) comes from
+    :class:`BaseService`. Any write purges every namespace listed in
+    :data:`CLASS_CACHE_NAMESPACES` via ``cache_namespaces``.
     """
 
     repository: ClassRepository

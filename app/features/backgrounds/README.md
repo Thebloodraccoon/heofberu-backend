@@ -15,7 +15,7 @@ capability, same `Backgrounds` tag):
 | `crud/` | `GET ""` (paginated listing), `GET /{background_id}` (full picture), `POST ""` (GM), `PATCH /{background_id}` (GM), `DELETE /{background_id}` (Founder) |
 | `skills/` | `PUT /backgrounds/skills?background_id=` — full-replace granted skills (GM) |
 | `items/` | `GET /backgrounds/items?background_id=`, `PUT /backgrounds/items?background_id=` — full-replace starting equipment (GM) |
-| `features/` | `GET/POST/PATCH/DELETE /backgrounds/features?background_id=[&feature_id=]` — per-background feature CRUD (GM writes) |
+| `features/` | `GET /backgrounds/features?background_id=` — cached per-background feature list (read-only; GM feature create/edit/delete is central: `POST /features`, `PATCH/DELETE /features/{id}`) |
 
 All capability endpoints identify the background via the required
 `background_id` query parameter (query-style IDs). Deps live in
@@ -29,11 +29,14 @@ Each capability service extends `BaseService` and inherits the shared engine:
 - `crud/service.py:BackgroundCrudService` extends `CachedService` and composes
   `BackgroundFeatureService` + `BackgroundSkillsService` explicitly in
   `__init__` (no mixin MRO).
-- `features/service.py:BackgroundFeatureService` = `SourceFeatureMixin`
-  (shared nested-feature engine with character-grant reconciliation), pinned
-  to `FeatureSourceType.BACKGROUND`.
+- `features/service.py:BackgroundFeatureService` = read-only cached feature
+  LIST (`@use_cache()` under `background_features`), delegating to the
+  central `FeatureCrudService.list_for_source` (pinned to
+  `FeatureSourceType.BACKGROUND`).
 - `items/service.py:BackgroundItemsService` = `SourceItemManagerMixin`
-  delegating to the shared `NestedSourceItemService`.
+  delegating to the shared `NestedSourceItemService`. Background starting
+  equipment is **fixed** — there are no item choice groups for backgrounds
+  (the `choice-groups` mechanic exists for classes only).
 - `skills/service.py:BackgroundSkillsService` = `SkillsManagerMixin`
   (+ `SkillLookupMixin` in its repository for skill-id resolution).
 
@@ -48,11 +51,14 @@ are attached afterwards through their own endpoints.
 
 `cache.py` owns the single invalidation point
 `invalidate_background_cache()`, purging `BACKGROUND_CACHE_NAMESPACES =
-("backgrounds", "nested_features", "nested_items")`. Every capability write
-calls it after commit; the crud service additionally declares it as
-`cache_namespaces` (blunt whole-namespace purge). The feature service wraps
-`_mutate_feature` to purge after every feature write too, because the full
-response embeds features under the `backgrounds` namespace.
+("backgrounds", "background_features", "features", "nested_items")`. Every
+capability write calls it after commit; the crud service additionally
+declares it as `cache_namespaces` (blunt whole-namespace purge). The `features`
+entry covers the background's feature list, and `background_features` is
+additionally purged directly by the central `FeatureCrudService`'s
+`_purge_feature_cache` (via `SOURCE_FEATURE_LIST_NAMESPACE`) whenever any
+feature write touches a BACKGROUND-source feature — central writes never touch
+the catalog's own invalidator.
 
 ## Notable Rules
 

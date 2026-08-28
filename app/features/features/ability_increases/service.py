@@ -24,7 +24,7 @@ class FeatureAbilityIncreaseService(BaseService[Feature, None, None, FeatureResp
     choice log involved. ``set_ability_increases`` is a full replace; any
     write purges the ``features`` namespace AND refreshes the stat caches
     of every character currently granted the feature (the same known
-    compromise as ``shared/features/mixins.py`` importing
+    one-way import compromise as ``FeatureCrudService`` importing
     ``characters/progression/feature_sync`` — one-directional, no import
     cycle).
     """

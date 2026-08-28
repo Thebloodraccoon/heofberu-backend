@@ -104,7 +104,7 @@ async def create_race(
         ),
     ],
     race_service: RaceCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """
     Create a new race. **GM only.**

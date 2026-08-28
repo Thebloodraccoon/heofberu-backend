@@ -21,7 +21,7 @@ class BackgroundSkillsService(
     from :class:`SkillsManagerMixin`; the generic CRUD machinery
     (``_get_or_404``/``_get_response``/``_invalidate_cache``) comes from
     :class:`BaseService`. Any write purges the ``backgrounds``,
-    ``nested_features`` and ``nested_items`` namespaces via
+    ``background_features``, ``features`` and ``nested_items`` namespaces via
     ``cache_namespaces``.
     """
 

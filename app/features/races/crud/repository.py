@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.features.races.subraces.crud.repository import SubraceRepository
+from app.features.subraces.crud.repository import SubraceRepository
 from app.models import Character
 from app.models.race_association_models import RaceAbilityBonus
 from app.models.race_model import Race

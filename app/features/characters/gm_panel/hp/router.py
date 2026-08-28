@@ -28,7 +28,7 @@ router = APIRouter()
     },
 )
 async def set_character_max_hp(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         MaxHpUpdate,
         Body(

@@ -15,7 +15,7 @@ from app.features.classes.schemas import (
     SpellSlotProgressionUpdate,
     _proficiency_bonus,
 )
-from app.features.shared.features.schemas import NestedFeatureCreate
+from app.features.features.crud.schemas import NestedFeatureCreate
 from app.models.class_model import Class
 
 

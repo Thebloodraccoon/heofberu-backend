@@ -6,20 +6,19 @@ bodies (which integration tests through the HTTP layer do not trace) are
 covered directly.
 """
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.constants import AbilityScore, FeatureSourceType
 from app.core.exceptions import RecordNotFoundError
+from app.features.features.crud.schemas import NestedFeatureCreate
 from app.features.races.ability_bonuses.schemas import AbilityBonusItem
 from app.features.races.exceptions import SubraceNotFoundException
-from app.features.races.subraces.ability_bonuses.service import SubraceAbilityBonusService
-from app.features.races.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceCreate, SubraceUpdate
-from app.features.races.subraces.crud.service import SubraceCrudService
-from app.features.races.subraces.features.service import SubraceFeatureService
-from app.features.shared.features.schemas import FeatureUpdate, NestedFeatureCreate
+from app.features.subraces.ability_bonuses.service import SubraceAbilityBonusService
+from app.features.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceCreate, SubraceUpdate
+from app.features.subraces import SubraceCrudService
+from app.features.subraces.features.service import SubraceFeatureService
 from app.models.subrace_association_models import SubraceAbilityBonus
 from app.models.subrace_model import Subrace
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
@@ -71,15 +70,12 @@ class FakeSubraceRepository(FakeRepository):
         return subrace
 
 
-class FakeNestedFeatureService:
-    """Stands in for NestedFeatureService inside the subrace services."""
+class FakeFeatures:
+    """Stands in for FeatureCrudService inside the subrace services."""
 
     def __init__(self, db):
         self.db = db
-        self.invalidate_calls = 0
         self.created = []
-        self.updated = []
-        self.deleted = []
 
     async def list_for_source(self, source_type, source_id):
         return []
@@ -87,26 +83,6 @@ class FakeNestedFeatureService:
     async def create_features_for_source(self, source_type, source_id, items, *, commit=False):
         self.created.append((source_type, source_id, items, commit))
         return []
-
-    async def create_feature_for_source(self, source_type, source_id, item, *, commit=False):
-        self.created.append((source_type, source_id, item, commit))
-        return SimpleNamespace(id=1, name=item.name, description=item.description, level=item.level)
-
-    async def update_feature_for_source(self, source_type, source_id, feature_id, fields, *, commit=False):
-        self.updated.append((source_type, source_id, feature_id, fields, commit))
-        return SimpleNamespace(
-            id=feature_id,
-            name=fields.get("name", "Extra Attack"),
-            description=fields.get("description", ""),
-            level=fields.get("level"),
-        )
-
-    async def delete_feature_for_source(self, source_type, source_id, feature_id, *, commit=False):
-        self.deleted.append((source_type, source_id, feature_id, commit))
-        return None
-
-    async def invalidate(self):
-        self.invalidate_calls += 1
 
 
 class FakeSubraceAbilityBonusService:
@@ -134,7 +110,6 @@ def no_redis_invalidate(monkeypatch):
 def no_subrace_invalidate(monkeypatch):
     monkeypatch.setattr("app.features.races.subraces.crud.service.invalidate_subrace_cache", AsyncMock())
     monkeypatch.setattr("app.features.races.subraces.ability_bonuses.service.invalidate_subrace_cache", AsyncMock())
-    monkeypatch.setattr("app.features.races.subraces.features.service.invalidate_subrace_cache", AsyncMock())
 
 
 @pytest.fixture(autouse=True)
@@ -146,7 +121,7 @@ def make_crud_service(existing_by_id=None, race_exists=True):
     db = FakeAsyncSession()
     service = SubraceCrudService(db)
     service.repository = FakeSubraceRepository(db, existing_by_id=existing_by_id)
-    service._features = FakeNestedFeatureService(db)
+    service._features = FakeFeatures(db)
     service._ability_bonuses = FakeSubraceAbilityBonusService(db)
     service._race_repository = FakeRaceRepository(db, exists=race_exists)
     return service, db
@@ -163,7 +138,7 @@ def make_feature_service(existing_by_id=None):
     db = FakeAsyncSession()
     service = SubraceFeatureService(db)
     service.repository = FakeSubraceRepository(db, existing_by_id=existing_by_id)
-    service._features = FakeNestedFeatureService(db)
+    service._features = FakeFeatures(db)
     return service, db
 
 
@@ -327,7 +302,7 @@ class TestSubraceAbilityBonusService:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestSubraceFeatureService:
-    async def test_list_features_delegates_to_nested_service(self):
+    async def test_list_features_delegates_to_feature_crud(self):
         subrace = make_subrace(id=1)
         service, _ = make_feature_service(existing_by_id={1: subrace})
 
@@ -335,42 +310,9 @@ class TestSubraceFeatureService:
 
         assert result == []
 
-    async def test_add_feature_creates_and_reconciles(self):
-        subrace = make_subrace(id=1)
-        service, db = make_feature_service(existing_by_id={1: subrace})
-        data = NestedFeatureCreate(name="Fey Ancestry", description="d", level=None)
-
-        result = await service.add_feature(1, 1, data)
-
-        assert result.id == 1
-        assert result.name == "Fey Ancestry"
-        assert service._features.created == [(FeatureSourceType.SUBRACE, 1, data, False)]
-        assert service._features.invalidate_calls == 1
-        assert db.commits == 1
-
-    async def test_update_feature_updates_in_place(self):
-        subrace = make_subrace(id=1)
-        service, db = make_feature_service(existing_by_id={1: subrace})
-
-        result = await service.update_feature(1, 1, 5, FeatureUpdate(name="Fey Ancestry"))
-
-        assert result.id == 5
-        assert service._features.updated == [(FeatureSourceType.SUBRACE, 1, 5, {"name": "Fey Ancestry"}, False)]
-        assert db.commits == 1
-
-    async def test_remove_feature_deletes_and_reconciles(self):
-        subrace = make_subrace(id=1)
-        service, db = make_feature_service(existing_by_id={1: subrace})
-
-        result = await service.remove_feature(1, 1, 5)
-
-        assert result is None
-        assert service._features.deleted == [(FeatureSourceType.SUBRACE, 1, 5, False)]
-        assert db.commits == 1
-
-    async def test_feature_write_raises_when_subrace_belongs_to_other_race(self):
+    async def test_list_features_raises_when_subrace_belongs_to_other_race(self):
         subrace = make_subrace(id=1, race_id=1)
         service, _ = make_feature_service(existing_by_id={1: subrace})
 
         with pytest.raises(SubraceNotFoundException):
-            await service.add_feature(2, 1, NestedFeatureCreate(name="x"))
+            await service.list_features(2, 1)

@@ -228,7 +228,7 @@ class ASILevelChoice(str, Enum):
 
 
 class CharacterFeatSource(str, Enum):
-    """Where a character's feat grant came from: GM grant, level-1 origin feat, or an ASI-level choice."""
+    """Where a character's feat grant came from: a GM panel grant or an ASI-level choice."""
 
     GM = "GM"
     ORIGIN = "ORIGIN"

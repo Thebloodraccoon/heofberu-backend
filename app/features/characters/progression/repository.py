@@ -64,9 +64,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         )
 
         for item in increases or []:
-            row.increases.append(
-                CharacterASIChoiceIncrease(ability=item["ability"], amount=item["amount"])
-            )
+            row.increases.append(CharacterASIChoiceIncrease(ability=item["ability"], amount=item["amount"]))
 
         self.db.add(row)
         if commit:

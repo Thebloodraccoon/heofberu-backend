@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.features.characters.gm_panel.hp.schemas import MaxHpUpdate
+from app.features.characters.gm_panel import MaxHpUpdate
 from app.features.characters.gm_panel.hp.service import GmPanelHpService
 from app.models.character_model import Character
 from tests.unit.fakes import FakeAsyncSession, FakeRepository

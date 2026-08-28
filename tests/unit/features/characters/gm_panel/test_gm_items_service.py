@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.features.characters.gm_panel.exceptions import CharacterItemNotFoundException
-from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.gm_panel import CharacterItemNotFoundException
+from app.features.characters.gm_panel import CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.gm_panel.items.service import GmPanelItemService
 from app.features.items.exceptions import ItemNotFoundException
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
@@ -82,9 +82,7 @@ def make_service(*, item_exists=True, stacks=None):
     db = FakeAsyncSession()
     service = GmPanelItemService(db)
     service.get_character_for_user = AsyncMock(return_value=SimpleNamespace(id=1))
-    service.item_repository = FakeRepository(
-        db, existing_by_id={5: SimpleNamespace()} if item_exists else {}
-    )
+    service.item_repository = FakeRepository(db, existing_by_id={5: SimpleNamespace()} if item_exists else {})
     service.character_item_repository = FakeCharacterItemRepository(db, stacks_by_id=stacks or {})
     return service
 

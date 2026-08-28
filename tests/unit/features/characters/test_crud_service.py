@@ -4,7 +4,7 @@ Unit tests for CharacterCrudService (one-shot creation contract, PATCH/delete).
 Exercises ``CharacterService.create_character`` against composition-style
 fakes: every collaborator repository/service is replaced with a recording
 stand-in, the session is a ``FakeAsyncSession``, and a shared event log
-asserts cross-collaborator ORDER (origin-feat grant before starting-HP
+asserts cross-collaborator ORDER (feature sync before starting-HP
 math, cache purge after the atomic commit). No database, no Redis.
 """
 
@@ -17,8 +17,6 @@ import pytest
 
 from app.constants import (
     AbilityScore,
-    ASILevelChoice,
-    CharacterFeatSource,
     DiceType,
     FeatureSourceType,
     UserRole,
@@ -33,14 +31,11 @@ from app.features.characters.crud.service import CharacterService
 from app.features.characters.exceptions import BackgroundNotFoundException, CharacterAccessDeniedException
 from app.features.characters.schemas import CharacterCreate, CharacterUpdate
 from app.features.classes.exceptions import ClassNotFoundException
-from app.features.feats.exceptions import FeatNotFoundException
 from app.features.races.exceptions import RaceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models import Character, CharacterSkillProficiency
 from app.models.character_item_model import CharacterItem
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
-
-_UNSET = object()
 
 
 @pytest.fixture(autouse=True)
@@ -75,15 +70,6 @@ def make_class(**overrides):
     return SimpleNamespace(**fields)
 
 
-def make_feat():
-    return SimpleNamespace(
-        id=9,
-        ability_score_increases=[],
-        prerequisite_ability=None,
-        prerequisite_minimum_score=None,
-    )
-
-
 def make_background():
     return SimpleNamespace(id=3, granted_skills=[SimpleNamespace(id=2)])
 
@@ -98,7 +84,6 @@ def make_create_payload(**overrides):
         "class_id": 1,
         "race_id": 5,
         "background_id": 3,
-        "feat_id": 9,
         "skill_ids": [1],
         "strength": 14,
         "dexterity": 10,
@@ -225,14 +210,6 @@ class FakeBackgroundRepo:
         return self.background
 
 
-class FakeFeatRepository:
-    def __init__(self, feat):
-        self.feat = feat
-
-    async def get_by_id(self, feat_id):
-        return self.feat
-
-
 class FakeFeatGrantRepository:
     def __init__(self, events):
         self.events = events
@@ -318,7 +295,6 @@ def make_service(
     events=None,
     *,
     character_class=None,
-    feat=_UNSET,
     background=None,
     race=None,
     class_exists=True,
@@ -345,7 +321,6 @@ def make_service(
         background_exists=background_exists,
     )
     service.item_repository = FakeItemRepository(events, entries=equipment_entries)
-    service.feat_repository = FakeFeatRepository(make_feat() if feat is _UNSET else feat)
     service.stats_service = FakeStatsService(events, constitution_total=constitution_total)
     service.feat_grant_repository = FakeFeatGrantRepository(events)
     service.asi_repository = FakeAsiRepository()
@@ -353,6 +328,7 @@ def make_service(
     service.character_spell_slot_repository = FakeSpellSlotRepository()
 
     if monkeypatch is not None:
+
         async def fake_sync(db_arg, character):
             events.append("sync_features")
 
@@ -373,7 +349,9 @@ class TestCharacterCreateSchema:
         with pytest.raises(ValidationError):
             make_create_payload(max_hp=20)
 
-    async def test_feat_id_is_mandatory(self):
+    async def test_creation_without_feat_is_valid(self):
+        """The origin-feat contract was removed: no feat is granted at creation."""
+
         payload = {
             "name": "Grog",
             "class_id": 1,
@@ -384,8 +362,12 @@ class TestCharacterCreateSchema:
             "wisdom": 10,
             "charisma": 10,
         }
+        assert CharacterCreate(**payload).name == "Grog"
+        assert not hasattr(CharacterCreate(**payload), "feat_id")
+
+    async def test_feat_id_field_is_rejected_as_extra(self):
         with pytest.raises(ValidationError):
-            CharacterCreate(**payload)
+            make_create_payload(feat_id=9)
 
     async def test_duplicate_skill_ids_rejected(self):
         with pytest.raises(ValidationError):
@@ -459,8 +441,6 @@ class TestCreateCharacterHappyPath:
         assert character.temp_hp == 0
         assert character.owner_id == user.id
         assert "skill_ids" not in service.repository.last_create_payload
-        assert "feat_id" not in service.repository.last_create_payload
-        assert "ability_score_increase_id" not in service.repository.last_create_payload
         assert character.current_hp == 12
         assert character.max_hp == 12
 
@@ -478,8 +458,8 @@ class TestCreateCharacterHappyPath:
         assert service.max_level_repository.calls == [(1, 1, False)]
         assert service.class_repository.slot_progression_calls == [(1, 1)]
         assert service.character_spell_slot_repository.calls == [(1, {}, False)]
-        assert service.feat_grant_repository.calls == [(1, 9, None, CharacterFeatSource.ORIGIN, False)]
-        assert service.asi_repository.calls == [(1, None, ASILevelChoice.FEAT, 9, None, False)]
+        assert service.feat_grant_repository.calls == []
+        assert service.asi_repository.calls == []
 
         assert db.commits == 1
         assert db.flushes == 4
@@ -492,13 +472,13 @@ class TestCreateCharacterHappyPath:
         assert result.hit_dice == "D10"
         assert result.speed == 30
 
-    async def test_order_feat_and_feature_sync_before_hp_math_commit_before_invalidate(self, monkeypatch):
+    async def test_order_feature_sync_before_hp_math_commit_before_invalidate(self, monkeypatch):
         events = []
         service, _ = make_service(monkeypatch, events)
 
         await service.create_character(make_create_payload(), make_user())
 
-        assert events.index("feat_grant") < events.index("compute_hp")
+        assert "feat_grant" not in events
         assert events.index("sync_features") < events.index("compute_hp")
         assert events.index("compute_hp") < events.index("grant_equipment")
         assert events.index("commit") < events.index("invalidate")
@@ -526,12 +506,6 @@ class TestCreateCharacterReferenceValidation:
         service, _ = make_service(monkeypatch, [], background_exists=False)
 
         with pytest.raises(BackgroundNotFoundException):
-            await service.create_character(make_create_payload(), make_user())
-
-    async def test_nonexistent_feat_raises(self, monkeypatch):
-        service, _ = make_service(monkeypatch, [], feat=None)
-
-        with pytest.raises(FeatNotFoundException):
             await service.create_character(make_create_payload(), make_user())
 
 

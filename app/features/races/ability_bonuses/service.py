@@ -15,8 +15,8 @@ class RaceAbilityBonusService(BaseService[Race, RaceCreate, RaceUpdate, RaceResp
 
     ``set_ability_bonuses`` is the public full-replace write; the
     ``commit=False`` variant is shared with ``create_race`` so bonuses seed
-    in the same transaction as the race row. Any write purges the ``races``
-    and ``nested_features`` namespaces.
+    in the same transaction as the race row. Any write purges the ``races``,
+    ``race_features``, ``features`` and ``characters`` namespaces.
     """
 
     repository: RaceRepository

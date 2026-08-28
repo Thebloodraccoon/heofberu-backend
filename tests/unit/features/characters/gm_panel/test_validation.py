@@ -5,12 +5,12 @@ from types import SimpleNamespace
 import pytest
 
 from app.constants import AbilityScore
-from app.features.characters.gm_panel.exceptions import (
+from app.features.characters.gm_panel import (
     FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,
     InvalidAbilityScoreIncreaseException,
 )
-from app.features.characters.gm_panel.validation import (
+from app.features.characters.gm_panel import (
     check_feat_prerequisite,
     validate_ability_score_increase,
     validate_ability_score_increase_cap,

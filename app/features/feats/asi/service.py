@@ -16,7 +16,7 @@ class FeatAsiService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, Non
     ``set_ability_score_increases`` is the public full-replace write; the
     ``commit=False`` variant is shared with ``create_feat`` so ASI choices
     seed in the same transaction as the feat row. Any write purges the
-    ``feats`` and ``nested_features`` namespaces.
+    ``feats`` namespace.
     """
 
     repository: FeatRepository

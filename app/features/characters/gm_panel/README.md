@@ -25,22 +25,22 @@ own capability segment.
 - Root files: `dependencies.py` (the `GmPanel*Dep` service aliases),
   `exceptions.py` (ALL panel HTTP exceptions — progression imports from here
   for its level-up ASI path), `validation.py` (ASI-choice/prerequisite checks
-  shared by `feats/` and progression).
+  shared by `feats` and progression).
 
 ## Capabilities
 
 | Capability | Endpoints | Access | Owns |
 |---|---|---|---|
-| `feats/` | POST/PATCH/DELETE `/feats` | GM only | `CharacterFeatRepository` |
-| `features/` | POST/PATCH/DELETE `/features` | GM only | `CharacterFeatureRepository` |
-| `items/` | GET/POST/PATCH/DELETE `/items` | reads GM/owner, writes GM only | `CharacterItemRepository` + own schemas |
-| `asi/` | GET/POST/DELETE `/asi` | reads GM/owner, writes GM only | own schemas |
-| `hp/` | PATCH `/max-hp` | GM only | — |
-| `level/` | PATCH/GET `/max-level` | reads GM/owner, writes GM only | `CharacterMaxLevelRepository` |
-| `skills/` | PATCH `/skills` | GM only | `CharacterSkillProficiencyRepository` |
-| `stats/` | GET `/stats` | GM/owner | own schemas |
+| `feats` | POST/PATCH/DELETE `/feats` | GM only | `CharacterFeatRepository` |
+| `features` | POST/PATCH/DELETE `/features` | GM only | `CharacterFeatureRepository` |
+| `items` | GET/POST/PATCH/DELETE `/items` | reads GM/owner, writes GM only | `CharacterItemRepository` + own schemas |
+| `asi` | GET/POST/DELETE `/asi` | reads GM/owner, writes GM only | own schemas |
+| `hp` | PATCH `/max-hp` | GM only | — |
+| `level` | PATCH/GET `/max-level` | reads GM/owner, writes GM only | `CharacterMaxLevelRepository` |
+| `skills` | PATCH `/skills` | GM only | `CharacterSkillProficiencyRepository` |
+| `stats` | GET `/stats` | GM/owner | own schemas |
 
-### `feats/` — feat grants
+### `feats` — feat grants
 
 POST grants a reference feat outside any level-up flow (201); PATCH changes
 the grant's ability-score increase choice; DELETE revokes it (204). A feat
@@ -56,7 +56,7 @@ through the `character_feats` row, which stays the source of truth. The
 level-up endpoint (`CharacterProgressionService._apply_feat`) writes the same
 table through this repository with `source_type=ASI`.
 
-### `features/` — feature grants
+### `features` — feature grants
 
 Records/removes reference features on a character (optionally with free-form
 per-character notes; PATCH replaces notes only — the referenced feature is
@@ -65,7 +65,7 @@ add/remove DO refresh the ability-score cache because features can carry fixed
 `feature_ability_increases` effects. Progression auto-grants can be removed
 here too.
 
-### `items/` — inventory
+### `items` — inventory
 
 The former standalone `characters/items/` subpackage. Each `character_items`
 row is an independent stack, so the same item may be owned several times;
@@ -75,7 +75,7 @@ quantity/equip/attunement/notes; there is no way to change `item_id` — remove
 the stack and add a new one instead.
 `CharacterItemNotFoundException` lives in the root `exceptions.py`.
 
-### `asi/` — free-form ±adjustments
+### `asi` — free-form ±adjustments
 
 GET lists the character's adjustments (`class_level IS NULL` rows only);
 POST adds one as a `character_asi_choices` row with `class_level IS NULL`
@@ -89,14 +89,14 @@ deleting its log row (+ cascade of the child increments) and refreshing the
 cache, refusing level-tied rows (`LevelTiedAsiChoiceException`) — those belong
 to the level-up flow.
 
-### `hp/` — max HP
+### `hp` — max HP
 
 PATCH `/max-hp` is the ONLY write path for `Character.max_hp` (it is not a
 field of the player-reachable `CharacterUpdate`). When the new maximum is
 below the current HP pool, `current_hp` clamps DOWN to it; temp HP is
 untouched.
 
-### `level/` — max-level cap
+### `level` — max-level cap
 
 PATCH/GET `/max-level` on `character_max_levels` (one row per character,
 seeded at the starting level on creation and backfilled by migration): the
@@ -106,7 +106,7 @@ character's current level (`MaxLevelBelowCharacterLevelException`) is
 rejected, and the schema caps it at `CHARACTER_MAX_LEVEL`. The repository is
 imported by progression for the level-up gate.
 
-### `skills/` — expertise toggle
+### `skills` — expertise toggle
 
 PATCH `/skills?character_id=...&skill_id=...` with `{is_expertise: bool}`:
 toggles expertise on an EXISTING proficiency row (rows are written once at
@@ -117,7 +117,7 @@ implies proficiency). Expertise is never derived automatically; clients read
 repository is a plain class (not `BaseRepository`) because the model has a
 composite PK `(character_id, skill_id)`.
 
-### `stats/` — fresh-compute overview
+### `stats` — fresh-compute overview
 
 GET `/stats`: per-ability `{base, total}` pairing each ORIGINAL base value
 (player entry at creation, never mutated) with its COMPUTED effective total

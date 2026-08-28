@@ -45,6 +45,7 @@ from app.models.race_model import Race  # noqa: F401
 from app.models.skill_model import Skill  # noqa: F401
 
 # Source-owned starting equipment (classes/backgrounds).
+from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption  # noqa: F401
 from app.models.source_item_model import SourceItem  # noqa: F401
 
 # Spell.

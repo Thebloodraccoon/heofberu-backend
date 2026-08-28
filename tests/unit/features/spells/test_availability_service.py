@@ -224,7 +224,9 @@ class TestSpellAvailabilityService:
         assert invalidated.await_count == 0
 
     @pytest.mark.parametrize(("dimension", "schema", "id_field"), DIMENSIONS)
-    async def test_set_for_spell_delegates_without_commit_or_invalidation(self, dimension, schema, id_field, invalidated):
+    async def test_set_for_spell_delegates_without_commit_or_invalidation(
+        self, dimension, schema, id_field, invalidated
+    ):
         child = make_child()
         spell = make_spell()
         service, db = make_availability_service()

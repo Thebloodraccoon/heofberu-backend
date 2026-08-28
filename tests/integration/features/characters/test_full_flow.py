@@ -1,7 +1,6 @@
 """
-Full-flow character tests: the whole journey from creation (with the
-mandatory origin feat) through leveling up, ASI choices, caps, subclass
-and background setup — plus the edge cases along that path.
+Full-flow character tests: the whole journey from leveling up, ASI choices,
+caps, subclass and background setup — plus the edge cases along that path.
 """
 
 import pytest
@@ -28,8 +27,8 @@ async def get_stats(client, character_id, token):
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestMandatoryOriginFeat:
-    async def test_create_without_feat_is_rejected(self, client, player_token, create_class):
+class TestNoOriginFeat:
+    async def test_create_without_feat_is_accepted(self, client, player_token, create_class):
         character_class = await create_class(name="Fighter")
 
         response = await client.post(
@@ -38,9 +37,9 @@ class TestMandatoryOriginFeat:
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
 
-    async def test_create_with_unknown_feat_returns_404(self, client, player_token, create_class):
+    async def test_feat_id_is_rejected_as_extra_field(self, client, player_token, create_class):
         character_class = await create_class(name="Fighter")
 
         response = await client.post(
@@ -49,9 +48,9 @@ class TestMandatoryOriginFeat:
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        assert response.status_code == 404
+        assert response.status_code == 422
 
-    async def test_origin_feat_is_granted_and_audited(
+    async def test_creation_grants_no_feats_or_choices(
         self, client, player, player_token, gm_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
@@ -64,7 +63,7 @@ class TestMandatoryOriginFeat:
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json()
-        assert len(feats) == 1
+        assert feats == []
 
         choices = (
             await client.get(
@@ -73,84 +72,7 @@ class TestMandatoryOriginFeat:
                 headers={"Authorization": f"Bearer {player_token}"},
             )
         ).json()
-        assert [choice["choice_type"] for choice in choices] == ["FEAT"]
-        assert choices[0]["class_level"] is None
-
-    async def test_feat_with_asi_options_requires_explicit_choice(self, client, gm_token, player_token, create_class, create_feat):
-        character_class = await create_class(name="Fighter")
-        resilient = await create_feat(name="Resilient Creation")
-        await client.put(
-            "/feats/ability-score-increases",
-            params={"feat_id": resilient.id},
-            json={"ability_score_increases": [{"ability": "CON", "amount": 1}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        response = await client.post(
-            "/characters",
-            json={"name": "Silent", "class_id": character_class.id, "feat_id": resilient.id},
-            headers={"Authorization": f"Bearer {player_token}"},
-        )
-
-        assert response.status_code == 422
-
-    async def test_feat_asi_choice_applies_to_starting_hp(
-        self, client, player, player_token, gm_token, create_class, create_feat, create_background, create_api_character
-    ):
-        """A +1 CON origin feat raises starting max HP through the effective CON modifier."""
-
-        character_class = await create_class(name="Fighter", hit_dice="D10")
-        tough = await create_feat(name="Tough Origin")
-        asi_response = await client.put(
-            "/feats/ability-score-increases",
-            params={"feat_id": tough.id},
-            json={"ability_score_increases": [{"ability": "CON", "amount": 1}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        assert asi_response.status_code == 200
-        tough_asi_id = asi_response.json()["ability_score_increases"][0]["id"]
-
-        # CON 13 -> mod +1 (HP 11); with the feat's +1: 14 -> mod +2 (HP 12).
-        # (Odd scores: (score-10)//2 floors, so 15 would still be +2.)
-        plain_background = await create_background(name="Plain Acolyte")
-        tough_background = await create_background(name="Tough Acolyte")
-        plain, _ = await create_api_character(
-            class_id=character_class.id, owner=player, name="Plain", constitution=13,
-            background_id=plain_background.id,
-        )
-        tough_char, _ = await create_api_character(
-            class_id=character_class.id,
-            owner=player,
-            name="Tough",
-            constitution=13,
-            background_id=tough_background.id,
-            origin_feat=tough,
-            ability_score_increase_id=tough_asi_id,
-        )
-
-        assert plain["max_hp"] == 11
-        assert tough_char["max_hp"] == 12
-
-    async def test_feat_prerequisite_unmet_returns_400(self, client, player_token, create_class, create_feat):
-        character_class = await create_class(name="Fighter")
-        heavy_armor_master = await create_feat(
-            name="Heavy Armor Master Creation",
-            prerequisite_ability="STR",
-            prerequisite_minimum_score=13,
-        )
-
-        response = await client.post(
-            "/characters",
-            json={
-                "name": "Weakling",
-                "class_id": character_class.id,
-                "feat_id": heavy_armor_master.id,
-                "strength": 8,
-            },
-            headers={"Authorization": f"Bearer {player_token}"},
-        )
-
-        assert response.status_code == 400
+        assert choices == []
 
 
 @pytest.mark.integration
@@ -193,7 +115,9 @@ class TestFullJourneyToLevelFive:
         assert ok.json()["max_hp"] == 36  # 12 + 8*2 + 8
 
         # Level 5: choice must NOT be sent on a non-ASI level.
-        rejected = await level_up(client, character["id"], token, {"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 1}]}})
+        rejected = await level_up(
+            client, character["id"], token, {"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 1}]}}
+        )
         assert rejected.status_code == 400
         ok = await level_up(client, character["id"], token)
         assert ok.status_code == 200
@@ -236,9 +160,7 @@ class TestFullJourneyToLevelFive:
         self, client, player, player_token, gm_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
-        character, token = await create_api_character(
-            class_id=character_class.id, owner=player, raise_max_level=False
-        )
+        character, token = await create_api_character(class_id=character_class.id, owner=player, raise_max_level=False)
 
         blocked = await level_up(client, character["id"], token)
         assert blocked.status_code == 400
@@ -258,21 +180,27 @@ class TestFullJourneyToLevelFive:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestScoreBoundaries:
-    async def test_asi_to_exact_cap_twenty_then_blocked(self, client, player, player_token, gm_token, create_class, create_api_character):
+    async def test_asi_to_exact_cap_twenty_then_blocked(
+        self, client, player, player_token, gm_token, create_class, create_api_character
+    ):
         character_class = await create_class(name="Fighter")
         character, token = await create_api_character(class_id=character_class.id, owner=player, strength=16)
 
-        await level_up(client, character["id"], token)   # 2
-        await level_up(client, character["id"], token)   # 3
+        await level_up(client, character["id"], token)  # 2
+        await level_up(client, character["id"], token)  # 3
         response = await level_up(
-            client, character["id"], token,
+            client,
+            character["id"],
+            token,
             {"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
         )  # 4: STR effective 18
         assert response.status_code == 200
 
-        await level_up(client, character["id"], token)   # 5
+        await level_up(client, character["id"], token)  # 5
         response = await level_up(
-            client, character["id"], token,
+            client,
+            character["id"],
+            token,
             {"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
         )  # 6 (non-ASI level!) -> 400
         assert response.status_code == 400
@@ -297,7 +225,9 @@ class TestScoreBoundaries:
         stats = await get_stats(client, character["id"], token)
         assert stats["strength"]["total"] == 20
 
-    async def test_negative_adjustments_floor_effective_at_one(self, client, gm_token, gm, create_class, create_character):
+    async def test_negative_adjustments_floor_effective_at_one(
+        self, client, gm_token, gm, create_class, create_character
+    ):
         character_class = await create_class(name="Sorcerer")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, charisma=3)
 
@@ -343,13 +273,19 @@ class TestScoreBoundaries:
 @pytest.mark.asyncio
 class TestLateSetupGrants:
     async def test_subclass_set_after_creation_applies_feature_effects(
-        self, client, player, player_token, gm_token, create_class, create_subclass, create_feature, create_api_character
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        create_class,
+        create_subclass,
+        create_feature,
+        create_api_character,
     ):
         character_class = await create_class(name="Fighter")
         champion = await create_subclass(class_id=character_class.id, name="Champion")
-        trait = await create_feature(
-            name="Champion Trait", source_type="SUBCLASS", subclass_id=champion.id, level=None
-        )
+        trait = await create_feature(name="Champion Trait", source_type="SUBCLASS", subclass_id=champion.id, level=None)
         await client.put(
             "/features/ability-increases",
             params={"feature_id": trait.id},
@@ -375,9 +311,7 @@ class TestLateSetupGrants:
     ):
         character_class = await create_class(name="Fighter")
         background = await create_background()
-        character, token = await create_api_character(
-            class_id=character_class.id, owner=player, background_id=False
-        )
+        character, token = await create_api_character(class_id=character_class.id, owner=player, background_id=False)
 
         response = await client.patch(
             "/characters/progression/background",

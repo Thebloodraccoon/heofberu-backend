@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/conditions",
+    "{character_id:int}/conditions",
     response_model=list[CharacterConditionResponse],
     summary="List a character's conditions",
     responses={
@@ -35,7 +35,7 @@ router = APIRouter()
     },
 )
 async def get_character_conditions(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -48,7 +48,7 @@ async def get_character_conditions(
 
 
 @router.post(
-    "/conditions",
+    "{character_id:int}/conditions",
     response_model=CharacterConditionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Record a condition on a character",
@@ -59,7 +59,7 @@ async def get_character_conditions(
     },
 )
 async def add_character_condition(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         CharacterConditionAdd,
         Body(
@@ -92,7 +92,7 @@ async def add_character_condition(
 
 
 @router.patch(
-    "/conditions",
+    "{character_id:int}/conditions",
     response_model=CharacterConditionResponse,
     summary="Change a condition's exhaustion level or source",
     responses={
@@ -102,7 +102,7 @@ async def add_character_condition(
     },
 )
 async def update_character_condition(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     condition: Annotated[ConditionType, Query()],
     data: Annotated[
         CharacterConditionUpdate,
@@ -132,7 +132,7 @@ async def update_character_condition(
 
 
 @router.delete(
-    "/conditions",
+    "{character_id:int}/conditions",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a condition from a character",
     responses={
@@ -141,7 +141,7 @@ async def update_character_condition(
     },
 )
 async def remove_character_condition(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     condition: Annotated[ConditionType, Query()],
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,

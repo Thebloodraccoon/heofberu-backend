@@ -74,12 +74,6 @@ class CharacterCreate(CharacterBase):
     belong to the class's ``available_skills``, and the total must not
     exceed the class's ``skill_choice_count``. The background's granted
     skills (when ``background_id`` is set) are added automatically.
-
-    ``feat_id`` is MANDATORY: every character takes one origin feat at
-    creation (granted with ``source_type=ORIGIN`` and audited in
-    ``character_asi_choices``). If the chosen feat offers ability-score
-    increase options, ``ability_score_increase_id`` must pick one — the
-    choice is never silent.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -95,10 +89,6 @@ class CharacterCreate(CharacterBase):
     charisma: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
 
     skill_ids: list[int] = Field(default_factory=list)
-
-    # Mandatory origin feat (see docstring above).
-    feat_id: int
-    ability_score_increase_id: int | None = None
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):

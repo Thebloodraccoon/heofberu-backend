@@ -122,7 +122,7 @@ async def create_feat(
         ),
     ],
     feat_service: FeatCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """
     Create a new feat. **GM only.**

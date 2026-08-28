@@ -107,10 +107,11 @@ class BackgroundCrudService(
 
         Any write that touches this background (base fields, granted
         skills, features, starting items) invalidates the ``backgrounds``
-        namespace — plus ``nested_features``/``nested_items`` via
-        :func:`invalidate_background_cache` — the same blunt,
-        whole-namespace invalidation the rest of this service uses for
-        reference-catalog data (infrequent writes, frequent reads).
+        namespace — plus ``background_features``, ``features`` and
+        ``nested_items`` via :func:`invalidate_background_cache` — the
+        same blunt, whole-namespace invalidation the rest of this service
+        uses for reference-catalog data (infrequent writes, frequent
+        reads).
         """
 
         background = await self._get_or_404(item_id)

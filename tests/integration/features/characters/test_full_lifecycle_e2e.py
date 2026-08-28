@@ -73,21 +73,14 @@ class TestFullCharacterLifecycle:
             )
             assert slots_response.status_code == 200, slots_response.text
 
-        origin_feat_response = await client.post(
-            "/feats", json={"name": "Tough Origin"}, headers=gm_headers
-        )
-        feat_choice_response = await client.post(
-            "/feats", json={"name": "Slasher"}, headers=gm_headers
-        )
+        feat_choice_response = await client.post("/feats", json={"name": "Slasher"}, headers=gm_headers)
         resilient_response = await client.post(
             "/feats",
             json={"name": "Resilient", "ability_score_increases": [{"ability": "CON", "amount": 1}]},
             headers=gm_headers,
         )
-        assert origin_feat_response.status_code == 201
         assert feat_choice_response.status_code == 201
         assert resilient_response.status_code == 201
-        origin_feat = origin_feat_response.json()
         feat_choice = feat_choice_response.json()
         resilient = resilient_response.json()
         resilient_asi_id = resilient["ability_score_increases"][0]["id"]
@@ -118,7 +111,6 @@ class TestFullCharacterLifecycle:
                 "wisdom": 10,
                 "charisma": 10,
                 "skill_ids": [skill.id],
-                "feat_id": origin_feat["id"],
             },
             headers=player_headers,
         )
@@ -212,7 +204,7 @@ class TestFullCharacterLifecycle:
             "/characters/feats", params={"character_id": character_id}, headers=player_headers
         )
         assert feats_response.status_code == 200
-        assert sorted(entry["feat"]["name"] for entry in feats_response.json()) == ["Slasher", "Tough Origin"]
+        assert sorted(entry["feat"]["name"] for entry in feats_response.json()) == ["Slasher"]
 
         choices_response = await client.get(
             "/characters/progression/asi-choices", params={"character_id": character_id}, headers=player_headers
@@ -220,7 +212,7 @@ class TestFullCharacterLifecycle:
         assert choices_response.status_code == 200
         choices = choices_response.json()
         feat_choices = [choice for choice in choices if choice["choice_type"] == "FEAT"]
-        assert sorted((choice["class_level"] or 0) for choice in feat_choices) == [0, 4]
+        assert sorted((choice["class_level"] or 0) for choice in feat_choices) == [4]
         level_four_choice = next(choice for choice in feat_choices if choice["class_level"] == 4)
         assert level_four_choice["feat_id"] == feat_choice["id"]
         asi_choice = [choice for choice in choices if choice["choice_type"] == "ASI"]

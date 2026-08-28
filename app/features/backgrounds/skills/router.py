@@ -1,11 +1,11 @@
 """
-Background granted-skill endpoints (query-style ID — the background is
-identified by the required ``background_id`` query parameter).
+Background granted-skill endpoints.
+``background_id`` is a path parameter supplied via the router prefix.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.backgrounds.crud.schemas import BackgroundResponse
 from app.features.backgrounds.dependencies import BackgroundSkillsDep
@@ -25,7 +25,7 @@ router = APIRouter()
     },
 )
 async def set_background_skills(
-    background_id: Annotated[int, Query(gt=0)],
+    background_id: int,
     data: Annotated[
         SkillsUpdate,
         Body(

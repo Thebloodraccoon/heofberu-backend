@@ -78,6 +78,14 @@ class Class(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    starting_choice_groups = relationship(
+        "SourceItemChoiceGroup",
+        primaryjoin="Class.id == SourceItemChoiceGroup.class_id",
+        foreign_keys="SourceItemChoiceGroup.class_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="SourceItemChoiceGroup.sort_order",
+    )
     characters = relationship("Character", back_populates="character_class")
 
     def __repr__(self):

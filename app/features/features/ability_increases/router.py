@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/ability-increases",
+    "{feature_id:int}/ability-increases",
     response_model=FeatureAbilityIncreasesResponse,
     summary="List a feature's fixed ability-score increases",
     responses={
@@ -26,7 +26,7 @@ router = APIRouter()
     },
 )
 async def get_feature_ability_increases(
-    feature_id: Annotated[int, Query(gt=0)],
+    feature_id: int,
     service: FeatureAbilityIncreasesDep,
 ):
     """List the fixed ability-score effects granted while this feature is on a character. Open endpoint."""
@@ -35,7 +35,7 @@ async def get_feature_ability_increases(
 
 
 @router.put(
-    "/ability-increases",
+    "{feature_id:int}/ability-increases",
     response_model=FeatureAbilityIncreasesResponse,
     summary="Replace a feature's fixed ability-score increases",
     responses={
@@ -45,7 +45,7 @@ async def get_feature_ability_increases(
     },
 )
 async def set_feature_ability_increases(
-    feature_id: Annotated[int, Query(gt=0)],
+    feature_id: int,
     data: Annotated[
         AbilityIncreasesUpdate,
         Body(

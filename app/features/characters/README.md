@@ -51,12 +51,13 @@ creates a character. Everything is derived server-side:
 - **Level pinned to 1**, `temp_hp=0`; the payload has no `level`/HP fields
   and `CharacterCreate` sets `extra="forbid"`, so stale clients sending
   removed fields get a 422.
-- **Mandatory origin feat**: `feat_id` is required, granted with
-  `source_type=ORIGIN` and audited in `character_asi_choices`. Validated
-  like every other feat path (existence, explicit ASI choice when the feat
-  offers options → otherwise 422, ability cap, prerequisite). Granted
-  *before* the starting-HP math so its ability effects count into level-1 HP
-  (with an explicit flush — the session runs `autoflush=False`).
+- **No origin feat**: there is no mandatory starting feat anymore — creation
+  carries no `feat_id`/`ability_score_increase_id` (`CharacterCreate` rejects
+  them as extra fields with a 422). Characters start with zero feats and zero
+  ASI-choice audit rows; feats come only from GM grants (`gm_panel/feats`) or
+  ASI-level choices during progression. The feat-grant path still validates
+  existence, explicit ASI choice when the feat offers options (else 422),
+  ability cap, and prerequisite.
 - **Max-level row seeded** at the starting level in the same transaction:
   the character cannot level up until a GM raises its cap via the GM panel.
 - **Skills merged and deduplicated** across three sources: the validated

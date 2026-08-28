@@ -347,9 +347,8 @@ class TestLevelUp:
         )
         assert choices_response.status_code == 200
         choices = choices_response.json()
-        # One level-4 ASI + the origin-feat audit row (no class level,
-        # sorted last — Postgres NULLS LAST).
-        assert len(choices) == 2
+        # Only the level-4 ASI choice is recorded.
+        assert len(choices) == 1
         level_choice = choices[0]
         assert level_choice["class_level"] == 4
         assert level_choice["choice_type"] == "ASI"
@@ -432,8 +431,8 @@ class TestLevelUp:
             headers={"Authorization": f"Bearer {player_token}"},
         )
         feats = feats_response.json()
-        # The mandatory origin feat + the level-up feat.
-        assert len(feats) == 2
+        # Only the level-up feat is granted.
+        assert len(feats) == 1
         assert feat.id in [item["feat_id"] for item in feats]
 
         choices_response = await client.get(
@@ -442,7 +441,7 @@ class TestLevelUp:
             headers={"Authorization": f"Bearer {player_token}"},
         )
         choices = choices_response.json()
-        assert len(choices) == 2
+        assert len(choices) == 1
         level_choice = choices[0]
         assert level_choice["class_level"] == 4
         assert level_choice["choice_type"] == "FEAT"
@@ -593,9 +592,7 @@ class TestLevelUp:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestASIChoices:
-    async def test_new_character_has_only_the_origin_feat_choice(
-        self, client, player, player_token, create_class, create_api_character
-    ):
+    async def test_new_character_has_no_choices(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
@@ -606,10 +603,7 @@ class TestASIChoices:
         )
 
         assert response.status_code == 200
-        choices = response.json()
-        assert len(choices) == 1
-        assert choices[0]["choice_type"] == "FEAT"
-        assert choices[0]["class_level"] is None
+        assert response.json() == []
 
     async def test_asi_choices_accumulate_across_levels(
         self, client, player, player_token, create_class, create_api_character, create_feat
@@ -641,10 +635,9 @@ class TestASIChoices:
 
         assert response.status_code == 200
         choices = response.json()
-        # The level-4 ASI + the level-8 FEAT + the origin-feat audit row
-        # (class_level NULL, sorted last — Postgres NULLS LAST).
-        assert [choice["class_level"] for choice in choices] == [4, 8, None]
-        assert [choice["choice_type"] for choice in choices] == ["ASI", "FEAT", "FEAT"]
+        # The level-4 ASI + the level-8 FEAT, ordered by class level.
+        assert [choice["class_level"] for choice in choices] == [4, 8]
+        assert [choice["choice_type"] for choice in choices] == ["ASI", "FEAT"]
 
     async def test_player_cannot_view_other_players_asi_choices(
         self, client, player_token, create_user, create_class, create_character

@@ -131,7 +131,7 @@ async def create_item(
         ),
     ],
     item_service: ItemCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """Create a new item. **GM only.**"""
 

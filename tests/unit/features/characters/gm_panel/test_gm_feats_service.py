@@ -6,14 +6,14 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import AbilityScore, ASILevelChoice
-from app.features.characters.gm_panel.exceptions import (
+from app.features.characters.gm_panel import (
     CharacterFeatAlreadyKnownException,
     CharacterFeatNotFoundException,
     FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,
 )
-from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
-from app.features.characters.gm_panel.feats.service import GmPanelFeatService
+from app.features.characters.gm_panel.feats import CharacterFeatAdd, CharacterFeatUpdate
+from app.features.characters.gm_panel.feats import GmPanelFeatService
 from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
 from app.features.feats.exceptions import FeatNotFoundException
 from app.models.character_model import Character
@@ -210,7 +210,9 @@ class TestAddFeat:
         stats = FakeStatsService()
         service = make_service(character, feat=make_feat(ability_score_increases=[increase]), stats=stats)
 
-        await service.add_feat(character.id, CharacterFeatAdd(feat_id=2, ability_score_increase_id=10), SimpleNamespace())
+        await service.add_feat(
+            character.id, CharacterFeatAdd(feat_id=2, ability_score_increase_id=10), SimpleNamespace()
+        )
 
         assert service.feat_grant_repository.add_calls == [(1, 2, 10, False)]
         assert service.asi_repository.add_calls[0]["ability_score_increase_id"] == 10
@@ -267,7 +269,9 @@ class TestUpdateFeat:
     async def test_updates_choice_and_refreshes_cache(self):
         character = make_character()
         grant = make_grant(3, 2, 10)
-        feat = make_feat(ability_score_increases=[make_increase(10, AbilityScore.STR, 1), make_increase(11, AbilityScore.DEX, 1)])
+        feat = make_feat(
+            ability_score_increases=[make_increase(10, AbilityScore.STR, 1), make_increase(11, AbilityScore.DEX, 1)]
+        )
         service = make_service(character, feat=feat, grants_by_id={3: grant})
 
         result = await service.update_feat(1, 3, CharacterFeatUpdate(ability_score_increase_id=11), SimpleNamespace())

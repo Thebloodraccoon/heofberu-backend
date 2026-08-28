@@ -3,13 +3,13 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, RaceSize
+from app.features.features.crud.schemas import NestedFeatureCreate
 from app.features.races.ability_bonuses.schemas import (
     AbilityBonusItem,
     AbilityBonusResponse,
     _validate_unique_abilities,
 )
-from app.features.races.subraces.crud.schemas import SubraceBriefResponse
-from app.features.shared.features.schemas import NestedFeatureCreate
+from app.features.subraces.crud.schemas import SubraceBriefResponse
 
 
 class RaceBase(BaseModel):

@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import FeatureSourceType
-from app.features.characters.gm_panel.exceptions import (
+from app.features.characters.gm_panel import (
     CharacterFeatureAlreadyKnownException,
     CharacterFeatureNotFoundException,
 )
-from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
-from app.features.characters.gm_panel.features.service import GmPanelFeatureService
+from app.features.characters.gm_panel import CharacterFeatureAdd, CharacterFeatureUpdate
+from app.features.characters.gm_panel import GmPanelFeatureService
 from app.features.features.exceptions import FeatureNotFoundException
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 

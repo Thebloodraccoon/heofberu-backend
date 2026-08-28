@@ -26,16 +26,13 @@ class TestSourceEditReconciliation:
     ):
         character_class = await create_class(name="Fighter")
         race = await create_race(name="Dwarf")
-        character, token = await create_api_character(
-            class_id=character_class.id, owner=player, race_id=race.id
-        )
+        character, token = await create_api_character(class_id=character_class.id, owner=player, race_id=race.id)
 
         assert await feature_ids(client, character["id"], token) == set()
 
         add_response = await client.post(
-            "/races/features",
-            params={"race_id": race.id},
-            json={"name": "Stonecunning", "description": "Stone sense."},
+            "/features",
+            json={"name": "Stonecunning", "description": "Stone sense.", "source_type": "RACE", "race_id": race.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201, add_response.text
@@ -43,8 +40,7 @@ class TestSourceEditReconciliation:
         assert await feature_ids(client, character["id"], token) == {"Stonecunning"}
 
         remove_response = await client.delete(
-            "/races/features",
-            params={"race_id": race.id, "feature_id": add_response.json()["id"]},
+            f"/features/{add_response.json()['id']}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert remove_response.status_code == 204
@@ -58,9 +54,14 @@ class TestSourceEditReconciliation:
         character, token = await create_api_character(class_id=character_class.id, owner=player)
 
         add_response = await client.post(
-            "/classes/features",
-            params={"class_id": character_class.id},
-            json={"name": "Rage", "description": "Bonus damage.", "level": 1},
+            "/features",
+            json={
+                "name": "Rage",
+                "description": "Bonus damage.",
+                "level": 1,
+                "source_type": "CLASS",
+                "class_id": character_class.id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201, add_response.text
@@ -78,14 +79,21 @@ class TestSourceEditReconciliation:
         character_class = await create_class(name="Wizard", spellcasting_ability=None)
         character, token = await create_api_character(class_id=character_class.id, owner=player)
 
-        before_response = await client.get(f"/characters/{character['id']}", headers={"Authorization": f"Bearer {token}"})
+        before_response = await client.get(
+            f"/characters/{character['id']}", headers={"Authorization": f"Bearer {token}"}
+        )
         assert before_response.status_code == 200
         assert before_response.json()["ability_scores"]["intelligence_total"] == 10
 
         add_response = await client.post(
-            "/classes/features",
-            params={"class_id": character_class.id},
-            json={"name": "Arcane Aptitude", "description": "+2 INT.", "level": 1},
+            "/features",
+            json={
+                "name": "Arcane Aptitude",
+                "description": "+2 INT.",
+                "level": 1,
+                "source_type": "CLASS",
+                "class_id": character_class.id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201, add_response.text

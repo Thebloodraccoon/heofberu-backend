@@ -14,6 +14,8 @@ from app.features.ping.router import router as ping_router
 from app.features.races.router import router as race_router
 from app.features.skills.router import router as skill_router
 from app.features.spells.router import router as spell_router
+from app.features.subclasses.router import router as subclass_router
+from app.features.subraces.router import router as subrace_router
 from app.features.users.router import router as user_router
 
 api_router = APIRouter(prefix="/api")
@@ -24,7 +26,9 @@ _feature_routers = (
     auth_router,
     user_router,
     race_router,
+    subrace_router,
     class_router,
+    subclass_router,
     skill_router,
     spell_router,
     background_router,

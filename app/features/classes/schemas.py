@@ -5,9 +5,9 @@ import math
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel, WeaponProficiency
-from app.features.classes.subclasses.crud.schemas import SubclassBriefResponse
-from app.features.shared.features.schemas import NestedFeatureResponse
-from app.features.shared.items.schemas import SourceItemResponse
+from app.features.subclasses.crud.schemas import SubclassBriefResponse
+from app.features.features.crud.schemas import NestedFeatureResponse
+from app.features.shared.items.schemas import ChoiceGroupResponse, SourceItemResponse
 
 
 def _proficiency_bonus(class_level: int) -> int:
@@ -289,6 +289,7 @@ class ClassResponse(ClassBase):
     weapon_proficiencies: list[WeaponProficiencyResponse] = []
     available_skills: list[SkillResponse] = []
     starting_items: list[SourceItemResponse] = []
+    starting_choice_groups: list[ChoiceGroupResponse] = []
     spell_slot_progression: list[SpellSlotProgressionResponse] = []
     subclasses: list[SubclassBriefResponse] = []
 
@@ -356,6 +357,6 @@ class ClassFullResponse(ClassResponse):
 # forward ref (defined in subclasses/crud/schemas.py) to avoid a circular
 # import at module load time (subclasses/crud/schemas.py does not import
 # from here).
-from app.features.classes.subclasses.crud.schemas import SubclassListResponse  # noqa: E402
+from app.features.subclasses.crud.schemas import SubclassListResponse  # noqa: E402
 
 ClassGetAllResponse.model_rebuild()

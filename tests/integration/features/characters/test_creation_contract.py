@@ -20,20 +20,25 @@ async def set_available_skills(db_session, character_class, *skills):
 @pytest.mark.asyncio
 class TestCreationSkillChoices:
     async def test_chosen_skills_are_written_with_is_expertise_false(
-        self, client, player, player_token, db_session, create_class, create_skill,
-        create_feat,
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
         skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
         skill_b = await create_skill(key="ACROBATICS", name="Acrobatics", ability="DEX")
         await set_available_skills(db_session, character_class, skill_a, skill_b)
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id, "skill_ids": [skill_a.id, skill_b.id],
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [skill_a.id, skill_b.id],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -44,35 +49,40 @@ class TestCreationSkillChoices:
         assert all(item["is_expertise"] is False for item in proficiencies)
 
     async def test_skill_outside_class_available_skills_returns_400(
-        self, client, player, player_token, db_session, create_class, create_skill,
-        create_feat,
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
     ):
         character_class = await create_class(name="Fighter")
         available = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
         other = await create_skill(key="ARCANA", name="Arcana", ability="INT")
         await set_available_skills(db_session, character_class, available)
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id, "skill_ids": [other.id],
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [other.id],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 400
 
-    async def test_unknown_skill_id_returns_400(self, client, player, player_token, create_class, create_feat):
+    async def test_unknown_skill_id_returns_400(self, client, player, player_token, create_class):
         character_class = await create_class(name="Fighter")
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id, "skill_ids": [999999],
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [999999],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -80,8 +90,13 @@ class TestCreationSkillChoices:
         assert response.status_code == 400
 
     async def test_too_many_skill_choices_returns_400(
-        self, client, player, player_token, db_session, create_class, create_skill,
-        create_feat,
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
         skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
@@ -89,11 +104,9 @@ class TestCreationSkillChoices:
         skill_c = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
         await set_available_skills(db_session, character_class, skill_a, skill_b, skill_c)
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
                 "name": "Conan",
                 "class_id": character_class.id,
                 "skill_ids": [skill_a.id, skill_b.id, skill_c.id],
@@ -103,16 +116,16 @@ class TestCreationSkillChoices:
 
         assert response.status_code == 400
 
-    async def test_duplicate_skill_ids_return_422(self, client, player, player_token, create_class, create_skill, create_feat):
+    async def test_duplicate_skill_ids_return_422(self, client, player, player_token, create_class, create_skill):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
         skill = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id, "skill_ids": [skill.id, skill.id],
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [skill.id, skill.id],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -124,8 +137,15 @@ class TestCreationSkillChoices:
 @pytest.mark.asyncio
 class TestCreationBackgroundSkills:
     async def test_background_skills_added_and_merged_with_choices(
-        self, client, gm_token, player, player_token, db_session, create_class, create_skill, create_background,
-        create_feat,
+        self,
+        client,
+        gm_token,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
+        create_background,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
         chosen = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
@@ -140,11 +160,9 @@ class TestCreationBackgroundSkills:
         )
         assert put_response.status_code == 200, put_response.text
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
                 "name": "Acolyte",
                 "class_id": character_class.id,
                 "background_id": background.id,
@@ -159,8 +177,14 @@ class TestCreationBackgroundSkills:
         assert len(proficiencies) == 2
 
     async def test_background_only_skills_written_without_choices(
-        self, client, gm_token, player, player_token, create_class, create_skill, create_background,
-        create_feat,
+        self,
+        client,
+        gm_token,
+        player,
+        player_token,
+        create_class,
+        create_skill,
+        create_background,
     ):
         character_class = await create_class(name="Fighter")
         skill = await create_skill(key="RELIGION", name="Religion", ability="INT")
@@ -173,12 +197,12 @@ class TestCreationBackgroundSkills:
         )
         assert put_response.status_code == 200, put_response.text
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Acolyte", "class_id": character_class.id, "background_id": background.id,
+                "name": "Acolyte",
+                "class_id": character_class.id,
+                "background_id": background.id,
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -191,16 +215,16 @@ class TestCreationBackgroundSkills:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCreationHp:
-    async def test_default_max_hp_is_hit_die_plus_con_modifier(self, client, player, player_token, create_class, create_feat):
+    async def test_default_max_hp_is_hit_die_plus_con_modifier(self, client, player, player_token, create_class):
         # Fighter D10 with base CON 12 -> CON mod +1 -> default max_hp 11.
         character_class = await create_class(name="Fighter", hit_dice="D10")
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id, "constitution": 12,
+                "name": "Conan",
+                "class_id": character_class.id,
+                "constitution": 12,
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -211,32 +235,32 @@ class TestCreationHp:
         assert body["current_hp"] == 11
         assert body["temp_hp"] == 0
 
-    async def test_explicit_max_hp_is_rejected(self, client, player, player_token, create_class, create_feat):
+    async def test_explicit_max_hp_is_rejected(self, client, player, player_token, create_class):
         """HP is fully server-derived at level 1 — sending `max_hp` fails with a 422."""
         character_class = await create_class(name="Fighter", hit_dice="D10")
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id, "max_hp": 4,
+                "name": "Conan",
+                "class_id": character_class.id,
+                "max_hp": 4,
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 422
 
-    async def test_client_sent_level_is_rejected(self, client, player, player_token, create_class, create_feat):
+    async def test_client_sent_level_is_rejected(self, client, player, player_token, create_class):
         """`extra="forbid"` — unknown fields like `level` are rejected with a 422."""
         character_class = await create_class(name="Fighter", hit_dice="D10")
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id, "level": 5,
+                "name": "Conan",
+                "class_id": character_class.id,
+                "level": 5,
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -247,7 +271,7 @@ class TestCreationHp:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCreationSavingThrows:
-    async def test_saving_throws_come_from_the_class(self, client, gm_token, player_token, create_class, create_feat):
+    async def test_saving_throws_come_from_the_class(self, client, gm_token, player_token, create_class):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         put_response = await client.put(
             "/classes/saving-throws",
@@ -257,12 +281,11 @@ class TestCreationSavingThrows:
         )
         assert put_response.status_code == 200, put_response.text
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Conan", "class_id": character_class.id,
+                "name": "Conan",
+                "class_id": character_class.id,
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -276,8 +299,14 @@ class TestCreationSavingThrows:
 @pytest.mark.asyncio
 class TestCreationRaceSkills:
     async def test_race_granted_skills_written_without_choices(
-        self, client, gm_token, player, player_token, create_class, create_skill, create_race,
-        create_feat,
+        self,
+        client,
+        gm_token,
+        player,
+        player_token,
+        create_class,
+        create_skill,
+        create_race,
     ):
         character_class = await create_class(name="Fighter")
         skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
@@ -290,12 +319,12 @@ class TestCreationRaceSkills:
         )
         assert put_response.status_code == 200, put_response.text
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
-                "name": "Legolas", "class_id": character_class.id, "race_id": race.id,
+                "name": "Legolas",
+                "class_id": character_class.id,
+                "race_id": race.id,
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -316,7 +345,6 @@ class TestCreationRaceSkills:
         create_skill,
         create_background,
         create_race,
-        create_feat,
     ):
         """Skills granted by several sources (choice + race) produce a single row."""
         character_class = await create_class(name="Fighter", skill_choice_count=2)
@@ -343,11 +371,9 @@ class TestCreationRaceSkills:
         )
         assert put_race.status_code == 200, put_race.text
 
-        feat = await create_feat(name="Origin Feat")
         response = await client.post(
             "/characters",
             json={
-                "feat_id": feat.id,
                 "name": "Acolyte",
                 "class_id": character_class.id,
                 "race_id": race.id,

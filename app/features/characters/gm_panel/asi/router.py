@@ -29,7 +29,7 @@ router = APIRouter()
     },
 )
 async def get_character_asi_adjustments(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     asi_service: GmPanelAsiDep,
     current_user: CurrentUserDep,
 ):
@@ -51,7 +51,7 @@ async def get_character_asi_adjustments(
     },
 )
 async def add_character_asi_adjustment(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         GmAsiChoiceAdd,
         Body(
@@ -93,7 +93,7 @@ async def add_character_asi_adjustment(
     },
 )
 async def remove_character_asi_adjustment(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     adjustment_id: Annotated[int, Query(gt=0)],
     asi_service: GmPanelAsiDep,
     current_user: GmUserDep,

@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/ability-score-increases",
+    "{feat_id:int}/ability-score-increases",
     response_model=FeatResponse,
     summary="Replace a feat's ability score increase choices",
     responses={
@@ -26,7 +26,7 @@ router = APIRouter()
     },
 )
 async def set_feat_ability_score_increases(
-    feat_id: Annotated[int, Query(gt=0)],
+    feat_id: int,
     data: Annotated[
         AbilityScoreIncreasesUpdate,
         Body(

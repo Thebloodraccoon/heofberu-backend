@@ -12,9 +12,7 @@ import pytest
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestClassCreationSeeding:
-    async def test_create_class_seeds_throws_proficiencies_and_skills(
-        self, client, gm_token, create_skill
-    ):
+    async def test_create_class_seeds_throws_proficiencies_and_skills(self, client, gm_token, create_skill):
         skill_a = await create_skill(key="ARCANA", name="Arcana", ability="INT")
         skill_b = await create_skill(key="HISTORY", name="History", ability="INT")
 
@@ -99,9 +97,7 @@ class TestClassCreationSeeding:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestFullCatalogPicture:
-    async def test_spell_slot_progression_and_features_embed_in_full_read(
-        self, client, gm_token
-    ):
+    async def test_spell_slot_progression_and_features_embed_in_full_read(self, client, gm_token):
         created = await client.post(
             "/classes",
             json={"name": "Full Picture Sorcerer", "hit_dice": "D6", "spellcasting_ability": "CHA"},
@@ -120,9 +116,14 @@ class TestFullCatalogPicture:
         assert slots_response.status_code == 200
 
         feature_response = await client.post(
-            "/classes/features",
-            params={"class_id": character_class_id},
-            json={"name": "Font of Magic", "level": 1, "description": "Metamagic fuel."},
+            "/features",
+            json={
+                "name": "Font of Magic",
+                "level": 1,
+                "description": "Metamagic fuel.",
+                "source_type": "CLASS",
+                "class_id": character_class_id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert feature_response.status_code == 201
@@ -143,13 +144,11 @@ class TestFullCatalogPicture:
             ("LEVEL_1", 2),
         }
         assert [feature["name"] for feature in fetched["features"]] == ["Font of Magic"]
-        assert [
-            {"id": subclass["id"], "name": subclass["name"]} for subclass in fetched["subclasses"]
-        ] == [{"id": subclass_response.json()["id"], "name": "Draconic Bloodline"}]
+        assert [{"id": subclass["id"], "name": subclass["name"]} for subclass in fetched["subclasses"]] == [
+            {"id": subclass_response.json()["id"], "name": "Draconic Bloodline"}
+        ]
 
-    async def test_seeded_slots_flow_into_new_characters_at_creation(
-        self, client, gm_token, player, login_as, create_feat
-    ):
+    async def test_seeded_slots_flow_into_new_characters_at_creation(self, client, gm_token, player, login_as):
         """A character of the freshly seeded caster class starts with the CANTRIP/LEVEL_1 totals."""
         created = await client.post(
             "/classes",
@@ -167,11 +166,10 @@ class TestFullCatalogPicture:
         )
         assert slots_response.status_code == 200
 
-        feat = await create_feat(name="Flow Origin Feat")
         token = await login_as(player)
         char_response = await client.post(
             "/characters",
-            json={"name": "Slot Flow", "class_id": character_class_id, "feat_id": feat.id},
+            json={"name": "Slot Flow", "class_id": character_class_id},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert char_response.status_code == 201, char_response.text

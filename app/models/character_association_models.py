@@ -56,9 +56,9 @@ class CharacterFeat(settings.Base):  # type: ignore
     the feat grants no ability score increase or none was applicable.
 
     `source_type` records where the grant came from — a plain GM grant
-    (the default, and what the manual feats endpoint writes), a level-1
-    origin feat (ORIGIN), or an Ability Score Improvement level choice
-    (ASI, written by the progression level-up endpoint).
+    (the default, and what the manual feats endpoint writes), or an Ability
+    Score Improvement level choice (ASI, written by the progression level-up
+    endpoint).
     """
 
     __tablename__ = "character_feats"

@@ -21,8 +21,8 @@ class RaceSkillService(
     ``set_skills`` (full replacement) and skill-id resolution are inherited
     from :class:`SkillsManagerMixin`; the generic CRUD machinery
     (``_get_or_404``/``_get_response``/``_invalidate_cache``) comes from
-    :class:`BaseService`. Any write purges the ``races`` and
-    ``nested_features`` namespaces via ``cache_namespaces``.
+    :class:`BaseService`. Any write purges the ``races``, ``race_features``,
+    ``features`` and ``characters`` namespaces via ``cache_namespaces``.
     """
 
     repository: RaceSkillsRepository

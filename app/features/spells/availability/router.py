@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/classes",
+    "/{spell_id:int}/classes",
     response_model=SpellResponse,
     summary="Replace a spell's available classes",
     responses={
@@ -31,7 +31,7 @@ router = APIRouter()
     },
 )
 async def set_spell_classes(
-    spell_id: Annotated[int, Query(gt=0)],
+    spell_id: int,
     data: Annotated[
         ClassAvailabilityUpdate,
         Body(
@@ -63,7 +63,7 @@ async def set_spell_classes(
 
 
 @router.put(
-    "/subclasses",
+    "/{spell_id:int}/subclasses",
     response_model=SpellResponse,
     summary="Replace a spell's available subclasses",
     responses={
@@ -72,7 +72,7 @@ async def set_spell_classes(
     },
 )
 async def set_spell_subclasses(
-    spell_id: Annotated[int, Query(gt=0)],
+    spell_id: int,
     data: Annotated[
         SubclassAvailabilityUpdate,
         Body(
@@ -104,7 +104,7 @@ async def set_spell_subclasses(
 
 
 @router.put(
-    "/races",
+    "/{spell_id:int}/races",
     response_model=SpellResponse,
     summary="Replace a spell's available races",
     responses={
@@ -113,7 +113,7 @@ async def set_spell_subclasses(
     },
 )
 async def set_spell_races(
-    spell_id: Annotated[int, Query(gt=0)],
+    spell_id: int,
     data: Annotated[
         RaceAvailabilityUpdate,
         Body(
@@ -145,7 +145,7 @@ async def set_spell_races(
 
 
 @router.put(
-    "/subraces",
+    "/{spell_id:int}/subraces",
     response_model=SpellResponse,
     summary="Replace a spell's available subraces",
     responses={
@@ -154,7 +154,7 @@ async def set_spell_races(
     },
 )
 async def set_spell_subraces(
-    spell_id: Annotated[int, Query(gt=0)],
+    spell_id: int,
     data: Annotated[
         SubraceAvailabilityUpdate,
         Body(

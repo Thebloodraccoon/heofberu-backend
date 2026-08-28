@@ -83,16 +83,18 @@ class TestCharacterUpdate:
 @pytest.mark.unit
 class TestCharacterCreate:
     def _payload(self, **overrides):
-        payload = {"name": "Grog", "class_id": 1, "feat_id": 5}
+        payload = {"name": "Grog", "class_id": 1}
         payload.update(overrides)
         return payload
 
-    def test_feat_id_is_required(self):
-        """The origin feat is mandatory at creation."""
-        payload = {"name": "Grog", "class_id": 1}
+    def test_feat_id_no_longer_part_of_creation(self):
+        """The origin-feat contract was removed: creation carries no feat."""
+        assert "feat_id" not in CharacterCreate.model_fields
+        assert CharacterCreate(**self._payload()).name == "Grog"
 
+    def test_feat_id_is_rejected_as_extra(self):
         with pytest.raises(ValidationError):
-            CharacterCreate(**payload)
+            CharacterCreate(**self._payload(feat_id=5))
 
     def test_level_is_not_client_settable(self):
         """Every character starts at level 1; level is not part of the create payload."""

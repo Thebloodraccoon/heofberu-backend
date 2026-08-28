@@ -8,7 +8,7 @@ sub-resources use query-style IDs (``/characters/hp?character_id=...``).
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Path, Query, status
+from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
@@ -123,9 +123,7 @@ async def get_all_characters(
     `GET /characters`.
     """
 
-    return await character_service.get_all_characters(
-        gm_user, search=search, class_id=class_id, page=page, size=size
-    )
+    return await character_service.get_all_characters(gm_user, search=search, class_id=class_id, page=page, size=size)
 
 
 @router.get(
@@ -153,7 +151,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
 
 
 @router.get(
-    "/feats",
+    "{character_id:int}/feats",
     response_model=list[CharacterFeatResponse],
     summary="List a character's feats",
     responses={
@@ -162,7 +160,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
     },
 )
 async def get_character_feats(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -172,7 +170,7 @@ async def get_character_feats(
 
 
 @router.get(
-    "/features",
+    "{character_id:int}/features",
     response_model=list[CharacterFeatureResponse],
     summary="List a character's features",
     responses={
@@ -181,7 +179,7 @@ async def get_character_feats(
     },
 )
 async def get_character_features(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -287,7 +285,7 @@ async def create_character(
     },
 )
 async def update_character(
-    character_id: Annotated[int, Path()],
+    character_id: int,
     data: Annotated[
         CharacterUpdate,
         Body(
@@ -350,7 +348,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
 
 
 @router.patch(
-    "/hp",
+    "{character_id:int}/hp",
     response_model=CharacterResponse,
     summary="Apply damage/healing or set HP directly",
     responses={
@@ -360,7 +358,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
     },
 )
 async def update_character_hp(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         HpUpdate,
         Body(
@@ -400,7 +398,7 @@ async def update_character_hp(
 
 
 @router.post(
-    "/rest",
+    "{character_id:int}/rest",
     response_model=CharacterResponse,
     summary="Take a short or long rest",
     responses={
@@ -410,7 +408,7 @@ async def update_character_hp(
     },
 )
 async def rest_character(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         RestRequest,
         Body(

@@ -2,18 +2,18 @@
 Generic base for "per-source nested collection" services: a cached,
 FK-scoped listing plus namespace invalidation.
 
-Both ``NestedFeatureService`` (app/features/shared/features/nested_service.py)
-and ``NestedSourceItemService`` (app/features/shared/items/nested_service.py) are
-this same shape:
+``NestedSourceItemService`` (app/features/shared/items/nested_service.py)
+is this shape:
 
     SELECT <Model> WHERE <fk> == source_id ORDER BY id  -->  cached list
 
-Writes are NOT generalized here — they differ too much per domain
-(``NestedSourceItemService`` inserts/deletes ``SourceItem`` rows directly;
-``NestedFeatureService`` delegates to ``FeatureCrudService`` for
-ownership-aware writes, since features have row-level ownership rules
-nested items don't). Only the read + cache-namespace boilerplate is
-shared, since that part is byte-for-byte identical across both today.
+Per-source feature LISTINGS no longer use this base — the catalogs cache
+their own ``GET /{source}/features`` lists under dedicated namespaces
+(``race_features``, ``class_features``, ...) via the central
+``FeatureCrudService``, which owns every feature write. Only the
+read + cache-namespace boilerplate that both domains share is kept here;
+the feature domain's row-level ownership rules live in
+``FeatureCrudService``.
 """
 
 from typing import Any, Generic
@@ -45,24 +45,16 @@ class NestedCollectionService(Generic[Model, ResponseSchema]):
         for a given source type (``"race_id"``, ``"background_id"``, ...).
         Raise inside it (rather than returning ``None``) for source types
         that don't support this listing — see
-        ``NestedFeatureService.fk_for``.
+        ``NestedSourceItemService.fk_for``.
       - optional ``load_options``: extra ``.options(...)`` for the select
         (e.g. ``NestedSourceItemService`` needs ``selectinload(item)``).
 
     Example::
 
-        class NestedFeatureService(NestedCollectionService[Feature, NestedFeatureResponse]):
-            model = Feature
-            response_schema = NestedFeatureResponse
-            cache_namespaces = ("nested_features",)
-
-            def fk_for(self, source_type: FeatureSourceType) -> str:
-                fk_name = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
-                if fk_name is None:
-                    raise ValueError(...)
-                return fk_name
-
-            # writes stay domain-specific, defined alongside this class
+        class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResponse]):
+            model = SourceItem
+            response_schema = SourceItemResponse
+            cache_namespaces = ("source_items",)
     """
 
     model: type[Model]
