@@ -91,10 +91,14 @@ class ChoiceGroupEntry(BaseModel):
     options: list[ChoiceOptionEntry] = Field(min_length=1)
 
     @field_validator("options")
-    def validate_unique_item_ids(cls, options: list[ChoiceOptionEntry]) -> list[ChoiceOptionEntry]:
+    def validate_unique_item_ids(cls, options: list[ChoiceOptionEntry], info):
         item_ids = [o.item_id for o in options]
         if len(item_ids) != len(set(item_ids)):
             raise ValueError("Duplicate item IDs within a choice group are not allowed.")
+
+        pick_count = info.data.get("pick_count")
+        if pick_count is not None and pick_count > len(options):
+            raise ValueError("pick_count cannot exceed the number of options in the group.")
         return options
 
 

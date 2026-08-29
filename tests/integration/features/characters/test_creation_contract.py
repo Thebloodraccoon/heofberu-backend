@@ -48,6 +48,37 @@ class TestCreationSkillChoices:
         assert {item["skill_id"] for item in proficiencies} == {skill_a.id, skill_b.id}
         assert all(item["is_expertise"] is False for item in proficiencies)
 
+    async def test_choosing_fewer_than_max_grants_only_the_chosen_skills(
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
+    ):
+        """A player may pick fewer than ``skill_choice_count``; only the chosen ones are granted."""
+        character_class = await create_class(name="Ranger", skill_choice_count=3)
+        skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skill_b = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill_c = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        await set_available_skills(db_session, character_class, skill_a, skill_b, skill_c)
+
+        response = await client.post(
+            "/characters",
+            json={
+                "name": "Shades",
+                "class_id": character_class.id,
+                "skill_ids": [skill_a.id],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 201
+        proficiencies = response.json()["skill_proficiencies"]
+        assert {item["skill_id"] for item in proficiencies} == {skill_a.id}
+        assert all(item["is_expertise"] is False for item in proficiencies)
+
     async def test_skill_outside_class_available_skills_returns_400(
         self,
         client,

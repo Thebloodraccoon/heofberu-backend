@@ -2,6 +2,9 @@
 
 import pytest
 
+from app.constants import FeatureSourceType
+from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -63,3 +66,22 @@ class TestItemCrud:
 
         assert response.status_code == 204
         assert (await client.get(f"/items/{item.id}")).status_code == 404
+
+    async def test_founder_cannot_delete_item_used_only_as_choice_option(
+        self, client, founder_token, db_session, create_class, create_item
+    ):
+        item = await create_item(name="Choice Option Item")
+        character_class = await create_class(name="Fighter")
+
+        group = SourceItemChoiceGroup(
+            source_type=FeatureSourceType.CLASS, class_id=character_class.id, pick_count=1
+        )
+        db_session.add(group)
+        await db_session.flush()
+        db_session.add(SourceItemChoiceOption(group_id=group.id, item_id=item.id, quantity=1))
+        await db_session.commit()
+
+        response = await client.delete(f"/items/{item.id}", headers={"Authorization": f"Bearer {founder_token}"})
+
+        assert response.status_code == 409
+        assert (await client.get(f"/items/{item.id}")).status_code == 200

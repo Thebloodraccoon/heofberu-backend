@@ -154,11 +154,15 @@ class FakeBackgroundRepository:
 
 
 class FakeItemRepository:
-    def __init__(self, entries=None):
+    def __init__(self, entries=None, choice_groups=None):
         self.entries = entries or []
+        self.choice_groups = choice_groups or []
 
     async def get_source_items_for_sources(self, sources):
         return list(self.entries)
+
+    async def get_choice_groups_for_sources(self, sources):
+        return list(self.choice_groups)
 
 
 class FakeFeatRepository:

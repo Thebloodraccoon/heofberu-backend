@@ -128,6 +128,13 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
         row is deleted by ``FeatureCrudService.delete``, so the
         ``ON DELETE CASCADE`` clears the grants.
 
+    It is also the seed of the ``RaceAbilityBonusService`` and
+    ``SubraceAbilityBonusService`` ability-bonus writes (a known one-way
+    catalog → characters import): there the per-character run produces no
+    grant changes, but the stat-cache refresh below is exactly the fix for
+    a bonus edit that would otherwise leave existing characters' totals
+    stale until a GM-panel read.
+
     Each source filters ``Character`` by its own FK. Never commits — the
     caller's transaction owns persistence.
     """
@@ -168,3 +175,8 @@ async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> No
     stats_service = CharacterStatsService(db)
     for character in characters.scalars().all():
         await stats_service.refresh(character, commit=False)
+        # The DB cache row was just refreshed, but ``GET /characters/{id}``
+        # serves its ability scores from a Redis-cached CharacterResponse —
+        # purge it so the new totals are visible immediately (mirroring
+        # ``reconcile_characters_for_source``).
+        await invalidate_character_cache(character.id)

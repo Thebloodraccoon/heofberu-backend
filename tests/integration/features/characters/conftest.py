@@ -36,6 +36,8 @@ async def create_api_character(client, login_as, create_user, create_background,
     level-1 cap (used by the max-level system's own tests).
     """
 
+    default_background_id = None
+
     async def _create_api_character(
         class_id,
         owner=None,
@@ -45,6 +47,7 @@ async def create_api_character(client, login_as, create_user, create_background,
         raise_max_level=True,
         **kwargs,
     ):
+        nonlocal default_background_id
         if owner is None:
             owner = await create_user()
         # ``background_id=False`` omits the field entirely — a character
@@ -54,7 +57,12 @@ async def create_api_character(client, login_as, create_user, create_background,
             omit_background = True
         else:
             if background_id is None:
-                background_id = (await create_background()).id
+                # Reuse one background per test so calling this fixture for
+                # several characters (each auto-picking a background) does
+                # not collide on ``backgrounds.name`` unique.
+                if default_background_id is None:
+                    default_background_id = (await create_background()).id
+                background_id = default_background_id
             omit_background = False
         token = await login_as(owner)
         payload = {

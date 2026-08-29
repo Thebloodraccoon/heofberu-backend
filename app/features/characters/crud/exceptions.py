@@ -36,3 +36,39 @@ class TooManySkillChoicesException(AppError):
         self.allowed = allowed
         self.requested = requested
         super().__init__(f"Class {class_id} allows at most {allowed} skill choices, but {requested} were requested.")
+
+
+class ItemChoicesWithoutGroupsException(AppError):
+    """Raised when item_choice_ids are sent but the character's sources define no choice groups."""
+
+    status_code = 400
+
+    def __init__(self):
+        super().__init__("Item choice options were provided, but no choice groups exist for this character's sources.")
+
+
+class ItemChoiceNotAvailableException(AppError):
+    """Raised when an item_choice_id is not one of the character's sources' choice-group options."""
+
+    status_code = 400
+
+    def __init__(self, option_id: int):
+        self.option_id = option_id
+        super().__init__(f"Item choice option {option_id} is not available for this character's sources.")
+
+
+class TooFewItemChoicesException(AppError):
+    """
+    Raised when fewer (or more) options than the group's ``pick_count``
+    were chosen from a starting-equipment choice group.
+    """
+
+    status_code = 400
+
+    def __init__(self, group_id: int, pick_count: int, chosen: int):
+        self.group_id = group_id
+        self.pick_count = pick_count
+        self.chosen = chosen
+        super().__init__(
+            f"Choice group {group_id} requires exactly {pick_count} selection(s), but {chosen} were chosen."
+        )

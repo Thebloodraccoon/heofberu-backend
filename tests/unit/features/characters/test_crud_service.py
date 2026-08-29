@@ -24,7 +24,10 @@ from app.constants import (
 from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.crud import service as crud_service_module
 from app.features.characters.crud.exceptions import (
+    ItemChoiceNotAvailableException,
+    ItemChoicesWithoutGroupsException,
     SkillNotAvailableForClassException,
+    TooFewItemChoicesException,
     TooManySkillChoicesException,
 )
 from app.features.characters.crud.service import CharacterService
@@ -256,15 +259,21 @@ class FakeSpellSlotRepository:
 
 
 class FakeItemRepository:
-    def __init__(self, events, entries=None):
+    def __init__(self, events, entries=None, choice_groups=None):
         self.events = events
         self.entries = entries or []
+        self.choice_groups = choice_groups or []
         self.source_calls = []
+        self.choice_group_calls = []
 
     async def get_source_items_for_sources(self, sources):
         self.source_calls.append(sources)
         self.events.append("grant_equipment")
         return self.entries
+
+    async def get_choice_groups_for_sources(self, sources):
+        self.choice_group_calls.append(sources)
+        return self.choice_groups
 
 
 class FakeStatsService:
@@ -302,6 +311,7 @@ def make_service(
     background_exists=True,
     constitution_total=14,
     equipment_entries=None,
+    choice_groups=None,
     existing_characters=None,
 ):
     db = RecordingSession(events)
@@ -320,7 +330,7 @@ def make_service(
         background if background is not None else make_background(),
         background_exists=background_exists,
     )
-    service.item_repository = FakeItemRepository(events, entries=equipment_entries)
+    service.item_repository = FakeItemRepository(events, entries=equipment_entries, choice_groups=choice_groups)
     service.stats_service = FakeStatsService(events, constitution_total=constitution_total)
     service.feat_grant_repository = FakeFeatGrantRepository(events)
     service.asi_repository = FakeAsiRepository()
@@ -373,6 +383,10 @@ class TestCharacterCreateSchema:
         with pytest.raises(ValidationError):
             make_create_payload(skill_ids=[1, 1])
 
+    async def test_duplicate_item_choice_ids_rejected(self):
+        with pytest.raises(ValidationError):
+            make_create_payload(item_choice_ids=[100, 100])
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -400,6 +414,115 @@ class TestValidateChosenSkills:
         service, _ = make_service(None, [])
 
         assert service._validate_chosen_skills([], make_class()) == []
+
+
+def make_choice_group(group_id=1, pick_count=1, options=None):
+    return SimpleNamespace(id=group_id, pick_count=pick_count, options=options or [])
+
+
+def make_choice_option(option_id=100, group_id=1, item_id=20, quantity=1):
+    return SimpleNamespace(id=option_id, group_id=group_id, item_id=item_id, quantity=quantity)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestResolveItemChoices:
+    async def test_no_sources_and_empty_choice_returns_empty(self):
+        service, _ = make_service(None, [])
+
+        assert await service._resolve_item_choices(None, None, []) == []
+
+    async def test_choice_without_sources_raises(self):
+        service, _ = make_service(None, [])
+
+        with pytest.raises(ItemChoicesWithoutGroupsException):
+            await service._resolve_item_choices(None, None, [100])
+
+    async def test_choice_when_sources_define_no_groups_raises(self):
+        service, _ = make_service(None, [], choice_groups=[])
+
+        with pytest.raises(ItemChoicesWithoutGroupsException):
+            await service._resolve_item_choices(1, 3, [100])
+
+    async def test_foreign_option_raises(self):
+        group = make_choice_group(
+            options=[make_choice_option(option_id=100), make_choice_option(option_id=101)]
+        )
+        service, _ = make_service(None, [], choice_groups=[group])
+
+        with pytest.raises(ItemChoiceNotAvailableException) as exc_info:
+            await service._resolve_item_choices(1, 3, [999])
+
+        assert exc_info.value.option_id == 999
+
+    async def test_exactly_pick_count_is_accepted(self):
+        option_a = make_choice_option(option_id=100, item_id=20)
+        option_b = make_choice_option(option_id=101, item_id=21)
+        group = make_choice_group(pick_count=1, options=[option_a, option_b])
+        service, _ = make_service(None, [], choice_groups=[group])
+
+        resolved = await service._resolve_item_choices(1, None, [100])
+
+        assert resolved == [option_a]
+        assert service.item_repository.choice_group_calls == [[(FeatureSourceType.CLASS, 1)]]
+
+    async def test_fewer_than_pick_count_raises(self):
+        group = make_choice_group(
+            pick_count=2,
+            options=[
+                make_choice_option(option_id=100, item_id=20),
+                make_choice_option(option_id=101, item_id=21),
+                make_choice_option(option_id=102, item_id=22),
+            ],
+        )
+        service, _ = make_service(None, [], choice_groups=[group])
+
+        with pytest.raises(TooFewItemChoicesException) as exc_info:
+            await service._resolve_item_choices(1, None, [100])
+
+        assert exc_info.value.group_id == 1
+        assert exc_info.value.pick_count == 2
+        assert exc_info.value.chosen == 1
+
+    async def test_every_group_must_be_answered(self):
+        group_a = make_choice_group(
+            group_id=1,
+            pick_count=1,
+            options=[
+                make_choice_option(option_id=100, group_id=1, item_id=20),
+                make_choice_option(option_id=101, group_id=1, item_id=21),
+            ],
+        )
+        group_b = make_choice_group(
+            group_id=2,
+            pick_count=1,
+            options=[
+                make_choice_option(option_id=200, group_id=2, item_id=22),
+                make_choice_option(option_id=201, group_id=2, item_id=23),
+            ],
+        )
+        service, _ = make_service(None, [], choice_groups=[group_a, group_b])
+
+        with pytest.raises(TooFewItemChoicesException) as exc_info:
+            await service._resolve_item_choices(1, None, [100])
+
+        assert exc_info.value.group_id == 2
+
+    async def test_class_and_background_groups_are_both_resolved(self):
+        class_option = make_choice_option(option_id=100, group_id=1, item_id=20)
+        background_option = make_choice_option(option_id=200, group_id=2, item_id=22)
+        groups = [
+            make_choice_group(group_id=1, pick_count=1, options=[class_option]),
+            make_choice_group(group_id=2, pick_count=1, options=[background_option]),
+        ]
+        service, _ = make_service(None, [], choice_groups=groups)
+
+        resolved = await service._resolve_item_choices(1, 3, [100, 200])
+
+        assert resolved == [class_option, background_option]
+        assert service.item_repository.choice_group_calls == [
+            [(FeatureSourceType.CLASS, 1), (FeatureSourceType.BACKGROUND, 3)]
+        ]
 
 
 @pytest.mark.unit
@@ -471,6 +594,45 @@ class TestCreateCharacterHappyPath:
         assert [st.ability for st in result.saving_throw_proficiencies] == [AbilityScore.STR, AbilityScore.CON]
         assert result.hit_dice == "D10"
         assert result.speed == 30
+
+    async def test_creation_grants_chosen_item_options_merged_with_guaranteed(self, monkeypatch):
+        events = []
+        guaranteed = [SimpleNamespace(item_id=10, quantity=1)]
+        option = make_choice_option(option_id=100, group_id=1, item_id=10, quantity=2)
+        group = make_choice_group(
+            pick_count=1, options=[option, make_choice_option(option_id=101, group_id=1, item_id=21)]
+        )
+        service, db = make_service(monkeypatch, events, equipment_entries=guaranteed, choice_groups=[group])
+        user = make_user()
+
+        result = await service.create_character(make_create_payload(item_choice_ids=[100]), user)
+
+        # Item 10 is granted both as guaranteed equipment (qty 1) and as
+        # the chosen option (qty 2) — merged into a single stack of three.
+        item_rows = [row for row in db.added if isinstance(row, CharacterItem)]
+        assert sorted((row.item_id, row.quantity) for row in item_rows) == [(10, 3)]
+        assert "item_choice_ids" not in service.repository.last_create_payload
+        assert service.item_repository.choice_group_calls == [
+            [(FeatureSourceType.CLASS, 1), (FeatureSourceType.BACKGROUND, 3)]
+        ]
+        assert result.ability_scores is None
+
+    async def test_creation_rejects_unanswered_choice_group(self, monkeypatch):
+        group = make_choice_group(
+            pick_count=1,
+            options=[
+                make_choice_option(option_id=100, group_id=1, item_id=20),
+                make_choice_option(option_id=101, group_id=1, item_id=21),
+            ],
+        )
+        service, db = make_service(monkeypatch, [], choice_groups=[group])
+        user = make_user()
+
+        with pytest.raises(TooFewItemChoicesException):
+            await service.create_character(make_create_payload(item_choice_ids=[]), user)
+
+        assert not service.repository.created
+        assert db.added == []
 
     async def test_order_feature_sync_before_hp_math_commit_before_invalidate(self, monkeypatch):
         events = []

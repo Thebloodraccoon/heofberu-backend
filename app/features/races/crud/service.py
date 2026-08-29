@@ -41,11 +41,11 @@ class RaceCrudService(
     in ``BaseRepository.delete`` (via ``check_in_use_on_delete=True`` +
     ``RaceRepository.is_in_use``).
 
-    The race responses embed their ``subraces`` but not their ``features`` —
-    per-source features are read through ``list_features`` (cached under the
-    dedicated ``race_features`` namespace). ``cache_namespaces`` covers
-    the namespaces any race read hits; the capability services use
-    :func:`invalidate_race_cache` explicitly for their own writes.
+    The race responses embed their ``subraces`` and their RACE-source
+    ``features`` (eager-loaded via ``RaceRepository.default_load_options``);
+    ``cache_namespaces`` covers the namespaces any race read hits, and the
+    capability services use :func:`invalidate_race_cache` explicitly for
+    their own writes.
     """
 
     repository: RaceRepository

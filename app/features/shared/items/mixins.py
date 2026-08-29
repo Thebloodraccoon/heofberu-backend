@@ -65,7 +65,7 @@ class ChoiceGroupManagerMixin:
 
         await self._get_or_404(source_id)
         result = await self._items.set_choice_groups_for_source(
-            self._source_item_source_type, source_id, data.choice_groups
+            self._source_item_source_type, source_id, data.choice_groups, commit=True
         )
         await self._invalidate_cache()
 

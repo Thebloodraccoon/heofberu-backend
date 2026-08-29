@@ -23,6 +23,7 @@ from app.features.characters.gm_panel.validation import (
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     BackgroundAlreadySetException,
+    BackgroundItemChoicesNotSupportedException,
     CharacterAlreadyAtMaxLevelException,
     CharacterRebuildNotImplementedException,
     InvalidHitPointGainException,
@@ -174,6 +175,15 @@ class CharacterProgressionService(CharacterSubDomainService):
         background = await self.background_repository.get_by_id(data.background_id)
         if background is None:
             raise BackgroundNotFoundException(background_id=data.background_id)
+
+        # The late-background path has no "pick N of M" surface: a
+        # background whose equipment is built on choice groups is rejected
+        # up front instead of silently dropping its options.
+        groups = await self.item_repository.get_choice_groups_for_sources(
+            [(FeatureSourceType.BACKGROUND, background.id)]
+        )
+        if groups:
+            raise BackgroundItemChoicesNotSupportedException(background_id=background.id)
 
         async with self._atomic():
             character.background_id = data.background_id

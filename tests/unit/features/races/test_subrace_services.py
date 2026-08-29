@@ -14,6 +14,7 @@ from app.constants import AbilityScore, FeatureSourceType
 from app.core.exceptions import RecordNotFoundError
 from app.features.features.crud.schemas import NestedFeatureCreate
 from app.features.races.ability_bonuses.schemas import AbilityBonusItem
+from app.features.subraces.ability_bonuses import service as subrace_ability_bonus_service
 from app.features.subraces.ability_bonuses.service import SubraceAbilityBonusService
 from app.features.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceCreate, SubraceUpdate
 from app.features.subraces.crud.service import SubraceCrudService
@@ -124,7 +125,9 @@ def no_subrace_invalidate(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_reconcile(monkeypatch):
-    monkeypatch.setattr("app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock())
+    monkeypatch.setattr(
+        "app.features.subraces.ability_bonuses.service.reconcile_characters_for_source", AsyncMock()
+    )
 
 
 def make_crud_service(existing_by_id=None, race_exists=True):
@@ -271,7 +274,7 @@ class TestSubraceCrudService:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestSubraceAbilityBonusService:
-    async def test_set_ability_bonuses_replaces_and_returns_subrace(self):
+    async def test_set_ability_bonuses_replaces_refreshes_characters_and_returns_subrace(self):
         subrace = make_subrace(id=1)
         service, db = make_ability_bonus_service(existing_by_id={1: subrace})
         data = SubraceAbilityBonusesUpdate(ability_bonuses=[AbilityBonusItem(ability=AbilityScore.INT, bonus=1)])
@@ -282,7 +285,11 @@ class TestSubraceAbilityBonusService:
         assert result.ability_bonuses[0].bonus == 1
         assert service.repository.set_bonuses_calls[0][0] is subrace
         assert service.repository.set_bonuses_calls[0][1] == [{"ability": AbilityScore.INT, "bonus": 1}]
+        assert service.repository.set_bonuses_calls[0][2] is False
         assert db.commits == 1
+        subrace_ability_bonus_service.reconcile_characters_for_source.assert_awaited_once_with(
+            db, FeatureSourceType.SUBRACE, 1
+        )
 
     async def test_set_ability_bonuses_raises_when_subrace_missing(self):
         service, _ = make_ability_bonus_service(existing_by_id={})

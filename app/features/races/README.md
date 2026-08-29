@@ -29,8 +29,8 @@ explicitly in `__init__` (no mixin MRO): `_skills`, `_ability_bonuses`,
 
 - The listing is lightweight (`RaceGetAllResponse`: id/name/size only);
   the detail read returns `RaceResponse`, which embeds `ability_bonuses`,
-  `granted_skills`, and `subraces` — but NOT `features` (read those via
-  `GET /races/features?race_id=...`).
+  `granted_skills`, the race's RACE-source `features`, and `subraces` (the
+  dedicated `GET /races/features?race_id=...` list stays available too).
 - `create_race` seeds optional `ability_bonuses`, `granted_skills`, and
   nested `features` in one `_atomic()` transaction through the capability
   services (each inner write passes `commit=False`).
@@ -47,7 +47,7 @@ source-specific bits:
 |---|---|---|---|
 | features | `RaceFeatureService` | `FeatureCrudService` (delegation) | `@use_cache()` list under `race_features`, pinned `_feature_source_type=RACE` |
 | skills | `RaceSkillService` | `SkillsManagerMixin` | nothing source-specific beyond the repository |
-| ability_bonuses | `RaceAbilityBonusService` | plain `BaseService` | full-replace write |
+| ability_bonuses | `RaceAbilityBonusService` | plain `BaseService` | full-replace write + refreshes every affected character's stat cache via `reconcile_characters_for_source` |
 
 The feature engine (any-source create/update/delete + character-grant
 reconciliation) is centralized in `app/features/features/crud/service.py`;
@@ -84,7 +84,10 @@ owns, mounted by `races/router.py` under a STATIC `/races/subraces` prefix:
   `_get_or_404_for_race` and delegating to the central
   `FeatureCrudService.list_for_source`.
 - **`ability_bonuses/`** — `SubraceAbilityBonusService`: full-replace write,
-  plus the `commit=False` variant used by `create_subrace`.
+  plus the `commit=False` variant used by `create_subrace`. A bonus edit
+  also refreshes every character of that subrace's stat cache via
+  `reconcile_characters_for_source` (same one-way import compromise as the
+  race ability-bonus write).
 
 ## Cache invalidation
 
@@ -96,9 +99,11 @@ commits:
   included because race features are auto-granted to characters and
   character payloads derive `speed` live from the race.
 - `../subraces/cache.py:invalidate_subrace_cache()` — purges
-  `("races", "subrace_features", "features")`: subraces (and their
-  features) are embedded in cached race responses, so any subrace write
-  must invalidate the race reads too.
+  `("races", "subrace_features", "features", "characters")`: subraces (and
+  their features) are embedded in cached race responses, so any subrace
+  write must invalidate the race reads too; `characters` is included
+  because ability-score totals in character payloads derive from subrace
+  bonuses (mirroring the race namespace).
 
 The crud services declare `cache_namespaces = RACE_CACHE_NAMESPACES` /
 `SUBRACE_CACHE_NAMESPACES` for their inherited cached reads; capability

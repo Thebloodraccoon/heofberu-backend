@@ -120,7 +120,7 @@ class TestFeatureCrudCreate:
 
         reconcile.assert_not_awaited()
 
-    async def test_create_invalidates_owning_catalog_list_only(self, monkeypatch):
+    async def test_create_invalidates_owning_catalog_list_and_parent_only(self, monkeypatch):
         invalidate_feature = AsyncMock()
         invalidate = AsyncMock()
         monkeypatch.setattr("app.features.features.crud.service.invalidate_feature_cache", invalidate_feature)
@@ -130,9 +130,10 @@ class TestFeatureCrudCreate:
         await service.create(FeatureCreate(name="Fey", source_type=FeatureSourceType.SUBRACE, subrace_id=1, level=1))
 
         assert invalidate_feature.await_count == 1
-        # only the subrace's own list namespace is purged alongside the shared one
-        assert invalidate.await_args.args == (SOURCE_FEATURE_LIST_NAMESPACE[FeatureSourceType.SUBRACE],)
+        # only the subrace's own list namespace and its parent read namespace
+        # are purged alongside the shared one — never a neighbor catalog
         assert SOURCE_FEATURE_LIST_NAMESPACE[FeatureSourceType.SUBRACE] == "subrace_features"
+        assert sorted(call.args for call in invalidate.call_args_list) == [("races",), ("subrace_features",)]
 
 
 @pytest.mark.unit

@@ -51,6 +51,33 @@ async def adjust_asi(client, gm_token, character_id, increases):
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+class TestFeatureEffectsRefreshCachedDetail:
+    async def test_editing_effects_refresh_cached_character_detail_immediately(
+        self, client, player, player_token, gm_token, create_class, create_feature, create_api_character
+    ):
+        """GET /characters/{id} (Redis-cached detail) must not serve stale totals after an effects edit."""
+        character_class = await create_class(name="Barbarian")
+        primal_champion = await create_feature(
+            name="Primal Champion", source_type="CLASS", class_id=character_class.id, level=1
+        )
+        character, token = await create_api_character(class_id=character_class.id)
+        character_id = character["id"]
+
+        await set_feature_effects(client, gm_token, primal_champion.id, [{"ability": "STR", "amount": 2}])
+
+        first = await client.get(f"/characters/{character_id}", headers={"Authorization": f"Bearer {token}"})
+        assert first.status_code == 200
+        assert first.json()["ability_scores"]["strength_total"] == 12
+
+        await set_feature_effects(client, gm_token, primal_champion.id, [{"ability": "STR", "amount": 4}])
+
+        second = await client.get(f"/characters/{character_id}", headers={"Authorization": f"Bearer {token}"})
+        assert second.status_code == 200
+        assert second.json()["ability_scores"]["strength_total"] == 14
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 class TestFeatureEffectsInTotals:
     async def test_level_up_grants_class_feature_effect(
         self, client, player, player_token, gm_token, create_class, create_feature, create_api_character

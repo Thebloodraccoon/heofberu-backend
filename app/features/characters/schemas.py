@@ -74,6 +74,14 @@ class CharacterCreate(CharacterBase):
     belong to the class's ``available_skills``, and the total must not
     exceed the class's ``skill_choice_count``. The background's granted
     skills (when ``background_id`` is set) are added automatically.
+
+    ``item_choice_ids`` are the starting-equipment "pick N of M" choices
+    (the ids of the ``SourceItemChoiceOption`` rows the player picked from
+    the class's/background's choice groups). Each id must belong to one of
+    the character's sources' choice groups, and every such group must be
+    answered with exactly ``pick_count`` selected options — anything else
+    is rejected with a 400 so no requested choice is ever silently
+    dropped.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -89,6 +97,7 @@ class CharacterCreate(CharacterBase):
     charisma: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
 
     skill_ids: list[int] = Field(default_factory=list)
+    item_choice_ids: list[int] = Field(default_factory=list)
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
@@ -98,6 +107,15 @@ class CharacterCreate(CharacterBase):
             raise ValueError("Duplicate skill IDs are not allowed.")
 
         return skill_ids
+
+    @field_validator("item_choice_ids")
+    def validate_unique_item_choice_ids(cls, item_choice_ids):
+        """Reject lists containing duplicate item-choice option IDs."""
+
+        if len(item_choice_ids) != len(set(item_choice_ids)):
+            raise ValueError("Duplicate item choice IDs are not allowed.")
+
+        return item_choice_ids
 
 
 class CharacterUpdate(BaseModel):

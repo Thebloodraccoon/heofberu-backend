@@ -35,6 +35,22 @@ SOURCE_FEATURE_LIST_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.OTHER: None,
 }
 
+# The parent catalog read namespace holding that source's cached FULL
+# response. A central feature write must also purge it: the parent detail
+# reads embed their features (``RaceResponse``, ``ClassFullResponse``,
+# ``SubclassFullResponse``, ``SubraceFullResponse``,
+# ``BackgroundFullResponse``), so the whole cached payload would go stale
+# otherwise. Subrace detail is cached under ``races`` (subraces are also
+# embedded in race responses) and subclass detail under ``classes``.
+SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
+    FeatureSourceType.CLASS: "classes",
+    FeatureSourceType.SUBCLASS: "classes",
+    FeatureSourceType.RACE: "races",
+    FeatureSourceType.SUBRACE: "races",
+    FeatureSourceType.BACKGROUND: "backgrounds",
+    FeatureSourceType.OTHER: None,
+}
+
 
 def _get_fk_name(source_type: FeatureSourceType) -> str:
     """The source-FK column for ``source_type`` (raises for OTHER)."""
@@ -64,7 +80,8 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
       (``race_features``/``subrace_features``/``class_features``/
       ``subclass_features``/``background_features``); a feature write here
       invalidates the owning catalog's list namespace via
-      :data:`SOURCE_FEATURE_LIST_NAMESPACE` plus the shared ``features``
+      :data:`SOURCE_FEATURE_LIST_NAMESPACE` plus its read namespace via
+      :data:`SOURCE_PARENT_READ_NAMESPACE` and the shared ``features``
       namespace (cached ``GET /features`` and ``GET /features/{id}``).
     - ``create_feature_for_source``/``create_features_for_source`` remain for
       seeding nested ``features`` inside a parent create payload; they run
@@ -100,7 +117,10 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         namespace (feature list + by-id detail). If the feature belongs to a
         parent record, the owning catalog's feature-list cache
         (``race_features`` etc.) is purged too — only that catalog, so a
-        feature write never nukes its neighbors' caches.
+        feature write never nukes its neighbors' caches. The owning
+        catalog's read namespace (``races``/``classes``/``backgrounds``) is
+        additionally purged because those detail responses embed their
+        features.
         """
 
         await invalidate_feature_cache()
@@ -108,6 +128,10 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         list_namespace = SOURCE_FEATURE_LIST_NAMESPACE[source_type]
         if list_namespace is not None:
             await invalidate(list_namespace)
+
+        parent_namespace = SOURCE_PARENT_READ_NAMESPACE[source_type]
+        if parent_namespace is not None:
+            await invalidate(parent_namespace)
 
     async def list_for_source(self, source_type: FeatureSourceType, source_id: int) -> list[NestedFeatureResponse]:
         """

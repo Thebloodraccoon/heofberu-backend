@@ -44,9 +44,13 @@ Two subpackages, each holding ONLY the pieces other catalogs build on:
 `FeaturesCrudService` (create/update/delete) and `features/ability_increases`
 (`refresh_feature_effect_caches`) import
 `app.features.characters.progression.feature_sync.reconcile_characters_for_source`
-(character-grant reconciliation). That is a features → characters edge, but `feature_sync`
-pulls only `app.models` / `app.constants`, so there is **no import-time cycle**.
-Do not add new reverse dependencies to `feature_sync`.
+(character-grant reconciliation). The race and subrace **ability-bonus**
+services reuse that same helper so a GM editing bonuses refreshes every
+existing character's `character_ability_scores` cache row in the same
+transaction. That is a features/races/subraces → characters edge, but
+`feature_sync` pulls only `app.models` / `app.constants`, so there is
+**no import-time cycle**. Do not add new reverse dependencies to
+`feature_sync`.
 
 ## Nested cache namespaces
 

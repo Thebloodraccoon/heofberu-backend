@@ -59,7 +59,7 @@ async def get_races(
 async def get_race(race_id: int, race_service: RaceCrudDep):
     """
     Return a single race by ID, with full detail — including ability
-    bonuses and granted skills.
+    bonuses, granted skills, and the race's own features.
 
     Open endpoint, no authentication required.
     """
