@@ -1,5 +1,6 @@
 """Shared validation helpers for GM feat-grant operations on a character."""
 
+from app.constants import ABILITY_SCORE_CAP
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.gm_panel.exceptions import (
@@ -42,15 +43,20 @@ async def validate_ability_score_increase_cap(
     """
     Raise ``AbilityScoreCapExceededException`` if applying the selected
     ``FeatAbilityScoreIncrease`` would push the character's effective
-    score above the ability's cap.
+    score above ``ABILITY_SCORE_CAP`` (20).
 
-    Mirrors the level-up ASI check (``CharacterProgressionService._apply_asi``)
-    and the GM panel's ±adjustment check (``GmPanelAsiService``): every
-    structured source of points validates against *effective* totals
+    Feats — whether taken by the player at level-up or granted directly by
+    the GM — are always capped at 20 ("все черты обсчитываются только до
+    20"); they can never push an ability past 20, even when a feature's
+    ``new_cap`` lets the score reach 30 through GM/feature intervention.
+    This therefore mirrors the level-up ASI rule: any *player* structured
+    choice (ASI or feat) is bounded by 20, while only the GM panel
+    (``GmPanelAsiService``, capped at 30) or genuine feature effects can
+    take a score above 20.
+
+    The check validates against the character's *effective* totals
     (base + race/subrace + feat increases + counted ASI log + feature
-    effects) and the per-ability cap (20 by default, raised by feature
-    ``new_cap`` effects such as Primal Champion), computed fresh rather
-    than read from the cache table.
+    effects), computed fresh rather than read from the cache table.
     """
 
     increase = next((i for i in feat.ability_score_increases if i.id == ability_score_increase_id), None)
@@ -58,12 +64,11 @@ async def validate_ability_score_increase_cap(
         return
 
     totals = await stats_service.compute(character)
-    caps = await stats_service.resolve_ability_caps(character)
     total_field = TOTAL_FIELD_BY_ABILITY[increase.ability]
     current_total = totals[total_field]
     requested = current_total + increase.amount
 
-    if requested > caps[increase.ability]:
+    if requested > ABILITY_SCORE_CAP:
         raise AbilityScoreCapExceededException(
             ability=increase.ability.value,
             current_total=current_total,

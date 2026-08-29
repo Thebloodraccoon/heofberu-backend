@@ -346,10 +346,12 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def _apply_asi(self, character: Character, increases: list[ASIIncreaseItem], class_level: int) -> None:
         """
-        Apply an Ability Score Improvement: validate against the
-        ability's effective cap (20 by default, raised by feature effects
-        such as Primal Champion) using the character's *effective*
-        scores, then record the choice.
+        Apply an Ability Score Improvement: validate that no ability's
+        *effective* total would exceed the standard
+        ``ABILITY_SCORE_CAP`` (20) — the player's own level-up choices are
+        always capped at 20, regardless of any feature ``new_cap`` that
+        lets the score reach 30 via GM intervention or a granted feature —
+        then record the choice.
 
         The base ability columns are NOT touched — the increments live
         only in the ``character_asi_choices`` log (as typed child rows)
@@ -359,13 +361,11 @@ class CharacterProgressionService(CharacterSubDomainService):
         """
 
         totals = await self.stats_service.compute(character)
-        caps = await self.stats_service.resolve_ability_caps(character)
         for item in increases:
             total_field = TOTAL_FIELD_BY_ABILITY[item.ability]
             current_total = totals[total_field]
-            cap = caps[item.ability]
 
-            if current_total + item.amount > cap:
+            if current_total + item.amount > ABILITY_SCORE_CAP:
                 raise AbilityScoreCapExceededException(
                     ability=item.ability.value,
                     current_total=current_total,

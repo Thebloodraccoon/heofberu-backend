@@ -279,8 +279,15 @@ CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
 # the progression service.
 ASI_LEVELS = frozenset({4, 8, 12, 16, 19})
 
-# Maximum effective (post-bonus) ability score, per the 5e rule.
+# Standard effective (post-bonus) ability score, per the 5e rule. A feature
+# effect may raise a single ability's cap above this (via ``new_cap``) up to
+# ``MAX_ABILITY_SCORE_CAP`` — the hard system ceiling (e.g. a GM granting a
+# feature that lifts STR to 30).
 ABILITY_SCORE_CAP = 20
+
+# Absolute hard ceiling for any single ability score, regardless of how many
+# feature effects raise a cap. ``new_cap`` values are clamped to this.
+MAX_ABILITY_SCORE_CAP = 30
 
 # Hard ceiling for character levels (also enforced by DB check constraints
 # on ``characters.level`` and ``character_max_levels.max_level``).

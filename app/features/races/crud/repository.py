@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.base.repository import BaseRepository
 from app.features.subraces.crud.repository import SubraceRepository
 from app.models import Character
+from app.models.feature_model import Feature
 from app.models.race_association_models import RaceAbilityBonus
 from app.models.race_model import Race
 from app.models.subrace_model import Subrace
@@ -45,7 +46,7 @@ class RaceRepository(BaseRepository[Race]):
             default_load_options=[
                 selectinload(Race.ability_bonuses),
                 selectinload(Race.granted_skills),
-                selectinload(Race.features),
+                selectinload(Race.features).selectinload(Feature.ability_increases),
                 selectinload(Race.subraces).selectinload(Subrace.ability_bonuses),
             ],
             search_fields=["name"],

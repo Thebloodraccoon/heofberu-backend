@@ -12,7 +12,7 @@ database access.
 
 from dataclasses import dataclass
 
-from app.constants import ABILITY_SCORE_CAP, AbilityScore
+from app.constants import ABILITY_SCORE_CAP, MAX_ABILITY_SCORE_CAP, AbilityScore
 from app.models.character_model import Character
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
@@ -127,13 +127,17 @@ def resolve_ability_caps(feature_increases: list) -> dict[AbilityScore, int]:
     Resolve each ability's maximum score: the standard
     ``ABILITY_SCORE_CAP`` (20), raised to ``max(cap, new_cap)`` by every
     granted feature effect that carries a ``new_cap`` (e.g. Primal
-    Champion lifts STR/CON to 24). Pure — no database access.
+    Champion lifts STR/CON to 24, or a GM-granted feature to 30), and
+    never exceeding ``MAX_ABILITY_SCORE_CAP`` (the hard ceiling). Pure —
+    no database access.
     """
 
     caps = dict.fromkeys(AbilityScore, ABILITY_SCORE_CAP)
     for increase in feature_increases:
         if increase.new_cap is not None:
-            caps[increase.ability] = max(caps[increase.ability], increase.new_cap)
+            caps[increase.ability] = min(
+                MAX_ABILITY_SCORE_CAP, max(caps[increase.ability], increase.new_cap)
+            )
     return caps
 
 

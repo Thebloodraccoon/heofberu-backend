@@ -220,9 +220,79 @@ class TestFeatureEffectsInTotals:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestPerAbilityCap:
-    async def test_new_cap_allows_adjustments_above_twenty(
+    async def test_gm_panel_can_raise_to_thirty_without_a_feature(
+        self, client, gm_token, gm, create_class, create_character
+    ):
+        """The GM panel is its own ceiling: it can take an ability up to 30 with NO feature required."""
+        character_class = await create_class(name="Barbarian")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=10)
+
+        to_thirty = await adjust_asi(client, gm_token, character.id, [{"ability": "STR", "amount": 20}])
+        assert to_thirty.status_code == 201  # 10 + 20 = 30
+
+        over_thirty = await adjust_asi(client, gm_token, character.id, [{"ability": "STR", "amount": 1}])
+        assert over_thirty.status_code == 400  # 31 > 30
+
+    async def test_new_cap_above_thirty_rejected_with_422(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Over 9000", source_type="OTHER")
+
+        response = await client.put(
+            f"/features/{feature.id}/ability-increases",
+            json={"ability_increases": [{"ability": "STR", "amount": 4, "new_cap": 31}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_new_cap_below_twenty_rejected_with_422(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Under Twenty", source_type="OTHER")
+
+        response = await client.put(
+            f"/features/{feature.id}/ability-increases",
+            json={"ability_increases": [{"ability": "STR", "amount": 1, "new_cap": 19}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_player_level_up_asi_is_capped_at_twenty_even_with_new_cap_30(
+        self, client, player, player_token, gm_token, create_class, create_feature, create_api_character
+    ):
+        """A player's own ASI choice may never push an ability past 20 — even if a feature raised the cap to 30."""
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+        primal_champion = await create_feature(name="Primal Champion", source_type="OTHER")
+        await set_feature_effects(
+            client,
+            gm_token,
+            primal_champion.id,
+            [{"ability": "STR", "amount": 4, "new_cap": 30}],
+        )
+        character, token = await create_api_character(
+            class_id=character_class.id, owner=player, strength=18
+        )
+        await grant_feature(client, gm_token, character["id"], primal_champion.id)
+        # Effective STR is already 22 (feature-driven, above 20). cap is 30.
+
+        for _ in (2, 3):  # level up to 3 (no ASI)
+            response = await client.post(
+                f"/characters/{character['id']}/progression/level-up",
+                json={},
+                headers={"Authorization": f"Bearer {player_token}"},
+            )
+            assert response.status_code == 200
+
+        # Level 4 ASI: +2 STR would push to 24 > 20 -> player is capped at 20.
+        rejected = await client.post(
+            f"/characters/{character['id']}/progression/level-up",
+            json={"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert rejected.status_code == 400
+
+    async def test_feature_effect_raises_effective_score_above_twenty(
         self, client, gm_token, gm, create_class, create_feature, create_character
     ):
+        """A granted feature's amount lifts the effective score above 20 (up to its 30 new_cap)."""
         character_class = await create_class(name="Barbarian")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=18)
         primal_champion = await create_feature(name="Primal Champion", source_type="OTHER")
@@ -230,24 +300,43 @@ class TestPerAbilityCap:
             client,
             gm_token,
             primal_champion.id,
-            [{"ability": "STR", "amount": 4, "new_cap": 24}],
+            [{"ability": "STR", "amount": 4, "new_cap": 30}],
         )
         await grant_feature(client, gm_token, character.id, primal_champion.id)
-        # Effective STR is now 22 (base untouched).
 
-        ok_response = await adjust_asi(client, gm_token, character.id, [{"ability": "STR", "amount": 2}])
-        assert ok_response.status_code == 201  # 24 <= new cap 24
+        # Feature-driven total: 18 base + 4 feature = 22 (> 20), allowed.
+        assert await get_strength_total(client, character.id, gm_token) == 22
 
-        over_response = await adjust_asi(client, gm_token, character.id, [{"ability": "STR", "amount": 1}])
-        assert over_response.status_code == 400  # 25 > 24
+    async def test_gm_feat_grant_is_capped_at_twenty_even_with_new_cap_30(
+        self, client, gm_token, gm, create_class, create_feat, create_feature, create_character
+    ):
+        """Feats — even GM-granted — are always capped at 20; a new_cap-30 feature doesn't lift them."""
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=19)
+        primal_champion = await create_feature(name="Primal Champion", source_type="OTHER")
+        await set_feature_effects(
+            client,
+            gm_token,
+            primal_champion.id,
+            [{"ability": "STR", "amount": 0, "new_cap": 30}],
+        )
+        await grant_feature(client, gm_token, character.id, primal_champion.id)
 
-    async def test_other_abilities_still_capped_at_twenty(self, client, gm_token, gm, create_class, create_character):
-        character_class = await create_class(name="Rogue")
-        character = await create_character(owner_id=gm.id, class_id=character_class.id, dexterity=10)
+        feat = await create_feat(name="Mighty")
+        asi_response = await client.put(
+            f"/feats/{feat.id}/ability-score-increases",
+            json={"ability_score_increases": [{"ability": "STR", "amount": 2}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        feat_asi_id = asi_response.json()["ability_score_increases"][0]["id"]
 
-        response = await adjust_asi(client, gm_token, character.id, [{"ability": "DEX", "amount": 11}])
-
-        assert response.status_code == 400
+        # 19 + 2 = 21 > 20 -> the feat cannot be granted; it would exceed the 20 feat cap.
+        rejected = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id, "ability_score_increase_id": feat_asi_id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert rejected.status_code == 400
 
     async def test_combined_sources_stack_in_one_total(
         self, client, gm_token, gm, player_token, create_class, create_feat, create_feature, create_character

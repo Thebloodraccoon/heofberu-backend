@@ -243,3 +243,14 @@ class TestResolveAbilityCaps:
         caps = resolve_ability_caps([make_feature_increase(AbilityScore.CHA, amount=2, new_cap=None)])
 
         assert caps[AbilityScore.CHA] == 20
+
+    def test_new_cap_can_raise_to_thirty(self):
+        effects = [make_feature_increase(AbilityScore.STR, amount=4, new_cap=30)]
+
+        assert resolve_ability_caps(effects)[AbilityScore.STR] == 30
+
+    def test_new_cap_is_clamped_to_thirty(self):
+        """A new_cap above 30 is hard-clamped, never beyond the system ceiling."""
+        effects = [make_feature_increase(AbilityScore.STR, amount=4, new_cap=31)]
+
+        assert resolve_ability_caps(effects)[AbilityScore.STR] == 30

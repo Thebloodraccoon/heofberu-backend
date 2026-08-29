@@ -2,6 +2,7 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.core.base.cached_service import CachedService
@@ -148,7 +149,10 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
 
         fk_name = _get_fk_name(source_type)
         result = await self.repository.db.execute(
-            select(Feature).where(getattr(Feature, fk_name) == source_id).order_by(Feature.id)
+            select(Feature)
+            .where(getattr(Feature, fk_name) == source_id)
+            .options(selectinload(Feature.ability_increases))
+            .order_by(Feature.id)
         )
         rows = result.scalars().all()
         return [NestedFeatureResponse.model_validate(row) for row in rows]
@@ -192,6 +196,10 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             create_data.source_type, self._source_fk_value(create_data.source_type, create_data)
         )
         await self.repository.commit_or_flush()
+        # The commit expires the row; refetch it with the repository's default
+        # eager loads so serialization never trips an async lazy load on the
+        # (just-created, empty) ``ability_increases`` collection.
+        item = await self.repository.get_by_id(item.id)
         await self._purge_feature_cache(create_data.source_type)
 
         return self.response_schema.model_validate(item)
@@ -331,6 +339,9 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         await self.repository.commit_or_flush()
         await self._purge_feature_cache(source_type)
 
+        # Re-fetch after the commit so the expired row's ``ability_increases``
+        # are eagerly loaded before serialization (async-safe).
+        feature = await self.repository.get_by_id(feature_id)
         return self.response_schema.model_validate(feature)
 
     async def delete(self, feature_id: int) -> bool:

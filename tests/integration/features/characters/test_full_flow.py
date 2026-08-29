@@ -174,7 +174,7 @@ class TestFullJourneyToLevelFive:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestScoreBoundaries:
-    async def test_asi_to_exact_cap_twenty_then_blocked(
+    async def test_player_asi_caps_at_twenty_but_gm_panel_continues_to_thirty(
         self, client, player, player_token, gm_token, create_class, create_api_character
     ):
         character_class = await create_class(name="Fighter")
@@ -199,23 +199,23 @@ class TestScoreBoundaries:
         )  # 6 (non-ASI level!) -> 400
         assert response.status_code == 400
 
-        # Reach the cap through GM adjustments instead.
+        # The GM panel is its own ceiling: it takes STR beyond 20 up to 30.
         ok = await client.post(
             f"/characters/{character['id']}/gm-panel/asi",
-            json={"increases": [{"ability": "STR", "amount": 2}]},
+            json={"increases": [{"ability": "STR", "amount": 12}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert ok.status_code == 201  # 18 + 2 = 20 <= 20
+        assert ok.status_code == 201  # 18 + 12 = 30
 
         over = await client.post(
             f"/characters/{character['id']}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert over.status_code == 400
+        assert over.status_code == 400  # 31 > 30
 
         stats = await get_stats(client, character["id"], token)
-        assert stats["strength"]["total"] == 20
+        assert stats["strength"]["total"] == 30
 
     async def test_negative_adjustments_floor_effective_at_one(
         self, client, gm_token, gm, create_class, create_character

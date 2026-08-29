@@ -267,12 +267,20 @@ class TestFullCharacterLifecycle:
         assert str_boost.status_code == 201
         assert wis_drop.status_code == 201
 
+        # The GM panel is its own ceiling: it takes STR beyond 20 up to 30.
         over_cap = await client.post(
+            f"/characters/{character_id}/gm-panel/asi",
+            json={"increases": [{"ability": "STR", "amount": 10}]},
+            headers=gm_headers,
+        )
+        assert over_cap.status_code == 201  # 20 + 10 = 30
+
+        over_thirty = await client.post(
             f"/characters/{character_id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 1}]},
             headers=gm_headers,
         )
-        assert over_cap.status_code == 400
+        assert over_thirty.status_code == 400  # 31 > 30
 
         equip_sword = await client.post(
             f"/characters/{character_id}/gm-panel/items",
@@ -309,7 +317,7 @@ class TestFullCharacterLifecycle:
         assert final["background_id"] == background.id
 
         scores = final["ability_scores"]
-        assert scores["strength_total"] == 20
+        assert scores["strength_total"] == 30
         assert scores["dexterity_total"] == 12
         assert scores["constitution_total"] == 16
         assert scores["intelligence_total"] == 10
@@ -324,7 +332,7 @@ class TestFullCharacterLifecycle:
         )
         assert stats_response.status_code == 200
         stats = stats_response.json()
-        assert stats["strength"] == {"base": 16, "total": 20}
+        assert stats["strength"] == {"base": 16, "total": 30}
         assert stats["wisdom"] == {"base": 10, "total": 9}
 
         spells_response = await client.get(

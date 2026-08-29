@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ASILevelChoice
+from app.constants import ASILevelChoice, MAX_ABILITY_SCORE_CAP
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
@@ -52,20 +52,21 @@ class GmPanelAsiService(CharacterSubDomainService):
 
         Unlike the level-up ASI there is no ±budget here — the GM may
         raise or lower abilities through repeated adjustments (negative
-        amounts included) — but the ability's effective cap DOES apply
-        (20 by default, raised by feature effects such as Primal
-        Champion): no adjustment may push an effective total above it.
-        The base columns are not touched; the row commits, then the
-        ability-score cache refreshes so effective totals follow.
+        amounts included) — and the GM overrides the 20 standard cap: an
+        adjustment may push an ability's effective total up to
+        ``MAX_ABILITY_SCORE_CAP`` (30) with no feature required. (Player
+        level-up ASI and feats stay capped at 20; features may raise a
+        score above 20 via their own ``new_cap``.) A total may never go
+        above 30. The base columns are not touched; the row commits, then
+        the ability-score cache refreshes so effective totals follow.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
 
         totals = await self.stats_service.compute(character)
-        caps = await self.stats_service.resolve_ability_caps(character)
         for item in data.increases:
             current_total = totals[TOTAL_FIELD_BY_ABILITY[item.ability]]
-            if current_total + item.amount > caps[item.ability]:
+            if current_total + item.amount > MAX_ABILITY_SCORE_CAP:
                 raise AbilityScoreCapExceededException(
                     ability=item.ability.value,
                     current_total=current_total,

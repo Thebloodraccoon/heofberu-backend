@@ -97,3 +97,49 @@ class TestFeatureAbilityIncreasesCrud:
         response = await client.get(f"/features/{feature.id}/ability-increases")
 
         assert response.status_code == 200
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestFeatureResponsesEmbedAbilityIncreases:
+    async def test_feature_detail_response_embeds_ability_increases(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Primal Champion")
+        await set_increases(
+            client,
+            gm_token,
+            feature.id,
+            [{"ability": "STR", "amount": 4, "new_cap": 30}],
+        )
+
+        response = await client.get(f"/features/{feature.id}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ability_increases"] == [{"ability": "STR", "amount": 4, "new_cap": 30}]
+
+    async def test_race_feature_list_embeds_ability_increases(
+        self, client, gm_token, create_race, create_feature
+    ):
+        race = await create_race(name="Half-Orc")
+        feature = await create_feature(name="Savage Attacks", source_type="RACE", race_id=race.id)
+        await set_increases(
+            client,
+            gm_token,
+            feature.id,
+            [{"ability": "STR", "amount": 2, "new_cap": 30}],
+        )
+
+        response = await client.get(f"/races/{race.id}/features")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body[0]["name"] == "Savage Attacks"
+        assert body[0]["ability_increases"] == [{"ability": "STR", "amount": 2, "new_cap": 30}]
+
+    async def test_fresh_feature_embeds_empty_ability_increases(self, client, create_feature):
+        feature = await create_feature(name="Plain")
+
+        response = await client.get(f"/features/{feature.id}")
+
+        assert response.status_code == 200
+        assert response.json()["ability_increases"] == []

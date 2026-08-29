@@ -12,6 +12,7 @@ catalog is the single schema owner.
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.constants import FeatureSourceType
+from app.features.features.ability_increases.schemas import AbilityIncreaseItem
 
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS now keys off subclass_id (not class_id — that was the old denorm approach).
@@ -98,13 +99,6 @@ class FeatureBase(BaseModel):
 
     description: str = ""
 
-    @model_validator(mode="after")
-    def validate_source_fk_consistency(self):
-        """Enforce the source_type/FK consistency rules (plus the level rules)."""
-
-        _validate_source_fk_consistency(self.source_type, self.__dict__)
-        return self
-
 
 class FeatureCreate(FeatureBase):
     """
@@ -117,6 +111,13 @@ class FeatureCreate(FeatureBase):
     CLASS/SUBCLASS features and optional for everything else.
     """
 
+    @model_validator(mode="after")
+    def validate_source_fk_consistency(self):
+        """Enforce the source_type/FK/level consistency rules on write payloads."""
+
+        _validate_source_fk_consistency(self.source_type, self.__dict__)
+        return self
+
 
 class FeatureResponse(FeatureBase):
     """Full feature representation returned by the API."""
@@ -124,6 +125,7 @@ class FeatureResponse(FeatureBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    ability_increases: list[AbilityIncreaseItem] = []
 
 
 class FeatureGetAllResponse(BaseModel):
@@ -167,6 +169,7 @@ class NestedFeatureResponse(BaseModel):
     name: str
     description: str
     level: int | None = None
+    ability_increases: list[AbilityIncreaseItem] = []
 
 
 class FeatureUpdate(BaseModel):

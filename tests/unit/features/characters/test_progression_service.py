@@ -413,17 +413,20 @@ class TestLevelUpAsi:
         assert call[6] is False
         assert db.commits == 1
 
-    async def test_increase_resolves_caps_through_stats_service(self):
-        service, _ = self.make_asi_service(
+    async def test_increase_is_capped_at_twenty_even_when_a_feature_raises_the_cap(self):
+        service, db = self.make_asi_service(
             totals={**default_totals(), "strength_total": 21},
             caps={**dict.fromkeys(AbilityScore, ABILITY_SCORE_CAP), AbilityScore.STR: 24},
         )
         choice = ASIChoice(increases=[ASIIncreaseItem(ability=AbilityScore.STR, amount=2)])
 
-        await service.level_up(1, LevelUpRequest(choice=choice), make_user())
+        with pytest.raises(AbilityScoreCapExceededException):
+            await service.level_up(1, LevelUpRequest(choice=choice), make_user())
 
-        assert service.stats_service.resolve_caps_calls
-        assert service.asi_repository.add_calls
+        # The player's ASI is hard-capped at 20 (ABILITY_SCORE_CAP): the
+        # stats service's per-ability caps (feature new_cap) are NOT consulted.
+        assert service.stats_service.resolve_caps_calls == []
+        assert service.asi_repository.add_calls == []
 
     async def test_increase_exceeding_cap_raises_and_rolls_back(self):
         service, db = self.make_asi_service(totals={**default_totals(), "strength_total": 19})

@@ -128,8 +128,8 @@ class TestAddAsiAdjustment:
         ]
         assert service.stats_service.refresh_calls == [character]
 
-    async def test_enforces_effective_total_cap(self):
-        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 19})
+    async def test_raises_when_total_would_exceed_thirty(self):
+        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 29})
         service = make_service(make_character(), stats=stats)
 
         with pytest.raises(AbilityScoreCapExceededException) as exc_info:
@@ -140,10 +140,22 @@ class TestAddAsiAdjustment:
             )
 
         assert exc_info.value.status_code == 400
-        assert exc_info.value.current_total == 19
-        assert exc_info.value.requested == 21
+        assert exc_info.value.current_total == 29
+        assert exc_info.value.requested == 31
         assert service.asi_repository.add_calls == []
         assert service.stats_service.refresh_calls == []
+
+    async def test_allows_adjustments_up_to_thirty(self):
+        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 28})
+        service = make_service(make_character(), stats=stats)
+
+        await service.add_asi_adjustment(
+            1,
+            GmAsiChoiceAdd(increases=[GmAsiIncreaseItem(ability=AbilityScore.DEX, amount=2)]),
+            SimpleNamespace(),
+        )
+
+        assert service.asi_repository.add_calls[0][3] == [{"ability": "DEX", "amount": 2}]  # 30 <= 30
 
     async def test_allows_negative_amounts(self):
         service = make_service(make_character())
@@ -156,11 +168,8 @@ class TestAddAsiAdjustment:
 
         assert service.asi_repository.add_calls[0][3] == [{"ability": "STR", "amount": -4}]
 
-    async def test_every_increase_is_checked_against_its_own_cap(self):
-        stats = FakeStatsService(
-            totals=TOTALS,
-            caps={**dict.fromkeys(AbilityScore, 20), AbilityScore.INT: 10},
-        )
+    async def test_every_increase_is_checked_against_the_thirty_cap(self):
+        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 28})
         service = make_service(make_character(), stats=stats)
 
         with pytest.raises(AbilityScoreCapExceededException):
@@ -169,7 +178,7 @@ class TestAddAsiAdjustment:
                 GmAsiChoiceAdd(
                     increases=[
                         GmAsiIncreaseItem(ability=AbilityScore.STR, amount=-2),
-                        GmAsiIncreaseItem(ability=AbilityScore.INT, amount=3),
+                        GmAsiIncreaseItem(ability=AbilityScore.DEX, amount=3),
                     ]
                 ),
                 SimpleNamespace(),

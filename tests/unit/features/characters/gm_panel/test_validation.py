@@ -117,15 +117,16 @@ class TestValidateAbilityScoreIncreaseCap:
         assert exc_info.value.current_total == 19
         assert exc_info.value.requested == 22
 
-    async def test_raised_cap_allows_beyond_20(self):
+    async def test_feat_is_capped_at_twenty_even_when_a_feature_raises_the_cap(self):
         increase = make_increase(10, AbilityScore.STR, 4)
         feat = SimpleNamespace(id=2, ability_score_increases=[increase])
         stats = FakeStatsService(
             totals={**TOTALS, "strength_total": 20},
-            caps={**dict.fromkeys(AbilityScore, 20), AbilityScore.STR: 24},
+            caps={**dict.fromkeys(AbilityScore, 20), AbilityScore.STR: 30},
         )
 
-        assert await validate_ability_score_increase_cap(feat, 10, SimpleNamespace(), stats) is None
+        with pytest.raises(AbilityScoreCapExceededException):
+            await validate_ability_score_increase_cap(feat, 10, SimpleNamespace(), stats)
 
 
 @pytest.mark.asyncio

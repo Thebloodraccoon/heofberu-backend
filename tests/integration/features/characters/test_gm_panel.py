@@ -151,9 +151,9 @@ class TestGmPanelAsiAdjustments:
         )
         assert listed.json() == []
 
-    async def test_adjustment_above_cap_returns_400(self, client, gm, gm_token, create_class, create_character):
+    async def test_adjustment_above_thirty_returns_400(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=19)
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=29)
 
         response = await client.post(
             f"/characters/{character.id}/gm-panel/asi",
@@ -161,7 +161,19 @@ class TestGmPanelAsiAdjustments:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 400  # 31 > 30
+
+    async def test_gm_can_raise_above_twenty_up_to_thirty(self, client, gm, gm_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=20)
+
+        response = await client.post(
+            f"/characters/{character.id}/gm-panel/asi",
+            json={"increases": [{"ability": "STR", "amount": 2}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201  # 22 > 20, but <= 30: the GM panel override applies
 
     async def test_duplicate_ability_in_increases_returns_422(
         self, client, gm, gm_token, create_class, create_character

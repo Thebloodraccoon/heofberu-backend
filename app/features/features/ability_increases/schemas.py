@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.constants import AbilityScore
+from app.constants import ABILITY_SCORE_CAP, MAX_ABILITY_SCORE_CAP, AbilityScore
 
 
 def _validate_unique_abilities(items: list["AbilityIncreaseItem"]) -> list["AbilityIncreaseItem"]:
@@ -16,8 +16,9 @@ class AbilityIncreaseItem(BaseModel):
     """
     One fixed ability-score effect of a feature: ``amount`` is added to
     the effective total while the feature is granted; ``new_cap``, when
-    set, raises that ability's maximum score above the standard 20
-    (e.g. Primal Champion's ``{"ability": "STR", "amount": 4, "new_cap": 24}``).
+    set, raises that ability's maximum score above the standard 20 and at
+    most ``MAX_ABILITY_SCORE_CAP`` (30) — e.g. Primal Champion's
+    ``{"ability": "STR", "amount": 4, "new_cap": 30}``.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -25,6 +26,15 @@ class AbilityIncreaseItem(BaseModel):
     ability: AbilityScore
     amount: int
     new_cap: int | None = None
+
+    @field_validator("new_cap")
+    @classmethod
+    def validate_new_cap(cls, value):
+        if value is not None and not (ABILITY_SCORE_CAP <= value <= MAX_ABILITY_SCORE_CAP):
+            raise ValueError(
+                f"'new_cap' must be between {ABILITY_SCORE_CAP} and {MAX_ABILITY_SCORE_CAP}."
+            )
+        return value
 
 
 class AbilityIncreasesUpdate(BaseModel):
