@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.features.characters.attacks.router import router as attacks_router
+from app.features.characters.backstory.router import router as backstory_router
 from app.features.characters.conditions.router import router as conditions_router
 from app.features.characters.crud.router import router as core_router
 from app.features.characters.gm_panel.router import router as gm_panel_router
@@ -17,3 +18,4 @@ router.include_router(attacks_router, prefix="/characters", tags=["Characters At
 router.include_router(gm_panel_router, prefix="/characters", tags=["Characters GM Panel"])
 router.include_router(conditions_router, prefix="/characters", tags=["Characters Conditions"])
 router.include_router(progression_router, prefix="/characters", tags=["Characters Progression"])
+router.include_router(backstory_router, prefix="/characters", tags=["Characters Backstory"])

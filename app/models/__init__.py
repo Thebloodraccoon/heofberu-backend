@@ -10,6 +10,10 @@ from app.models.character_association_models import (  # noqa: F401
     CharacterSkillProficiency,
     CharacterSpellSlot,
 )
+
+# CharacterBackstory: FK/relationship targets are string-based, so no import
+# ordering constraint — grouped here with the other character association models.
+from app.models.character_backstory_model import CharacterBackstory  # noqa: F401
 from app.models.character_condition_model import CharacterCondition  # noqa: F401
 from app.models.character_feature_model import CharacterFeature  # noqa: F401
 from app.models.character_item_model import CharacterItem  # noqa: F401

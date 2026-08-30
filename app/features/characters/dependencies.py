@@ -6,6 +6,7 @@ from fastapi import Depends
 
 from app.core.db import DatabaseDep
 from app.features.characters.attacks.service import CharacterAttackService
+from app.features.characters.backstory.service import CharacterBackstoryService
 from app.features.characters.conditions.service import CharacterConditionService
 from app.features.characters.crud.service import CharacterService
 from app.features.characters.progression.service import CharacterProgressionService
@@ -46,6 +47,15 @@ def get_character_condition_service(db: DatabaseDep) -> CharacterConditionServic
 
 
 CharacterConditionServiceDep = Annotated[CharacterConditionService, Depends(get_character_condition_service)]
+
+
+def get_character_backstory_service(db: DatabaseDep) -> CharacterBackstoryService:
+    """Get the character backstory service instance."""
+
+    return CharacterBackstoryService(db)
+
+
+CharacterBackstoryServiceDep = Annotated[CharacterBackstoryService, Depends(get_character_backstory_service)]
 
 
 def get_character_progression_service(db: DatabaseDep) -> CharacterProgressionService:

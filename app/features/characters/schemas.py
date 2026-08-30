@@ -43,7 +43,6 @@ class CharacterBase(BaseModel):
     wisdom: int
     charisma: int
 
-    backstory: str = ""
     notes: str = ""
 
     # Personality card free-text fields (5e "Personality" section).
@@ -141,6 +140,10 @@ class CharacterUpdate(BaseModel):
     from the character's class and race on every read (see
     ``CharacterStatsService``). ``armor_class`` and ``shield`` are plain
     editable columns — there is no dynamic armor calculation anymore.
+    ``inspiration`` (5e's per-session advantage boolean) is editable here.
+    The backstory is NOT a field of this schema — it is managed through the
+    dedicated ``GET/PUT /characters/{id}/backstory`` endpoints (it can be
+    several pages of text and is never included in the cached character).
     """
 
     name: str | None = None
@@ -151,7 +154,9 @@ class CharacterUpdate(BaseModel):
     armor_class: int | None = Field(default=None, ge=0)
     shield: int | None = Field(default=None, ge=0)
 
-    backstory: str | None = None
+    # 5e inspiration — a boolean the GM grants (advantage on a roll).
+    inspiration: bool | None = None
+
     notes: str | None = None
 
     personality_traits: str | None = None
@@ -230,6 +235,7 @@ class CharacterResponse(CharacterBase):
     current_hp: int
     max_hp: int
     temp_hp: int
+    inspiration: bool = False
 
     # Raw base ability scores — accepted on input and read from the row,
     # but excluded from serialized output (clients use ``ability_scores``;
@@ -262,6 +268,21 @@ class FeatBriefResponse(BaseModel):
     description: str = ""
 
 
+class FeatAbilityScoreIncreaseResponse(BaseModel):
+    """
+    The ability score a granted feat improved (the ASI option chosen for
+    the feat). Backed by the ``FeatAbilityScoreIncrease`` row pointed at by
+    ``CharacterFeat.ability_score_increase_id`` — ``None`` on the grant when
+    the feat improves no ability (or none was chosen).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ability: AbilityScore
+    amount: int = 1
+
+
 class CharacterFeatResponse(BaseModel):
     """Aggregates a character's feat grant with its chosen ASI and feat brief."""
 
@@ -273,6 +294,7 @@ class CharacterFeatResponse(BaseModel):
     ability_score_increase_id: int | None = None
     source_type: CharacterFeatSource = CharacterFeatSource.GM
     feat: FeatBriefResponse | None = None
+    ability_score_increase: FeatAbilityScoreIncreaseResponse | None = None
 
 
 class CharacterFeatureBriefResponse(BaseModel):

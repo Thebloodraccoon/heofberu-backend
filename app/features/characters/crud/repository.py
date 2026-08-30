@@ -35,10 +35,9 @@ class CharacterRepository(BaseRepository[Character]):
 
     ``search_fields=["name"]`` pins free-text ``search`` (on the
     inherited ``get_all``) to just ``name`` — without this, the base
-    class's auto-detection would also search ``traits``, ``backstory``,
-    ``notes`` and the other free-text columns on ``Character``, which
-    isn't the intended behavior for the listing endpoint's ``search``
-    parameter.
+    class's auto-detection would also search ``notes`` and the other
+    free-text columns on ``Character``, which isn't the intended behavior
+    for the listing endpoint's ``search`` parameter.
 
     ``update_hp`` stays here: it's a two-column specialized write, not a
     generic ``update`` call.

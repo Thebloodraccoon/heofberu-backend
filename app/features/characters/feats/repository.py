@@ -16,9 +16,10 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
     Split out of ``CharacterRepository`` — feat grants are their own
     association table, unrelated to the ``Character`` row's own columns.
 
-    Every read eager-loads ``CharacterFeat.feat``: the grant rows are
-    serialized with an embedded feat brief, and lazy-loading a
-    relationship in the async session would fail.
+    Every read eager-loads ``CharacterFeat.feat`` and
+    ``CharacterFeat.ability_score_increase``: the grant rows are serialized
+    with an embedded feat brief and the resolved ability score increase, and
+    lazy-loading either relationship in the async session would fail.
     """
 
     def __init__(self, db: AsyncSession):
@@ -29,7 +30,10 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
 
         result = await self.db.execute(
             select(CharacterFeat)
-            .options(selectinload(CharacterFeat.feat))
+            .options(
+                selectinload(CharacterFeat.feat),
+                selectinload(CharacterFeat.ability_score_increase),
+            )
             .where(CharacterFeat.character_id == character_id)
         )
         return list(result.scalars().unique().all())
@@ -39,7 +43,10 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
 
         result = await self.db.execute(
             select(CharacterFeat)
-            .options(selectinload(CharacterFeat.feat))
+            .options(
+                selectinload(CharacterFeat.feat),
+                selectinload(CharacterFeat.ability_score_increase),
+            )
             .where(
                 CharacterFeat.id == character_feat_id,
                 CharacterFeat.character_id == character_id,
@@ -103,10 +110,15 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
         return await self._reload_with_feat(grant.id)
 
     async def _reload_with_feat(self, grant_id: int) -> CharacterFeat:
-        """Re-fetch a grant with its feat eager-loaded (for safe serialization)."""
+        """Re-fetch a grant with its feat and ASI choice eager-loaded (for safe serialization)."""
 
         result = await self.db.execute(
-            select(CharacterFeat).options(selectinload(CharacterFeat.feat)).where(CharacterFeat.id == grant_id)
+            select(CharacterFeat)
+            .options(
+                selectinload(CharacterFeat.feat),
+                selectinload(CharacterFeat.ability_score_increase),
+            )
+            .where(CharacterFeat.id == grant_id)
         )
         return result.scalar_one()
 

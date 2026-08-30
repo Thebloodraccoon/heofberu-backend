@@ -293,6 +293,11 @@ MAX_ABILITY_SCORE_CAP = 30
 # on ``characters.level`` and ``character_max_levels.max_level``).
 CHARACTER_MAX_LEVEL = 20
 
+# Max length (characters) of a character's backstory — roughly four pages of
+# Word text. Enforced by both the backstory schema (422) and a DB check
+# constraint on ``character_backstories.content``.
+BACKSTORY_MAX_LENGTH = 12000
+
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"
 ON_DELETE_RESTRICT = "RESTRICT"

@@ -13,7 +13,7 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
 | File | Role |
 | --- | --- |
 | `router.py` | Aggregates the six child routers under `/characters`, one `include_router` per child, tags declared here once. |
-| `schemas.py` | Shared domain schemas: `CharacterCreate`/`CharacterUpdate`/`CharacterResponse` plus the feat/feature grant responses (`CharacterFeatResponse`, `CharacterFeatureResponse`). Sub-packages import from here — never the reverse. |
+| `schemas.py` | Shared domain schemas: `CharacterCreate`/`CharacterUpdate`/`CharacterResponse` plus the feat/feature grant responses (`CharacterFeatResponse`, `CharacterFeatureResponse`). `CharacterFeatResponse` embeds the resolved ASI (`ability_score_increase`: `{id, ability, amount}`) so a feat read shows which ability it improved. Sub-packages import from here — never the reverse. |
 | `exceptions.py` | Domain-wide `AppError`s: `CharacterNotFoundException`, `CharacterAccessDeniedException`, `BackgroundNotFoundException`. |
 | `access.py` | Access-control helpers: `get_character_or_404`, `check_character_access`, and the combined `get_character_for_user` (GM or owner, else 403/404). Almost every character operation starts with one of these. |
 | `base.py` | `CharacterSubDomainService` — shared base for sub-domain services: owns the single `CharacterRepository`, exposes `_atomic()` and the access-checked `get_character_for_user`. Defaults to the **light** character fetch (`_light_character_fetch = True` → scalar columns only); services that serialize a full `CharacterResponse` override it to `False`. |
@@ -32,6 +32,13 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   is recomputed.
 - `attacks/` — weapon/attack rows on the sheet.
 - `conditions/` — conditions applied to a character.
+- `backstory/` — the character's backstory, isolated in its own table
+  (`character_backstories`) and served ONLY through dedicated endpoints
+  (`GET/PUT /characters/{id}/backstory`). Because it can run several pages of
+  free text (up to `BACKSTORY_MAX_LENGTH` = 12000 chars, ~4 pages of Word), it
+  is deliberately excluded from the cached `CharacterResponse` and is never
+  cached — reads hit the DB directly through the owner/GM access check. It is
+  also not part of `CharacterCreate`/`CharacterUpdate`.
 - `spells/` — known spells + slot totals (class-derived only, no
   spend/restore endpoints).
 - `progression/` — level-up, subclass/subrace/background setup,
@@ -69,6 +76,12 @@ creates a character. Everything is derived server-side:
   modifier, clamped to ≥1; `current_hp` starts equal to it.
 - **Saving throws are never stored** on the character — they are derived
   from the class on every response (the table was dropped by migration).
+- **Backstory is not part of creation** — it is written afterwards via the
+  dedicated `PUT /characters/{id}/backstory` endpoint (and read via
+  `GET /characters/{id}/backstory`), isolated in `character_backstories` and
+  never cached.
+- **`inspiration`** (5e's per-session boolean) defaults to `False` and is
+  editable via the plain character PATCH.
 - Spell slots for level 1 are applied immediately; features and starting
   equipment (class + background, aggregated into one stack per item) are
   granted in the same `_atomic()` transaction.
