@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/spell-slots",
+    "/{class_id:int}/spell-slots",
     response_model=ClassResponse,
     summary="Replace a class's spell slots at a given class level",
     responses={
@@ -35,7 +35,7 @@ router = APIRouter()
     },
 )
 async def set_class_spell_slots(
-    class_id: Annotated[int, Query(gt=0)],
+    class_id: int,
     class_level: Annotated[int, Query()],
     data: Annotated[
         SpellSlotProgressionUpdate,
@@ -80,12 +80,12 @@ async def set_class_spell_slots(
 
 
 @router.get(
-    "/progression",
+    "/{class_id:int}/progression",
     response_model=ClassProgressionResponse,
     summary="Get the full 1-20 progression table",
     responses={404: {"description": "No class exists with the given ID."}},
 )
-async def get_class_progression(class_id: Annotated[int, Query(gt=0)], class_service: ClassProgressionDep):
+async def get_class_progression(class_id: int, class_service: ClassProgressionDep):
     """
     Return the full level 1-20 progression table for a class.
 

@@ -15,6 +15,7 @@ from alembic.config import Config  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from redis.asyncio import Redis  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
 from app.settings import settings  # noqa: E402
 
@@ -28,9 +29,17 @@ def _run_migrations() -> None:
 
 
 async def _truncate_all_tables(session) -> None:
-    """Delete all rows in child-first order so FK constraints are respected."""
-    for table in reversed(settings.Base.metadata.sorted_tables):
-        await session.execute(table.delete())
+    """
+    Wipe every table in one atomic TRUNCATE ... CASCADE statement.
+
+    A single TRUNCATE (instead of per-table DELETEs) cannot hit FK-ordering
+    issues, is far faster on big catalogs, and — crucially — is all-or-nothing:
+    a partial wipe can never leave stale rows that poison later tests with
+    unique-constraint violations.
+    """
+    await session.rollback()  # discard any aborted/stale transaction state
+    table_names = ", ".join(f'"{table.name}"' for table in settings.Base.metadata.sorted_tables)
+    await session.execute(text(f"TRUNCATE TABLE {table_names} RESTART IDENTITY CASCADE"))
     await session.commit()
 
 

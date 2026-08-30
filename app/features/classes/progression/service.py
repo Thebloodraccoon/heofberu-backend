@@ -15,7 +15,7 @@ from app.features.classes.schemas import (
     SpellSlotProgressionUpdate,
     _proficiency_bonus,
 )
-from app.features.shared.features.schemas import NestedFeatureCreate
+from app.features.features.crud.schemas import NestedFeatureCreate
 from app.models.class_model import Class
 
 
@@ -28,8 +28,8 @@ class ClassProgressionService(BaseService[Class, ClassCreate, ClassUpdate, Class
     the DB and full-replaces that level's rows. ``get_progression`` builds
     the whole 1-20 table straight from the eager-loaded
     ``spell_slot_progression`` and ``ClassRepository.get_progression_features``.
-    Any write purges the ``classes``, ``nested_features`` and
-    ``nested_items`` namespaces.
+    Any write purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES`
+    via ``cache_namespaces``.
     """
 
     repository: ClassRepository

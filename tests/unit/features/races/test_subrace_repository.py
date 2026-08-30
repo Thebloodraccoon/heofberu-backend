@@ -3,7 +3,7 @@
 import pytest
 
 from app.constants import AbilityScore
-from app.features.races.subraces.crud.repository import SubraceRepository
+from app.features.subraces.crud.repository import SubraceRepository
 from app.models.subrace_association_models import SubraceAbilityBonus
 from app.models.subrace_model import Subrace
 from tests.unit.fakes import FakeAsyncSession, FakeResult

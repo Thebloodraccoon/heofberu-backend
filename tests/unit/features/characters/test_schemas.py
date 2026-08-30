@@ -87,6 +87,15 @@ class TestCharacterCreate:
         payload.update(overrides)
         return payload
 
+    def test_feat_id_no_longer_part_of_creation(self):
+        """The origin-feat contract was removed: creation carries no feat."""
+        assert "feat_id" not in CharacterCreate.model_fields
+        assert CharacterCreate(**self._payload()).name == "Grog"
+
+    def test_feat_id_is_rejected_as_extra(self):
+        with pytest.raises(ValidationError):
+            CharacterCreate(**self._payload(feat_id=5))
+
     def test_level_is_not_client_settable(self):
         """Every character starts at level 1; level is not part of the create payload."""
         assert "level" not in CharacterCreate.model_fields

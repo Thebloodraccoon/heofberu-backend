@@ -67,8 +67,7 @@ class TestSkillCrud:
         skill = await create_skill(key="SURVIVAL", name="Survival", ability="WIS")
         race = await create_race(name="Tracker")
         link_response = await client.put(
-            "/races/skills",
-            params={"race_id": race.id},
+            f"/races/{race.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {founder_token}"},
         )

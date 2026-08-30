@@ -20,7 +20,13 @@ async def set_available_skills(db_session, character_class, *skills):
 @pytest.mark.asyncio
 class TestCreationSkillChoices:
     async def test_chosen_skills_are_written_with_is_expertise_false(
-        self, client, player, player_token, db_session, create_class, create_skill
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
         skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
@@ -29,7 +35,11 @@ class TestCreationSkillChoices:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id, "skill_ids": [skill_a.id, skill_b.id]},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [skill_a.id, skill_b.id],
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -38,8 +48,45 @@ class TestCreationSkillChoices:
         assert {item["skill_id"] for item in proficiencies} == {skill_a.id, skill_b.id}
         assert all(item["is_expertise"] is False for item in proficiencies)
 
+    async def test_choosing_fewer_than_max_grants_only_the_chosen_skills(
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
+    ):
+        """A player may pick fewer than ``skill_choice_count``; only the chosen ones are granted."""
+        character_class = await create_class(name="Ranger", skill_choice_count=3)
+        skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skill_b = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill_c = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        await set_available_skills(db_session, character_class, skill_a, skill_b, skill_c)
+
+        response = await client.post(
+            "/characters",
+            json={
+                "name": "Shades",
+                "class_id": character_class.id,
+                "skill_ids": [skill_a.id],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 201
+        proficiencies = response.json()["skill_proficiencies"]
+        assert {item["skill_id"] for item in proficiencies} == {skill_a.id}
+        assert all(item["is_expertise"] is False for item in proficiencies)
+
     async def test_skill_outside_class_available_skills_returns_400(
-        self, client, player, player_token, db_session, create_class, create_skill
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
     ):
         character_class = await create_class(name="Fighter")
         available = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
@@ -48,7 +95,11 @@ class TestCreationSkillChoices:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id, "skill_ids": [other.id]},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [other.id],
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -59,14 +110,24 @@ class TestCreationSkillChoices:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id, "skill_ids": [999999]},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [999999],
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 400
 
     async def test_too_many_skill_choices_returns_400(
-        self, client, player, player_token, db_session, create_class, create_skill
+        self,
+        client,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
         skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
@@ -92,7 +153,11 @@ class TestCreationSkillChoices:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id, "skill_ids": [skill.id, skill.id]},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+                "skill_ids": [skill.id, skill.id],
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -103,7 +168,15 @@ class TestCreationSkillChoices:
 @pytest.mark.asyncio
 class TestCreationBackgroundSkills:
     async def test_background_skills_added_and_merged_with_choices(
-        self, client, gm_token, player, player_token, db_session, create_class, create_skill, create_background
+        self,
+        client,
+        gm_token,
+        player,
+        player_token,
+        db_session,
+        create_class,
+        create_skill,
+        create_background,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
         chosen = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
@@ -111,8 +184,7 @@ class TestCreationBackgroundSkills:
         await set_available_skills(db_session, character_class, chosen)
         background = await create_background(name="Acolyte")
         put_response = await client.put(
-            "/backgrounds/skills",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/skills",
             json={"skill_ids": [granted.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -135,14 +207,20 @@ class TestCreationBackgroundSkills:
         assert len(proficiencies) == 2
 
     async def test_background_only_skills_written_without_choices(
-        self, client, gm_token, player, player_token, create_class, create_skill, create_background
+        self,
+        client,
+        gm_token,
+        player,
+        player_token,
+        create_class,
+        create_skill,
+        create_background,
     ):
         character_class = await create_class(name="Fighter")
         skill = await create_skill(key="RELIGION", name="Religion", ability="INT")
         background = await create_background(name="Acolyte")
         put_response = await client.put(
-            "/backgrounds/skills",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -150,7 +228,11 @@ class TestCreationBackgroundSkills:
 
         response = await client.post(
             "/characters",
-            json={"name": "Acolyte", "class_id": character_class.id, "background_id": background.id},
+            json={
+                "name": "Acolyte",
+                "class_id": character_class.id,
+                "background_id": background.id,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -168,7 +250,11 @@ class TestCreationHp:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id, "constitution": 12},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+                "constitution": 12,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -184,7 +270,11 @@ class TestCreationHp:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id, "max_hp": 4},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+                "max_hp": 4,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -196,7 +286,11 @@ class TestCreationHp:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id, "level": 5},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+                "level": 5,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -209,8 +303,7 @@ class TestCreationSavingThrows:
     async def test_saving_throws_come_from_the_class(self, client, gm_token, player_token, create_class):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         put_response = await client.put(
-            "/classes/saving-throws",
-            params={"class_id": character_class.id},
+            f"/classes/{character_class.id}/saving-throws",
             json={"saving_throws": ["STR", "CON"]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -218,7 +311,10 @@ class TestCreationSavingThrows:
 
         response = await client.post(
             "/characters",
-            json={"name": "Conan", "class_id": character_class.id},
+            json={
+                "name": "Conan",
+                "class_id": character_class.id,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -231,14 +327,20 @@ class TestCreationSavingThrows:
 @pytest.mark.asyncio
 class TestCreationRaceSkills:
     async def test_race_granted_skills_written_without_choices(
-        self, client, gm_token, player, player_token, create_class, create_skill, create_race
+        self,
+        client,
+        gm_token,
+        player,
+        player_token,
+        create_class,
+        create_skill,
+        create_race,
     ):
         character_class = await create_class(name="Fighter")
         skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
         race = await create_race(name="Elf")
         put_response = await client.put(
-            "/races/skills",
-            params={"race_id": race.id},
+            f"/races/{race.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -246,7 +348,11 @@ class TestCreationRaceSkills:
 
         response = await client.post(
             "/characters",
-            json={"name": "Legolas", "class_id": character_class.id, "race_id": race.id},
+            json={
+                "name": "Legolas",
+                "class_id": character_class.id,
+                "race_id": race.id,
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -276,8 +382,7 @@ class TestCreationRaceSkills:
 
         background = await create_background(name="Acolyte")
         put_bg = await client.put(
-            "/backgrounds/skills",
-            params={"background_id": background.id},
+            f"/backgrounds/{background.id}/skills",
             json={"skill_ids": [granted.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -285,8 +390,7 @@ class TestCreationRaceSkills:
 
         race = await create_race(name="Elf")
         put_race = await client.put(
-            "/races/skills",
-            params={"race_id": race.id},
+            f"/races/{race.id}/skills",
             json={"skill_ids": [chosen.id, racial.id]},  # `chosen` overlaps with the class choice
             headers={"Authorization": f"Bearer {gm_token}"},
         )

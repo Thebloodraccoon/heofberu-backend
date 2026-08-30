@@ -35,10 +35,16 @@ router = APIRouter()
         403: {"description": "You are not a GM."},
         404: {"description": "No character or feat exists with the given ID."},
         409: {"description": "The character already has this feat."},
+        422: {
+            "description": (
+                "The feat offers ability-score increase options but no "
+                "`ability_score_increase_id` was chosen — the choice is required."
+            )
+        },
     },
 )
 async def add_character_feat(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         CharacterFeatAdd,
         Body(
@@ -59,8 +65,10 @@ async def add_character_feat(
 ):
     """
     Grant a feat to a character outside any level-up flow. If the feat
-    offers an ability-score increase of its own, pass the matching
-    ``ability_score_increase_id`` to apply it. **GM only.**
+    offers ability-score increase options, a matching
+    ``ability_score_increase_id`` MUST be chosen (422 otherwise); each
+    granted point is also recorded in the character's ASI-choice log.
+    **GM only.**
     """
 
     return await feat_service.add_feat(character_id, data, current_user)
@@ -76,10 +84,16 @@ async def add_character_feat(
         404: {
             "description": "No character exists with the given ID, or no feat grant exists with the given `feat_id`."
         },
+        422: {
+            "description": (
+                "The feat offers ability-score increase options but no "
+                "`ability_score_increase_id` was provided — clearing is not allowed."
+            )
+        },
     },
 )
 async def update_character_feat(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     feat_id: Annotated[int, Query(gt=0)],
     data: Annotated[
         CharacterFeatUpdate,
@@ -89,10 +103,6 @@ async def update_character_feat(
                     "summary": "Point the feat's ASI choice at another increase row",
                     "value": {"ability_score_increase_id": 35},
                 },
-                "clear": {
-                    "summary": "Clear the feat's ASI choice",
-                    "value": {"ability_score_increase_id": None},
-                },
             }
         ),
     ],
@@ -100,8 +110,8 @@ async def update_character_feat(
     current_user: GmUserDep,
 ):
     """
-    Change or clear the ability-score increase chosen for an
-    already-granted feat. **GM only.**
+    Change the ability-score increase chosen for an already-granted feat
+    (a feat offering ASI options must always keep one). **GM only.**
     """
 
     return await feat_service.update_feat(character_id, feat_id, data, current_user)
@@ -119,7 +129,7 @@ async def update_character_feat(
     },
 )
 async def remove_character_feat(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     feat_id: Annotated[int, Query(gt=0)],
     feat_service: GmPanelFeatsDep,
     current_user: GmUserDep,

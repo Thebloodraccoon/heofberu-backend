@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/attacks",
+    "/{character_id:int}/attacks",
     response_model=list[AttackResponse],
     summary="List a character's attacks",
     responses={
@@ -30,7 +30,7 @@ router = APIRouter()
     },
 )
 async def get_character_attacks(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     attack_service: CharacterAttackServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -40,7 +40,7 @@ async def get_character_attacks(
 
 
 @router.post(
-    "/attacks",
+    "/{character_id:int}/attacks",
     response_model=AttackResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Add an attack to a character",
@@ -50,7 +50,7 @@ async def get_character_attacks(
     },
 )
 async def create_character_attack(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         AttackCreate,
         Body(
@@ -95,7 +95,7 @@ async def create_character_attack(
 
 
 @router.patch(
-    "/attacks",
+    "/{character_id:int}/attacks/{attack_id:int}",
     response_model=AttackResponse,
     summary="Update an attack",
     responses={
@@ -104,8 +104,8 @@ async def create_character_attack(
     },
 )
 async def update_character_attack(
-    character_id: Annotated[int, Query(gt=0)],
-    attack_id: Annotated[int, Query(gt=0)],
+    character_id: int,
+    attack_id: int,
     data: Annotated[
         AttackUpdate,
         Body(
@@ -135,7 +135,7 @@ async def update_character_attack(
 
 
 @router.delete(
-    "/attacks",
+    "/{character_id:int}/attacks/{attack_id:int}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an attack",
     responses={
@@ -144,8 +144,8 @@ async def update_character_attack(
     },
 )
 async def delete_character_attack(
-    character_id: Annotated[int, Query(gt=0)],
-    attack_id: Annotated[int, Query(gt=0)],
+    character_id: int,
+    attack_id: int,
     attack_service: CharacterAttackServiceDep,
     current_user: CurrentUserDep,
 ):

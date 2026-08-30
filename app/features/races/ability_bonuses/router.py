@@ -6,7 +6,7 @@ query parameter).
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.races.dependencies import RaceAbilityBonusesDep
 from app.features.races.schemas import AbilityBonusesUpdate, RaceResponse
@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/ability-bonuses",
+    "/{race_id:int}/ability-bonuses",
     response_model=RaceResponse,
     summary="Replace a race's ability bonuses",
     responses={
@@ -24,7 +24,7 @@ router = APIRouter()
     },
 )
 async def set_ability_bonuses(
-    race_id: Annotated[int, Query(gt=0)],
+    race_id: int,
     data: Annotated[
         AbilityBonusesUpdate,
         Body(

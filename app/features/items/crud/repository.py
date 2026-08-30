@@ -2,11 +2,13 @@
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.core.base.repository import BaseRepository
 from app.models.character_item_model import CharacterItem
 from app.models.item_model import Item
+from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 from app.models.source_item_model import SourceItem
 
 # Which FK must be set for each starting-equipment source type.
@@ -53,15 +55,47 @@ class ItemRepository(BaseRepository[Item]):
         result = await self.db.execute(select(SourceItem).where(or_(*conditions)))
         return list(result.scalars().all())
 
+    async def get_choice_groups_for_sources(
+        self, sources: list[tuple[FeatureSourceType, int]]
+    ) -> list[SourceItemChoiceGroup]:
+        """
+        Return every choice group (with their eager-loaded options) owned
+        by the given ``(source_type, source_id)`` pairs.
+
+        Used by character creation to collect all "pick N of M" starting-
+        equipment decisions the character's class/background define, in
+        one query.
+        """
+
+        if not sources:
+            return []
+
+        conditions = [
+            getattr(SourceItemChoiceGroup, SOURCE_ITEM_FK_BY_SOURCE_TYPE[source_type]) == source_id
+            for source_type, source_id in sources
+        ]
+
+        result = await self.db.execute(
+            select(SourceItemChoiceGroup)
+            .where(or_(*conditions))
+            .options(selectinload(SourceItemChoiceGroup.options))
+            .order_by(SourceItemChoiceGroup.sort_order, SourceItemChoiceGroup.id)
+        )
+        return list(result.scalars().all())
+
     async def is_in_use(self, item_id: int) -> bool:
         """
         Return whether the item is referenced by any character inventory
-        (``character_items``) or as starting equipment by a class or
-        background (``source_items``). Both FKs are ``ON DELETE RESTRICT``,
-        so either reference blocks deletion.
+        (``character_items``), as starting equipment by a class or
+        background (``source_items``), or as a choice-group option
+        (``source_item_choice_options``). All FKs are ``ON DELETE
+        RESTRICT``, so any reference blocks deletion.
         """
 
         if await self.exists_referencing(CharacterItem, "item_id", item_id):
             return True
 
-        return await self.exists_referencing(SourceItem, "item_id", item_id)
+        if await self.exists_referencing(SourceItem, "item_id", item_id):
+            return True
+
+        return await self.exists_referencing(SourceItemChoiceOption, "item_id", item_id)

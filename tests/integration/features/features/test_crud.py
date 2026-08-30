@@ -26,7 +26,7 @@ class TestFeatureCrud:
         assert response.json()["name"] == "Custom Feature"
         assert response.json()["source_type"] == "OTHER"
 
-    async def test_cannot_create_class_feature_directly(self, client, gm_token, create_class):
+    async def test_gm_can_create_class_feature(self, client, gm_token, create_class):
         character_class = await create_class(name="Fighter")
 
         response = await client.post(
@@ -35,9 +35,11 @@ class TestFeatureCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        assert response.json()["source_type"] == "CLASS"
+        assert response.json()["class_id"] == character_class.id
 
-    async def test_cannot_create_subclass_feature_directly(self, client, gm_token, create_class, create_subclass):
+    async def test_gm_can_create_subclass_feature(self, client, gm_token, create_class, create_subclass):
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
 
@@ -47,7 +49,9 @@ class TestFeatureCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        assert response.json()["source_type"] == "SUBCLASS"
+        assert response.json()["subclass_id"] == subclass.id
 
     @pytest.mark.parametrize(
         "source_type,fk_name",
@@ -57,7 +61,7 @@ class TestFeatureCrud:
             ("BACKGROUND", "background_id"),
         ],
     )
-    async def test_cannot_create_source_owned_feature_directly(
+    async def test_gm_can_create_source_owned_feature_directly(
         self, client, gm_token, create_race, create_subrace, create_background, create_feat, source_type, fk_name
     ):
         elf = await create_race(name="Elf")
@@ -74,7 +78,8 @@ class TestFeatureCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        assert response.json()[fk_name] == parent.id
 
     async def test_other_feature_cannot_set_source_fk(self, client, gm_token, create_class):
         character_class = await create_class(name="Fighter")
@@ -141,7 +146,7 @@ class TestFeatureCrud:
         assert response.status_code == 204
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
 
-    async def test_cannot_update_source_owned_feature_via_features_crud(
+    async def test_gm_can_update_source_owned_feature_via_features_crud(
         self, client, gm_token, create_class, create_feature
     ):
         character_class = await create_class(name="Fighter")
@@ -153,12 +158,12 @@ class TestFeatureCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
-        assert (await client.get(f"/features/{feature.id}")).status_code == 404
-        fetched = await client.get("/classes/features", params={"class_id": character_class.id})
-        assert [item["name"] for item in fetched.json()] == ["Extra Attack"]
+        assert response.status_code == 200
+        assert response.json()["name"] == "Renamed"
+        fetched = await client.get(f"/classes/{character_class.id}/features")
+        assert [item["name"] for item in fetched.json()] == ["Renamed"]
 
-    async def test_cannot_delete_source_owned_feature_via_features_crud(
+    async def test_gm_can_delete_source_owned_feature_via_features_crud(
         self, client, gm_token, create_race, create_feature
     ):
         race = await create_race(name="Elf")
@@ -166,7 +171,66 @@ class TestFeatureCrud:
 
         response = await client.delete(f"/features/{feature.id}", headers={"Authorization": f"Bearer {gm_token}"})
 
-        assert response.status_code == 400
+        assert response.status_code == 204
         assert (await client.get(f"/features/{feature.id}")).status_code == 404
-        fetched = await client.get("/races/features", params={"race_id": race.id})
-        assert [item["name"] for item in fetched.json()] == ["Darkvision"]
+        fetched = await client.get(f"/races/{race.id}/features")
+        assert fetched.json() == []
+
+    async def test_cannot_clear_level_on_class_feature(self, client, gm_token, create_class, create_feature):
+        character_class = await create_class(name="Fighter")
+        feature = await create_feature(name="Rage", source_type="CLASS", class_id=character_class.id, level=1)
+
+        response = await client.patch(
+            f"/features/{feature.id}",
+            json={"level": None},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_cannot_set_level_out_of_range_on_class_feature(self, client, gm_token, create_class, create_feature):
+        character_class = await create_class(name="Fighter")
+        feature = await create_feature(name="Rage", source_type="CLASS", class_id=character_class.id, level=1)
+
+        response = await client.patch(
+            f"/features/{feature.id}",
+            json={"level": 25},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_gm_can_clear_level_on_race_feature(self, client, gm_token, create_race, create_feature):
+        race = await create_race(name="Elf")
+        feature = await create_feature(name="Darkvision", source_type="RACE", race_id=race.id, level=1)
+
+        response = await client.patch(
+            f"/features/{feature.id}",
+            json={"level": None},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["level"] is None
+
+    async def test_cannot_update_feature_foreign_key(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Custom Feature", source_type="OTHER")
+
+        response = await client.patch(
+            f"/features/{feature.id}",
+            json={"race_id": 1},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_gm_can_create_class_feature_without_level_returns_422(self, client, gm_token, create_class):
+        character_class = await create_class(name="Fighter")
+
+        response = await client.post(
+            "/features",
+            json={"name": "Extra Attack", "source_type": "CLASS", "class_id": character_class.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422

@@ -5,23 +5,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource, FeatureSourceType
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, TOTAL_FIELD_BY_ABILITY
+from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.crud.service import CharacterService
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.gm_panel.exceptions import CharacterFeatAlreadyKnownException
-from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
-from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
-from app.features.characters.gm_panel.validation import (
+from app.features.characters.feats.exceptions import CharacterFeatAlreadyKnownException
+from app.features.characters.feats.repository import CharacterFeatRepository
+from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
     validate_ability_score_increase_cap,
+    validate_asi_choice_required,
 )
+from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     BackgroundAlreadySetException,
+    BackgroundItemChoicesNotSupportedException,
     CharacterAlreadyAtMaxLevelException,
     CharacterRebuildNotImplementedException,
     InvalidHitPointGainException,
@@ -31,9 +33,11 @@ from app.features.characters.progression.exceptions import (
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.progression.schemas import (
+    ASIIncreaseItem,
     BackgroundChange,
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
+    FeatChoice,
     LevelUpRequest,
     SubclassChange,
     SubraceChange,
@@ -64,7 +68,9 @@ class CharacterProgressionService(CharacterSubDomainService):
     Leveling up is the entry point for ability score improvements: an
     ASI level (see ``ASI_LEVELS``) *requires* a ``choice`` in the
     request, and the resolved ASI-or-feat is recorded in
-    ``character_asi_choices`` for audit and future level-down support.
+    ``character_asi_choices`` — the counted source of the improvement
+    points (the base columns stay untouched) as well as the audit trail
+    that makes a future level-down a plain row deletion.
 
     Source-owned feature grants are kept in sync automatically: every
     level-up, subclass change, subrace change, and background setup
@@ -101,6 +107,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         current class — otherwise ``SubclassNotFoundException``.
         Setting a subclass grants its features at or below the current
         level; clearing it revokes that subclass's auto-granted features.
+        The ability-score cache is refreshed because granted features can
+        carry fixed ability effects.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -115,6 +123,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             character.subclass_id = data.subclass_id
             await sync_progression_features(self.repository.db, character)
 
+        await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
 
     async def set_subrace(self, character_id: int, data: SubraceChange, current_user: UserResponse) -> None:
@@ -153,7 +162,9 @@ class CharacterProgressionService(CharacterSubDomainService):
         granted skills (deduplicated against the proficiencies the
         character already holds), and its starting equipment (merged into
         existing stacks). The background is then fixed: re-choosing will
-        only ever be possible through the (future) rebuild endpoint.
+        only ever be possible through the (future) rebuild endpoint. The
+        ability-score cache is refreshed because granted features can
+        carry fixed ability effects.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -165,6 +176,15 @@ class CharacterProgressionService(CharacterSubDomainService):
         if background is None:
             raise BackgroundNotFoundException(background_id=data.background_id)
 
+        # The late-background path has no "pick N of M" surface: a
+        # background whose equipment is built on choice groups is rejected
+        # up front instead of silently dropping its options.
+        groups = await self.item_repository.get_choice_groups_for_sources(
+            [(FeatureSourceType.BACKGROUND, background.id)]
+        )
+        if groups:
+            raise BackgroundItemChoicesNotSupportedException(background_id=background.id)
+
         async with self._atomic():
             character.background_id = data.background_id
 
@@ -172,11 +192,11 @@ class CharacterProgressionService(CharacterSubDomainService):
             await self._grant_background_skills(character, background.granted_skills)
             await self._grant_background_equipment(character)
 
+        await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
 
     async def request_rebuild(self, character_id: int, current_user: UserResponse) -> None:
         """
-
         Point-rebuild placeholder.
 
         A full class/race swap is planned as a single "rebuild" operation
@@ -324,11 +344,20 @@ class CharacterProgressionService(CharacterSubDomainService):
         row = await self.max_level_repository.get_by_character_id(character_id)
         return row.max_level if row is not None else min(character_level, ABILITY_SCORE_CAP)
 
-    async def _apply_asi(self, character: Character, increases, class_level: int) -> None:
+    async def _apply_asi(self, character: Character, increases: list[ASIIncreaseItem], class_level: int) -> None:
         """
-        Apply an Ability Score Improvement: validate against the 20 cap
-        using the character's *effective* scores, then bump the base
-        columns and record the choice.
+        Apply an Ability Score Improvement: validate that no ability's
+        *effective* total would exceed the standard
+        ``ABILITY_SCORE_CAP`` (20) — the player's own level-up choices are
+        always capped at 20, regardless of any feature ``new_cap`` that
+        lets the score reach 30 via GM intervention or a granted feature —
+        then record the choice.
+
+        The base ability columns are NOT touched — the increments live
+        only in the ``character_asi_choices`` log (as typed child rows)
+        and are counted from there by the ability-score calculator. This
+        keeps the base columns at their originally entered values (easy
+        rebuild) and makes a future level-down a plain row deletion.
         """
 
         totals = await self.stats_service.compute(character)
@@ -343,10 +372,6 @@ class CharacterProgressionService(CharacterSubDomainService):
                     requested=current_total + item.amount,
                 )
 
-        for item in increases:
-            base_field = BASE_FIELD_BY_ABILITY[item.ability]
-            setattr(character, base_field, getattr(character, base_field) + item.amount)
-
         await self.asi_repository.add(
             character.id,
             class_level,
@@ -355,7 +380,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             commit=False,
         )
 
-    async def _apply_feat(self, character: Character, choice, class_level: int) -> None:
+    async def _apply_feat(self, character: Character, choice: FeatChoice, class_level: int) -> None:
         """
         Apply a feat-as-ASI: validate the feat exists, isn't already
         known, has a valid ASI pick (if any) and the prerequisite is met,
@@ -375,6 +400,10 @@ class CharacterProgressionService(CharacterSubDomainService):
             await validate_ability_score_increase_cap(
                 feat, choice.ability_score_increase_id, character, self.stats_service
             )
+        else:
+            # Same rule as the GM grant: a feat offering ASI options must
+            # be taken with an explicit choice — never silently without.
+            validate_asi_choice_required(feat, choice.ability_score_increase_id)
 
         await check_feat_prerequisite(character, feat, self.stats_service)
 

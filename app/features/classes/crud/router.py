@@ -43,7 +43,7 @@ async def get_classes(
     Response is `{items, total, page, size}` — `total` is the count of
     matching classes across every page, not just this one.
 
-    Does not include primary abilities, saving throws, or available
+    Does not include saving throws, proficiencies, or available
     skills — use `GET /classes/{class_id}` for the full record.
     """
 
@@ -61,7 +61,7 @@ async def get_classes(
 async def get_class(class_id: int, class_service: ClassCrudDep):
     """
     Return a single class by ID, with everything about it: base fields,
-    primary abilities/saving throws/armor proficiencies/available
+    saving throws/armor proficiencies/available
     skills/starting items/spell slots, CLASS-source `features`, and every
     `subclass` together with its own SUBCLASS-source features.
 
@@ -82,7 +82,7 @@ async def get_class(class_id: int, class_service: ClassCrudDep):
     summary="Create a class",
     responses={
         409: {"description": "A class with this name already exists."},
-        400: {"description": "Invalid payload (skill IDs, spellcasting_ability consistency, etc.)."},
+        400: {"description": "Invalid payload (unknown skill IDs, etc.)."},
     },
 )
 async def create_class(
@@ -96,7 +96,6 @@ async def create_class(
                         "name": "Fighter",
                         "hit_dice": "D10",
                         "spellcasting_ability": None,
-                        "primary_abilities": ["STR"],
                         "saving_throws": ["STR", "CON"],
                     },
                 },
@@ -106,7 +105,6 @@ async def create_class(
                         "name": "Wizard",
                         "hit_dice": "D6",
                         "spellcasting_ability": "INT",
-                        "primary_abilities": ["INT"],
                         "saving_throws": ["INT", "WIS"],
                         "available_skills": [3, 7],
                     },
@@ -115,26 +113,20 @@ async def create_class(
         ),
     ],
     class_service: ClassCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """
     Create a new class. **GM only.**
 
     `spellcasting_ability` must always be supplied explicitly — pass
-    `null` for a non-caster class. If non-null, it must also appear in
-    `primary_abilities`.
+    `null` for a non-caster class.
 
-    `primary_abilities`, `saving_throws`, `armor_proficiencies`,
-    `weapon_proficiencies`, and `available_skills` are optional. If
-    provided, they're saved together with the class in a single transaction.
+    `saving_throws`, `armor_proficiencies`, `weapon_proficiencies`, and
+    `available_skills` are optional. If provided, they're saved together
+    with the class in a single transaction.
 
     This endpoint is intentionally minimal: it does NOT accept `features`,
-    `subclasses`, `spell_slot_progression`, or `starting_items`. Attach
-    those afterwards through their own endpoints:
-    - `POST /classes/{class_id}/features`
-    - `POST /classes/{class_id}/subclasses`
-    - `PUT /classes/{class_id}/spell-slots/{class_level}`
-    - `PUT /classes/{class_id}/starting-items`
+    `subclasses`, `spell_slot_progression`, or `starting_items`.
     """
 
     return await class_service.create_class(data)
@@ -147,13 +139,6 @@ async def create_class(
     responses={
         404: {"description": "No class exists with the given ID."},
         409: {"description": "Another class already uses the requested name."},
-        400: {
-            "description": (
-                "spellcasting_ability was set but is not included in primary_abilities, or "
-                "primary_abilities was updated without spellcasting_ability and no longer "
-                "includes the class's current spellcasting_ability."
-            )
-        },
     },
 )
 async def update_class(
@@ -170,11 +155,8 @@ async def update_class(
                     },
                 },
                 "make-caster": {
-                    "summary": "Set spellcasting ability alongside primary abilities",
-                    "value": {
-                        "primary_abilities": ["STR", "INT"],
-                        "spellcasting_ability": "INT",
-                    },
+                    "summary": "Set the class's spellcasting ability",
+                    "value": {"spellcasting_ability": "INT"},
                 },
             }
         ),
@@ -186,17 +168,11 @@ async def update_class(
     Partially update a class. **GM only.**
 
     Only fields included in the request body are changed; omitted fields
-    are left as-is. `primary_abilities` and `saving_throws`, when
-    included, are fully replaced (not merged) — the same semantics as the
-    dedicated `PUT /classes/{class_id}/saving-throws` endpoint. Does not
-    touch available skills — use `PUT /classes/{class_id}/available-skills`
-    for that.
-
-    If `primary_abilities` is changed without also passing
-    `spellcasting_ability`, the class's current `spellcasting_ability`
-    must still be present in the new `primary_abilities` list — otherwise
-    the request is rejected. Pass `spellcasting_ability` explicitly in the
-    same request to change it alongside `primary_abilities`.
+    are left as-is. `saving_throws`, when included, is fully replaced (not
+    merged) — the same semantics as the dedicated
+    `PUT /classes/{class_id}/saving-throws` endpoint. Does not touch
+    available skills — use `PUT /classes/{class_id}/available-skills` for
+    that.
     """
 
     return await class_service.update_class(class_id, data)
@@ -215,7 +191,7 @@ async def delete_class(class_id: int, class_service: ClassCrudDep, _: FounderDep
     """
     Delete a class. **Founder only.**
 
-    Also removes its primary abilities, saving throws, and links to
+    Also removes its saving throws, proficiencies, and links to
     available skills. Blocked if the class is still assigned to one or
     more characters.
     """

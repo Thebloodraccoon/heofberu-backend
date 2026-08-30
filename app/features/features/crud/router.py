@@ -1,4 +1,4 @@
-"""Feature CRUD endpoints: standalone (OTHER) listing, get, create, update, delete."""
+"""Central feature CRUD endpoints: list, get, create, update, delete — for every source type."""
 
 from typing import Annotated
 
@@ -7,12 +7,12 @@ from fastapi import APIRouter, Body, Query, status
 from app.constants import FeatureSourceType
 from app.core.base.service import Page
 from app.features.features.crud.schemas import (
+    FeatureCreate,
     FeatureGetAllResponse,
     FeatureResponse,
-    StandaloneFeatureCreate,
+    FeatureUpdate,
 )
 from app.features.features.dependencies import FeatureCrudDep
-from app.features.shared.features.schemas import FeatureUpdate
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
@@ -38,10 +38,9 @@ async def get_features(
 
     Open endpoint, no authentication required.
 
-    Features owned by a class/race/background/feat/subclass are NOT
-    included — they live under their parent record
-    (`GET /races/{id}`, `GET /classes/{id}`, ...) and are managed through
-    that parent's per-feature endpoints.
+    Features owned by a class/race/background/subclass/subrace are NOT
+    included — they are listed through the parent record
+    (`GET /races/{id}/features`, `GET /classes/{id}/features`, ...).
 
     `search` is a case-insensitive partial match against the feature name.
 
@@ -63,31 +62,29 @@ async def get_features(
 @router.get(
     "/{feature_id:int}",
     response_model=FeatureResponse,
-    summary="Get a standalone feature by ID",
+    summary="Get a feature by ID",
     responses={
-        404: {"description": "Feature with id not found, or the feature is owned by a parent record."},
+        404: {"description": "No feature exists with the given ID."},
     },
 )
 async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
     """
-    Return a single standalone (``source_type: OTHER``) feature, with full
-    detail.
+    Return a single feature, with full detail.
 
     Open endpoint, no authentication required.
 
-    Only standalone features are served here — a class/race/background/
-    subclass feature returns 404, since those live under their parent
-    record.
+    Serves features of every source type — standalone ``OTHER`` features and
+    features owned by a class/subclass/race/subrace/background alike.
     """
 
-    return await feature_service.get_standalone(feature_id)
+    return await feature_service.get_by_id(feature_id)
 
 
 @router.post(
     "",
     response_model=FeatureResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a standalone feature",
+    summary="Create a feature",
     responses={
         400: {
             "description": (
@@ -99,7 +96,7 @@ async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
 )
 async def create_feature(
     data: Annotated[
-        StandaloneFeatureCreate,
+        FeatureCreate,
         Body(
             openapi_examples={
                 "custom_feature": {
@@ -117,21 +114,18 @@ async def create_feature(
     _: GmUserDep,
 ):
     """
-    Create a standalone feature. **GM only.**
+    Create a feature of any source type. **GM only.**
 
-    Only ``source_type: OTHER`` is accepted here — a standalone feature
-    owned by no parent record, which the GM can then grant to any
-    character.
+    Features are managed centrally through this catalog: pass
+    ``source_type`` plus the matching parent FK (``class_id``,
+    ``subclass_id``, ``race_id``, ``subrace_id``, ``background_id``) to
+    create a feature owned by that record, or ``source_type: OTHER`` with no
+    FK for a standalone feature the GM can grant to any character.
 
-    Class, subclass, race and background features are owned by
-    their parent records: they are created through that parent's nested
-    ``features`` payload (``POST /races/``, ``POST /classes/``,
-    ``POST /backgrounds/``, ...) or added one-by-one via
-    ``POST /{source}/{id}/features`` — and must NOT be posted here (422).
-
-    None of ``class_id``/``subclass_id``/``race_id``/``background_id``/
-    ``feat_id`` may be set. ``level`` is optional and meaningful for
-    CLASS/SUBCLASS/OTHER features.
+    ``level`` is mandatory for CLASS/SUBCLASS features (1-20) and optional
+    for every other source type. The source_type/FK/level combination is
+    validated — mismatches (e.g. ``source_type: CLASS`` without
+    ``class_id``) are rejected with a 422.
     """
 
     return await feature_service.create(data)
@@ -140,13 +134,12 @@ async def create_feature(
 @router.patch(
     "/{feature_id:int}",
     response_model=FeatureResponse,
-    summary="Update a standalone feature",
+    summary="Update a feature",
     responses={
         400: {
             "description": (
-                "The feature is not standalone (OTHER) — source-owned features are "
-                "managed through their parent's per-feature endpoints; or the resulting "
-                "source_type/FK combination would be inconsistent."
+                "The patch would leave a CLASS/SUBCLASS feature without its "
+                "mandatory 'level' (or with a level outside 1-20)."
             )
         },
         404: {"description": "No feature exists with the given ID."},
@@ -172,19 +165,15 @@ async def update_feature(
     _: GmUserDep,
 ):
     """
-    Partially update a standalone feature. **GM only.**
-
-    Only ``source_type: OTHER`` (standalone) features are editable here —
-    class/subclass/race/background/feat features are owned by their parent
-    record and are managed through the parent's per-feature endpoints.
+    Partially update a feature of any source type. **GM only.**
 
     Only fields included in the request body are changed; omitted fields
     are left as-is.
 
     `source_type` and its FK are immutable — ownership never moves. Only
-    `name`, `level`, `description` are editable. Setting
-    a non-`None` `level` on a feature that isn't CLASS/SUBCLASS/OTHER is
-    rejected with a 400.
+    `name`, `level`, `description` are editable. A CLASS/SUBCLASS feature's
+    `level` is mandatory (1-20): it may be changed but never cleared; for
+    other source types `level` is optional.
     """
 
     return await feature_service.update_feature(feature_id, data)
@@ -193,24 +182,14 @@ async def update_feature(
 @router.delete(
     "/{feature_id:int}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a standalone feature",
+    summary="Delete a feature",
     responses={
-        400: {
-            "description": (
-                "The feature is not standalone (OTHER) — source-owned features are "
-                "managed through their parent's per-feature endpoints."
-            )
-        },
         404: {"description": "No feature exists with the given ID."},
     },
 )
 async def delete_feature(feature_id: int, feature_service: FeatureCrudDep, _: GmUserDep):
     """
-    Delete a standalone feature. **GM only.**
-
-    Only ``source_type: OTHER`` (standalone) features can be deleted
-    here — class/subclass/race/background/feat features are deleted
-    through their parent's per-feature endpoints.
+    Delete a feature of any source type. **GM only.**
 
     Also removes any `CharacterFeature` rows referencing it (cascade).
     """

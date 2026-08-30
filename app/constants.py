@@ -228,7 +228,7 @@ class ASILevelChoice(str, Enum):
 
 
 class CharacterFeatSource(str, Enum):
-    """Where a character's feat grant came from: GM grant, level-1 origin feat, or an ASI-level choice."""
+    """Where a character's feat grant came from: a GM panel grant or an ASI-level choice."""
 
     GM = "GM"
     ORIGIN = "ORIGIN"
@@ -279,12 +279,24 @@ CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
 # the progression service.
 ASI_LEVELS = frozenset({4, 8, 12, 16, 19})
 
-# Maximum effective (post-bonus) ability score, per the 5e rule.
+# Standard effective (post-bonus) ability score, per the 5e rule. A feature
+# effect may raise a single ability's cap above this (via ``new_cap``) up to
+# ``MAX_ABILITY_SCORE_CAP`` — the hard system ceiling (e.g. a GM granting a
+# feature that lifts STR to 30).
 ABILITY_SCORE_CAP = 20
+
+# Absolute hard ceiling for any single ability score, regardless of how many
+# feature effects raise a cap. ``new_cap`` values are clamped to this.
+MAX_ABILITY_SCORE_CAP = 30
 
 # Hard ceiling for character levels (also enforced by DB check constraints
 # on ``characters.level`` and ``character_max_levels.max_level``).
 CHARACTER_MAX_LEVEL = 20
+
+# Max length (characters) of a character's backstory — roughly four pages of
+# Word text. Enforced by both the backstory schema (422) and a DB check
+# constraint on ``character_backstories.content``.
+BACKSTORY_MAX_LENGTH = 12000
 
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"
@@ -292,7 +304,7 @@ ON_DELETE_RESTRICT = "RESTRICT"
 
 
 def create_enum_constraint(field_name: str, values: list, nullable: bool = True) -> str:
-    """Creates a line for CheckContraint with ENUM values."""
+    """Creates a line for CheckConstraint with ENUM values."""
 
     values_str = ", ".join(repr(v) for v in values)
 
@@ -303,7 +315,7 @@ def create_enum_constraint(field_name: str, values: list, nullable: bool = True)
 
 
 def create_range_constraint(field_name: str, min_val: int, max_val: int, nullable: bool = True) -> str:
-    """Creates a line for CheckContraint with a numerical range."""
+    """Creates a line for CheckConstraint with a numerical range."""
 
     constraint = f"({field_name} >= {min_val} AND {field_name} <= {max_val})"
 

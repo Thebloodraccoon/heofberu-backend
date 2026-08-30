@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import AbilityScore, FeatureSourceType
+from app.constants import AbilityScore
 from app.core.exceptions import RecordNotFoundError
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.backgrounds.crud.schemas import BackgroundCreate
@@ -14,7 +14,6 @@ from app.features.backgrounds.features.service import BackgroundFeatureService
 from app.features.backgrounds.skills.repository import BackgroundSkillsRepository
 from app.features.backgrounds.skills.schemas import SkillsUpdate
 from app.features.backgrounds.skills.service import BackgroundSkillsService
-from app.features.shared.features.schemas import NestedFeatureCreate
 from app.models.background_model import Background
 from app.models.skill_model import Skill
 from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
@@ -143,7 +142,6 @@ def no_redis_invalidate(monkeypatch):
 @pytest.fixture(autouse=True)
 def no_background_invalidate(monkeypatch):
     monkeypatch.setattr("app.features.backgrounds.crud.service.invalidate_background_cache", AsyncMock())
-    monkeypatch.setattr("app.features.backgrounds.features.service.invalidate_background_cache", AsyncMock())
 
 
 @pytest.fixture(autouse=True)
@@ -318,21 +316,15 @@ class TestBackgroundSkillsRepository:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestBackgroundFeatureService:
-    async def test_add_feature_runs_super_and_invalidates_background_cache(self):
-        service, db = make_feature_service(existing_by_id={1: make_background()})
-        data = NestedFeatureCreate(name="Steady", description="d")
-
-        result = await service.add_feature(1, data)
-
-        assert result.id == 1
-        assert result.name == "Steady"
-        assert service._features.create_calls == [(FeatureSourceType.BACKGROUND, 1, data, False)]
-        assert service._features.invalidate_calls == 1
-        assert db.commits == 1
-
-    async def test_list_features_delegates_to_nested_service(self):
+    async def test_list_features_delegates_to_feature_crud(self):
         service, _ = make_feature_service(existing_by_id={1: make_background()})
 
         result = await service.list_features(1)
 
         assert result == []
+
+    async def test_list_features_raises_when_background_missing(self):
+        service, _ = make_feature_service(existing_by_id={})
+
+        with pytest.raises(RecordNotFoundError):
+            await service.list_features(99)

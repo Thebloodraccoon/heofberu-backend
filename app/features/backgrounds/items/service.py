@@ -17,14 +17,16 @@ class BackgroundItemsService(
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
 ):
     """
-    Everything about a background's starting equipment.
+    Everything about a background's starting equipment: flat items (fixed —
+    backgrounds grant no item choices; the choice-group mechanic exists for
+    classes only).
 
-    ``list_items``/``set_items`` come from :class:`SourceItemManagerMixin`,
-    which delegates the writes to the shared :class:`NestedSourceItemService`
-    engine; the generic CRUD machinery (``_get_or_404``/``_get_response``/
-    ``_invalidate_cache``) comes from :class:`BaseService`. Any write
-    purges the ``backgrounds``, ``nested_features`` and ``nested_items``
-    namespaces via ``cache_namespaces``.
+    ``list_items``/``set_items`` come from
+    :class:`SourceItemManagerMixin`; the generic CRUD machinery
+    (``_get_or_404``/``_get_response``/``_invalidate_cache``) comes from
+    :class:`BaseService`. Any write purges the ``backgrounds``,
+    ``background_features``, ``features`` and ``nested_items`` namespaces via
+    ``cache_namespaces``.
     """
 
     repository: BackgroundRepository

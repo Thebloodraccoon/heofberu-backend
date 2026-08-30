@@ -24,9 +24,6 @@ class Subclass(settings.Base):  # type: ignore
 
     name = Column(String(100), nullable=False, index=True)
 
-    # Human-readable grouping label shown in the UI, e.g. "Bard Colleges", "Fighter Archetypes".
-    # Matches the class's own archetype grouping name; stored here for convenience.
-    archetype_group_name = Column(String(100), nullable=True)
     description = Column(Text, nullable=False, default="")
 
     __table_args__ = (

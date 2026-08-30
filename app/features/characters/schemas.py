@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import AbilityScore, CharacterFeatSource, FeatureSourceType
 from app.features.characters.conditions.schemas import CharacterConditionResponse
+from app.features.items.crud.schemas import ItemResponse
 
 # Standard D&D 5e ability-score range for values entered directly by a
 # player (before racial/feat bonuses are applied) — matches the typical
@@ -42,7 +43,6 @@ class CharacterBase(BaseModel):
     wisdom: int
     charisma: int
 
-    backstory: str = ""
     notes: str = ""
 
     # Personality card free-text fields (5e "Personality" section).
@@ -74,6 +74,14 @@ class CharacterCreate(CharacterBase):
     belong to the class's ``available_skills``, and the total must not
     exceed the class's ``skill_choice_count``. The background's granted
     skills (when ``background_id`` is set) are added automatically.
+
+    ``item_choice_ids`` are the starting-equipment "pick N of M" choices
+    (the ids of the ``SourceItemChoiceOption`` rows the player picked from
+    the class's/background's choice groups). Each id must belong to one of
+    the character's sources' choice groups, and every such group must be
+    answered with exactly ``pick_count`` selected options — anything else
+    is rejected with a 400 so no requested choice is ever silently
+    dropped.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -89,6 +97,7 @@ class CharacterCreate(CharacterBase):
     charisma: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
 
     skill_ids: list[int] = Field(default_factory=list)
+    item_choice_ids: list[int] = Field(default_factory=list)
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
@@ -98,6 +107,15 @@ class CharacterCreate(CharacterBase):
             raise ValueError("Duplicate skill IDs are not allowed.")
 
         return skill_ids
+
+    @field_validator("item_choice_ids")
+    def validate_unique_item_choice_ids(cls, item_choice_ids):
+        """Reject lists containing duplicate item-choice option IDs."""
+
+        if len(item_choice_ids) != len(set(item_choice_ids)):
+            raise ValueError("Duplicate item choice IDs are not allowed.")
+
+        return item_choice_ids
 
 
 class CharacterUpdate(BaseModel):
@@ -122,6 +140,10 @@ class CharacterUpdate(BaseModel):
     from the character's class and race on every read (see
     ``CharacterStatsService``). ``armor_class`` and ``shield`` are plain
     editable columns — there is no dynamic armor calculation anymore.
+    ``inspiration`` (5e's per-session advantage boolean) is editable here.
+    The backstory is NOT a field of this schema — it is managed through the
+    dedicated ``GET/PUT /characters/{id}/backstory`` endpoints (it can be
+    several pages of text and is never included in the cached character).
     """
 
     name: str | None = None
@@ -132,7 +154,9 @@ class CharacterUpdate(BaseModel):
     armor_class: int | None = Field(default=None, ge=0)
     shield: int | None = Field(default=None, ge=0)
 
-    backstory: str | None = None
+    # 5e inspiration — a boolean the GM grants (advantage on a roll).
+    inspiration: bool | None = None
+
     notes: str | None = None
 
     personality_traits: str | None = None
@@ -165,6 +189,53 @@ class AbilityScoresResponse(BaseModel):
     charisma_total: int
 
 
+class StatSourceContribution(BaseModel):
+    """
+    One source's contribution to an ability's effective total — the
+    "what is calculated from what" row shown to the player.
+
+    ``source`` is a stable machine-readable kind ("race", "subrace",
+    "feat", "asi", "feature"); ``label`` is the human-readable source
+    (e.g. race/feat/feature name, or "Level 4 (ASI)"); ``amount`` is the
+    signed points this source contributed to the total.
+    """
+
+    source: str
+    label: str
+    amount: int
+
+
+class AbilityStatsView(BaseModel):
+    """
+    One ability's score view: the ORIGINAL base value (what the player
+    entered at creation, never mutated) next to the COMPUTED total and
+    the list of ``StatSourceContribution`` entries that produced it.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    base: int
+    total: int
+    contributions: list[StatSourceContribution] = Field(default_factory=list)
+
+
+class CharacterStatsResponse(BaseModel):
+    """
+    Player-facing view of a character's six abilities: the ORIGINAL base
+    values alongside the COMPUTED effective totals, each with the list of
+    sources that contributed to it. Totals are freshly calculated from the
+    current bonus sources (race/subrace bonuses + feat ASI + ASI-log
+    increases + feature increases) — never the possibly-stale cache row.
+    """
+
+    strength: AbilityStatsView
+    dexterity: AbilityStatsView
+    constitution: AbilityStatsView
+    intelligence: AbilityStatsView
+    wisdom: AbilityStatsView
+    charisma: AbilityStatsView
+
+
 class SkillProficiencyResponse(BaseModel):
     """A skill proficiency row returned on the character."""
 
@@ -189,8 +260,8 @@ class CharacterResponse(CharacterBase):
     The raw base ability scores are accepted on input (and read from the
     row via ``from_attributes``) but are EXCLUDED from serialized output —
     clients consume the effective totals from ``ability_scores`` instead,
-    and the original base values are exposed to the GM through
-    ``GET /characters/{id}/gm-panel/stats``. They carry inert defaults so
+    and the original base values are exposed through
+    ``GET /characters/{id}/stats``. They carry inert defaults so
     the cached-response JSON round-trips without them.
 
     ``hit_dice`` and ``speed`` are not read from the character row (the
@@ -211,11 +282,12 @@ class CharacterResponse(CharacterBase):
     current_hp: int
     max_hp: int
     temp_hp: int
+    inspiration: bool = False
 
     # Raw base ability scores — accepted on input and read from the row,
     # but excluded from serialized output (clients use ``ability_scores``;
-    # the GM sees base values via /gm-panel/stats). Inert defaults keep
-    # cached-response JSON round-trips working.
+    # the base values are visible via /characters/{id}/stats). Inert
+    # defaults keep cached-response JSON round-trips working.
     strength: int = Field(default=10, exclude=True)
     dexterity: int = Field(default=10, exclude=True)
     constitution: int = Field(default=10, exclude=True)
@@ -243,6 +315,21 @@ class FeatBriefResponse(BaseModel):
     description: str = ""
 
 
+class FeatAbilityScoreIncreaseResponse(BaseModel):
+    """
+    The ability score a granted feat improved (the ASI option chosen for
+    the feat). Backed by the ``FeatAbilityScoreIncrease`` row pointed at by
+    ``CharacterFeat.ability_score_increase_id`` — ``None`` on the grant when
+    the feat improves no ability (or none was chosen).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ability: AbilityScore
+    amount: int = 1
+
+
 class CharacterFeatResponse(BaseModel):
     """Aggregates a character's feat grant with its chosen ASI and feat brief."""
 
@@ -254,6 +341,7 @@ class CharacterFeatResponse(BaseModel):
     ability_score_increase_id: int | None = None
     source_type: CharacterFeatSource = CharacterFeatSource.GM
     feat: FeatBriefResponse | None = None
+    ability_score_increase: FeatAbilityScoreIncreaseResponse | None = None
 
 
 class CharacterFeatureBriefResponse(BaseModel):
@@ -284,3 +372,22 @@ class CharacterFeatureResponse(BaseModel):
     feature_id: int
     notes: str = ""
     feature: CharacterFeatureBriefResponse
+
+
+class CharacterItemResponse(BaseModel):
+    """
+    Aggregates an owned item stack with its quantity/state flags and the
+    full item record (``ItemResponse``) so the sheet can render details
+    without a follow-up call.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    character_id: int
+    item_id: int
+    quantity: int
+    is_equipped: bool
+    is_attuned: bool
+    notes: str = ""
+    item: ItemResponse

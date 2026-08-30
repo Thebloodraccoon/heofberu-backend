@@ -4,36 +4,42 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import FeatureSourceType, UserRole
+from app.constants import AbilityScore, FeatureSourceType, UserRole
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
 from app.core.exceptions import GmAccessException
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.characters.ability_score.calculator import DerivedStats
+from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.cache import CHARACTER_CACHE_NAMESPACE, invalidate_character_cache
 from app.features.characters.crud.exceptions import (
     InvalidHpUpdateException,
+    ItemChoiceNotAvailableException,
+    ItemChoicesWithoutGroupsException,
     SkillNotAvailableForClassException,
+    TooFewItemChoicesException,
     TooManySkillChoicesException,
 )
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
-from app.features.characters.exceptions import (
-    BackgroundNotFoundException,
-)
-from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
-from app.features.characters.gm_panel.features.repository import CharacterFeatureRepository
-from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
+from app.features.characters.exceptions import BackgroundNotFoundException
+from app.features.characters.feats.repository import CharacterFeatRepository
+from app.features.characters.features.repository import CharacterFeatureRepository
+from app.features.characters.items.repository import CharacterItemRepository
+from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.feature_sync import sync_progression_features
+from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.schemas import (
     AbilityScoresResponse,
+    AbilityStatsView,
     CharacterCreate,
     CharacterFeatResponse,
     CharacterFeatureResponse,
+    CharacterItemResponse,
     CharacterResponse,
+    CharacterStatsResponse,
     CharacterUpdate,
     SavingThrowProficiencyResponse,
 )
@@ -47,6 +53,7 @@ from app.features.users.schemas import UserResponse
 from app.models import CharacterAbilityScore, CharacterSkillProficiency, Class
 from app.models.character_item_model import CharacterItem
 from app.models.character_model import Character
+from app.models.source_item_choice_model import SourceItemChoiceOption
 
 
 class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, CharacterResponse]):
@@ -112,7 +119,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.item_repository = ItemRepository(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.feature_grant_repository = CharacterFeatureRepository(db)
+        self.character_item_repository = CharacterItemRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
+        self.asi_repository = CharacterASIChoiceRepository(db)
         self.stats_service = CharacterStatsService(db)
 
     async def get_characters(
@@ -137,9 +146,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
 
         owner_id = None if current_user.role in (UserRole.GM, UserRole.FOUND_FATHER) else current_user.id
-        return await self._list_characters(
-            owner_id=owner_id, search=search, class_id=class_id, page=page, size=size
-        )
+        return await self._list_characters(owner_id=owner_id, search=search, class_id=class_id, page=page, size=size)
 
     async def get_my_characters(
         self,
@@ -176,9 +183,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         if current_user.role not in (UserRole.GM, UserRole.FOUND_FATHER):
             raise GmAccessException()
 
-        return await self._list_characters(
-            owner_id=None, search=search, class_id=class_id, page=page, size=size
-        )
+        return await self._list_characters(owner_id=None, search=search, class_id=class_id, page=page, size=size)
 
     async def _list_characters(
         self,
@@ -243,15 +248,39 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         List every feat granted to a character (GM/owner readable).
 
-        Grants come from every source — level-up ASI choices and GM-panel
-        grants alike; the writes live in ``gm_panel`` and the progression
-        service.
+        Grants come from every source — level-up ASI choices and GM-grant
+        writes (``gm_panel``) and the progression service.
         """
 
         await get_character_for_user(self.repository, character_id, current_user)
 
         grants = await self.feat_grant_repository.get_character_feats(character_id)
         return [CharacterFeatResponse.model_validate(grant) for grant in grants]
+
+    async def get_stats(self, character_id: int, current_user: UserResponse) -> CharacterStatsResponse:
+        """
+        Return each ability's ORIGINAL base value next to its COMPUTED
+        effective total, each with the list of ``StatSourceContribution``
+        sources that produced that total ("what is calculated from what",
+        player/GM/owner readable).
+        """
+
+        character = await get_character_for_user(self.repository, character_id, current_user)
+        breakdown_by_ability = await self.stats_service.compute_breakdown(character)
+
+        return CharacterStatsResponse(
+            **{
+                BASE_FIELD_BY_ABILITY[ability]: AbilityStatsView(
+                    base=breakdown.base,
+                    total=breakdown.total,
+                    contributions=[
+                        {"source": c.source, "label": c.label, "amount": c.amount}
+                        for c in breakdown.contributions
+                    ],
+                )
+                for ability, breakdown in breakdown_by_ability.items()
+            }
+        )
 
     async def get_features(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatureResponse]:
         """
@@ -264,8 +293,16 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         grants = await self.feature_grant_repository.get_character_features(character_id)
         return [CharacterFeatureResponse.model_validate(grant) for grant in grants]
 
+    async def get_items(self, character_id: int, current_user: UserResponse) -> list[CharacterItemResponse]:
+        """List every item stack a character owns (GM/owner readable)."""
+
+        await get_character_for_user(self.repository, character_id, current_user)
+
+        stacks = await self.character_item_repository.get_character_items(character_id)
+        return [CharacterItemResponse.model_validate(stack) for stack in stacks]
+
     @use_cache(
-        key_builder=lambda self, character_id, **_: (f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}"),
+        key_builder=lambda self, character_id, **_: f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}",
     )
     async def _get_character_response(self, character_id: int) -> CharacterResponse:
         """Cached response assembly for a single character (access check is NOT cached)."""
@@ -296,6 +333,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             the class's ``available_skills`` and ``skill_choice_count``)
             plus the background's and the race's granted skills,
             deduplicated;
+          - starting-equipment "pick N of M" choices come from
+            ``item_choice_ids`` (validated against the class's and
+            background's choice groups — exactly ``pick_count`` options per
+            group);
           - saving throws are not written at all — they are read from the
             class on every response;
           - HP: the level-1 maximum is fixed server-side as the class's
@@ -306,10 +347,11 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         applied immediately, and the class/subclass/race/subrace/background
         features the character is entitled to are granted, along with the
         starting equipment granted by the character's class and background
-        (aggregated into one stack per item). The character row, its
-        proficiency rows, initial slot rows, feature grants, and starting
-        items are written in one transaction (``_atomic()`` with
-        ``commit=False`` on all writes): either all persist or none do.
+        plus the resolved item choices (aggregated into one stack per
+        item). The character row, its proficiency rows, initial slot rows,
+        feature grants, and starting items are written in one transaction
+        (``_atomic()`` with ``commit=False`` on all writes): either all
+        persist or none do.
         """
 
         await self._validate_references(
@@ -328,6 +370,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         chosen_skill_ids = self._validate_chosen_skills(character_data.skill_ids, character_class)
 
+        chosen_item_options = await self._resolve_item_choices(
+            character_data.class_id, character_data.background_id, character_data.item_choice_ids
+        )
+
         background_skill_ids: list[int] = []
         if character_data.background_id is not None:
             background = await self.background_repository.get_by_id(character_data.background_id)
@@ -342,7 +388,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             if race is not None:
                 race_skill_ids = [skill.id for skill in race.granted_skills]
 
-        payload = character_data.model_dump(exclude={"skill_ids"})
+        payload = character_data.model_dump(exclude={"skill_ids", "item_choice_ids"})
         payload["owner_id"] = current_user.id
         payload["level"] = 1
         payload["temp_hp"] = 0
@@ -354,19 +400,25 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             # level: it cannot level up until a GM raises its maximum.
             await self.max_level_repository.create_for_character(character.id, character.level, commit=False)
 
-            max_hp = await self._compute_starting_max_hp(character, character_class)
-            character.max_hp = max_hp
-            character.current_hp = max_hp
-            await self.repository.db.flush()
-
             await self._apply_skill_proficiencies(
                 character, chosen_skill_ids, background_skill_ids, race_skill_ids, commit=False
             )
             await self._apply_spell_slot_progression(character, commit=False)
 
+            # Features are granted BEFORE the starting-HP math so their
+            # fixed ability effects (e.g. +4 CON) are included in the
+            # effective CON modifier from the very first hit point.
             await sync_progression_features(self.repository.db, character)
+            # The session runs with autoflush=False — flush the pending
+            # grant rows so the stats computation below can read them.
+            await self.repository.db.flush()
 
-            await self._apply_starting_equipment(character, commit=False)
+            max_hp = await self._compute_starting_max_hp(character, character_class)
+            character.max_hp = max_hp
+            character.current_hp = max_hp
+            await self.repository.db.flush()
+
+            await self._apply_starting_equipment(character, chosen_item_options, commit=False)
 
         character = await get_character_for_user(self.repository, character.id, current_user)
         await invalidate_character_cache(character.id)
@@ -396,6 +448,65 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
                 raise SkillNotAvailableForClassException(class_id=character_class.id, skill_id=skill_id)
 
         return skill_ids
+
+    async def _resolve_item_choices(
+        self,
+        class_id: int | None,
+        background_id: int | None,
+        item_choice_ids: list[int],
+    ) -> list[SourceItemChoiceOption]:
+        """
+        Resolve the player's starting-equipment "pick N of M" choices
+        against the choice groups defined by the character's class and
+        background.
+
+        Every submitted id must be an option of one of those groups, and
+        each group must be answered with exactly ``pick_count`` selected
+        options — a group left unanswered (or over-answered) is rejected,
+        so the player always receives exactly what they chose. A character
+        whose sources define no choice groups must send an empty list.
+        """
+
+        sources: list[tuple[FeatureSourceType, int]] = []
+        if class_id is not None:
+            sources.append((FeatureSourceType.CLASS, class_id))
+        if background_id is not None:
+            sources.append((FeatureSourceType.BACKGROUND, background_id))
+
+        if not sources:
+            if item_choice_ids:
+                raise ItemChoicesWithoutGroupsException()
+            return []
+
+        groups = await self.item_repository.get_choice_groups_for_sources(sources)
+
+        if not groups:
+            if item_choice_ids:
+                raise ItemChoicesWithoutGroupsException()
+            return []
+
+        option_by_id: dict[int, SourceItemChoiceOption] = {}
+        for group in groups:
+            for option in group.options:
+                option_by_id[option.id] = option
+
+        chosen_options: list[SourceItemChoiceOption] = []
+        for option_id in item_choice_ids:
+            option = option_by_id.get(option_id)
+            if option is None:
+                raise ItemChoiceNotAvailableException(option_id=option_id)
+            chosen_options.append(option)
+
+        choices_by_group: dict[int, int] = {}
+        for option in chosen_options:
+            choices_by_group[option.group_id] = choices_by_group.get(option.group_id, 0) + 1
+
+        for group in groups:
+            chosen = choices_by_group.get(group.id, 0)
+            if chosen != group.pick_count:
+                raise TooFewItemChoicesException(group_id=group.id, pick_count=group.pick_count, chosen=chosen)
+
+        return chosen_options
 
     async def _compute_starting_max_hp(self, character: Character, character_class: Class) -> int:
         """
@@ -616,16 +727,29 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             character.id, slots_by_level, commit=commit
         )
 
-    async def _apply_starting_equipment(self, character: Character, *, commit: bool = True) -> None:
+    async def _apply_starting_equipment(
+        self,
+        character: Character,
+        chosen_options: list[SourceItemChoiceOption],
+        *,
+        commit: bool = True,
+    ) -> None:
         """
         Grant the character the starting equipment of its class and
         background.
 
         All ``source_items`` rows owned by the character's sources are
-        collected in one query, then aggregated into one ``CharacterItem``
-        stack per item (quantities summed across sources — e.g. a class
-        and a background both granting a dagger produce a single stack of
-        two daggers, matching D&D's combined starting-equipment feel).
+        collected in one query, and the resolved ``chosen_options`` (the
+        player's "pick N of M" selections) are added to the same
+        aggregation — one ``CharacterItem`` stack per item, quantities
+        summed across sources and choices (e.g. a class and a background
+        both granting a dagger, or a guaranteed dagger plus a chosen one,
+        produce a single stack, matching D&D's combined starting-
+        equipment feel).
+
+        ``chosen_options`` comes from :meth:`_resolve_item_choices`, which
+        has already validated that every group is answered with exactly
+        ``pick_count`` options.
 
         ``commit=False`` defers the commit so the caller can wrap this in
         a transaction with other writes — see :meth:`create_character`.
@@ -645,6 +769,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         quantities: dict[int, int] = {}
         for entry in entries:
             quantities[entry.item_id] = quantities.get(entry.item_id, 0) + entry.quantity
+        for option in chosen_options:
+            quantities[option.item_id] = quantities.get(option.item_id, 0) + option.quantity
 
         for item_id, quantity in quantities.items():
             self.repository.db.add(CharacterItem(character_id=character.id, item_id=item_id, quantity=quantity))

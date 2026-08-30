@@ -8,7 +8,7 @@ sub-resources use query-style IDs (``/characters/hp?character_id=...``).
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Path, Query, status
+from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
@@ -17,7 +17,9 @@ from app.features.characters.schemas import (
     CharacterCreate,
     CharacterFeatResponse,
     CharacterFeatureResponse,
+    CharacterItemResponse,
     CharacterResponse,
+    CharacterStatsResponse,
     CharacterUpdate,
 )
 from app.features.users.security import CurrentUserDep, GmUserDep
@@ -123,9 +125,7 @@ async def get_all_characters(
     `GET /characters`.
     """
 
-    return await character_service.get_all_characters(
-        gm_user, search=search, class_id=class_id, page=page, size=size
-    )
+    return await character_service.get_all_characters(gm_user, search=search, class_id=class_id, page=page, size=size)
 
 
 @router.get(
@@ -153,7 +153,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
 
 
 @router.get(
-    "/feats",
+    "/{character_id:int}/feats",
     response_model=list[CharacterFeatResponse],
     summary="List a character's feats",
     responses={
@@ -162,7 +162,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
     },
 )
 async def get_character_feats(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
@@ -172,7 +172,32 @@ async def get_character_feats(
 
 
 @router.get(
-    "/features",
+    "/{character_id:int}/stats",
+    response_model=CharacterStatsResponse,
+    summary="Ability scores with their source breakdown",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def get_character_stats(
+    character_id: int,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+):
+    """
+    Return each of the six abilities as `{base, total, contributions}`:
+    the ORIGINAL base value (player entry at creation, never mutated)
+    next to its COMPUTED effective total and the list of sources that
+    contributed to it (race/subrace bonuses, feat ASI, ASI-log increases,
+    feature increases). Freshly calculated — never the stale cache.
+    """
+
+    return await character_service.get_stats(character_id, current_user)
+
+
+@router.get(
+    "/{character_id:int}/features",
     response_model=list[CharacterFeatureResponse],
     summary="List a character's features",
     responses={
@@ -181,13 +206,32 @@ async def get_character_feats(
     },
 )
 async def get_character_features(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
     """List every feature recorded on a character (progression auto-grants plus GM records)."""
 
     return await character_service.get_features(character_id, current_user)
+
+
+@router.get(
+    "/{character_id:int}/items",
+    response_model=list[CharacterItemResponse],
+    summary="List a character's items",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def get_character_items(
+    character_id: int,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+):
+    """List every item stack owned by a character (GM/owner readable)."""
+
+    return await character_service.get_items(character_id, current_user)
 
 
 @router.post(
@@ -224,7 +268,7 @@ async def create_character(
                     },
                 },
                 "wizard": {
-                    "summary": "A frail level-1 wizard with a backstory",
+                    "summary": "A frail level-1 wizard with a note",
                     "value": {
                         "name": "Elyse Moonbrook",
                         "class_id": 5,
@@ -235,7 +279,7 @@ async def create_character(
                         "intelligence": 16,
                         "wisdom": 12,
                         "charisma": 10,
-                        "backstory": "Expelled from the academy for asking the wrong questions.",
+                        "notes": "Expelled from the academy for asking the wrong questions.",
                         "money_gold": 10,
                     },
                 },
@@ -256,11 +300,14 @@ async def create_character(
     must reference an existing class; `race_id`/`background_id` are
     optional but, if provided, must reference existing records.
 
-    On creation: `skill_ids` are validated against the class's available
-    skills and merged with the background's and the race's granted skills;
-    the class's level-1 spell slot progression is applied immediately, so
-    a caster already has spell slot totals without any follow-up call.
-    Saving throws are not written — they come from the class on every read.
+    On creation: `feat_id` is MANDATORY — every character takes one origin
+    feat (when it offers ability-score increases, an explicit
+    `ability_score_increase_id` is required). `skill_ids` are validated
+    against the class's available skills and merged with the background's
+    and the race's granted skills; the class's level-1 spell slot
+    progression is applied immediately, so a caster already has spell slot
+    totals without any follow-up call. Saving throws are not written —
+    they come from the class on every read.
     """
 
     return await character_service.create_character(data, current_user)
@@ -281,7 +328,7 @@ async def create_character(
     },
 )
 async def update_character(
-    character_id: Annotated[int, Path()],
+    character_id: int,
     data: Annotated[
         CharacterUpdate,
         Body(
@@ -344,7 +391,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
 
 
 @router.patch(
-    "/hp",
+    "/{character_id:int}/hp",
     response_model=CharacterResponse,
     summary="Apply damage/healing or set HP directly",
     responses={
@@ -354,7 +401,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
     },
 )
 async def update_character_hp(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         HpUpdate,
         Body(
@@ -394,7 +441,7 @@ async def update_character_hp(
 
 
 @router.post(
-    "/rest",
+    "/{character_id:int}/rest",
     response_model=CharacterResponse,
     summary="Take a short or long rest",
     responses={
@@ -404,7 +451,7 @@ async def update_character_hp(
     },
 )
 async def rest_character(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         RestRequest,
         Body(

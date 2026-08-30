@@ -35,7 +35,7 @@ router = APIRouter()
     },
 )
 async def set_character_skill_expertise(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     skill_id: Annotated[int, Query(gt=0)],
     data: Annotated[
         SkillExpertiseUpdate,

@@ -18,6 +18,6 @@ from app.features.backgrounds.skills.router import router as skills_router
 router = APIRouter()
 
 router.include_router(crud_router, prefix="/backgrounds", tags=["Backgrounds"])
-router.include_router(skills_router, prefix="/backgrounds", tags=["Backgrounds"])
-router.include_router(items_router, prefix="/backgrounds", tags=["Backgrounds"])
-router.include_router(features_router, prefix="/backgrounds", tags=["Backgrounds"])
+router.include_router(skills_router, prefix="/backgrounds/{background_id}", tags=["Backgrounds"])
+router.include_router(items_router, prefix="/backgrounds/{background_id}", tags=["Backgrounds"])
+router.include_router(features_router, prefix="/backgrounds/{background_id}", tags=["Backgrounds"])

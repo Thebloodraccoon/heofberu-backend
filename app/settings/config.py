@@ -28,12 +28,12 @@ class AppSettings(BaseSettings):
     DATABASE_URL: str = Field(..., alias="DATABASE_URL")
     REDIS_URL: str = Field(..., alias="REDIS_URL")
 
-    # Test DB & Redis (только для STAGE=test)
+    # Test DB & Redis (STAGE=test only)
     TEST_DATABASE_URL: str = Field(default="", alias="TEST_DATABASE_URL")
     TEST_REDIS_URL: str = Field(default="", alias="TEST_REDIS_URL")
 
-    # Cache (catalogs: spells/classes/races/feats/features/backgrounds/skills/items)
-    # TTL - insurance in case of missed disability, freshness is provided by namespace reset.
+    # Cache (catalogs: spells/classes/races/feats/features/backgrounds/skills/items).
+    # TTL is a safety net for missed invalidations; freshness comes from namespace purges.
     CACHE_ENABLED: bool = Field(default=True, alias="CACHE_ENABLED")
     CACHE_TTL_DEFAULT: int = Field(default=86400, alias="CACHE_TTL_DEFAULT")
     CACHE_PREFIX: str = Field(default="cache", alias="CACHE_PREFIX")

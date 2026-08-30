@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.features.races.subraces.crud.repository import SubraceRepository
+from app.features.subraces.crud.repository import SubraceRepository
 from app.models import Character
+from app.models.feature_model import Feature
 from app.models.race_association_models import RaceAbilityBonus
 from app.models.race_model import Race
 from app.models.subrace_model import Subrace
@@ -15,8 +16,8 @@ class RaceRepository(BaseRepository[Race]):
     """
     Race-specific repository built on :class:`BaseRepository`.
 
-    ``ability_bonuses`` and ``granted_skills`` are always part of
-    ``RaceResponse``, so they're wired up as ``default_load_options``
+    ``ability_bonuses``, ``granted_skills``, and ``features`` are always
+    part of ``RaceResponse``, so they're wired up as ``default_load_options``
     rather than re-implemented here via a hand-rolled ``get_all`` override.
     ``subraces`` (with their own ability bonuses) are loaded the same way so
     ``RaceResponse`` can embed them without extra queries; subrace CRUD
@@ -45,6 +46,7 @@ class RaceRepository(BaseRepository[Race]):
             default_load_options=[
                 selectinload(Race.ability_bonuses),
                 selectinload(Race.granted_skills),
+                selectinload(Race.features).selectinload(Feature.ability_increases),
                 selectinload(Race.subraces).selectinload(Subrace.ability_bonuses),
             ],
             search_fields=["name"],

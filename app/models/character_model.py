@@ -1,6 +1,7 @@
 """ORM model for the D&D 5e character sheet."""
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -51,8 +52,10 @@ class Character(settings.Base):  # type: ignore
     charisma = Column(Integer, nullable=False, default=10)
 
     # Free text sections
-    backstory = Column(Text, nullable=False, default="")
     notes = Column(Text, nullable=False, default="")
+
+    # 5e inspiration: a per-session boolean the GM grants (advantage on a roll).
+    inspiration = Column(Boolean, nullable=False, default=False)
 
     # Personality card free-text fields (5e "Personality" section).
     personality_traits = Column(Text, nullable=False, default="")
@@ -138,6 +141,14 @@ class Character(settings.Base):  # type: ignore
 
     ability_score_cache = relationship(
         "CharacterAbilityScore",
+        back_populates="character",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    backstory = relationship(
+        "CharacterBackstory",
         back_populates="character",
         uselist=False,
         cascade="all, delete-orphan",

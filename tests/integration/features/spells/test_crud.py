@@ -59,8 +59,7 @@ class TestSpellCrud:
         race = await create_race(name="High Elf")
 
         classes_response = await client.put(
-            "/spells/classes",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/classes",
             json={"class_ids": [character_class.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -68,8 +67,7 @@ class TestSpellCrud:
         assert [item["id"] for item in classes_response.json()["available_classes"]] == [character_class.id]
 
         races_response = await client.put(
-            "/spells/races",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/races",
             json={"race_ids": [race.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -86,8 +84,7 @@ class TestSpellCrud:
         subrace = await create_subrace(race_id=race.id, name="High Elf")
 
         subclasses_response = await client.put(
-            "/spells/subclasses",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subclasses",
             json={"subclass_ids": [subclass.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -99,8 +96,7 @@ class TestSpellCrud:
         assert body["available_races"] == []
 
         subraces_response = await client.put(
-            "/spells/subraces",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subraces",
             json={"subrace_ids": [subrace.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -116,22 +112,19 @@ class TestSpellCrud:
         second_race = await create_race(name="Dwarf")
 
         await client.put(
-            "/spells/races",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/races",
             json={"race_ids": [first_race.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         response = await client.put(
-            "/spells/subraces",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subraces",
             json={"subrace_ids": []},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert response.status_code == 200
 
         replace_response = await client.put(
-            "/spells/races",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/races",
             json={"race_ids": [second_race.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -142,16 +135,14 @@ class TestSpellCrud:
         spell = await create_spell(name="Picky Spell")
 
         subclasses_response = await client.put(
-            "/spells/subclasses",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subclasses",
             json={"subclass_ids": [999999]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert subclasses_response.status_code == 400
 
         subraces_response = await client.put(
-            "/spells/subraces",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subraces",
             json={"subrace_ids": [999999]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -161,16 +152,14 @@ class TestSpellCrud:
         spell = await create_spell(name="Locked Spell")
 
         subclasses_response = await client.put(
-            "/spells/subclasses",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subclasses",
             json={"subclass_ids": []},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert subclasses_response.status_code == 403
 
         subraces_response = await client.put(
-            "/spells/subraces",
-            params={"spell_id": spell.id},
+            f"/spells/{spell.id}/subraces",
             json={"subrace_ids": []},
             headers={"Authorization": f"Bearer {player_token}"},
         )

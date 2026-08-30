@@ -14,6 +14,8 @@ import pytest
 
 from app.constants import AbilityScore, FeatureSourceType, RaceSize
 from app.core.exceptions import RecordNotFoundError
+from app.features.features.crud.schemas import NestedFeatureCreate
+from app.features.races.ability_bonuses import service as race_ability_bonus_service
 from app.features.races.ability_bonuses.schemas import AbilityBonusItem
 from app.features.races.ability_bonuses.service import RaceAbilityBonusService
 from app.features.races.crud.repository import RaceRepository
@@ -21,7 +23,6 @@ from app.features.races.crud.service import RaceCrudService
 from app.features.races.schemas import AbilityBonusesUpdate, RaceCreate, SkillsUpdate
 from app.features.races.skills.repository import RaceSkillsRepository
 from app.features.races.skills.service import RaceSkillService
-from app.features.shared.features.schemas import NestedFeatureCreate
 from app.models.race_association_models import RaceAbilityBonus
 from app.models.race_model import Race
 from app.models.skill_model import Skill
@@ -148,8 +149,8 @@ class FakeRaceAbilityBonusService:
         ]
 
 
-class FakeNestedFeatureService:
-    """Stands in for NestedFeatureService inside RaceCrudService."""
+class FakeFeatures:
+    """Stands in for FeatureCrudService inside RaceCrudService."""
 
     def __init__(self, db):
         self.db = db
@@ -171,13 +172,18 @@ def no_race_invalidate(monkeypatch):
     monkeypatch.setattr("app.features.races.ability_bonuses.service.invalidate_race_cache", AsyncMock())
 
 
+@pytest.fixture(autouse=True)
+def no_reconcile(monkeypatch):
+    monkeypatch.setattr("app.features.races.ability_bonuses.service.reconcile_characters_for_source", AsyncMock())
+
+
 def make_crud_service(existing_by_id=None, resolved_skills=None):
     db = FakeAsyncSession()
     service = RaceCrudService(db)
     service.repository = FakeRaceRepository(db, existing_by_id=existing_by_id)
     service._skills = FakeRaceSkillsService(db, resolved=resolved_skills)
     service._ability_bonuses = FakeRaceAbilityBonusService(db)
-    service._nested_features = FakeNestedFeatureService(db)
+    service._features = FakeFeatures(db)
     return service, db
 
 
@@ -207,7 +213,7 @@ class TestRaceCrudService:
         assert result.name == "Elf"
         assert result.speed == 35
         assert db.commits == 1
-        assert service._nested_features.created == [(FeatureSourceType.RACE, 1, None, False)]
+        assert service._features.created == [(FeatureSourceType.RACE, 1, None, False)]
         assert service._ability_bonuses.calls == []
         assert service._skills.set_calls == []
 
@@ -232,7 +238,7 @@ class TestRaceCrudService:
         assert service._ability_bonuses.calls[0][1] == [{"ability": AbilityScore.DEX, "bonus": 2}]
         assert service._ability_bonuses.calls[0][2] is False
         assert service._skills.set_calls == [(service.repository._rows[1], [skill], False)]
-        assert service._nested_features.created == [(FeatureSourceType.RACE, 1, data.features, False)]
+        assert service._features.created == [(FeatureSourceType.RACE, 1, data.features, False)]
 
     async def test_create_race_rolls_back_when_persist_fails(self):
         service, db = make_crud_service(resolved_skills=None)
@@ -254,7 +260,7 @@ class TestRaceCrudService:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestRaceAbilityBonusService:
-    async def test_set_ability_bonuses_replaces_and_returns_race(self):
+    async def test_set_ability_bonuses_replaces_refreshes_characters_and_returns_race(self):
         service, db = make_ability_bonus_service(existing_by_id={1: make_race()})
         data = AbilityBonusesUpdate(ability_bonuses=[AbilityBonusItem(ability=AbilityScore.INT, bonus=1)])
 
@@ -264,8 +270,11 @@ class TestRaceAbilityBonusService:
         assert result.ability_bonuses[0].bonus == 1
         assert service.repository.set_ability_bonuses_calls[0][0].id == 1
         assert service.repository.set_ability_bonuses_calls[0][1] == [{"ability": AbilityScore.INT, "bonus": 1}]
-        assert service.repository.set_ability_bonuses_calls[0][2] is True
+        assert service.repository.set_ability_bonuses_calls[0][2] is False
         assert db.commits == 1
+        race_ability_bonus_service.reconcile_characters_for_source.assert_awaited_once_with(
+            db, FeatureSourceType.RACE, 1
+        )
 
     async def test_set_ability_bonuses_raises_when_race_missing(self):
         service, _ = make_ability_bonus_service(existing_by_id={})

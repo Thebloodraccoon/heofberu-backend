@@ -1,9 +1,14 @@
 """Unit tests for the pure CharacterAbilityScoreCalculator."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.constants import AbilityScore
-from app.features.characters.ability_score.calculator import CharacterAbilityScoreCalculator
+from app.features.characters.ability_score.calculator import (
+    CharacterAbilityScoreCalculator,
+    resolve_ability_caps,
+)
 from app.models.character_model import Character
 from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
@@ -150,3 +155,102 @@ class TestCharacterAbilityScoreCalculator:
         totals = CharacterAbilityScoreCalculator().compute(character, [], [], feat_increases)
 
         assert totals["strength_total"] == 12
+
+
+def make_feature_increase(ability: AbilityScore, amount: int, new_cap: int | None = None):
+    return SimpleNamespace(ability=ability, amount=amount, new_cap=new_cap)
+
+
+def make_asi_log_increase(ability: AbilityScore, amount: int):
+    return SimpleNamespace(ability=ability, amount=amount)
+
+
+@pytest.mark.unit
+class TestFeatureEffectAndAsiLogCounting:
+    def test_all_five_sources_stack_into_one_total(self):
+        """Race + subrace + feat ASI + counted log + feature effect all apply to one total."""
+        character = make_character(strength=10)
+        race_bonuses = [make_race_bonus(AbilityScore.STR, 1)]
+        subrace_bonuses = [make_subrace_bonus(AbilityScore.STR, 1)]
+        feat_increases = [make_feat_increase(AbilityScore.STR, amount=1)]
+        asi_log = [make_asi_log_increase(AbilityScore.STR, 2)]
+        feature_effects = [make_feature_increase(AbilityScore.STR, amount=4)]
+
+        totals = CharacterAbilityScoreCalculator().compute(
+            character, race_bonuses, subrace_bonuses, feat_increases, asi_log, feature_effects
+        )
+
+        assert totals["strength_total"] == 19
+
+    def test_negative_feature_effect_lowers_total_but_floors_at_one(self):
+        character = make_character(charisma=3)
+        feature_effects = [
+            make_feature_increase(AbilityScore.CHA, amount=-2),
+            make_feature_increase(AbilityScore.INT, amount=-20),
+        ]
+
+        totals = CharacterAbilityScoreCalculator().compute(character, [], [], [], [], feature_effects)
+
+        assert totals["charisma_total"] == 1
+        assert totals["intelligence_total"] == 1
+
+    def test_normal_totals_are_not_affected_by_the_floor(self):
+        totals = CharacterAbilityScoreCalculator().compute(make_character(), [], [], [])
+
+        assert totals == {
+            "strength_total": 14,
+            "dexterity_total": 10,
+            "constitution_total": 12,
+            "intelligence_total": 8,
+            "wisdom_total": 9,
+            "charisma_total": 11,
+        }
+
+
+@pytest.mark.unit
+class TestResolveAbilityCaps:
+    def test_without_effects_every_cap_is_twenty(self):
+        caps = resolve_ability_caps([])
+
+        assert caps == dict.fromkeys(AbilityScore, 20)
+
+    def test_new_cap_raises_the_standard_cap(self):
+        effects = [
+            make_feature_increase(AbilityScore.STR, amount=4, new_cap=24),
+            make_feature_increase(AbilityScore.CON, amount=4, new_cap=24),
+        ]
+
+        caps = resolve_ability_caps(effects)
+
+        assert caps[AbilityScore.STR] == 24
+        assert caps[AbilityScore.CON] == 24
+        assert caps[AbilityScore.DEX] == 20
+
+    def test_lower_new_cap_is_ignored(self):
+        caps = resolve_ability_caps([make_feature_increase(AbilityScore.WIS, amount=1, new_cap=18)])
+
+        assert caps[AbilityScore.WIS] == 20
+
+    def test_multiple_caps_take_the_maximum(self):
+        effects = [
+            make_feature_increase(AbilityScore.STR, amount=2, new_cap=22),
+            make_feature_increase(AbilityScore.STR, amount=2, new_cap=24),
+        ]
+
+        assert resolve_ability_caps(effects)[AbilityScore.STR] == 24
+
+    def test_effect_without_new_cap_keeps_default(self):
+        caps = resolve_ability_caps([make_feature_increase(AbilityScore.CHA, amount=2, new_cap=None)])
+
+        assert caps[AbilityScore.CHA] == 20
+
+    def test_new_cap_can_raise_to_thirty(self):
+        effects = [make_feature_increase(AbilityScore.STR, amount=4, new_cap=30)]
+
+        assert resolve_ability_caps(effects)[AbilityScore.STR] == 30
+
+    def test_new_cap_is_clamped_to_thirty(self):
+        """A new_cap above 30 is hard-clamped, never beyond the system ceiling."""
+        effects = [make_feature_increase(AbilityScore.STR, amount=4, new_cap=31)]
+
+        assert resolve_ability_caps(effects)[AbilityScore.STR] == 30

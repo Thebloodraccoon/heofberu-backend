@@ -12,8 +12,7 @@ class TestCharacterFeatures:
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
 
         add_response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id, "notes": "Two attacks"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -23,8 +22,7 @@ class TestCharacterFeatures:
         assert add_response.json()["notes"] == "Two attacks"
 
         list_response = await client.get(
-            "/characters/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/features",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert list_response.status_code == 200
@@ -38,8 +36,7 @@ class TestCharacterFeatures:
         feature = await create_feature(name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1)
 
         add_response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id, "notes": "Once per short rest"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -56,8 +53,7 @@ class TestCharacterFeatures:
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": 999999},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -72,15 +68,13 @@ class TestCharacterFeatures:
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
 
         await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -92,16 +86,15 @@ class TestCharacterFeatures:
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Fighting Style", source_type="OTHER")
         add_response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id, "notes": "Defense"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_feature_id = add_response.json()["id"]
 
         response = await client.patch(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id, "feature_id": character_feature_id},
+            f"/characters/{character.id}/gm-panel/features",
+            params={"feature_id": character_feature_id},
             json={"notes": "Dueling"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -114,24 +107,22 @@ class TestCharacterFeatures:
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
         add_response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         character_feature_id = add_response.json()["id"]
 
         response = await client.delete(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id, "feature_id": character_feature_id},
+            f"/characters/{character.id}/gm-panel/features",
+            params={"feature_id": character_feature_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 204
         assert (
             await client.get(
-                "/characters/features",
-                params={"character_id": character.id},
+                f"/characters/{character.id}/features",
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json() == []
@@ -144,8 +135,7 @@ class TestCharacterFeatures:
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
 
         response = await client.post(
-            "/characters/gm-panel/features",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )

@@ -1,14 +1,14 @@
-"""Shared settings logic: variables, session factory, and DB/Redis accessors.
+"""
+Shared settings logic: variables, session factory, and DB/Redis accessors.
 
 Async stack: the engine/session layer is built on ``asyncpg`` +
 ``sqlalchemy.ext.asyncio``, and Redis access goes through ``redis.asyncio``.
 """
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-
-import asyncio
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -45,7 +45,8 @@ def utcnow() -> datetime:
 
 
 def as_async_database_url(url: str) -> str:
-    """Convert a sync ``postgresql://`` URL to the asyncpg driver form.
+    """
+    Convert a sync ``postgresql://`` URL to the asyncpg driver form.
 
     Query params that asyncpg does not accept (``sslmode``, ``channel_binding``)
     are stripped from the URL; ``sslmode`` is translated to asyncpg's ``ssl``.
@@ -116,10 +117,9 @@ def make_get_redis(redis_url: str):
             current_loop = asyncio.get_running_loop()
             if state["client"] is None or state["loop"] is not current_loop:
                 if state["client"] is not None:
-                    try:
+                    # Best-effort close of a client bound to a dead event loop.
+                    with suppress(Exception):
                         await state["client"].aclose()
-                    except Exception:
-                        pass  # nosec B110 -- best-effort close of a client bound to a dead event loop
                 state["client"] = Redis.from_url(redis_url, decode_responses=True)
                 state["loop"] = current_loop
 

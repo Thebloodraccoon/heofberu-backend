@@ -24,8 +24,7 @@ class TestGmPanelMaxLevel:
         character, _ = await create_capped_character(character_class.id, owner=gm)
 
         response = await client.patch(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/max-level",
             json={"max_level": 3},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -44,8 +43,7 @@ class TestGmPanelMaxLevel:
         character, _ = await create_capped_character(character_class.id, owner=player)
 
         response = await client.get(
-            "/characters/progression/can-level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/can-level-up",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -56,17 +54,16 @@ class TestGmPanelMaxLevel:
         character_class = await create_class(name="Fighter")
         character, _ = await create_capped_character(character_class.id, owner=gm)
         headers = {"Authorization": f"Bearer {gm_token}"}
-        url = "/characters/gm-panel/max-level"
-        params = {"character_id": character["id"]}
+        url = f"/characters/{character['id']}/gm-panel/max-level"
 
-        raise_response = await client.patch(url, params=params, json={"max_level": 5}, headers=headers)
+        raise_response = await client.patch(url, json={"max_level": 5}, headers=headers)
         assert raise_response.status_code == 200
 
-        lower_response = await client.patch(url, params=params, json={"max_level": 3}, headers=headers)
+        lower_response = await client.patch(url, json={"max_level": 3}, headers=headers)
         assert lower_response.status_code == 400
         assert "only be raised" in lower_response.json()["error"]["message"]
 
-        same_response = await client.patch(url, params=params, json={"max_level": 5}, headers=headers)
+        same_response = await client.patch(url, json={"max_level": 5}, headers=headers)
         assert same_response.status_code == 400
 
     async def test_max_level_below_current_level_returns_400(
@@ -81,8 +78,7 @@ class TestGmPanelMaxLevel:
         await db_session.commit()
 
         response = await client.patch(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/max-level",
             json={"max_level": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -97,8 +93,7 @@ class TestGmPanelMaxLevel:
         character, _ = await create_capped_character(character_class.id, owner=player)
 
         response = await client.patch(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/max-level",
             json={"max_level": 5},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -112,16 +107,14 @@ class TestGmPanelMaxLevel:
         character, _ = await create_capped_character(character_class.id, owner=player)
 
         read_response = await client.get(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/max-level",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert read_response.status_code == 200
         assert read_response.json()["max_level"] == 1
 
         write_response = await client.patch(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/max-level",
             json={"max_level": 5},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -136,8 +129,7 @@ class TestLevelUpCap:
         character, _ = await create_capped_character(character_class.id, owner=player)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -154,25 +146,24 @@ class TestLevelUpCap:
         gm_headers = {"Authorization": f"Bearer {gm_token}"}
 
         raise_response = await client.patch(
-            "/characters/gm-panel/max-level",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/max-level",
             json={"max_level": 2},
             headers=gm_headers,
         )
         assert raise_response.status_code == 200
 
         can_response = await client.get(
-            "/characters/progression/can-level-up", params={"character_id": character["id"]}, headers=headers
+            f"/characters/{character['id']}/progression/can-level-up", headers=headers
         )
         assert can_response.json() == {"can_level_up": True, "current_level": 1, "max_level": 2}
 
         level_up_response = await client.post(
-            "/characters/progression/level-up", params={"character_id": character["id"]}, json={}, headers=headers
+            f"/characters/{character['id']}/progression/level-up", json={}, headers=headers
         )
         assert level_up_response.status_code == 200
         assert level_up_response.json()["level"] == 2
 
         exhausted_response = await client.get(
-            "/characters/progression/can-level-up", params={"character_id": character["id"]}, headers=headers
+            f"/characters/{character['id']}/progression/can-level-up", headers=headers
         )
         assert exhausted_response.json() == {"can_level_up": False, "current_level": 2, "max_level": 2}

@@ -15,6 +15,7 @@ live in ``tests/integration/conftest.py`` — they need the ``heof-test-db`` /
 """
 
 import os
+import uuid
 
 os.environ["STAGE"] = "test"
 os.environ.setdefault("TEST_DATABASE_URL", "postgresql://heof_user:test_secret@localhost:5433/heof_test_db")
@@ -59,22 +60,30 @@ async def client(db_session):
         async with httpx.AsyncClient(transport=transport, base_url="https://testserver/api") as test_client:
             yield test_client
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(settings.get_db, None)
 
 
 @pytest_asyncio.fixture
 async def create_user(db_session):
-    """Factory fixture for creating users directly in the database."""
+    """
+    Factory fixture for creating users directly in the database.
+
+    Defaults are unique per call (random suffix) so a stale row leaked from
+    another test or another process can never trip the username/email
+    unique constraints — failures surface at the assertion under test
+    instead of as unrelated IntegrityErrors.
+    """
 
     async def _create_user(
-        username="player1",
-        email="player1@example.com",
+        username=None,
+        email=None,
         password="password123",
         role=UserRole.PLAYER,
     ):
+        suffix = uuid.uuid4().hex[:8]
         user = User(
-            username=username,
-            email=email,
+            username=username if username is not None else f"player-{suffix}",
+            email=email if email is not None else f"player-{suffix}@example.com",
             hashed_password=get_password_hash(password),
             role=role,
         )
@@ -95,13 +104,13 @@ async def player(create_user):
 @pytest_asyncio.fixture
 async def gm(create_user):
     """A default GM user."""
-    return await create_user(username="gm1", email="gm1@example.com", role=UserRole.GM)
+    return await create_user(role=UserRole.GM)
 
 
 @pytest_asyncio.fixture
 async def founder(create_user):
     """A default found-father (founder) user."""
-    return await create_user(username="founder1", email="founder1@example.com", role=UserRole.FOUND_FATHER)
+    return await create_user(role=UserRole.FOUND_FATHER)
 
 
 @pytest_asyncio.fixture
@@ -174,13 +183,11 @@ async def create_subclass(db_session):
     async def _create_subclass(
         class_id,
         name="Champion",
-        archetype_group_name=None,
         description="",
     ):
         subclass = Subclass(
             class_id=class_id,
             name=name,
-            archetype_group_name=archetype_group_name,
             description=description,
         )
         db_session.add(subclass)

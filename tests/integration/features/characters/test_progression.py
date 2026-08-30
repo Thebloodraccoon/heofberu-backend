@@ -6,8 +6,8 @@ import pytest
 async def set_class_spell_slots(client, gm_token, character_class, class_level, slots):
     """Set a class's spell slot progression for a level via the API (GM only)."""
     response = await client.put(
-        "/classes/spell-slots",
-        params={"class_id": character_class.id, "class_level": class_level},
+        f"/classes/{character_class.id}/spell-slots",
+        params={"class_level": class_level},
         json={"slots": slots},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
@@ -24,8 +24,7 @@ async def level_up_to(client, token, character_id, target_level):
     """
     for _ in range(target_level - 1):
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character_id},
+            f"/characters/{character_id}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -45,8 +44,7 @@ class TestBackgroundSetup:
         background = await create_background(name="Sage")
 
         response = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/background",
             json={"background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -62,8 +60,7 @@ class TestBackgroundSetup:
         other_background = await create_background(name="Sage")
 
         response = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/background",
             json={"background_id": other_background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -77,8 +74,7 @@ class TestBackgroundSetup:
         character, _ = await create_api_character(class_id=character_class.id, owner=player, background_id=False)
 
         response = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/background",
             json={"background_id": 999999},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -94,8 +90,7 @@ class TestBackgroundSetup:
         background = await create_background(name="Sage")
 
         response = await client.patch(
-            "/characters/progression/background",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/progression/background",
             json={"background_id": background.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -113,8 +108,7 @@ class TestRebuildStub:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
-            "/characters/rebuild",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/rebuild",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -128,8 +122,7 @@ class TestRebuildStub:
         character = await create_character(owner_id=other.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/rebuild",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/rebuild",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -147,8 +140,7 @@ class TestSubclassChange:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/subclass",
             json={"subclass_id": subclass.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -164,8 +156,7 @@ class TestSubclassChange:
         character, _ = await create_api_character(class_id=character_class.id, owner=player, subclass_id=subclass.id)
 
         response = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/subclass",
             json={"subclass_id": None},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -182,8 +173,7 @@ class TestSubclassChange:
         character, _ = await create_api_character(class_id=fighter.id, owner=player)
 
         response = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/subclass",
             json={"subclass_id": wizard_subclass.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -195,8 +185,7 @@ class TestSubclassChange:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/subclass",
             json={"subclass_id": 999999},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -212,8 +201,7 @@ class TestSubclassChange:
         character = await create_character(owner_id=other.id, class_id=character_class.id)
 
         response = await client.patch(
-            "/characters/progression/subclass",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/progression/subclass",
             json={"subclass_id": subclass.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -231,8 +219,7 @@ class TestLevelUp:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -252,8 +239,7 @@ class TestLevelUp:
         assert character["max_hp"] == 2  # starting: die faces 6 + (-4), clamped to >= 1
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -268,8 +254,7 @@ class TestLevelUp:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={"hit_points_gained": 8},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -284,8 +269,7 @@ class TestLevelUp:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={"hit_points_gained": 11},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -299,8 +283,7 @@ class TestLevelUp:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 1}]}},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -313,8 +296,7 @@ class TestLevelUp:
         await level_up_to(client, player_token, character["id"], target_level=3)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -329,8 +311,7 @@ class TestLevelUp:
         await level_up_to(client, player_token, character["id"], target_level=3)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -341,24 +322,65 @@ class TestLevelUp:
         assert body["ability_scores"]["strength_total"] == 16
 
         choices_response = await client.get(
-            "/characters/progression/asi-choices",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/asi-choices",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert choices_response.status_code == 200
         choices = choices_response.json()
+        # Only the level-4 ASI choice is recorded.
         assert len(choices) == 1
-        assert choices[0]["class_level"] == 4
-        assert choices[0]["choice_type"] == "ASI"
-        assert choices[0]["increases"] == [{"ability": "STR", "amount": 2}]
+        level_choice = choices[0]
+        assert level_choice["class_level"] == 4
+        assert level_choice["choice_type"] == "ASI"
+        assert level_choice["increases"] == [{"ability": "STR", "amount": 2}]
+
+        # The base columns stay at their originally entered values; the
+        # counted points live in the ASI-choice log and lift only the total.
+        stats_response = await client.get(
+            f"/characters/{character['id']}/stats",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert stats_response.status_code == 200
+        assert stats_response.json()["strength"] == {
+            "base": 14,
+            "total": 16,
+            "contributions": [{"source": "asi", "label": "Level 4 (ASI)", "amount": 2}],
+        }
+
+    async def test_feat_choice_with_asi_options_without_choice_returns_422(
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        create_class,
+        create_api_character,
+        create_feat,
+    ):
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        await level_up_to(client, player_token, character["id"], target_level=3)
+        feat = await create_feat(name="Resilient")
+        await client.put(
+            f"/feats/{feat.id}/ability-score-increases",
+            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        response = await client.post(
+            f"/characters/{character['id']}/progression/level-up",
+            json={"choice": {"type": "FEAT", "feat_id": feat.id}},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
 
     async def test_asi_above_score_cap_returns_400(self, client, player, player_token, create_class, create_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         character = await create_character(owner_id=player.id, class_id=character_class.id, level=3, strength=19)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/progression/level-up",
             json={"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -374,8 +396,7 @@ class TestLevelUp:
         feat = await create_feat(name="Alert")
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={"choice": {"type": "FEAT", "feat_id": feat.id}},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -384,20 +405,24 @@ class TestLevelUp:
         assert response.json()["level"] == 4
 
         feats_response = await client.get(
-            "/characters/feats",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/feats",
             headers={"Authorization": f"Bearer {player_token}"},
         )
-        assert [item["feat_id"] for item in feats_response.json()] == [feat.id]
+        feats = feats_response.json()
+        # Only the level-up feat is granted.
+        assert len(feats) == 1
+        assert feat.id in [item["feat_id"] for item in feats]
 
         choices_response = await client.get(
-            "/characters/progression/asi-choices",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/asi-choices",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         choices = choices_response.json()
-        assert choices[0]["choice_type"] == "FEAT"
-        assert choices[0]["feat_id"] == feat.id
+        assert len(choices) == 1
+        level_choice = choices[0]
+        assert level_choice["class_level"] == 4
+        assert level_choice["choice_type"] == "FEAT"
+        assert level_choice["feat_id"] == feat.id
 
     async def test_feat_choice_with_unknown_feat_returns_404(
         self, client, player, player_token, create_class, create_api_character
@@ -407,8 +432,7 @@ class TestLevelUp:
         await level_up_to(client, player_token, character["id"], target_level=3)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={"choice": {"type": "FEAT", "feat_id": 999999}},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -424,16 +448,14 @@ class TestLevelUp:
         feat = await create_feat(name="Alert")
 
         grant_response = await client.post(
-            "/characters/gm-panel/feats",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/feats",
             json={"feat_id": feat.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert grant_response.status_code == 201
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={"choice": {"type": "FEAT", "feat_id": feat.id}},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -455,8 +477,7 @@ class TestLevelUp:
         await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
-            "/feats/ability-score-increases",
-            params={"feat_id": feat.id},
+            f"/feats/{feat.id}/ability-score-increases",
             json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -464,8 +485,7 @@ class TestLevelUp:
         asi_id = asi_response.json()["ability_score_increases"][0]["id"]
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={
                 "choice": {
                     "type": "FEAT",
@@ -493,16 +513,14 @@ class TestLevelUp:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 200
         slots_response = await client.get(
-            "/characters/spells",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/spells",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         slots = {item["spell_level"]: item for item in slots_response.json()["spell_slots"]}
@@ -516,8 +534,7 @@ class TestLevelUp:
         character = await create_character(owner_id=player.id, class_id=character_class.id, level=20)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -532,8 +549,7 @@ class TestLevelUp:
         character = await create_character(owner_id=other.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/progression/level-up",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/progression/level-up",
             json={},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -544,15 +560,12 @@ class TestLevelUp:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestASIChoices:
-    async def test_list_asi_choices_is_empty_for_new_character(
-        self, client, player, player_token, create_class, create_api_character
-    ):
+    async def test_new_character_has_no_choices(self, client, player, player_token, create_class, create_api_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
 
         response = await client.get(
-            "/characters/progression/asi-choices",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/asi-choices",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -574,21 +587,20 @@ class TestASIChoices:
             else:
                 payload = {}
             response = await client.post(
-                "/characters/progression/level-up",
-                params={"character_id": character["id"]},
+                f"/characters/{character['id']}/progression/level-up",
                 json=payload,
                 headers={"Authorization": f"Bearer {player_token}"},
             )
             assert response.status_code == 200, response.text
 
         response = await client.get(
-            "/characters/progression/asi-choices",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/progression/asi-choices",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 200
         choices = response.json()
+        # The level-4 ASI + the level-8 FEAT, ordered by class level.
         assert [choice["class_level"] for choice in choices] == [4, 8]
         assert [choice["choice_type"] for choice in choices] == ["ASI", "FEAT"]
 
@@ -600,8 +612,7 @@ class TestASIChoices:
         character = await create_character(owner_id=other.id, class_id=character_class.id)
 
         response = await client.get(
-            "/characters/progression/asi-choices",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/progression/asi-choices",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 

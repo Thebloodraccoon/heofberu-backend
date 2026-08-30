@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/armor-proficiencies",
+    "/{class_id:int}/armor-proficiencies",
     response_model=ClassResponse,
     summary="Replace a class's armor proficiencies",
     responses={
@@ -23,7 +23,7 @@ router = APIRouter()
     },
 )
 async def set_class_armor_proficiencies(
-    class_id: Annotated[int, Query(gt=0)],
+    class_id: int,
     data: Annotated[
         ArmorProficienciesUpdate,
         Body(

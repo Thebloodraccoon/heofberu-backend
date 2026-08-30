@@ -11,11 +11,13 @@ endpoint; per-grant operations additionally take their grant ID as a
 query parameter (``feat_id``, ``item_id``, ...).
 
 Every route is a GM-only write via ``GmUserDep``, except the read-only
-``/stats``, ``GET /max-level``, ``/asi`` listing and ``/items`` listing
-(GM/owner).
+``GET /max-level`` listing (GM/owner).
 The matching player-facing reads live in the plain character CRUD
-(``GET /characters/feats?character_id=...``,
-``GET /characters/features?character_id=...``).
+(``GET /characters/{character_id}/feats``,
+``GET /characters/{character_id}/features``,
+``GET /characters/{character_id}/items`` and
+``GET /characters/{character_id}/stats`` — the latter surfaces recorded
+ASI adjustments/choices as ``asi`` contributions).
 """
 
 from fastapi import APIRouter
@@ -27,15 +29,13 @@ from app.features.characters.gm_panel.hp.router import router as hp_router
 from app.features.characters.gm_panel.items.router import router as items_router
 from app.features.characters.gm_panel.level.router import router as level_router
 from app.features.characters.gm_panel.skills.router import router as skills_router
-from app.features.characters.gm_panel.stats.router import router as stats_router
 
 router = APIRouter()
 
-router.include_router(feats_router, prefix="/gm-panel")
-router.include_router(features_router, prefix="/gm-panel")
-router.include_router(items_router, prefix="/gm-panel")
-router.include_router(asi_router, prefix="/gm-panel")
-router.include_router(hp_router, prefix="/gm-panel")
-router.include_router(level_router, prefix="/gm-panel")
-router.include_router(skills_router, prefix="/gm-panel")
-router.include_router(stats_router, prefix="/gm-panel")
+router.include_router(feats_router, prefix="/{character_id:int}/gm-panel")
+router.include_router(features_router, prefix="/{character_id:int}/gm-panel")
+router.include_router(items_router, prefix="/{character_id:int}/gm-panel")
+router.include_router(asi_router, prefix="/{character_id:int}/gm-panel")
+router.include_router(hp_router, prefix="/{character_id:int}/gm-panel")
+router.include_router(level_router, prefix="/{character_id:int}/gm-panel")
+router.include_router(skills_router, prefix="/{character_id:int}/gm-panel")

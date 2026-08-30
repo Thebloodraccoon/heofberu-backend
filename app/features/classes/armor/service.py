@@ -16,8 +16,7 @@ class ClassArmorService(BaseService[Class, ClassCreate, ClassUpdate, ClassRespon
     ``set_armor_proficiencies`` is the public full-replace write; the
     ``commit=False`` variant is shared with ``create_class``/``update_class``
     so armor proficiencies seed in the same transaction as the class row.
-    Any write purges the ``classes``, ``nested_features`` and
-    ``nested_items`` namespaces.
+    Any write purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES`.
     """
 
     repository: ClassRepository

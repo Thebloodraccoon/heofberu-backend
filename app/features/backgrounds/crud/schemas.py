@@ -3,8 +3,8 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.features.backgrounds.skills.schemas import SkillResponse, _validate_unique_skill_ids
-from app.features.shared.features.schemas import NestedFeatureResponse
-from app.features.shared.items.schemas import SourceItemResponse
+from app.features.features.crud.schemas import NestedFeatureResponse
+from app.features.shared.items.schemas import ChoiceGroupResponse, SourceItemResponse
 
 
 class BackgroundBase(BaseModel):
@@ -60,6 +60,7 @@ class BackgroundResponse(BackgroundBase):
     id: int
     granted_skills: list[SkillResponse] = []
     starting_items: list[SourceItemResponse] = []
+    starting_choice_groups: list[ChoiceGroupResponse] = []
 
 
 class BackgroundGetAllResponse(BaseModel):

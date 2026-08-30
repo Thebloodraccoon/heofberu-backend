@@ -2,8 +2,8 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import AbilityScore, ASILevelChoice
-from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY
+from app.constants import ASILevelChoice, MAX_ABILITY_SCORE_CAP
+from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
@@ -12,6 +12,7 @@ from app.features.characters.gm_panel.exceptions import (
     GmAsiAdjustmentNotFoundException,
     LevelTiedAsiChoiceException,
 )
+from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.users.schemas import UserResponse
 
@@ -21,11 +22,13 @@ class GmPanelAsiService(CharacterSubDomainService):
     Free-form ±ASI adjustments, independent of any class level.
 
     Split out of the former ``CharacterGmPanelService`` — this capability
-    owns the GET/POST/DELETE ``/gm-panel/asi`` endpoints. Bumps are
-    applied straight to the base ability columns and audited as
-    ``character_asi_choices`` rows with ``class_level IS NULL`` (Postgres
-    unique constraint treats NULLs as distinct); removal reverts the
-    bumps and refuses level-tied rows.
+    owns the GET/POST/DELETE ``/gm-panel/asi`` endpoints. Adjustments are
+    recorded ONLY as ``character_asi_choices`` rows with
+    ``class_level IS NULL`` (Postgres unique constraint treats NULLs as
+    distinct); the base ability columns are never touched — the counted
+    increments live in typed child rows and flow into the effective
+    totals through the ability-score calculator. Removal is therefore a
+    plain row deletion plus cache refresh, and refuses level-tied rows.
     """
 
     def __init__(self, db: AsyncSession):
@@ -44,30 +47,40 @@ class GmPanelAsiService(CharacterSubDomainService):
         self, character_id: int, data: GmAsiChoiceAdd, current_user: UserResponse
     ) -> GmAsiChoiceResponse:
         """
-        Apply a free-form ±ability change to the character's base columns
-        and record it as an audit row with no class level.
+        Record a free-form ±ability change as an adjustment row with no
+        class level.
 
-        Unlike the level-up ASI there is deliberately NO ability-score cap
-        and NO ±budget here — the GM may raise, lower, or outright set an
-        ability through repeated adjustments. The base-column bumps and
-        the audit row commit together; the ability-score cache is then
-        refreshed so effective totals follow.
+        Unlike the level-up ASI there is no ±budget here — the GM may
+        raise or lower abilities through repeated adjustments (negative
+        amounts included) — and the GM overrides the 20 standard cap: an
+        adjustment may push an ability's effective total up to
+        ``MAX_ABILITY_SCORE_CAP`` (30) with no feature required. (Player
+        level-up ASI and feats stay capped at 20; features may raise a
+        score above 20 via their own ``new_cap``.) A total may never go
+        above 30. The base columns are not touched; the row commits, then
+        the ability-score cache refreshes so effective totals follow.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
 
+        totals = await self.stats_service.compute(character)
         for item in data.increases:
-            base_field = BASE_FIELD_BY_ABILITY[item.ability]
-            setattr(character, base_field, getattr(character, base_field) + item.amount)
+            current_total = totals[TOTAL_FIELD_BY_ABILITY[item.ability]]
+            if current_total + item.amount > MAX_ABILITY_SCORE_CAP:
+                raise AbilityScoreCapExceededException(
+                    ability=item.ability.value,
+                    current_total=current_total,
+                    requested=current_total + item.amount,
+                )
 
-        row = await self.asi_repository.add(
-            character.id,
-            None,
-            ASILevelChoice.ASI,
-            increases=[{"ability": item.ability.value, "amount": item.amount} for item in data.increases],
-            commit=False,
-        )
-        await self.repository.db.commit()
+        async with self._atomic():
+            row = await self.asi_repository.add(
+                character.id,
+                None,
+                ASILevelChoice.ASI,
+                increases=[{"ability": item.ability.value, "amount": item.amount} for item in data.increases],
+                commit=False,
+            )
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
@@ -76,8 +89,9 @@ class GmPanelAsiService(CharacterSubDomainService):
 
     async def remove_asi_adjustment(self, character_id: int, adjustment_id: int, current_user: UserResponse) -> bool:
         """
-        Revert one GM ASI adjustment: subtract its recorded increases from
-        the base columns and delete the audit row.
+        Revert one GM ASI adjustment by deleting its log row (the counted
+        increment children go with it via cascade) and refreshing the
+        ability-score cache.
 
         Level-tied choices (made through level-ups) cannot be removed
         here — they are managed by the progression service.
@@ -93,10 +107,6 @@ class GmPanelAsiService(CharacterSubDomainService):
             raise LevelTiedAsiChoiceException(
                 character_id=character_id, adjustment_id=adjustment_id, class_level=choice.class_level
             )
-
-        for entry in choice.increases or []:
-            base_field = BASE_FIELD_BY_ABILITY[AbilityScore(entry["ability"])]
-            setattr(character, base_field, getattr(character, base_field) - int(entry["amount"]))
 
         result = await self.asi_repository.remove_choice(choice)
 

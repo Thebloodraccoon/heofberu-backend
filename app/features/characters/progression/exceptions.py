@@ -32,6 +32,27 @@ class BackgroundAlreadySetException(AppError):
         )
 
 
+class BackgroundItemChoicesNotSupportedException(AppError):
+    """
+    Raised when a background with starting-equipment choice groups is set
+    after character creation.
+
+    The set-background path grants a background's guaranteed starting
+    equipment but has no "pick N of M" surface, so a background with
+    choice groups is rejected up front instead of silently dropping its
+    options.
+    """
+
+    status_code = 400
+
+    def __init__(self, background_id: int):
+        self.background_id = background_id
+        super().__init__(
+            f"Background {background_id} defines starting-equipment choice groups, which cannot "
+            "be answered when setting a background after character creation."
+        )
+
+
 class CharacterAlreadyAtMaxLevelException(AppError):
     """Raised when trying to level up a character already at its GM-set maximum level."""
 

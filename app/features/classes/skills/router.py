@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/available-skills",
+    "/{class_id:int}/available-skills",
     response_model=ClassResponse,
     summary="Replace a class's available skills",
     responses={
@@ -24,7 +24,7 @@ router = APIRouter()
     },
 )
 async def set_class_available_skills(
-    class_id: Annotated[int, Query(gt=0)],
+    class_id: int,
     data: Annotated[
         AvailableSkillsUpdate,
         Body(

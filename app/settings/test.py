@@ -26,7 +26,7 @@ CACHE_ENABLED = False
 # Test stage always targets the isolated TEST_* services, never the
 # plain DATABASE_URL/REDIS_URL (which point at dev/prod).
 DATABASE_URL = _settings.TEST_DATABASE_URL
-REDIS_URL = _settings.TEST_REDIS_URL
+REDIS_URL = _settings.TEST_REDIS_URL  # noqa: F811 -- deliberate override of the star-imported dev URL
 
 engine = create_async_engine(
     as_async_database_url(DATABASE_URL),

@@ -20,7 +20,10 @@ router = APIRouter()
 )
 async def get_races(
     race_service: RaceCrudDep,
-    race_size: list[RaceSize] | None = Query(None, description="Any-of match on the race's size (repeat the key: `?race_size=SMALL&race_size=MEDIUM`)."),
+    race_size: list[RaceSize] | None = Query(
+        None,
+        description="Any-of match on the race's size (repeat the key: `?race_size=SMALL&race_size=MEDIUM`).",
+    ),
     search: str | None = Query(None, description="Case-insensitive substring match against the race's name."),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
@@ -56,7 +59,7 @@ async def get_races(
 async def get_race(race_id: int, race_service: RaceCrudDep):
     """
     Return a single race by ID, with full detail — including ability
-    bonuses and granted skills.
+    bonuses, granted skills, and the race's own features.
 
     Open endpoint, no authentication required.
     """
@@ -101,7 +104,7 @@ async def create_race(
         ),
     ],
     race_service: RaceCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """
     Create a new race. **GM only.**

@@ -27,11 +27,6 @@ class Class(settings.Base):  # type: ignore
 
     description = Column(Text, nullable=False, default="")
 
-    primary_abilities = relationship(
-        "ClassPrimaryAbility",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
     saving_throws = relationship(
         "ClassSavingThrow",
         cascade="all, delete-orphan",
@@ -82,6 +77,14 @@ class Class(settings.Base):  # type: ignore
         foreign_keys="SourceItem.class_id",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    starting_choice_groups = relationship(
+        "SourceItemChoiceGroup",
+        primaryjoin="Class.id == SourceItemChoiceGroup.class_id",
+        foreign_keys="SourceItemChoiceGroup.class_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="SourceItemChoiceGroup.sort_order",
     )
     characters = relationship("Character", back_populates="character_class")
 

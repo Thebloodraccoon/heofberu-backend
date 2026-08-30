@@ -11,11 +11,18 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from pydantic import ValidationError
+
 from app.constants import DiceType, FeatureSourceType
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.features.classes.items.service import ClassItemsService
 from app.features.shared.items.nested_service import NestedSourceItemService
-from app.features.shared.items.schemas import SourceItemEntry, SourceItemsUpdate
+from app.features.shared.items.schemas import (
+    ChoiceGroupEntry,
+    ChoiceOptionEntry,
+    SourceItemEntry,
+    SourceItemsUpdate,
+)
 from app.models.class_model import Class
 from app.models.source_item_model import SourceItem
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
@@ -56,7 +63,6 @@ def make_class_row(**overrides) -> SimpleNamespace:
         "skill_choice_count": 2,
         "spellcasting_ability": None,
         "description": "",
-        "primary_abilities": [],
         "saving_throws": [],
         "armor_proficiencies": [],
         "available_skills": [],
@@ -190,3 +196,25 @@ class TestSourceItemManagerMixin:
 
         assert result.id == 1
         assert service._items.set_calls == [(FeatureSourceType.CLASS, 1, data.items, True)]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestChoiceGroupEntryValidation:
+    async def test_pick_count_cannot_exceed_number_of_options(self):
+        with pytest.raises(ValidationError):
+            ChoiceGroupEntry(pick_count=2, options=[ChoiceOptionEntry(item_id=1, quantity=1)])
+
+    async def test_duplicate_options_within_group_rejected(self):
+        with pytest.raises(ValidationError):
+            ChoiceGroupEntry(
+                pick_count=1,
+                options=[ChoiceOptionEntry(item_id=1), ChoiceOptionEntry(item_id=1)],
+            )
+
+    async def test_pick_count_equal_to_options_is_valid(self):
+        group = ChoiceGroupEntry(
+            pick_count=2, options=[ChoiceOptionEntry(item_id=1), ChoiceOptionEntry(item_id=2)]
+        )
+
+        assert group.pick_count == 2

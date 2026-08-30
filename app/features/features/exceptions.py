@@ -15,7 +15,6 @@ class FeatureNotFoundException(AppError):
 
 class InvalidFeatureSourceException(AppError):
     """
-
     Raised when a feature's source_type/class_id/subclass_id/race_id/
     background_id/level combination is inconsistent (e.g.
     source_type=RACE but race_id is missing).
@@ -25,20 +24,3 @@ class InvalidFeatureSourceException(AppError):
 
     def __init__(self, detail: str):
         super().__init__(detail)
-
-
-class FeatureNotOwnedException(AppError):
-    """
-
-    Raised when a feature replace payload references a feature id that does
-    not belong to the source record being replaced (e.g. a race replace
-    lists a feature owned by a different race).
-    """
-
-    status_code = 400
-
-    def __init__(self, source_type: str, source_id: int, feature_id: int):
-        self.source_type = source_type
-        self.source_id = source_id
-        self.feature_id = feature_id
-        super().__init__(f"Feature with id {feature_id} does not belong to {source_type} {source_id}.")

@@ -19,7 +19,7 @@ class ClassSkillsRepository(SkillLookupMixin, ClassRepository):
         unloaded many-to-many collection would trigger a lazy load, which
         is not supported on the async stack.
 
-        See ``ClassRepository.set_primary_abilities`` for the meaning of
+        See ``ClassRepository.set_saving_throws`` for the meaning of
         ``commit=False``.
         """
 

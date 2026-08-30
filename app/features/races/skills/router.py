@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.put(
-    "/skills",
+    "/{race_id:int}/skills",
     response_model=RaceResponse,
     summary="Replace a race's granted skills",
     responses={
@@ -25,7 +25,7 @@ router = APIRouter()
     },
 )
 async def set_skills(
-    race_id: Annotated[int, Query(gt=0)],
+    race_id: int,
     data: Annotated[
         SkillsUpdate,
         Body(

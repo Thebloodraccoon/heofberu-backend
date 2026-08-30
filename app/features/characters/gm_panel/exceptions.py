@@ -1,4 +1,12 @@
-"""Exceptions for GM grant and panel operations on a character."""
+"""
+Exceptions for GM grant and panel operations on a character.
+
+The feat-ASI exceptions (``CharacterFeatAlreadyKnownException``,
+``InvalidAbilityScoreIncreaseException``, ``FeatAsiChoiceRequiredException``,
+``FeatPrerequisiteNotMetException``) live in ``characters/feats/exceptions.py`` —
+they are shared with the level-up path in ``progression/``, so they must not
+hang off the GM panel.
+"""
 
 from app.core.exceptions import AppError
 
@@ -35,6 +43,24 @@ class InvalidAbilityScoreIncreaseException(AppError):
         self.ability_score_increase_id = ability_score_increase_id
         super().__init__(
             f"Ability score increase {ability_score_increase_id} is not a valid choice for feat {feat_id}."
+        )
+
+
+class FeatAsiChoiceRequiredException(AppError):
+    """
+    Raised when granting (or taking at level-up) a feat that offers
+    ability-score increases without picking one — the choice must be
+    explicit so the granted points are never silently lost.
+    """
+
+    status_code = 422
+
+    def __init__(self, feat_id: int, choices: int):
+        self.feat_id = feat_id
+        self.choices = choices
+        super().__init__(
+            f"Feat {feat_id} offers {choices} ability score increase option(s); "
+            "an `ability_score_increase_id` must be chosen explicitly."
         )
 
 
@@ -100,7 +126,6 @@ class CharacterItemNotFoundException(AppError):
 
 class SkillProficiencyNotFoundException(AppError):
     """
-
     Raised when the character has no proficiency row for the given skill —
     expertise can only be toggled on an existing proficiency.
     """
@@ -115,7 +140,6 @@ class SkillProficiencyNotFoundException(AppError):
 
 class LevelTiedAsiChoiceException(AppError):
     """
-
     Raised when attempting to remove an ASI choice that is tied to a
     class level — those are managed by the level-up endpoint, not the GM
     panel (only free-form GM adjustments, ``class_level IS NULL``, can be
@@ -136,7 +160,6 @@ class LevelTiedAsiChoiceException(AppError):
 
 class MaxLevelCanOnlyIncreaseException(AppError):
     """
-
     Raised when a GM attempts to lower (or keep) a character's maximum
     allowed level — the cap can only ever move up.
     """
@@ -154,7 +177,6 @@ class MaxLevelCanOnlyIncreaseException(AppError):
 
 class MaxLevelBelowCharacterLevelException(AppError):
     """
-
     Raised when a GM attempts to set a maximum level below the
     character's current level.
     """

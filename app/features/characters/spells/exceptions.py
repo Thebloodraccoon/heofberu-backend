@@ -27,7 +27,6 @@ class CharacterSpellAlreadyKnownException(AppError):
 
 class SpellNotAvailableToCharacterException(AppError):
     """
-
     Raised when a spell's ``available_classes`` / ``available_subclasses``
     / ``available_races`` / ``available_subraces`` restrictions (if any)
     don't include the character's class/subclass/race/subrace.
@@ -50,7 +49,6 @@ class SpellNotAvailableToCharacterException(AppError):
 
 class NoSpellSlotAvailableException(AppError):
     """
-
     Raised when choosing a spell would exceed the character's spell slot
     total at that spell's level — a character may know at most as many
     spells of a given level as they have slots of that level.

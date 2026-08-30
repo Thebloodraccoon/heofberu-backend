@@ -1,4 +1,4 @@
-"""Tests for the GM panel: max HP writes, stats overview, free-form ASI adjustments, skill expertise."""
+"""Tests for the GM panel: max HP writes, player-facing stats, free-form ASI adjustments, skill expertise."""
 
 import pytest
 
@@ -13,8 +13,7 @@ class TestGmPanelMaxHp:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, max_hp=20, current_hp=20)
 
         response = await client.patch(
-            "/characters/gm-panel/max-hp",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/max-hp",
             json={"max_hp": 12},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -28,8 +27,7 @@ class TestGmPanelMaxHp:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, max_hp=10, current_hp=7)
 
         response = await client.patch(
-            "/characters/gm-panel/max-hp",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/max-hp",
             json={"max_hp": 18},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -43,8 +41,7 @@ class TestGmPanelMaxHp:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.patch(
-            "/characters/gm-panel/max-hp",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/max-hp",
             json={"max_hp": 30},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -54,44 +51,48 @@ class TestGmPanelMaxHp:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestGmPanelStats:
+class TestCharacterStats:
     async def test_stats_show_base_vs_total_without_bonuses(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=14, dexterity=10)
 
         response = await client.get(
-            "/characters/gm-panel/stats",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/stats",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
         stats = response.json()
-        assert stats["strength"] == {"base": 14, "total": 14}
-        assert stats["dexterity"] == {"base": 10, "total": 10}
+        assert stats["strength"] == {"base": 14, "total": 14, "contributions": []}
+        assert stats["dexterity"] == {"base": 10, "total": 10, "contributions": []}
         for ability in ("constitution", "intelligence", "wisdom", "charisma"):
-            assert set(stats[ability]) == {"base", "total"}
+            assert set(stats[ability]) == {"base", "total", "contributions"}
 
     async def test_stats_reflect_asi_adjustment_freshly(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=14)
 
         add_response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
 
         response = await client.get(
-            "/characters/gm-panel/stats",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/stats",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
-        assert response.json()["strength"] == {"base": 16, "total": 16}
+        # Base stays at the originally entered value; the counted
+        # adjustment lives in the ASI-choice log and lifts only the total,
+        # reported as a "GM adjustment" contribution.
+        assert response.json()["strength"] == {
+            "base": 14,
+            "total": 16,
+            "contributions": [{"source": "asi", "label": "GM adjustment", "amount": 2}],
+        }
 
 
 @pytest.mark.integration
@@ -102,8 +103,7 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
 
         add_response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={
                 "increases": [
                     {"ability": "STR", "amount": 2},
@@ -117,47 +117,73 @@ class TestGmPanelAsiAdjustments:
         assert {item["ability"]: item["amount"] for item in adjustment["increases"]} == {"STR": 2, "DEX": -1}
 
         list_response = await client.get(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert list_response.status_code == 200
         assert [row["id"] for row in list_response.json()] == [adjustment["id"]]
+
+        # The adjustment also surfaces through the player-facing stats view
+        # as an "asi" contribution.
+        stats = (
+            await client.get(
+                f"/characters/{character.id}/stats",
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).json()
+        assert {c["label"]: c["amount"] for c in stats["strength"]["contributions"]} == {"GM adjustment": 2}
+        assert {c["label"]: c["amount"] for c in stats["dexterity"]["contributions"]} == {"GM adjustment": -1}
 
     async def test_remove_adjustment_reverts_base_scores(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
 
         add_response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 3}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         adjustment_id = add_response.json()["id"]
 
         remove_response = await client.delete(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id, "adjustment_id": adjustment_id},
+            f"/characters/{character.id}/gm-panel/asi",
+            params={"adjustment_id": adjustment_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert remove_response.status_code == 204
 
         stats = (
             await client.get(
-                "/characters/gm-panel/stats",
-                params={"character_id": character.id},
+                f"/characters/{character.id}/stats",
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json()
-        assert stats["strength"]["base"] == 13
+        # Deleting the log row reverts the total; the base was never touched.
+        assert stats["strength"] == {"base": 13, "total": 13, "contributions": []}
 
-        listed = await client.get(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+    async def test_adjustment_above_thirty_returns_400(self, client, gm, gm_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=29)
+
+        response = await client.post(
+            f"/characters/{character.id}/gm-panel/asi",
+            json={"increases": [{"ability": "STR", "amount": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert listed.json() == []
+
+        assert response.status_code == 400  # 31 > 30
+
+    async def test_gm_can_raise_above_twenty_up_to_thirty(self, client, gm, gm_token, create_class, create_character):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=20)
+
+        response = await client.post(
+            f"/characters/{character.id}/gm-panel/asi",
+            json={"increases": [{"ability": "STR", "amount": 2}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201  # 22 > 20, but <= 30: the GM panel override applies
 
     async def test_duplicate_ability_in_increases_returns_422(
         self, client, gm, gm_token, create_class, create_character
@@ -166,8 +192,7 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={
                 "increases": [
                     {"ability": "STR", "amount": 1},
@@ -184,8 +209,7 @@ class TestGmPanelAsiAdjustments:
         character = await create_character(owner_id=player.id, class_id=character_class.id)
 
         response = await client.post(
-            "/characters/gm-panel/asi",
-            params={"character_id": character.id},
+            f"/characters/{character.id}/gm-panel/asi",
             json={"increases": [{"ability": "STR", "amount": 5}]},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -206,8 +230,8 @@ class TestGmPanelSkillExpertise:
         await db_session.commit()
 
         on_response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -223,8 +247,8 @@ class TestGmPanelSkillExpertise:
         assert proficiencies[skill.id]["is_expertise"] is True
 
         off_response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": False},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -241,8 +265,8 @@ class TestGmPanelSkillExpertise:
         await db_session.commit()
 
         response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -258,8 +282,8 @@ class TestGmPanelSkillExpertise:
         skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
 
         response = await client.patch(
-            "/characters/gm-panel/skills",
-            params={"character_id": character.id, "skill_id": skill.id},
+            f"/characters/{character.id}/gm-panel/skills",
+            params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

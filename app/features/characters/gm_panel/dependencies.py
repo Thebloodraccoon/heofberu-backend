@@ -12,7 +12,6 @@ from app.features.characters.gm_panel.hp.service import GmPanelHpService
 from app.features.characters.gm_panel.items.service import GmPanelItemService
 from app.features.characters.gm_panel.level.service import GmPanelLevelService
 from app.features.characters.gm_panel.skills.service import GmPanelSkillsService
-from app.features.characters.gm_panel.stats.service import GmPanelStatsService
 
 
 def get_gm_panel_feat_service(db: DatabaseDep) -> GmPanelFeatService:
@@ -58,15 +57,6 @@ def get_gm_panel_hp_service(db: DatabaseDep) -> GmPanelHpService:
 
 
 GmPanelHpDep = Annotated[GmPanelHpService, Depends(get_gm_panel_hp_service)]
-
-
-def get_gm_panel_stats_service(db: DatabaseDep) -> GmPanelStatsService:
-    """Get the GM stats-overview service instance."""
-
-    return GmPanelStatsService(db)
-
-
-GmPanelStatsDep = Annotated[GmPanelStatsService, Depends(get_gm_panel_stats_service)]
 
 
 def get_gm_panel_skills_service(db: DatabaseDep) -> GmPanelSkillsService:

@@ -93,17 +93,21 @@ async def create_feat(
                 "with_prerequisite": {
                     "summary": "Ability score prerequisite (e.g. Heavy Armor Master)",
                     "value": {
-                        "name": "Heavy Armor Master",
-                        "description": "While wearing heavy armor, bludgeoning, piercing, and slashing damage from nonmagical attacks is reduced by 3.",
                         "prerequisite_ability": "STR",
                         "prerequisite_minimum_score": 13,
+                        "description": (
+                            "While wearing heavy armor, bludgeoning, piercing, and slashing damage "
+                            "from nonmagical attacks is reduced by 3."
+                        ),
                     },
                 },
                 "with_asi_choice": {
                     "summary": "Grants a choice of ASI (e.g. Resilient)",
                     "value": {
                         "name": "Resilient",
-                        "description": "Choose one ability score. You gain proficiency in saving throws using the chosen ability.",
+                        "description": (
+                            "Choose one ability score. You gain proficiency in saving throws using the chosen ability."
+                        ),
                         "ability_score_increases": [
                             {"ability": "STR", "amount": 1},
                             {"ability": "DEX", "amount": 1},
@@ -118,7 +122,7 @@ async def create_feat(
         ),
     ],
     feat_service: FeatCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """
     Create a new feat. **GM only.**

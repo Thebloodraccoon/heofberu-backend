@@ -97,8 +97,7 @@ class TestEditableArmorClass:
         armor_id = await self._create_armor(client, gm_token, "Scale Mail", base=14, dex_bonus=True, max_dex_bonus=2)
 
         add_response = await client.post(
-            "/characters/gm-panel/items",
-            params={"character_id": character["id"]},
+            f"/characters/{character['id']}/gm-panel/items",
             json={"item_id": armor_id, "is_equipped": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )

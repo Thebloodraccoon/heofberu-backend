@@ -28,13 +28,14 @@ class TestFeatureOpenRead:
         assert "Homebrew Boon" in names
         assert "Extra Attack" not in names
 
-    async def test_get_source_owned_feature_returns_404(self, client, create_class, create_feature):
+    async def test_get_source_owned_feature_by_id(self, client, create_class, create_feature):
         character_class = await create_class(name="Fighter")
         feature = await create_feature(name="Extra Attack", source_type="CLASS", class_id=character_class.id, level=5)
 
         response = await client.get(f"/features/{feature.id}")
 
-        assert response.status_code == 404
+        assert response.status_code == 200
+        assert response.json()["name"] == "Extra Attack"
 
     async def test_get_feature_by_id(self, client, create_feature):
         feature = await create_feature(name="Extra Attack", source_type="OTHER")

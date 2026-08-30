@@ -2,10 +2,16 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import AbilityScore
 from app.features.characters.ability_score.calculator import (
+    BASE_FIELD_BY_ABILITY,
     DEFAULT_SPEED,
+    TOTAL_FIELD_BY_ABILITY,
+    AbilityBreakdown,
     CharacterAbilityScoreCalculator,
     DerivedStats,
+    StatContribution,
+    resolve_ability_caps,
 )
 from app.features.characters.ability_score.repository import CharacterStatsRepository
 from app.models import Character, CharacterAbilityScore
@@ -28,7 +34,7 @@ class CharacterStatsService:
     Entry points:
       - ``compute`` — recompute a character's effective scores from the
         current source rows WITHOUT persisting (read-only use, e.g. the
-        feat-prerequisite check in ``gm_panel.validation``, or the
+        feat-prerequisite check in ``characters.feats.validation``, or the
         progression service's ASI cap / hit-point modifier checks).
       - ``refresh`` — ``compute`` + persist. Used by every write path
         that's already known to affect ability scores (feat
@@ -68,23 +74,116 @@ class CharacterStatsService:
         to the cache table.
 
         Loads the source bonus rows (race + subrace bonuses + feat ASI
-        choices) and feeds them to the pure
-        :class:`CharacterAbilityScoreCalculator`. Used by read-only
-        callers that need "what would the current scores be" — e.g. the
-        feat prerequisite check, which must be based on fresh data even
-        if the cache is stale.
+        choices + counted ASI-choice log increases) and feeds them to
+        the pure :class:`CharacterAbilityScoreCalculator`. Used by
+        read-only callers that need "what would the current scores be" —
+        e.g. the feat prerequisite check, which must be based on fresh
+        data even if the cache is stale.
         """
 
         race_bonuses = await self.repository.get_race_bonuses(character.race_id)
         subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
         feat_increases = await self.repository.get_feat_increases(character.id)
-        return self.calculator.compute(character, race_bonuses, subrace_bonuses, feat_increases)
+        asi_increases = await self.repository.get_asi_increases(character.id)
+        feature_increases = await self.repository.get_feature_increases(character.id)
+        return self.calculator.compute(
+            character, race_bonuses, subrace_bonuses, feat_increases, asi_increases, feature_increases
+        )
 
-    async def refresh(self, character: Character) -> CharacterAbilityScore:
-        """Recompute effective ability scores for ``character`` and persist them."""
+    async def compute_breakdown(self, character: Character) -> dict[AbilityScore, AbilityBreakdown]:
+        """
+        Compute each ability's ORIGINAL base, its COMPUTED total, and the
+        list of ``StatContribution`` sources that produced that total —
+        the "what is calculated from what" view shown to the player.
+
+        Loads the same source rows as :meth:`compute` (race/subrace
+        bonuses + feat ASI + counted ASI-log increases + feature
+        increases) and labels them for display (race/subrace/feature/feat
+        names, or "Level N (CHOICE)"). Does NOT persist anything — read-only.
+        """
+
+        race_bonuses = await self.repository.get_race_bonuses(character.race_id)
+        subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
+        feat_increases = await self.repository.get_feat_increases(character.id)
+        asi_increases = await self.repository.get_asi_increases(character.id)
+        feature_increases = await self.repository.get_feature_increases(character.id)
+
+        totals = self.calculator.compute(
+            character, race_bonuses, subrace_bonuses, feat_increases, asi_increases, feature_increases
+        )
+
+        contributions: dict[AbilityScore, list[StatContribution]] = {ability: [] for ability in AbilityScore}
+
+        race_rows = await self.repository.get_races([character.race_id]) if character.race_id is not None else {}
+        subrace_rows = await self.repository.get_subraces([character.subrace_id]) if character.subrace_id is not None else {}
+        race_name = getattr(race_rows.get(character.race_id), "name", None)
+        subrace_name = getattr(subrace_rows.get(character.subrace_id), "name", None)
+
+        for bonus in race_bonuses:
+            contributions[bonus.ability].append(
+                StatContribution(source="race", label=race_name or "Race bonus", amount=bonus.bonus)
+            )
+        for bonus in subrace_bonuses:
+            contributions[bonus.ability].append(
+                StatContribution(source="subrace", label=subrace_name or "Subrace bonus", amount=bonus.bonus)
+            )
+        for increase in feat_increases:
+            contributions[increase.ability].append(
+                StatContribution(
+                    source="feat",
+                    label=increase.feat.name if increase.feat is not None else "Feat",
+                    amount=increase.amount,
+                )
+            )
+        for increase in asi_increases:
+            choice = increase.choice
+            if choice is not None and choice.class_level is not None:
+                choice_kind = getattr(choice.choice_type, "value", choice.choice_type)
+                label = f"Level {choice.class_level} ({choice_kind})"
+            else:
+                label = "GM adjustment"
+            contributions[increase.ability].append(
+                StatContribution(source="asi", label=label, amount=increase.amount)
+            )
+        for increase in feature_increases:
+            contributions[increase.ability].append(
+                StatContribution(
+                    source="feature",
+                    label=increase.feature.name if increase.feature is not None else "Feature",
+                    amount=increase.amount,
+                )
+            )
+
+        return {
+            ability: AbilityBreakdown(
+                base=getattr(character, BASE_FIELD_BY_ABILITY[ability]),
+                total=totals[TOTAL_FIELD_BY_ABILITY[ability]],
+                contributions=contributions[ability],
+            )
+            for ability in AbilityScore
+        }
+
+    async def resolve_ability_caps(self, character: Character) -> dict[AbilityScore, int]:
+        """
+        Resolve each ability's maximum score for ``character``: the
+        standard 20 raised by any granted feature effect carrying a
+        ``new_cap`` (e.g. 24 for STR/CON under Primal Champion). Computed
+        fresh from the current feature grants — used by every cap check
+        (level-up ASI, GM ±adjustments, feat ASI choices).
+        """
+
+        feature_increases = await self.repository.get_feature_increases(character.id)
+        return resolve_ability_caps(feature_increases)
+
+    async def refresh(self, character: Character, *, commit: bool = True) -> CharacterAbilityScore:
+        """
+        Recompute effective ability scores for ``character`` and persist
+        them. ``commit=False`` defers persistence to the caller's
+        transaction (bulk refreshes inside a source reconciliation).
+        """
 
         totals = await self.compute(character)
-        return await self.repository.upsert(character.id, totals)
+        return await self.repository.upsert(character.id, totals, commit=commit)
 
     async def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
         """

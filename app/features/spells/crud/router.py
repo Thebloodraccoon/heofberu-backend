@@ -34,14 +34,22 @@ router = APIRouter()
 )
 async def get_spells(
     spell_service: SpellCrudDep,
-    school: list[SpellSchool] | None = Query(None, description="Any-of match on the spell's school (repeat the key: `?school=EVOCATION&school=ILLUSION`)."),
-    level: list[SpellLevel] | None = Query(None, description="Any-of match on the spell level (repeat the key: `?level=CANTRIP&level=LEVEL_1`)."),
+    school: list[SpellSchool] | None = Query(
+        None,
+        description="Any-of match on the spell's school (repeat the key: `?school=EVOCATION&school=ILLUSION`).",
+    ),
+    level: list[SpellLevel] | None = Query(
+        None,
+        description="Any-of match on the spell level (repeat the key: `?level=CANTRIP&level=LEVEL_1`).",
+    ),
     cast_time: list[SpellCastTime] | None = Query(None, description="Any-of match on casting time (repeat the key)."),
     range_type: list[SpellRangeType] | None = Query(None, description="Any-of match on range type (repeat the key)."),
     duration: list[SpellDuration] | None = Query(None, description="Any-of match on duration (repeat the key)."),
     attack_type: list[AttackType] | None = Query(None, description="Any-of match on attack type (repeat the key)."),
     damage_type: list[DamageType] | None = Query(None, description="Any-of match on damage type (repeat the key)."),
-    healing_target: list[HealingTarget] | None = Query(None, description="Any-of match on healing target (repeat the key)."),
+    healing_target: list[HealingTarget] | None = Query(
+        None, description="Any-of match on healing target (repeat the key)."
+    ),
     is_ritual: list[bool] | None = Query(
         None, description="Any-of match: `[true]` ritual spells, `[false]` non-ritual, `[true, false]` both."
     ),

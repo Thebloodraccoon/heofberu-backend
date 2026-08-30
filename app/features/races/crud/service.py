@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base.cached_service import CachedService
+from app.features.features.crud.service import FeatureCrudService
 from app.features.races.ability_bonuses.service import RaceAbilityBonusService
 from app.features.races.cache import RACE_CACHE_NAMESPACES, invalidate_race_cache
 from app.features.races.crud.repository import RaceRepository
@@ -14,7 +15,6 @@ from app.features.races.schemas import (
     RaceUpdate,
 )
 from app.features.races.skills.service import RaceSkillService
-from app.features.shared.features.nested_service import NestedFeatureService
 from app.models.race_model import Race
 
 
@@ -41,11 +41,11 @@ class RaceCrudService(
     in ``BaseRepository.delete`` (via ``check_in_use_on_delete=True`` +
     ``RaceRepository.is_in_use``).
 
-    The race responses embed their ``subraces`` but not their ``features`` —
-    per-source features are read through ``list_features`` (cached under the
-    dedicated ``nested_features`` namespace). ``cache_namespaces`` covers
-    the two namespaces any race read hits; the capability services use
-    :func:`invalidate_race_cache` explicitly for their own writes.
+    The race responses embed their ``subraces`` and their RACE-source
+    ``features`` (eager-loaded via ``RaceRepository.default_load_options``);
+    ``cache_namespaces`` covers the namespaces any race read hits, and the
+    capability services use :func:`invalidate_race_cache` explicitly for
+    their own writes.
     """
 
     repository: RaceRepository
@@ -60,7 +60,7 @@ class RaceCrudService(
         )
         self._skills = RaceSkillService(db)
         self._ability_bonuses = RaceAbilityBonusService(db)
-        self._nested_features = NestedFeatureService(db)
+        self._features = FeatureCrudService(db)
 
     async def create_race(self, race_data: RaceCreate) -> RaceResponse:
         """
@@ -94,7 +94,7 @@ class RaceCrudService(
             if skills:
                 await self._skills.set_skills_for_race(item, skills, commit=False)
 
-            await self._nested_features.create_features_for_source(
+            await self._features.create_features_for_source(
                 FeatureSourceType.RACE,
                 item.id,
                 race_data.features,

@@ -29,7 +29,7 @@ router = APIRouter()
     },
 )
 async def get_character_asi_adjustments(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     asi_service: GmPanelAsiDep,
     current_user: CurrentUserDep,
 ):
@@ -44,13 +44,14 @@ async def get_character_asi_adjustments(
     status_code=status.HTTP_201_CREATED,
     summary="Add a GM ASI adjustment (independent of level)",
     responses={
+        400: {"description": "The adjustment would push an effective score above the cap of 20."},
         403: {"description": "You are not a GM."},
         404: {"description": "No character exists with the given ID."},
         422: {"description": "Duplicate ability in `increases`."},
     },
 )
 async def add_character_asi_adjustment(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     data: Annotated[
         GmAsiChoiceAdd,
         Body(
@@ -70,11 +71,12 @@ async def add_character_asi_adjustment(
     current_user: GmUserDep,
 ):
     """
-    Apply a free-form ±ability change to the character's base scores —
-    no class level required and no 20 cap or +2 budget enforced. The
-    bumps commit together with an audit row in `character_asi_choices`
-    (`class_level IS NULL`), and the effective ability-score totals are
-    refreshed. **GM only.**
+    Record a free-form ±ability change as an adjustment row in
+    `character_asi_choices` (`class_level IS NULL`) — no class level
+    required and no +2 budget, but an adjustment may NOT push an
+    effective score above the 20 cap. The base columns are never
+    touched; the counted increments live in the log and the effective
+    totals refresh immediately. **GM only.**
     """
 
     return await asi_service.add_asi_adjustment(character_id, data, current_user)
@@ -91,14 +93,14 @@ async def add_character_asi_adjustment(
     },
 )
 async def remove_character_asi_adjustment(
-    character_id: Annotated[int, Query(gt=0)],
+    character_id: int,
     adjustment_id: Annotated[int, Query(gt=0)],
     asi_service: GmPanelAsiDep,
     current_user: GmUserDep,
 ):
     """
-    Revert one GM ASI adjustment: subtract its recorded increases from
-    the base scores and delete the audit row. **GM only.**
+    Revert one GM ASI adjustment by deleting its log row (the counted
+    increments go with it) and refreshing the effective totals. **GM only.**
     """
 
     await asi_service.remove_asi_adjustment(character_id, adjustment_id, current_user)

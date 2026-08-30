@@ -100,6 +100,14 @@ class TestCharacterStatsRepository:
 
         assert result == [row]
 
+    async def test_get_asi_increases_returns_counted_rows(self):
+        row = SimpleNamespace(id=1, character_asi_choice_id=9, ability=AbilityScore.STR, amount=2)
+        repository = CharacterStatsRepository(make_session([row]))
+
+        result = await repository.get_asi_increases(1)
+
+        assert result == [row]
+
     async def test_upsert_creates_new_row_when_missing(self):
         session = FakeAsyncSession(execute_results=[FakeResult([])])
         repository = CharacterStatsRepository(session)

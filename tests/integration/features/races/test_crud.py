@@ -65,7 +65,7 @@ class TestRaceCrud:
         assert response.status_code == 201
         race_id = response.json()["id"]
 
-        fetched = await client.get("/races/features", params={"race_id": race_id})
+        fetched = await client.get(f"/races/{race_id}/features")
         assert fetched.status_code == 200
         assert [feature["name"] for feature in fetched.json()] == [
             "Darkvision",
@@ -96,8 +96,7 @@ class TestRaceCrud:
         race = await create_race(name="Dragonborn")
 
         response = await client.put(
-            "/races/ability-bonuses",
-            params={"race_id": race.id},
+            f"/races/{race.id}/ability-bonuses",
             json={"ability_bonuses": [{"ability": "STR", "bonus": 2}, {"ability": "CHA", "bonus": 1}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -110,8 +109,7 @@ class TestRaceCrud:
         race = await create_race(name="Blank")
 
         response = await client.put(
-            "/races/ability-bonuses",
-            params={"race_id": race.id},
+            f"/races/{race.id}/ability-bonuses",
             json={"ability_bonuses": []},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -124,8 +122,7 @@ class TestRaceCrud:
         skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
 
         response = await client.put(
-            "/races/skills",
-            params={"race_id": race.id},
+            f"/races/{race.id}/skills",
             json={"skill_ids": [skill.id]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -165,9 +162,8 @@ class TestRaceCrud:
         race = await create_race(name="Elf")
 
         response = await client.post(
-            "/races/features",
-            params={"race_id": race.id},
-            json={"name": "Darkvision"},
+            "/features",
+            json={"name": "Darkvision", "source_type": "RACE", "race_id": race.id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -177,18 +173,22 @@ class TestRaceCrud:
         race = await create_race(name="Elf")
 
         added = await client.post(
-            "/races/features",
-            params={"race_id": race.id},
-            json={"name": "Darkvision", "description": "See in dim light within 60 ft."},
+            "/features",
+            json={
+                "name": "Darkvision",
+                "description": "See in dim light within 60 ft.",
+                "source_type": "RACE",
+                "race_id": race.id,
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert added.status_code == 201
         feature = added.json()
         assert feature["name"] == "Darkvision"
+        assert feature["level"] is None
 
         updated = await client.patch(
-            "/races/features",
-            params={"race_id": race.id, "feature_id": feature["id"]},
+            f"/features/{feature['id']}",
             json={"description": "See in dim light within 120 ft."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -198,64 +198,21 @@ class TestRaceCrud:
         assert updated_feature["description"] == "See in dim light within 120 ft."
 
         removed = await client.delete(
-            "/races/features",
-            params={"race_id": race.id, "feature_id": feature["id"]},
+            f"/features/{feature['id']}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed.status_code == 204
-        fetched = await client.get("/races/features", params={"race_id": race.id})
+        fetched = await client.get(f"/races/{race.id}/features")
         assert fetched.json() == []
 
-    async def test_update_race_feature_of_another_source_returns_400(
-        self, client, gm_token, create_race, create_feature
-    ):
+    async def test_gm_can_set_level_on_race_feature(self, client, gm_token, create_race):
         race = await create_race(name="Elf")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
 
-        response = await client.patch(
-            "/races/features",
-            params={"race_id": race.id, "feature_id": foreign.id},
-            json={"name": "Renamed"},
+        response = await client.post(
+            "/features",
+            json={"name": "Darkvision", "source_type": "RACE", "race_id": race.id, "level": 3},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
-
-    async def test_remove_race_feature_of_another_source_returns_400(
-        self, client, gm_token, create_race, create_feature
-    ):
-        race = await create_race(name="Elf")
-        foreign = await create_feature(name="Alien Feature", source_type="OTHER")
-
-        response = await client.delete(
-            "/races/features",
-            params={"race_id": race.id, "feature_id": foreign.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 400
-
-    async def test_race_feature_endpoints_return_404(self, client, gm_token):
-        assert (
-            await client.post(
-                "/races/features",
-                params={"race_id": 9999},
-                json={"name": "Darkvision"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.patch(
-                "/races/features",
-                params={"race_id": 9999, "feature_id": 1},
-                json={"name": "Renamed"},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
-        assert (
-            await client.delete(
-                "/races/features",
-                params={"race_id": 9999, "feature_id": 1},
-                headers={"Authorization": f"Bearer {gm_token}"},
-            )
-        ).status_code == 404
+        assert response.status_code == 201
+        assert response.json()["level"] == 3

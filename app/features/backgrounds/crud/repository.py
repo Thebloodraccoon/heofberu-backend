@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.models import Background, CharacterFeature, Feature, SourceItem
+from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 
 
 class BackgroundRepository(BaseRepository[Background]):
@@ -18,6 +19,9 @@ class BackgroundRepository(BaseRepository[Background]):
             default_load_options=[
                 selectinload(Background.granted_skills),
                 selectinload(Background.starting_items).selectinload(SourceItem.item),
+                selectinload(Background.starting_choice_groups)
+                .selectinload(SourceItemChoiceGroup.options)
+                .selectinload(SourceItemChoiceOption.item),
             ],
             search_fields=["name"],
             unique_fields=["name"],
