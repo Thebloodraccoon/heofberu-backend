@@ -116,8 +116,15 @@ class TestGmPanelAsiAdjustments:
         adjustment = add_response.json()
         assert {item["ability"]: item["amount"] for item in adjustment["increases"]} == {"STR": 2, "DEX": -1}
 
-        # The adjustment surfaces through the player-facing stats view as
-        # an "asi" contribution (the GM-panel has no GET listing anymore).
+        list_response = await client.get(
+            f"/characters/{character.id}/gm-panel/asi",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert list_response.status_code == 200
+        assert [row["id"] for row in list_response.json()] == [adjustment["id"]]
+
+        # The adjustment also surfaces through the player-facing stats view
+        # as an "asi" contribution.
         stats = (
             await client.get(
                 f"/characters/{character.id}/stats",

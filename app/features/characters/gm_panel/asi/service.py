@@ -22,23 +22,26 @@ class GmPanelAsiService(CharacterSubDomainService):
     Free-form ±ASI adjustments, independent of any class level.
 
     Split out of the former ``CharacterGmPanelService`` — this capability
-    owns the POST/DELETE ``/gm-panel/asi`` endpoints. Adjustments are
+    owns the GET/POST/DELETE ``/gm-panel/asi`` endpoints. Adjustments are
     recorded ONLY as ``character_asi_choices`` rows with
     ``class_level IS NULL`` (Postgres unique constraint treats NULLs as
     distinct); the base ability columns are never touched — the counted
     increments live in typed child rows and flow into the effective
     totals through the ability-score calculator. Removal is therefore a
     plain row deletion plus cache refresh, and refuses level-tied rows.
-
-    The recorded choices have no listing endpoint here — they are surfaced
-    to the player through ``GET /characters/{character_id}/stats`` as
-    ``asi`` contributions.
     """
 
     def __init__(self, db: AsyncSession):
         super().__init__(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.stats_service = CharacterStatsService(db)
+
+    async def get_asi_adjustments(self, character_id: int, current_user: UserResponse) -> list[GmAsiChoiceResponse]:
+        """List every GM ASI adjustment recorded on a character (level-tied choices excluded)."""
+
+        await self.get_character_for_user(character_id, current_user)
+        choices = await self.asi_repository.get_character_choices(character_id)
+        return [GmAsiChoiceResponse.model_validate(choice) for choice in choices if choice.class_level is None]
 
     async def add_asi_adjustment(
         self, character_id: int, data: GmAsiChoiceAdd, current_user: UserResponse

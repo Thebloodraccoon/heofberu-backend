@@ -14,12 +14,11 @@ own capability segment.
   Per-row operations additionally take the row's own id as a query parameter
   (`feat_id`, `feature_id`, `item_id`, `adjustment_id`, `skill_id`) — the id of
   the character-scoped grant/stack/choice row, never the reference-catalog id.
-- **Access model**: every route is a GM-only write via `GmUserDep`, except two
+- **Access model**: every route is a GM-only write via `GmUserDep`, except three
   read-only endpoints that are GM **or** owner via `CurrentUserDep`:
-  `GET /max-level`, `GET /items`. The matching player-facing reads live in
-  plain character CRUD (`GET /characters/feats`, `GET /characters/features`,
-  `GET /characters/stats`). Recorded ASI adjustments/choices have no GM-panel
-  listing — they surface via `GET /characters/stats` as `asi` contributions.
+  `GET /max-level`, `GET /asi`, `GET /items`. The matching player-facing reads
+  live in plain character CRUD (`GET /characters/feats`,
+  `GET /characters/features`, `GET /characters/stats`).
 - **Grant response schemas** live in top-level `characters/schemas.py`
   (`CharacterFeatResponse`, `CharacterFeatureResponse`,
   `SkillProficiencyResponse`) so `crud/` never imports from `gm_panel/`.
@@ -35,7 +34,7 @@ own capability segment.
 | `feats` | POST/PATCH/DELETE `/feats` | GM only | `CharacterFeatRepository` |
 | `features` | POST/PATCH/DELETE `/features` | GM only | `CharacterFeatureRepository` |
 | `items` | GET/POST/PATCH/DELETE `/items` | reads GM/owner, writes GM only | `CharacterItemRepository` + own schemas |
-| `asi` | POST/DELETE `/asi` | GM only (no read; see `/characters/stats`) | own schemas |
+| `asi` | GET/POST/DELETE `/asi` | reads GM/owner, writes GM only | own schemas |
 | `hp` | PATCH `/max-hp` | GM only | — |
 | `level` | PATCH/GET `/max-level` | reads GM/owner, writes GM only | `CharacterMaxLevelRepository` |
 | `skills` | PATCH `/skills` | GM only | `CharacterSkillProficiencyRepository` |
@@ -77,7 +76,8 @@ the stack and add a new one instead.
 
 ### `asi` — free-form ±adjustments
 
-POST adds an adjustment as a `character_asi_choices` row with
+GET lists the character's adjustments (`class_level IS NULL` rows only, GM/
+owner); POST adds an adjustment as a `character_asi_choices` row with
 `class_level IS NULL` (Postgres unique constraint treats NULLs as distinct),
 independent of class level and with no +2 level-up budget — negative amounts
 allowed. The base ability columns are NEVER touched: counted increments live
@@ -88,9 +88,8 @@ deleting its log row (+ cascade of the child increments) and refreshing the
 cache, refusing level-tied rows (`LevelTiedAsiChoiceException`) — those belong
 to the level-up flow.
 
-There is no GET listing here: recorded adjustments (and level-tied choices)
-surface to the player as `asi` contributions via
-`GET /characters/{character_id}/stats`.
+Recorded adjustments/choices also surface to the player as `asi` contributions
+via `GET /characters/{character_id}/stats`.
 
 ### `hp` — max HP
 

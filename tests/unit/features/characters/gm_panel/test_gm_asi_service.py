@@ -67,10 +67,14 @@ class FakeStatsService:
 class FakeASIChoiceRepository:
     """Records choice-row writes and serves configured rows."""
 
-    def __init__(self, choices_by_id=None):
+    def __init__(self, choices_by_id=None, all_choices=None):
         self._by_id = choices_by_id or {}
+        self._all = all_choices or []
         self.add_calls = []
         self.remove_calls = []
+
+    async def get_character_choices(self, character_id):
+        return self._all
 
     async def add(self, character_id, class_level, choice_type, *, increases=None, commit=True):
         row = SimpleNamespace(
@@ -181,6 +185,22 @@ class TestAddAsiAdjustment:
             )
 
         assert service.asi_repository.add_calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestGetAsiAdjustments:
+    async def test_filters_out_level_tied_choices(self):
+        gm_row = SimpleNamespace(id=3, character_id=1, class_level=None, increases=[])
+        level_tied = SimpleNamespace(id=4, character_id=1, class_level=4, increases=[])
+        repository = FakeASIChoiceRepository(all_choices=[gm_row, level_tied])
+        character = make_character()
+        service = make_service(character, asi_repository=repository)
+
+        result = await service.get_asi_adjustments(1, SimpleNamespace())
+
+        assert [row.id for row in result] == [3]
+        service.get_character_for_user.assert_awaited_once()
 
 
 @pytest.mark.unit

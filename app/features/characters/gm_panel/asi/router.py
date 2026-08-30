@@ -1,15 +1,11 @@
 """
-GM free-form ASI adjustment endpoints: POST/DELETE under ``/gm-panel/asi``
+GM free-form ASI adjustment endpoints: GET/POST/DELETE under ``/gm-panel/asi``
 (query-style IDs).
 
 The sub-router declares no prefix of its own; the panel's aggregating
 router applies ``/gm-panel``. The character is identified by the
 required ``character_id`` query parameter; removal additionally takes
 the ``adjustment_id`` query parameter.
-
-There is no GET listing: the recorded adjustments (and level-tied ASI
-choices) are surfaced to the player through
-``GET /characters/{character_id}/stats`` as ``asi`` contributions.
 """
 
 from typing import Annotated
@@ -18,9 +14,28 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd, GmAsiChoiceResponse
 from app.features.characters.gm_panel.dependencies import GmPanelAsiDep
-from app.features.users.security import GmUserDep
+from app.features.users.security import CurrentUserDep, GmUserDep
 
 router = APIRouter()
+
+
+@router.get(
+    "/asi",
+    response_model=list[GmAsiChoiceResponse],
+    summary="List a character's GM ASI adjustments",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def get_character_asi_adjustments(
+    character_id: int,
+    asi_service: GmPanelAsiDep,
+    current_user: CurrentUserDep,
+):
+    """List every free-form GM ASI adjustment (level-tied choices excluded)."""
+
+    return await asi_service.get_asi_adjustments(character_id, current_user)
 
 
 @router.post(
