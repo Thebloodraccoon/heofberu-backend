@@ -30,7 +30,7 @@ class CharacterStatsService:
     Entry points:
       - ``compute`` — recompute a character's effective scores from the
         current source rows WITHOUT persisting (read-only use, e.g. the
-        feat-prerequisite check in ``gm_panel.validation``, or the
+        feat-prerequisite check in ``characters.feats.validation``, or the
         progression service's ASI cap / hit-point modifier checks).
       - ``refresh`` — ``compute`` + persist. Used by every write path
         that's already known to affect ability scores (feat

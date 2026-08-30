@@ -1,6 +1,12 @@
-"""Schemas for items owned by a character (GM-panel managed)."""
+"""
+Request schemas for GM-managed item stacks on a character.
 
-from pydantic import BaseModel, ConfigDict, Field
+The response shape (``CharacterItemResponse`` and its embedded item
+record) lives in the top-level ``characters/schemas.py`` because it is
+shared by the player-facing reads in ``crud/`` and by these writes.
+"""
+
+from pydantic import BaseModel, Field
 
 
 class CharacterItemAdd(BaseModel):
@@ -31,17 +37,3 @@ class CharacterItemUpdate(BaseModel):
     is_equipped: bool | None = None
     is_attuned: bool | None = None
     notes: str | None = None
-
-
-class CharacterItemResponse(BaseModel):
-    """Aggregates an owned item stack with its quantity and state flags."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    character_id: int
-    item_id: int
-    quantity: int
-    is_equipped: bool
-    is_attuned: bool
-    notes: str = ""

@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import AbilityScore, CharacterFeatSource, FeatureSourceType
 from app.features.characters.conditions.schemas import CharacterConditionResponse
+from app.features.items.crud.schemas import ItemResponse
 
 # Standard D&D 5e ability-score range for values entered directly by a
 # player (before racial/feat bonuses are applied) — matches the typical
@@ -302,3 +303,22 @@ class CharacterFeatureResponse(BaseModel):
     feature_id: int
     notes: str = ""
     feature: CharacterFeatureBriefResponse
+
+
+class CharacterItemResponse(BaseModel):
+    """
+    Aggregates an owned item stack with its quantity/state flags and the
+    full item record (``ItemResponse``) so the sheet can render details
+    without a follow-up call.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    character_id: int
+    item_id: int
+    quantity: int
+    is_equipped: bool
+    is_attuned: bool
+    notes: str = ""
+    item: ItemResponse

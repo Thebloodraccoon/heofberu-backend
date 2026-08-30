@@ -26,7 +26,7 @@ class TestCharacterItems:
         assert add_response.json()["notes"] == "Primary"
 
         list_response = await client.get(
-            f"/characters/{character.id}/gm-panel/items",
+            f"/characters/{character.id}/items",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert list_response.status_code == 200
@@ -91,7 +91,7 @@ class TestCharacterItems:
         assert response.status_code == 204
         assert (
             await client.get(
-                f"/characters/{character.id}/gm-panel/items",
+                f"/characters/{character.id}/items",
                 headers={"Authorization": f"Bearer {player_token}"},
             )
         ).json() == []
@@ -117,7 +117,7 @@ class TestCharacterItems:
         assert first.status_code == 201
         assert second.status_code == 201
         list_response = await client.get(
-            f"/characters/{character.id}/gm-panel/items",
+            f"/characters/{character.id}/items",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert len(list_response.json()) == 2
@@ -138,6 +138,83 @@ class TestCharacterItems:
         )
 
         assert add_response.status_code == 403
+
+    async def test_owner_can_list_own_items(
+        self, client, gm_token, player, player_token, create_class, create_character, create_item
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        item = await create_item(name="Longsword")
+
+        add_response = await client.post(
+            f"/characters/{character.id}/gm-panel/items",
+            json={"item_id": item.id, "quantity": 2, "is_equipped": True},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert add_response.status_code == 201
+
+        list_response = await client.get(
+            f"/characters/{character.id}/items",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert list_response.status_code == 200
+        entries = list_response.json()
+        assert len(entries) == 1
+        assert entries[0]["item_id"] == item.id
+        assert entries[0]["quantity"] == 2
+        assert entries[0]["is_equipped"] is True
+
+    async def test_gm_can_list_any_characters_items(
+        self, client, gm_token, player, create_class, create_character, create_item
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        item = await create_item(name="Longsword")
+        add_response = await client.post(
+            f"/characters/{character.id}/gm-panel/items",
+            json={"item_id": item.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert add_response.status_code == 201
+
+        list_response = await client.get(
+            f"/characters/{character.id}/items",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert list_response.status_code == 200
+        assert [entry["item_id"] for entry in list_response.json()] == [item.id]
+
+    async def test_other_player_cannot_list_items(
+        self,
+        client,
+        gm_token,
+        player,
+        create_user,
+        login_as,
+        create_class,
+        create_character,
+        create_item,
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        item = await create_item(name="Longsword")
+        await client.post(
+            f"/characters/{character.id}/gm-panel/items",
+            json={"item_id": item.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        other = await create_user(username="other", email="other@example.com")
+        other_token = await login_as(other)
+
+        list_response = await client.get(
+            f"/characters/{character.id}/items",
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+
+        assert list_response.status_code == 403
 
     async def test_player_cannot_remove_item_stack(
         self, client, gm_token, player, player_token, create_class, create_character, create_item

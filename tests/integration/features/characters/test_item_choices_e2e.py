@@ -36,7 +36,7 @@ async def create_character_with_choices(client, player_token, class_id, item_cho
 
 async def get_character_items(client, token, character_id):
     response = await client.get(
-        f"/characters/{character_id}/gm-panel/items",
+        f"/characters/{character_id}/items",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200, response.text

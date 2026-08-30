@@ -1,4 +1,4 @@
-"""Repository for GM-managed feature grants on a character."""
+"""Repository for the feature grants recorded on a character (``character_features``)."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

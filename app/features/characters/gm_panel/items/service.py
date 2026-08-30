@@ -5,12 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.exceptions import CharacterItemNotFoundException
-from app.features.characters.gm_panel.items.repository import CharacterItemRepository
-from app.features.characters.gm_panel.items.schemas import (
-    CharacterItemAdd,
-    CharacterItemResponse,
-    CharacterItemUpdate,
-)
+from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.items.repository import CharacterItemRepository
+from app.features.characters.schemas import CharacterItemResponse
 from app.features.items.crud.repository import ItemRepository
 from app.features.items.exceptions import ItemNotFoundException
 from app.features.users.schemas import UserResponse
@@ -23,13 +20,14 @@ class GmPanelItemService(CharacterSubDomainService):
     capability.
 
     Each row is an independent stack of an item, so the same item may be
-    owned several times. Reads are GM/owner; every WRITE is GM-only
-    (routed through ``GmUserDep``) — inventory changes are a GM-panel
-    concern. Uses three collaborators:
+    owned several times. Every WRITE is GM-only (routed through
+    ``GmUserDep``) — inventory changes are a GM-panel concern; the
+    inventory listing is served by the character CRUD
+    (``GET /characters/{character_id}/items``). Uses three collaborators:
 
       - the inherited ``CharacterSubDomainService`` — access control
-        only (fetching the owning character to check GM/owner permission
-        via ``get_character_for_user``); no inventory data lives there.
+        only (fetching the owning character to check ownership via
+        ``get_character_for_user``); no inventory data lives there.
       - ``CharacterItemRepository`` — the ``character_items`` stack rows
         (CRUD).
       - ``ItemRepository`` — looking up the reference item being added,
@@ -40,14 +38,6 @@ class GmPanelItemService(CharacterSubDomainService):
         super().__init__(db)
         self.character_item_repository = CharacterItemRepository(db)
         self.item_repository = ItemRepository(db)
-
-    async def get_items(self, character_id: int, current_user: UserResponse) -> list[CharacterItemResponse]:
-        """List every item stack owned by a character."""
-
-        await self.get_character_for_user(character_id, current_user)
-
-        stacks = await self.character_item_repository.get_character_items(character_id)
-        return [CharacterItemResponse.model_validate(stack) for stack in stacks]
 
     async def add_item(
         self, character_id: int, data: CharacterItemAdd, current_user: UserResponse

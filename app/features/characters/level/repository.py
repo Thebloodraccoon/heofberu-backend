@@ -1,4 +1,4 @@
-"""Repository for the GM-controlled character max-level table."""
+"""Repository for the character max-level table (``character_max_levels``)."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

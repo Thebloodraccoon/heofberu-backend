@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import AbilityScore, ASILevelChoice
-from app.features.characters.gm_panel.exceptions import (
+from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
-    CharacterFeatNotFoundException,
     FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,
 )
+from app.features.characters.gm_panel.exceptions import CharacterFeatNotFoundException
 from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
 from app.features.characters.gm_panel.feats.service import GmPanelFeatService
 from app.features.characters.progression.exceptions import AbilityScoreCapExceededException

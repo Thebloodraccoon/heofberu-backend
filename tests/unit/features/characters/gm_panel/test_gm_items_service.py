@@ -23,9 +23,6 @@ class FakeCharacterItemRepository:
         self.update_calls = []
         self.remove_calls = []
 
-    async def get_character_items(self, character_id):
-        return [row for row in self._by_id.values() if row.character_id == character_id]
-
     async def get_character_item_by_id(self, character_id, character_item_id):
         return self._by_id.get(character_item_id)
 
@@ -38,6 +35,7 @@ class FakeCharacterItemRepository:
             is_equipped=is_equipped,
             is_attuned=is_attuned,
             notes=notes,
+            item=make_item(item_id),
         )
         self._next_id += 1
         self.add_calls.append(stack)
@@ -64,6 +62,10 @@ def no_cache_invalidate(monkeypatch):
     monkeypatch.setattr("app.features.characters.gm_panel.items.service.invalidate_character_cache", AsyncMock())
 
 
+def make_item(item_id=5) -> SimpleNamespace:
+    return SimpleNamespace(id=item_id, name="Longsword", item_type="WEAPON")
+
+
 def make_stack(stack_id=3, item_id=5, **overrides) -> SimpleNamespace:
     base = {
         "id": stack_id,
@@ -73,6 +75,7 @@ def make_stack(stack_id=3, item_id=5, **overrides) -> SimpleNamespace:
         "is_equipped": False,
         "is_attuned": False,
         "notes": "",
+        "item": make_item(item_id),
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -85,31 +88,6 @@ def make_service(*, item_exists=True, stacks=None):
     service.item_repository = FakeRepository(db, existing_by_id={5: SimpleNamespace()} if item_exists else {})
     service.character_item_repository = FakeCharacterItemRepository(db, stacks_by_id=stacks or {})
     return service
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-class TestGetItems:
-    async def test_lists_stacks_after_access_check(self):
-        stack = make_stack()
-        service = make_service(stacks={stack.id: stack})
-        user = SimpleNamespace()
-
-        result = await service.get_items(1, user)
-
-        assert len(result) == 1
-        assert result[0].item_id == 5
-        assert result[0].quantity == 2
-        service.get_character_for_user.assert_awaited_once_with(1, user)
-
-    async def test_returns_only_the_characters_stacks(self):
-        own = make_stack(stack_id=3)
-        other = make_stack(stack_id=4, character_id=2)
-        service = make_service(stacks={3: own, 4: other})
-
-        result = await service.get_items(1, SimpleNamespace())
-
-        assert [row.id for row in result] == [3]
 
 
 @pytest.mark.unit

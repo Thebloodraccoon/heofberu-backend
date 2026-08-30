@@ -11,11 +11,11 @@ endpoint; per-grant operations additionally take their grant ID as a
 query parameter (``feat_id``, ``item_id``, ...).
 
 Every route is a GM-only write via ``GmUserDep``, except the read-only
-``/stats``, ``GET /max-level``, ``/asi`` listing and ``/items`` listing
-(GM/owner).
+``/stats``, ``GET /max-level`` and ``/asi`` listing (GM/owner).
 The matching player-facing reads live in the plain character CRUD
-(``GET /characters/feats?character_id=...``,
-``GET /characters/features?character_id=...``).
+(``GET /characters/{character_id}/feats``,
+``GET /characters/{character_id}/features`` and
+``GET /characters/{character_id}/items``).
 """
 
 from fastapi import APIRouter

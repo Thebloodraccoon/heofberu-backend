@@ -5,11 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.features.repository import CharacterFeatureRepository
 from app.features.characters.gm_panel.exceptions import (
     CharacterFeatureAlreadyKnownException,
     CharacterFeatureNotFoundException,
 )
-from app.features.characters.gm_panel.features.repository import CharacterFeatureRepository
 from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
 from app.features.characters.schemas import CharacterFeatureResponse
 from app.features.features.crud.repository import FeatureRepository

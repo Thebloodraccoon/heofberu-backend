@@ -17,6 +17,7 @@ from app.features.characters.schemas import (
     CharacterCreate,
     CharacterFeatResponse,
     CharacterFeatureResponse,
+    CharacterItemResponse,
     CharacterResponse,
     CharacterUpdate,
 )
@@ -186,6 +187,25 @@ async def get_character_features(
     """List every feature recorded on a character (progression auto-grants plus GM records)."""
 
     return await character_service.get_features(character_id, current_user)
+
+
+@router.get(
+    "/{character_id:int}/items",
+    response_model=list[CharacterItemResponse],
+    summary="List a character's items",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def get_character_items(
+    character_id: int,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+):
+    """List every item stack owned by a character (GM/owner readable)."""
+
+    return await character_service.get_items(character_id, current_user)
 
 
 @router.post(

@@ -1,13 +1,14 @@
 """
-GM-panel inventory endpoints: view (GM/owner) and manage (GM-only) a character's items
-(query-style IDs).
+GM-panel inventory endpoints: manage a character's items (writes, GM-only;
+query-style IDs).
 
 The sub-router declares no prefix of its own; the panel's aggregating
 router applies ``/gm-panel`` — combined, ``"/items"`` resolves to
 ``/characters/gm-panel/items?character_id=...``. The character is
 identified by the required ``character_id`` query parameter; stack
 edits/removals additionally take ``item_id`` (the character-item stack
-row ID).
+row ID). Reads are served by the player-facing
+``GET /characters/{character_id}/items`` (see ``crud/``).
 """
 
 from typing import Annotated
@@ -15,36 +16,11 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.gm_panel.dependencies import GmPanelItemsDep
-from app.features.characters.gm_panel.items.schemas import (
-    CharacterItemAdd,
-    CharacterItemResponse,
-    CharacterItemUpdate,
-)
-from app.features.users.security import CurrentUserDep, GmUserDep
+from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.schemas import CharacterItemResponse
+from app.features.users.security import GmUserDep
 
 router = APIRouter()
-
-
-@router.get(
-    "/items",
-    response_model=list[CharacterItemResponse],
-    summary="List a character's items",
-    responses={
-        403: {"description": "You do not have access to this character."},
-        404: {"description": "No character exists with the given ID."},
-    },
-)
-async def get_character_items(
-    character_id: int,
-    item_service: GmPanelItemsDep,
-    current_user: CurrentUserDep,
-):
-    """
-    List every item stack owned by a character. GM can view any
-    character's items; players only their own.
-    """
-
-    return await item_service.get_items(character_id, current_user)
 
 
 @router.post(

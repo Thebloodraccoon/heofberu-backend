@@ -8,7 +8,7 @@ import pytest
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, AbilityScore, ASILevelChoice, CharacterFeatSource, UserRole
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.gm_panel.exceptions import (
+from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
     FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,

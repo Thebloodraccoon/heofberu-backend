@@ -7,8 +7,8 @@ from app.features.characters.gm_panel.exceptions import (
     MaxLevelBelowCharacterLevelException,
     MaxLevelCanOnlyIncreaseException,
 )
-from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
 from app.features.characters.gm_panel.level.schemas import CharacterMaxLevelResponse, MaxLevelUpdate
+from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.users.schemas import UserResponse
 
 

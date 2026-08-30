@@ -1,4 +1,12 @@
-"""Exceptions for GM grant and panel operations on a character."""
+"""
+Exceptions for GM grant and panel operations on a character.
+
+The feat-ASI exceptions (``CharacterFeatAlreadyKnownException``,
+``InvalidAbilityScoreIncreaseException``, ``FeatAsiChoiceRequiredException``,
+``FeatPrerequisiteNotMetException``) live in ``characters/feats/exceptions.py`` —
+they are shared with the level-up path in ``progression/``, so they must not
+hang off the GM panel.
+"""
 
 from app.core.exceptions import AppError
 

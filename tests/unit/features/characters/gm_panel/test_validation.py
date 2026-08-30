@@ -1,16 +1,16 @@
-"""Unit tests for the shared GM-panel ASI-choice/prerequisite validation helpers."""
+"""Unit tests for the shared feat-ASI choice/prerequisite validation helpers."""
 
 from types import SimpleNamespace
 
 import pytest
 
 from app.constants import AbilityScore
-from app.features.characters.gm_panel.exceptions import (
+from app.features.characters.feats.exceptions import (
     FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,
     InvalidAbilityScoreIncreaseException,
 )
-from app.features.characters.gm_panel.validation import (
+from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
     validate_ability_score_increase_cap,

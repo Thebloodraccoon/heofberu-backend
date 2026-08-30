@@ -25,9 +25,10 @@ from app.features.characters.crud.exceptions import (
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.gm_panel.feats.repository import CharacterFeatRepository
-from app.features.characters.gm_panel.features.repository import CharacterFeatureRepository
-from app.features.characters.gm_panel.level.repository import CharacterMaxLevelRepository
+from app.features.characters.feats.repository import CharacterFeatRepository
+from app.features.characters.features.repository import CharacterFeatureRepository
+from app.features.characters.items.repository import CharacterItemRepository
+from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.schemas import (
@@ -35,6 +36,7 @@ from app.features.characters.schemas import (
     CharacterCreate,
     CharacterFeatResponse,
     CharacterFeatureResponse,
+    CharacterItemResponse,
     CharacterResponse,
     CharacterUpdate,
     SavingThrowProficiencyResponse,
@@ -115,6 +117,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.item_repository = ItemRepository(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.feature_grant_repository = CharacterFeatureRepository(db)
+        self.character_item_repository = CharacterItemRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.stats_service = CharacterStatsService(db)
@@ -243,9 +246,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         List every feat granted to a character (GM/owner readable).
 
-        Grants come from every source — level-up ASI choices and GM-panel
-        grants alike; the writes live in ``gm_panel`` and the progression
-        service.
+        Grants come from every source — level-up ASI choices and GM-grant
+        writes (``gm_panel``) and the progression service.
         """
 
         await get_character_for_user(self.repository, character_id, current_user)
@@ -263,6 +265,14 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         grants = await self.feature_grant_repository.get_character_features(character_id)
         return [CharacterFeatureResponse.model_validate(grant) for grant in grants]
+
+    async def get_items(self, character_id: int, current_user: UserResponse) -> list[CharacterItemResponse]:
+        """List every item stack a character owns (GM/owner readable)."""
+
+        await get_character_for_user(self.repository, character_id, current_user)
+
+        stacks = await self.character_item_repository.get_character_items(character_id)
+        return [CharacterItemResponse.model_validate(stack) for stack in stacks]
 
     @use_cache(
         key_builder=lambda self, character_id, **_: f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}",

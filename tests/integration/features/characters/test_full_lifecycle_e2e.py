@@ -347,7 +347,7 @@ class TestFullCharacterLifecycle:
         assert sorted(entry["spell"]["name"] for entry in spell_body["spells"]) == ["Fire Bolt", "Light", "Shield"]
 
         items_response = await client.get(
-            f"/characters/{character_id}/gm-panel/items", headers=gm_headers
+            f"/characters/{character_id}/items", headers=gm_headers
         )
         assert items_response.status_code == 200
         stacks = {entry["item_id"]: entry for entry in items_response.json()}
