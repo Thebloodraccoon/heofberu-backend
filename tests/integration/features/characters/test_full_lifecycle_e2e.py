@@ -328,12 +328,16 @@ class TestFullCharacterLifecycle:
         assert proficiencies[skill.id]["is_expertise"] is True
 
         stats_response = await client.get(
-            f"/characters/{character_id}/gm-panel/stats", headers=gm_headers
+            f"/characters/{character_id}/stats", headers=gm_headers
         )
         assert stats_response.status_code == 200
         stats = stats_response.json()
-        assert stats["strength"] == {"base": 16, "total": 30}
-        assert stats["wisdom"] == {"base": 10, "total": 9}
+        assert set(stats["strength"]) == {"base", "total", "contributions"}
+        assert stats["strength"]["base"] == 16
+        assert stats["strength"]["total"] == 30
+        assert stats["strength"]["contributions"]
+        assert stats["wisdom"]["base"] == 10
+        assert stats["wisdom"]["total"] == 9
 
         spells_response = await client.get(
             f"/characters/{character_id}/spells", headers=player_headers

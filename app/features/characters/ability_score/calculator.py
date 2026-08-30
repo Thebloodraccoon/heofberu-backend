@@ -152,3 +152,33 @@ class DerivedStats:
 
     hit_dice: str
     speed: int
+
+
+@dataclass(frozen=True)
+class StatContribution:
+    """
+    One source's contribution to an ability's effective total, e.g.
+    ``{source: "race", label: "Mountain Dwarf", amount: 2}``.
+
+    ``source`` is a stable machine-readable kind ("race", "subrace",
+    "feat", "asi", "feature"); ``label`` is a human-readable description
+    (the race/feat/feature name, or "Level 4 (ASI)"); ``amount`` is the
+    signed points this source added.
+    """
+
+    source: str
+    label: str
+    amount: int
+
+
+@dataclass(frozen=True)
+class AbilityBreakdown:
+    """
+    A single ability's score breakdown: the ORIGINAL base value
+    (never mutated) next to its COMPUTED total and the list of
+    ``StatContribution`` sources that produced that total.
+    """
+
+    base: int
+    total: int
+    contributions: list[StatContribution]

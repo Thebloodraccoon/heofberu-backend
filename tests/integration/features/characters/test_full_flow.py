@@ -16,7 +16,7 @@ async def level_up(client, character_id, token, payload=None):
 
 async def get_stats(client, character_id, token):
     response = await client.get(
-        f"/characters/{character_id}/gm-panel/stats",
+        f"/characters/{character_id}/stats",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200

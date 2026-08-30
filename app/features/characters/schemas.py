@@ -189,6 +189,53 @@ class AbilityScoresResponse(BaseModel):
     charisma_total: int
 
 
+class StatSourceContribution(BaseModel):
+    """
+    One source's contribution to an ability's effective total — the
+    "what is calculated from what" row shown to the player.
+
+    ``source`` is a stable machine-readable kind ("race", "subrace",
+    "feat", "asi", "feature"); ``label`` is the human-readable source
+    (e.g. race/feat/feature name, or "Level 4 (ASI)"); ``amount`` is the
+    signed points this source contributed to the total.
+    """
+
+    source: str
+    label: str
+    amount: int
+
+
+class AbilityStatsView(BaseModel):
+    """
+    One ability's score view: the ORIGINAL base value (what the player
+    entered at creation, never mutated) next to the COMPUTED total and
+    the list of ``StatSourceContribution`` entries that produced it.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    base: int
+    total: int
+    contributions: list[StatSourceContribution] = Field(default_factory=list)
+
+
+class CharacterStatsResponse(BaseModel):
+    """
+    Player-facing view of a character's six abilities: the ORIGINAL base
+    values alongside the COMPUTED effective totals, each with the list of
+    sources that contributed to it. Totals are freshly calculated from the
+    current bonus sources (race/subrace bonuses + feat ASI + ASI-log
+    increases + feature increases) — never the possibly-stale cache row.
+    """
+
+    strength: AbilityStatsView
+    dexterity: AbilityStatsView
+    constitution: AbilityStatsView
+    intelligence: AbilityStatsView
+    wisdom: AbilityStatsView
+    charisma: AbilityStatsView
+
+
 class SkillProficiencyResponse(BaseModel):
     """A skill proficiency row returned on the character."""
 
@@ -213,8 +260,8 @@ class CharacterResponse(CharacterBase):
     The raw base ability scores are accepted on input (and read from the
     row via ``from_attributes``) but are EXCLUDED from serialized output —
     clients consume the effective totals from ``ability_scores`` instead,
-    and the original base values are exposed to the GM through
-    ``GET /characters/{id}/gm-panel/stats``. They carry inert defaults so
+    and the original base values are exposed through
+    ``GET /characters/{id}/stats``. They carry inert defaults so
     the cached-response JSON round-trips without them.
 
     ``hit_dice`` and ``speed`` are not read from the character row (the
@@ -239,8 +286,8 @@ class CharacterResponse(CharacterBase):
 
     # Raw base ability scores — accepted on input and read from the row,
     # but excluded from serialized output (clients use ``ability_scores``;
-    # the GM sees base values via /gm-panel/stats). Inert defaults keep
-    # cached-response JSON round-trips working.
+    # the base values are visible via /characters/{id}/stats). Inert
+    # defaults keep cached-response JSON round-trips working.
     strength: int = Field(default=10, exclude=True)
     dexterity: int = Field(default=10, exclude=True)
     constitution: int = Field(default=10, exclude=True)

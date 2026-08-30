@@ -9,6 +9,7 @@ from app.models import (
     CharacterAbilityScore,
     Class,
     Race,
+    Subrace,
 )
 from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 from app.models.character_association_models import CharacterFeat
@@ -115,6 +116,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
                 CharacterASIChoice.character_id == character_id,
                 CharacterASIChoice.applied_to_base.is_(False),
             )
+            .options(selectinload(CharacterASIChoiceIncrease.choice))
         )
         return list(result.scalars().all())
 
@@ -130,6 +132,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             select(FeatureAbilityIncrease)
             .join(CharacterFeature, CharacterFeature.feature_id == FeatureAbilityIncrease.feature_id)
             .where(CharacterFeature.character_id == character_id)
+            .options(selectinload(FeatureAbilityIncrease.feature))
         )
         return list(result.scalars().all())
 
@@ -176,4 +179,13 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             return {}
 
         result = await self.db.execute(select(Race).where(Race.id.in_(race_ids)))
+        return {row.id: row for row in result.scalars().unique().all()}
+
+    async def get_subraces(self, subrace_ids: list[int]) -> dict[int, Subrace]:
+        """Return ``{id: Subrace}`` for the given subrace ids (missing ids are absent)."""
+
+        if not subrace_ids:
+            return {}
+
+        result = await self.db.execute(select(Subrace).where(Subrace.id.in_(subrace_ids)))
         return {row.id: row for row in result.scalars().unique().all()}

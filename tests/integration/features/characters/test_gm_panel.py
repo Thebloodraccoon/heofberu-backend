@@ -1,4 +1,4 @@
-"""Tests for the GM panel: max HP writes, stats overview, free-form ASI adjustments, skill expertise."""
+"""Tests for the GM panel: max HP writes, player-facing stats, free-form ASI adjustments, skill expertise."""
 
 import pytest
 
@@ -51,22 +51,22 @@ class TestGmPanelMaxHp:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestGmPanelStats:
+class TestCharacterStats:
     async def test_stats_show_base_vs_total_without_bonuses(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=14, dexterity=10)
 
         response = await client.get(
-            f"/characters/{character.id}/gm-panel/stats",
+            f"/characters/{character.id}/stats",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
         stats = response.json()
-        assert stats["strength"] == {"base": 14, "total": 14}
-        assert stats["dexterity"] == {"base": 10, "total": 10}
+        assert stats["strength"] == {"base": 14, "total": 14, "contributions": []}
+        assert stats["dexterity"] == {"base": 10, "total": 10, "contributions": []}
         for ability in ("constitution", "intelligence", "wisdom", "charisma"):
-            assert set(stats[ability]) == {"base", "total"}
+            assert set(stats[ability]) == {"base", "total", "contributions"}
 
     async def test_stats_reflect_asi_adjustment_freshly(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
@@ -80,14 +80,19 @@ class TestGmPanelStats:
         assert add_response.status_code == 201
 
         response = await client.get(
-            f"/characters/{character.id}/gm-panel/stats",
+            f"/characters/{character.id}/stats",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
         # Base stays at the originally entered value; the counted
-        # adjustment lives in the ASI-choice log and lifts only the total.
-        assert response.json()["strength"] == {"base": 14, "total": 16}
+        # adjustment lives in the ASI-choice log and lifts only the total,
+        # reported as a "GM adjustment" contribution.
+        assert response.json()["strength"] == {
+            "base": 14,
+            "total": 16,
+            "contributions": [{"source": "asi", "label": "GM adjustment", "amount": 2}],
+        }
 
 
 @pytest.mark.integration
@@ -111,12 +116,16 @@ class TestGmPanelAsiAdjustments:
         adjustment = add_response.json()
         assert {item["ability"]: item["amount"] for item in adjustment["increases"]} == {"STR": 2, "DEX": -1}
 
-        list_response = await client.get(
-            f"/characters/{character.id}/gm-panel/asi",
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        assert list_response.status_code == 200
-        assert [row["id"] for row in list_response.json()] == [adjustment["id"]]
+        # The adjustment surfaces through the player-facing stats view as
+        # an "asi" contribution (the GM-panel has no GET listing anymore).
+        stats = (
+            await client.get(
+                f"/characters/{character.id}/stats",
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).json()
+        assert {c["label"]: c["amount"] for c in stats["strength"]["contributions"]} == {"GM adjustment": 2}
+        assert {c["label"]: c["amount"] for c in stats["dexterity"]["contributions"]} == {"GM adjustment": -1}
 
     async def test_remove_adjustment_reverts_base_scores(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")
@@ -138,18 +147,12 @@ class TestGmPanelAsiAdjustments:
 
         stats = (
             await client.get(
-                f"/characters/{character.id}/gm-panel/stats",
+                f"/characters/{character.id}/stats",
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
         ).json()
         # Deleting the log row reverts the total; the base was never touched.
-        assert stats["strength"] == {"base": 13, "total": 13}
-
-        listed = await client.get(
-            f"/characters/{character.id}/gm-panel/asi",
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        assert listed.json() == []
+        assert stats["strength"] == {"base": 13, "total": 13, "contributions": []}
 
     async def test_adjustment_above_thirty_returns_400(self, client, gm, gm_token, create_class, create_character):
         character_class = await create_class(name="Fighter")

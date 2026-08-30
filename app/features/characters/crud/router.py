@@ -19,6 +19,7 @@ from app.features.characters.schemas import (
     CharacterFeatureResponse,
     CharacterItemResponse,
     CharacterResponse,
+    CharacterStatsResponse,
     CharacterUpdate,
 )
 from app.features.users.security import CurrentUserDep, GmUserDep
@@ -168,6 +169,31 @@ async def get_character_feats(
     """List every feat granted to a character (level-up choices and GM grants alike)."""
 
     return await character_service.get_feats(character_id, current_user)
+
+
+@router.get(
+    "/{character_id:int}/stats",
+    response_model=CharacterStatsResponse,
+    summary="Ability scores with their source breakdown",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def get_character_stats(
+    character_id: int,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+):
+    """
+    Return each of the six abilities as `{base, total, contributions}`:
+    the ORIGINAL base value (player entry at creation, never mutated)
+    next to its COMPUTED effective total and the list of sources that
+    contributed to it (race/subrace bonuses, feat ASI, ASI-log increases,
+    feature increases). Freshly calculated — never the stale cache.
+    """
+
+    return await character_service.get_stats(character_id, current_user)
 
 
 @router.get(

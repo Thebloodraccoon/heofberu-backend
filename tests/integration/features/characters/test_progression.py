@@ -337,11 +337,15 @@ class TestLevelUp:
         # The base columns stay at their originally entered values; the
         # counted points live in the ASI-choice log and lift only the total.
         stats_response = await client.get(
-            f"/characters/{character['id']}/gm-panel/stats",
+            f"/characters/{character['id']}/stats",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert stats_response.status_code == 200
-        assert stats_response.json()["strength"] == {"base": 14, "total": 16}
+        assert stats_response.json()["strength"] == {
+            "base": 14,
+            "total": 16,
+            "contributions": [{"source": "asi", "label": "Level 4 (ASI)", "amount": 2}],
+        }
 
     async def test_feat_choice_with_asi_options_without_choice_returns_422(
         self,

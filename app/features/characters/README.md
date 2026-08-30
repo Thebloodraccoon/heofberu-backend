@@ -47,8 +47,11 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
 - `gm_panel/` — GM-only panel under `/characters/gm-panel`: feat grants
   (with mandatory ASI choice when offered), feature grants, inventory
   (items), free-form ±ASI adjustments, max-HP edit, the per-character
-  level-up cap (`max-level`), skill-expertise toggle, and the original-vs-
-  computed stats overview.
+  level-up cap (`max-level`), and skill-expertise toggle.
+- The original-vs-computed stats overview (with a per-source contribution
+  breakdown on every ability) is a **player-facing** read under
+  `GET /characters/{id}/stats` (see `crud/router.py`), not part of the GM
+  panel.
 
 ## One-shot creation contract
 
@@ -96,6 +99,11 @@ creates a character. Everything is derived server-side:
   (`ability_score/service.py`) — they follow the class/race reference rows,
   so no write path keeps them in sync. `armor_class`/`shield` are plain
   editable columns; there is no derived AC.
+- `GET /characters/{id}/stats` is the only read path that **recomputes**
+  per-ability totals fresh (never the cache) — it pairs each ORIGINAL base
+  value with its COMPUTED total plus the per-source contribution breakdown
+  ("what is calculated from what"), via
+  `CharacterStatsService.compute_breakdown`. Player/GM/owner readable.
 
 ## ASI-choice log as counted source
 

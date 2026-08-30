@@ -14,11 +14,12 @@ own capability segment.
   Per-row operations additionally take the row's own id as a query parameter
   (`feat_id`, `feature_id`, `item_id`, `adjustment_id`, `skill_id`) — the id of
   the character-scoped grant/stack/choice row, never the reference-catalog id.
-- **Access model**: every route is a GM-only write via `GmUserDep`, except four
+- **Access model**: every route is a GM-only write via `GmUserDep`, except two
   read-only endpoints that are GM **or** owner via `CurrentUserDep`:
-  `GET /stats`, `GET /max-level`, `GET /asi`, `GET /items`. The matching
-  player-facing reads live in plain character CRUD (`GET /characters/feats`,
-  `GET /characters/features`).
+  `GET /max-level`, `GET /items`. The matching player-facing reads live in
+  plain character CRUD (`GET /characters/feats`, `GET /characters/features`,
+  `GET /characters/stats`). Recorded ASI adjustments/choices have no GM-panel
+  listing — they surface via `GET /characters/stats` as `asi` contributions.
 - **Grant response schemas** live in top-level `characters/schemas.py`
   (`CharacterFeatResponse`, `CharacterFeatureResponse`,
   `SkillProficiencyResponse`) so `crud/` never imports from `gm_panel/`.
@@ -34,11 +35,10 @@ own capability segment.
 | `feats` | POST/PATCH/DELETE `/feats` | GM only | `CharacterFeatRepository` |
 | `features` | POST/PATCH/DELETE `/features` | GM only | `CharacterFeatureRepository` |
 | `items` | GET/POST/PATCH/DELETE `/items` | reads GM/owner, writes GM only | `CharacterItemRepository` + own schemas |
-| `asi` | GET/POST/DELETE `/asi` | reads GM/owner, writes GM only | own schemas |
+| `asi` | POST/DELETE `/asi` | GM only (no read; see `/characters/stats`) | own schemas |
 | `hp` | PATCH `/max-hp` | GM only | — |
 | `level` | PATCH/GET `/max-level` | reads GM/owner, writes GM only | `CharacterMaxLevelRepository` |
 | `skills` | PATCH `/skills` | GM only | `CharacterSkillProficiencyRepository` |
-| `stats` | GET `/stats` | GM/owner | own schemas |
 
 ### `feats` — feat grants
 
@@ -77,17 +77,20 @@ the stack and add a new one instead.
 
 ### `asi` — free-form ±adjustments
 
-GET lists the character's adjustments (`class_level IS NULL` rows only);
-POST adds one as a `character_asi_choices` row with `class_level IS NULL`
-(Postgres unique constraint treats NULLs as distinct), independent of class
-level and with no +2 level-up budget — negative amounts allowed. The base
-ability columns are NEVER touched: counted increments live in typed
-`character_asi_choice_increases` child rows and flow into effective totals
-through the calculator. A 20 cap IS enforced on the resulting effective total
-(raised by feature `new_cap` effects). DELETE reverts one adjustment by
+POST adds an adjustment as a `character_asi_choices` row with
+`class_level IS NULL` (Postgres unique constraint treats NULLs as distinct),
+independent of class level and with no +2 level-up budget — negative amounts
+allowed. The base ability columns are NEVER touched: counted increments live
+in typed `character_asi_choice_increases` child rows and flow into effective
+totals through the calculator. A 20 cap IS enforced on the resulting effective
+total (raised by feature `new_cap` effects). DELETE reverts one adjustment by
 deleting its log row (+ cascade of the child increments) and refreshing the
 cache, refusing level-tied rows (`LevelTiedAsiChoiceException`) — those belong
 to the level-up flow.
+
+There is no GET listing here: recorded adjustments (and level-tied choices)
+surface to the player as `asi` contributions via
+`GET /characters/{character_id}/stats`.
 
 ### `hp` — max HP
 
@@ -116,14 +119,6 @@ implies proficiency). Expertise is never derived automatically; clients read
 `is_expertise` off the proficiency row and double the proficiency bonus. The
 repository is a plain class (not `BaseRepository`) because the model has a
 composite PK `(character_id, skill_id)`.
-
-### `stats` — fresh-compute overview
-
-GET `/stats`: per-ability `{base, total}` pairing each ORIGINAL base value
-(player entry at creation, never mutated) with its COMPUTED effective total
-(base + race/subrace bonuses + counted ASI-choice log increases + feature
-effects). Always computed fresh via `CharacterStatsService.compute` — never
-read from the possibly-stale `character_ability_scores` cache.
 
 Services extend `CharacterSubDomainService` (light character fetch for access
 control; `GmPanelHpService` overrides `_light_character_fetch = False` because

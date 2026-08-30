@@ -18,13 +18,13 @@ async def set_feature_effects(client, gm_token, feature_id, increases):
 
 
 async def get_strength_total(client, character_id, token):
-    """Effective STR from the GM stats overview — always freshly computed, never the cache."""
+    """Effective STR from the player-facing stats view — always freshly computed, never the cache."""
     return await get_total(client, character_id, token, "strength")
 
 
 async def get_total(client, character_id, token, ability):
     response = await client.get(
-        f"/characters/{character_id}/gm-panel/stats",
+        f"/characters/{character_id}/stats",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200

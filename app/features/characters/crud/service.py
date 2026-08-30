@@ -4,13 +4,13 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import FeatureSourceType, UserRole
+from app.constants import AbilityScore, FeatureSourceType, UserRole
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
 from app.core.exceptions import GmAccessException
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.characters.ability_score.calculator import DerivedStats
+from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.cache import CHARACTER_CACHE_NAMESPACE, invalidate_character_cache
@@ -33,11 +33,13 @@ from app.features.characters.progression.feature_sync import sync_progression_fe
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.schemas import (
     AbilityScoresResponse,
+    AbilityStatsView,
     CharacterCreate,
     CharacterFeatResponse,
     CharacterFeatureResponse,
     CharacterItemResponse,
     CharacterResponse,
+    CharacterStatsResponse,
     CharacterUpdate,
     SavingThrowProficiencyResponse,
 )
@@ -254,6 +256,31 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
         grants = await self.feat_grant_repository.get_character_feats(character_id)
         return [CharacterFeatResponse.model_validate(grant) for grant in grants]
+
+    async def get_stats(self, character_id: int, current_user: UserResponse) -> CharacterStatsResponse:
+        """
+        Return each ability's ORIGINAL base value next to its COMPUTED
+        effective total, each with the list of ``StatSourceContribution``
+        sources that produced that total ("what is calculated from what",
+        player/GM/owner readable).
+        """
+
+        character = await get_character_for_user(self.repository, character_id, current_user)
+        breakdown_by_ability = await self.stats_service.compute_breakdown(character)
+
+        return CharacterStatsResponse(
+            **{
+                BASE_FIELD_BY_ABILITY[ability]: AbilityStatsView(
+                    base=breakdown.base,
+                    total=breakdown.total,
+                    contributions=[
+                        {"source": c.source, "label": c.label, "amount": c.amount}
+                        for c in breakdown.contributions
+                    ],
+                )
+                for ability, breakdown in breakdown_by_ability.items()
+            }
+        )
 
     async def get_features(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatureResponse]:
         """
