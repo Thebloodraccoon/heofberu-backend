@@ -74,7 +74,15 @@ def make_class(**overrides):
 
 
 def make_background():
-    return SimpleNamespace(id=3, granted_skills=[SimpleNamespace(id=2)])
+    return SimpleNamespace(
+        id=3,
+        granted_skills=[SimpleNamespace(id=2)],
+        description="",
+        personality_traits_suggestions="",
+        ideals_suggestions="",
+        bonds_suggestions="",
+        flaws_suggestions="",
+    )
 
 
 def make_race():

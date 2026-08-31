@@ -90,6 +90,7 @@ class ClassBase(BaseModel):
     skill_choice_count: int = 2
     spellcasting_ability: AbilityScore | None
     description: str = ""
+    image_url: str | None = None
 
 
 class ClassCreate(ClassBase):
@@ -153,6 +154,7 @@ class ClassUpdate(BaseModel):
     skill_choice_count: int | None = None
     spellcasting_ability: AbilityScore | None = None
     description: str | None = None
+    image_url: str | None = None
     saving_throws: list[AbilityScore] | None = None
     armor_proficiencies: list[ArmorProficiency] | None = None
     weapon_proficiencies: list[WeaponProficiency] | None = None
@@ -303,6 +305,7 @@ class ClassGetAllResponse(BaseModel):
     name: str
     hit_dice: DiceType
     subclasses: list["SubclassListResponse"] = []
+    image_url: str | None = None
 
 
 class ProgressionLevelRow(BaseModel):

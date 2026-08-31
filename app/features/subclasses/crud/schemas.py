@@ -16,6 +16,7 @@ class SubclassCreate(BaseModel):
     name: str
     class_id: int
     description: str = ""
+    image_url: str | None = None
 
 
 class SubclassUpdate(BaseModel):
@@ -23,6 +24,7 @@ class SubclassUpdate(BaseModel):
 
     name: str | None = None
     description: str | None = None
+    image_url: str | None = None
 
 
 class SubclassResponse(BaseModel):
@@ -34,6 +36,7 @@ class SubclassResponse(BaseModel):
     class_id: int
     name: str
     description: str
+    image_url: str | None = None
 
 
 class SubclassBriefResponse(BaseModel):
@@ -44,6 +47,7 @@ class SubclassBriefResponse(BaseModel):
     id: int
     class_id: int
     name: str
+    image_url: str | None = None
 
 
 class SubclassListResponse(BaseModel):
@@ -53,6 +57,7 @@ class SubclassListResponse(BaseModel):
 
     id: int
     name: str
+    image_url: str | None = None
 
 
 class SubclassFullResponse(SubclassResponse):

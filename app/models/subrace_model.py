@@ -21,6 +21,7 @@ class Subrace(settings.Base):  # type: ignore
     race_id = Column(Integer, ForeignKey("races.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(100), nullable=False, index=True)
     description = Column(Text, nullable=False, default="")
+    image_url = Column(String(512), nullable=True)
 
     __table_args__ = (UniqueConstraint("race_id", "name", name="uq_subrace_race_id_name"),)
 

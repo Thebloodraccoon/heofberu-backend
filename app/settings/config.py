@@ -24,6 +24,11 @@ class AppSettings(BaseSettings):
     ADMIN_LOGIN: str = Field(..., alias="ADMIN_LOGIN")
     ADMIN_PASSWORD: str = Field(..., alias="ADMIN_PASSWORD")
 
+    # Supabase file storage — used by the core image-upload service
+    SUPABASE_URL: str = Field(..., alias="SUPABASE_URL")
+    SUPABASE_KEY: str = Field(..., alias="SUPABASE_KEY")
+    STORAGE_BUCKET: str = Field(default="catalog-images", alias="STORAGE_BUCKET")
+
     # DB & Redis
     DATABASE_URL: str = Field(..., alias="DATABASE_URL")
     REDIS_URL: str = Field(..., alias="REDIS_URL")

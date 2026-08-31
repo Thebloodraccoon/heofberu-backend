@@ -16,6 +16,7 @@ class SubraceBase(BaseModel):
     name: str
     race_id: int
     description: str = ""
+    image_url: str | None = None
 
 
 class SubraceCreate(SubraceBase):
@@ -49,6 +50,7 @@ class SubraceUpdate(BaseModel):
 
     name: str | None = None
     description: str | None = None
+    image_url: str | None = None
 
 
 class SubraceAbilityBonusesUpdate(BaseModel):
@@ -81,6 +83,7 @@ class SubraceBriefResponse(BaseModel):
     id: int
     race_id: int
     name: str
+    image_url: str | None = None
 
 
 class SubraceFullResponse(SubraceResponse):
