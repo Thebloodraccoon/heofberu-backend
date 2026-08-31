@@ -20,6 +20,7 @@ from app.settings import settings
 
 ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
 REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+RESET_TOKEN_EXPIRES = timedelta(minutes=15)
 
 _BLACKLIST_KEY_PREFIX = "token_blacklist:"
 
@@ -52,6 +53,12 @@ def create_refresh_token(data: dict) -> str:
     """Create refresh token with 30 days expiration."""
 
     return create_token(data, "refresh", REFRESH_TOKEN_EXPIRES)
+
+
+def create_reset_token(data: dict) -> str:
+    """Create a short-lived (15 min) password-reset token."""
+
+    return create_token(data, "reset", RESET_TOKEN_EXPIRES)
 
 
 def decode_token(token: str) -> dict:
@@ -110,6 +117,12 @@ def verify_refresh_token(token_str: str) -> DecodedToken:
     """Verify refresh token string and return its parsed claims."""
 
     return _verify_token_str(token_str, "refresh")
+
+
+def verify_reset_token(token_str: str) -> DecodedToken:
+    """Verify a password-reset token string and return its parsed claims."""
+
+    return _verify_token_str(token_str, "reset")
 
 
 def _verify_token_str(token_str: str, required_token_type: str) -> DecodedToken:

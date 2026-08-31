@@ -77,8 +77,8 @@ async def update_current_user(data: UserProfileUpdate, user_service: UserService
     """
     Update the current user's own profile (personal cabinet).
 
-    Allows editing ``username``, ``email``, ``bio``, ``contact`` and
-    ``location``. The ``role`` is never editable here — assign it through the
+    Allows editing ``username``, ``email``, ``bio``, ``phone``, ``discord``
+    and ``telegram``. The ``role`` is never editable here — assign it through the
     GM endpoints instead.
     """
 
@@ -176,7 +176,7 @@ async def update_user(
                     "summary": "Edit profile fields",
                     "value": {
                         "bio": "Promoted to lorekeeper of the guild.",
-                        "location": "Waterdeep",
+                        "discord": "guild_keeper",
                     },
                 },
                 "role_change": {

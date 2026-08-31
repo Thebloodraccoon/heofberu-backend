@@ -29,6 +29,16 @@ class AppSettings(BaseSettings):
     SUPABASE_KEY: str = Field(..., alias="SUPABASE_KEY")
     STORAGE_BUCKET: str = Field(default="catalog-images", alias="STORAGE_BUCKET")
 
+    # Email (SMTP) — used by the password-reset mailer. No defaults in prod:
+    # production is required to provide a reachable SMTP relay.
+    SMTP_HOST: str = Field(default="", alias="SMTP_HOST")
+    SMTP_PORT: int = Field(default=587, alias="SMTP_PORT")
+    SMTP_USER: str = Field(default="", alias="SMTP_USER")
+    SMTP_PASSWORD: str = Field(default="", alias="SMTP_PASSWORD")
+    SMTP_FROM: str = Field(default="", alias="SMTP_FROM")
+    SMTP_USE_TLS: bool = Field(default=True, alias="SMTP_USE_TLS")
+    SMTP_STARTTLS: bool = Field(default=False, alias="SMTP_STARTTLS")
+
     # DB & Redis
     DATABASE_URL: str = Field(..., alias="DATABASE_URL")
     REDIS_URL: str = Field(..., alias="REDIS_URL")

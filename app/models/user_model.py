@@ -22,8 +22,9 @@ class User(settings.Base):  # type: ignore
     role = Column(UserRoleType, nullable=False, default=UserRole.PLAYER, server_default="PLAYER")
 
     bio = Column(Text, nullable=True)
-    contact = Column(String(length=100), nullable=True)
-    location = Column(String(length=100), nullable=True)
+    phone = Column(String(length=100), nullable=True)
+    discord = Column(String(length=100), nullable=True)
+    telegram = Column(String(length=100), nullable=True)
 
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(
