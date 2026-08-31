@@ -13,8 +13,9 @@ singleton (mirroring the cached Redis client in
 """
 
 import asyncio
+import hashlib
 
-from supabase import AsyncClient, create_client
+from supabase import AsyncClient, create_async_client
 
 from app.core.exceptions import AppError
 from app.settings import settings
@@ -57,7 +58,7 @@ class _ClientState:
             if cls._client is None or cls._loop is not current_loop:
                 if cls._client is not None:
                     await cls._client.aclose()
-                cls._client = create_client(SUPABASE_URL, SUPABASE_KEY)
+                cls._client = await create_async_client(SUPABASE_URL, SUPABASE_KEY)
                 cls._loop = current_loop
 
             return cls._client
@@ -129,12 +130,16 @@ class ImageStorageService:
             await bucket.upload(
                 path,
                 content,
-                {"content-type": content_type, "upsert": "true"},
+                {
+                    "content-type": content_type,
+                    "upsert": "true",
+                    "cache-control": "0",
+                },
             )
         except Exception as exc:  # noqa: BLE001 - surface any provider failure uniformly
             raise ImageUploadError(f"Failed to upload image: {exc}") from exc
 
-        return _public_url(path)
+        return f"{_public_url(path)}?v={hashlib.md5(content).hexdigest()[:8]}"
 
     async def delete_image(self, entity: str, row_id: int) -> None:
         """

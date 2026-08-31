@@ -43,7 +43,7 @@ class TestClassOpenRead:
 
         assert response.status_code == 200
         fighters = [item for item in response.json()["items"] if item["name"] == "Fighter"]
-        assert fighters[0]["subclasses"] == [{"id": subclass.id, "name": "Champion"}]
+        assert fighters[0]["subclasses"] == [{"id": subclass.id, "name": "Champion", "image_url": None}]
 
     async def test_list_classes_without_subclasses_returns_empty_list(self, client, create_class):
         await create_class(name="Fighter")
