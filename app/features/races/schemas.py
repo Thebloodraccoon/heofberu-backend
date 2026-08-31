@@ -19,6 +19,7 @@ class RaceBase(BaseModel):
     size: RaceSize = RaceSize.MEDIUM
     speed: int = 30
     description: str = ""
+    image_url: str | None = None
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
@@ -74,6 +75,7 @@ class RaceUpdate(BaseModel):
     size: RaceSize | None = None
     speed: int | None = None
     description: str | None = None
+    image_url: str | None = None
 
 
 class AbilityBonusesUpdate(BaseModel):
@@ -138,3 +140,4 @@ class RaceGetAllResponse(BaseModel):
     id: int
     name: str
     size: RaceSize
+    image_url: str | None = None

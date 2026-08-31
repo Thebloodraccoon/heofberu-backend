@@ -5,9 +5,11 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.db import DatabaseDep
+from app.core.storage.dependencies import StorageServiceDep
 from app.features.classes.armor.service import ClassArmorService
 from app.features.classes.crud.service import ClassCrudService
 from app.features.classes.features.service import ClassFeatureService
+from app.features.classes.image.service import ClassImageService
 from app.features.classes.items.service import ClassItemsService
 from app.features.classes.progression.service import ClassProgressionService
 from app.features.classes.skills.service import ClassSkillService
@@ -85,3 +87,12 @@ def get_class_progression_service(db: DatabaseDep) -> ClassProgressionService:
 
 
 ClassProgressionDep = Annotated[ClassProgressionService, Depends(get_class_progression_service)]
+
+
+def get_class_image_service(db: DatabaseDep, storage: StorageServiceDep) -> ClassImageService:
+    """Get the class image service instance."""
+
+    return ClassImageService(db, storage)
+
+
+ClassImageDep = Annotated[ClassImageService, Depends(get_class_image_service)]

@@ -26,6 +26,7 @@ class Class(settings.Base):  # type: ignore
     spellcasting_ability = Column(AbilityScoreType, nullable=True)
 
     description = Column(Text, nullable=False, default="")
+    image_url = Column(String(512), nullable=True)
 
     saving_throws = relationship(
         "ClassSavingThrow",

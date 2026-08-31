@@ -25,6 +25,7 @@ class Subclass(settings.Base):  # type: ignore
     name = Column(String(100), nullable=False, index=True)
 
     description = Column(Text, nullable=False, default="")
+    image_url = Column(String(512), nullable=True)
 
     __table_args__ = (
         # A class cannot have two subclasses with the same name.

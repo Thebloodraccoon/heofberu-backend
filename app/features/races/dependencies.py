@@ -5,9 +5,11 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.db import DatabaseDep
+from app.core.storage.dependencies import StorageServiceDep
 from app.features.races.ability_bonuses.service import RaceAbilityBonusService
 from app.features.races.crud.service import RaceCrudService
 from app.features.races.features.service import RaceFeatureService
+from app.features.races.image.service import RaceImageService
 from app.features.races.skills.service import RaceSkillService
 
 
@@ -45,3 +47,12 @@ def get_race_ability_bonus_service(db: DatabaseDep) -> RaceAbilityBonusService:
 
 
 RaceAbilityBonusesDep = Annotated[RaceAbilityBonusService, Depends(get_race_ability_bonus_service)]
+
+
+def get_race_image_service(db: DatabaseDep, storage: StorageServiceDep) -> RaceImageService:
+    """Get the race image service instance."""
+
+    return RaceImageService(db, storage)
+
+
+RaceImageDep = Annotated[RaceImageService, Depends(get_race_image_service)]

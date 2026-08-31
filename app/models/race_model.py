@@ -20,6 +20,7 @@ class Race(settings.Base):  # type: ignore
     speed = Column(Integer, nullable=False, default=30)
 
     description = Column(Text, nullable=False, default="")
+    image_url = Column(String(512), nullable=True)
 
     ability_bonuses = relationship(
         "RaceAbilityBonus",
