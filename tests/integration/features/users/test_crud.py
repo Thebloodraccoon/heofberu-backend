@@ -132,15 +132,15 @@ class TestPersonalCabinet:
     async def test_user_can_update_own_profile(self, client, player_token, player):
         response = await client.put(
             "/users/me",
-            json={"bio": "Люблю драконов", "location": "Москва", "contact": "@telegram"},
+            json={"bio": "Люблю драконов", "phone": "+7 900 000-00-00", "discord": "@telegram"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 200
         body = response.json()
         assert body["bio"] == "Люблю драконов"
-        assert body["location"] == "Москва"
-        assert body["contact"] == "@telegram"
+        assert body["phone"] == "+7 900 000-00-00"
+        assert body["discord"] == "@telegram"
         assert body["role"] == "player"
 
     async def test_user_can_update_username_and_email(self, client, player_token):

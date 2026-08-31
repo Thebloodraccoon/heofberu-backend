@@ -92,7 +92,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
     async def update_profile(self, user_id: int, data: UserProfileUpdate) -> UserResponse:
         """
-        Update a user's own profile (username, email, bio, contact, location).
+        Update a user's own profile (username, email, bio, phone, discord, telegram).
 
         Unlike :meth:`update_user` this never touches the ``role`` and does not
         block the seeded default admin, so the admin can edit their personal

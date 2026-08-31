@@ -6,12 +6,16 @@ from fastapi import APIRouter, Body, Request, Response, status
 
 from app.features.auth.dependencies import AuthServiceDep
 from app.features.auth.schemas import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     LoginResponse,
     LogoutResponse,
     RefreshResponse,
     RegisterRequest,
     RegisterResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
 )
 from app.features.auth.service import REFRESH_COOKIE_NAME
 from app.features.users.security import CurrentUserDep, TokenDep
@@ -168,3 +172,78 @@ async def refresh_tokens(http_request: Request, auth_service: AuthServiceDep):
 
     refresh_token = http_request.cookies.get(REFRESH_COOKIE_NAME, "")
     return await auth_service.refresh_tokens(refresh_token)
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    summary="Request a password reset link by email",
+    responses={
+        400: {"description": "Email fails validation."},
+        422: {"description": "Validation error — email format is invalid."},
+    },
+)
+async def forgot_password(
+    data: Annotated[
+        ForgotPasswordRequest,
+        Body(
+            openapi_examples={
+                "player": {
+                    "summary": "Request a reset link",
+                    "value": {
+                        "email": "aria@example.com",
+                    },
+                },
+            },
+        ),
+    ],
+    auth_service: AuthServiceDep,
+):
+    """
+    Request a password-reset email. Open endpoint.
+
+    If an account exists for ``email``, a short-lived reset link is sent
+    to it. The response is identical whether or not the account exists, so
+    this cannot be used to enumerate registered emails. The emailed link
+    is built from the backend's hardcoded reset-page URL plus the token.
+    """
+
+    return await auth_service.forgot_password(data)
+
+
+@router.post(
+    "/reset-password",
+    response_model=ResetPasswordResponse,
+    summary="Set a new password using the emailed reset token",
+    responses={
+        400: {"description": "Reset token invalid/expired/used, weak password, or passwords do not match."},
+        422: {"description": "Validation error — body shape is invalid."},
+    },
+)
+async def reset_password(
+    data: Annotated[
+        ResetPasswordRequest,
+        Body(
+            openapi_examples={
+                "player": {
+                    "summary": "Set a new password",
+                    "value": {
+                        "token": "<token-from-email-link>",
+                        "new_password": "correct-horse-battery",
+                        "confirm_password": "correct-horse-battery",
+                    },
+                },
+            },
+        ),
+    ],
+    auth_service: AuthServiceDep,
+):
+    """
+    Set a new password using the reset token from the emailed link.
+
+    The frontend collects the new password twice, then submits this payload.
+    On success (200) the user can log in with the new password — the
+    frontend then redirects to the login page.
+    """
+
+    return await auth_service.reset_password(data)

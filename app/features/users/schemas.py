@@ -28,8 +28,10 @@ class ProfileFields(BaseModel):
         if username is not None:
             if len(username) < 3 or len(username) > 32:
                 raise ValueError("Username must be between 3 and 32 characters long")
-            if not re.match(r"^[a-zA-Z0-9_-]+$", username):
-                raise ValueError("Username can only contain letters, numbers, underscores, and hyphens")
+            if not re.match(r"^[A-Za-z0-9А-Яа-яЁёІіЇїЄєҐґ_-]+$", username):
+                raise ValueError(
+                    "Username can only contain letters, numbers, underscores, and hyphens"
+                )
         return username
 
 
@@ -41,8 +43,9 @@ class UserBase(ProfileFields):
     email: str
 
     bio: str | None = None
-    contact: str | None = None
-    location: str | None = None
+    phone: str | None = None
+    discord: str | None = None
+    telegram: str | None = None
 
 
 class UserCreate(UserBase):
@@ -67,8 +70,9 @@ class UserUpdate(ProfileFields):
     role: UserRole | None = None
 
     bio: str | None = None
-    contact: str | None = None
-    location: str | None = None
+    phone: str | None = None
+    discord: str | None = None
+    telegram: str | None = None
 
     @model_validator(mode="before")
     def validate_data(cls, values):
@@ -84,15 +88,16 @@ class UserProfileUpdate(ProfileFields):
     Self-service payload for the personal cabinet.
 
     Same editable fields as :class:`UserUpdate` but never carries a ``role``:
-    users can change their own username/email/bio/contact/location only.
+    users can change their own username/email/bio/phone/discord/telegram only.
     """
 
     username: str | None = None
     email: str | None = None
 
     bio: str | None = None
-    contact: str | None = None
-    location: str | None = None
+    phone: str | None = None
+    discord: str | None = None
+    telegram: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
