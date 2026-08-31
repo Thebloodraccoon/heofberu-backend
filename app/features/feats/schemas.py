@@ -131,10 +131,11 @@ class FeatResponse(FeatBase):
 
 
 class FeatGetAllResponse(BaseModel):
-    """Lightweight listing row: no description, no ASI choices."""
+    """Lightweight listing row: no description."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
     min_level: int | None = None
+    ability_score_increases: list[AbilityScoreIncreaseResponse] = []

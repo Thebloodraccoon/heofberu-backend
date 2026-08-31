@@ -32,7 +32,8 @@ async def get_feats(
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
-    Return a paginated list of feats with only `id` and `name`.
+    Return a paginated list of feats with `id`, `name`, and the ASI choices
+    (`ability_score_increases`) that change a character's characteristics.
 
     Open endpoint, no authentication required.
 
@@ -41,8 +42,8 @@ async def get_feats(
     Response is `{items, total, page, size}` — `total` is the count of
     matching feats across every page, not just this one.
 
-    Does not include prerequisites or ability score increase choices —
-    use `GET /feats/{feat_id}` for the full record.
+    Does not include prerequisites or the full description — use
+    `GET /feats/{feat_id}` for the full record.
     """
 
     return await feat_service.get_all(page=page, size=size, search=search)

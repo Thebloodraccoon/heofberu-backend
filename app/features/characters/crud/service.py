@@ -51,6 +51,7 @@ from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models import CharacterAbilityScore, CharacterSkillProficiency, Class
+from app.models.character_backstory_model import CharacterBackstory
 from app.models.character_item_model import CharacterItem
 from app.models.character_model import Character
 from app.models.source_item_choice_model import SourceItemChoiceOption
@@ -342,6 +343,13 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
           - HP: the level-1 maximum is fixed server-side as the class's
             hit die faces + effective CON modifier; ``current_hp`` starts
             equal to it.
+          - when ``background_id`` is set, the personality card (``personality_traits``,
+            ``ideals``, ``bonds``, ``flaws``) is always taken from the
+            background's corresponding ``*_suggestions`` fields;
+          - when ``background_id`` is set, the character's backstory is
+            written from the background's ``description`` into the dedicated
+            ``character_backstories`` row (never on the cached character),
+            mirroring the ``GET/PUT /characters/{id}/backstory`` contract.
 
         After creation, the class's spell slot progression for level 1 is
         applied immediately, and the class/subclass/race/subrace/background
@@ -375,10 +383,29 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         )
 
         background_skill_ids: list[int] = []
+        background_personality = {
+            "personality_traits": "",
+            "ideals": "",
+            "bonds": "",
+            "flaws": "",
+        }
+        background_description = ""
         if character_data.background_id is not None:
             background = await self.background_repository.get_by_id(character_data.background_id)
             if background is not None:
                 background_skill_ids = [skill.id for skill in background.granted_skills]
+                # Always take the personality card from the background when one
+                # is chosen (the player's own values are replaced with the
+                # background's suggestions).
+                background_personality = {
+                    "personality_traits": background.personality_traits_suggestions,
+                    "ideals": background.ideals_suggestions,
+                    "bonds": background.bonds_suggestions,
+                    "flaws": background.flaws_suggestions,
+                }
+                # The backstory is written from the background's description —
+                # the client does not send backstory at creation.
+                background_description = background.description
 
         # Same pattern as the background: get_by_id eager-loads granted_skills,
         # so no extra query is needed to collect them.
@@ -392,9 +419,21 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         payload["owner_id"] = current_user.id
         payload["level"] = 1
         payload["temp_hp"] = 0
+        # Personality card comes from the background when one is chosen.
+        if character_data.background_id is not None:
+            payload.update(background_personality)
 
         async with self._atomic():
             character = await self.repository.create(payload, commit=False)
+
+            # The backstory description is kept off the cached character, on
+            # its own dedicated row, mirroring the backstory endpoints. It is
+            # written from the background's description when a background is
+            # chosen at creation.
+            if background_description:
+                self.repository.db.add(
+                    CharacterBackstory(character_id=character.id, content=background_description)
+                )
 
             # The GM-set level-up cap starts at the character's starting
             # level: it cannot level up until a GM raises its maximum.

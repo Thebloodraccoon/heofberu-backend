@@ -2,7 +2,11 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import AbilityScore, CharacterFeatSource, FeatureSourceType
+from app.constants import (
+    AbilityScore,
+    CharacterFeatSource,
+    FeatureSourceType,
+)
 from app.features.characters.conditions.schemas import CharacterConditionResponse
 from app.features.items.crud.schemas import ItemResponse
 
