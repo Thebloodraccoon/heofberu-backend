@@ -142,6 +142,7 @@ class FeatureGetAllResponse(BaseModel):
     subrace_id: int | None = None
     background_id: int | None = None
     level: int | None = None
+    ability_increases: list[AbilityIncreaseItem] = []
 
 
 class NestedFeatureCreate(BaseModel):

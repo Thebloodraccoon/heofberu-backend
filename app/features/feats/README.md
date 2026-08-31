@@ -13,7 +13,7 @@ Reference catalog for the `Feat` entity — origin/general feats with base field
 
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
-| GET | `/feats` | open | Paginated list (`Page[FeatGetAllResponse]`: id/name/min_level only); `search` on name. |
+| GET | `/feats` | open | Paginated list (`Page[FeatGetAllResponse]`: id/name/min_level + `ability_score_increases`); `search` on name. |
 | GET | `/feats/{feat_id}` | open | Full `FeatResponse` including ASI choices; cached as a single unit. |
 | POST | `/feats` | GM | Optional nested `ability_score_increases` seeded atomically with the row; duplicate `name` → 409. |
 | PATCH | `/feats/{feat_id}` | GM | Base fields only — ASI choices have their own PUT endpoint; duplicate `name` → 409. |

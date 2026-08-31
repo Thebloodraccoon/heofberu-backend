@@ -130,12 +130,34 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
     def __init__(self, db: AsyncSession):
         super().__init__(CharacterSpell, db)
 
+    @staticmethod
+    def _spell_load_options() -> list:
+        """
+        Eager-load the ``Spell`` plus its ``available_*`` relationships.
+
+        ``CharacterSpellResponse.spell`` is the full ``SpellResponse``, which
+        serializes ``available_classes``/``available_subclasses``/
+        ``available_races``/``available_subraces``. Those ``Spell``
+        relationships default to lazy loading, so without eager-loading them
+        here the async session would raise ``MissingGreenlet`` during
+        Pydantic serialization. Each sibling is its own ``Load`` path rooted
+        at ``CharacterSpell.spell``.
+        """
+        base = selectinload(CharacterSpell.spell)
+        return [
+            base,
+            base.selectinload(Spell.available_classes),
+            base.selectinload(Spell.available_subclasses),
+            base.selectinload(Spell.available_races),
+            base.selectinload(Spell.available_subraces),
+        ]
+
     async def get_known_spells(self, character_id: int) -> list[CharacterSpell]:
         """List all spells known by the character, each with its ``Spell`` eager-loaded."""
 
         result = await self.db.execute(
             select(CharacterSpell)
-            .options(selectinload(CharacterSpell.spell))
+            .options(*self._spell_load_options())
             .where(CharacterSpell.character_id == character_id)
         )
         return list(result.scalars().unique().all())
@@ -159,7 +181,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
 
         result = await self.db.execute(
             select(CharacterSpell)
-            .options(selectinload(CharacterSpell.spell))
+            .options(*self._spell_load_options())
             .where(
                 CharacterSpell.character_id == character_id,
                 CharacterSpell.spell_id == spell_id,
