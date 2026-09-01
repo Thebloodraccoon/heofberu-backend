@@ -1,10 +1,4 @@
-"""
-Request schemas for GM feature grants on a character.
-
-The response shape (``CharacterFeatureResponse`` and its embedded brief)
-lives in the top-level ``characters/schemas.py`` because it is shared
-by the player-facing reads in ``crud/`` and by these writes.
-"""
+"""Request schemas for GM feature grants on a character."""
 
 from pydantic import BaseModel
 

@@ -11,22 +11,16 @@ from app.features.shared.items.mixins import SourceItemManagerMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
 from app.models import Background
 
-
 class BackgroundItemsService(
     SourceItemManagerMixin,
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
 ):
     """
-    Everything about a background's starting equipment: flat items (fixed —
-    backgrounds grant no item choices; the choice-group mechanic exists for
-    classes only).
+    Background starting-equipment service: per-source list and full replacement.
 
-    ``list_items``/``set_items`` come from
-    :class:`SourceItemManagerMixin`; the generic CRUD machinery
-    (``_get_or_404``/``_get_response``/``_invalidate_cache``) comes from
-    :class:`BaseService`. Any write purges the ``backgrounds``,
-    ``background_features``, ``features`` and ``nested_items`` namespaces via
-    ``cache_namespaces``.
+    ``list_items``/``set_items`` come from :class:`SourceItemManagerMixin`;
+    generic CRUD machinery comes from :class:`BaseService`. Backgrounds grant
+    flat items with no choice-group mechanic (that exists for classes only).
     """
 
     repository: BackgroundRepository
@@ -36,6 +30,8 @@ class BackgroundItemsService(
     cache_namespaces = BACKGROUND_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Compose the nested source-item service."""
+
         super().__init__(
             repository=BackgroundRepository(db),
             response_schema=BackgroundResponse,

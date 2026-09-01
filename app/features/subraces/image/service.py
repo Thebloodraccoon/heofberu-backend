@@ -1,5 +1,7 @@
 """Subrace image service: upload/remove a subrace's catalog image."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import RecordNotFoundError
@@ -7,21 +9,17 @@ from app.core.storage.service import ImageStorageService
 from app.features.subraces.cache import invalidate_subrace_cache
 from app.features.subraces.crud.repository import SubraceRepository
 
+logger = logging.getLogger(__name__)
+
 ENTITY = "subraces"
 
 
 class SubraceImageService:
-    """
-    Upload/remove a subrace's image.
-
-    The image is stored in Supabase under the ``subraces`` folder (pinned to
-    ``subraces/{subrace_id}.{ext}``) and its public URL is persisted on the
-    subrace's ``image_url`` column. DB writes flow through
-    ``SubraceRepository`` and the shared subrace cache is invalidated on
-    every mutation.
-    """
+    """Upload/remove a subrace's catalog image via Supabase Storage."""
 
     def __init__(self, db: AsyncSession, storage: ImageStorageService):
+        """Initialize with a subrace repository and the shared image storage service."""
+
         self._repository = SubraceRepository(db)
         self._storage = storage
 
@@ -39,7 +37,7 @@ class SubraceImageService:
 
         url = await self._storage.upload_image(ENTITY, subrace_id, content, content_type)
         await self._repository.update(subrace, {"image_url": url})
-        await invalidate_subrace_cache()
+        await self._invalidate_cache(subrace_id)
 
         return url
 
@@ -52,4 +50,16 @@ class SubraceImageService:
 
         await self._storage.delete_image(ENTITY, subrace_id)
         await self._repository.update(subrace, {"image_url": None})
-        await invalidate_subrace_cache()
+        await self._invalidate_cache(subrace_id)
+
+    async def _invalidate_cache(self, subrace_id: int) -> None:
+        """Invalidate the shared subrace cache; failures are logged rather than raised."""
+
+        try:
+            await invalidate_subrace_cache()
+        except Exception as exc:  # noqa: BLE001 - cache failure must never fail the write path
+            logger.error(
+                "Failed to invalidate subrace cache after mutating subrace %s: %s",
+                subrace_id,
+                exc,
+            )

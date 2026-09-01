@@ -13,20 +13,14 @@ from app.features.users.schemas import UserResponse
 
 class CharacterBackstoryService(CharacterSubDomainService):
     """
-    Manage a character's backstory (``character_backstories``).
-
-    Unlike the character sheet, the backstory can run several pages of text,
-    so it is deliberately served UNcached — no ``@use_cache`` and no
-    ``invalidate_character_cache`` on write, because the backstory is never
-    part of the cached ``CharacterResponse``. Reads hit the DB directly
-    through the owning-character access check.
-
-    ``GET`` returns an empty ``content`` when no row exists (an empty
-    backstory is a valid, cheap default); ``PUT`` upserts (creates the row
-    on first write). ``READ``/``WRITE`` are available to the GM and owner.
+    Manage a character's backstory (``character_backstories``). Deliberately
+    served UNcached — the backstory can be several pages of text and is
+    never part of the cached ``CharacterResponse``.
     """
 
     def __init__(self, db: AsyncSession):
+        """Create the backstory repository."""
+
         super().__init__(db)
         self.backstory_repository = CharacterBackstoryRepository(db)
 

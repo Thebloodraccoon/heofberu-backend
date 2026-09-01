@@ -61,6 +61,7 @@ async def set_background(
     everything a background grants at creation: its features, its granted
     skills, and its starting equipment.
     """
+
     await progression_service.set_background(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
 
@@ -100,6 +101,7 @@ async def change_subclass(
     clears it). Grants the subclass's features at or below the
     character's current level.
     """
+
     await progression_service.set_subclass(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
 
@@ -139,6 +141,7 @@ async def change_subrace(
     it). Grants the subrace's features at or below the character's
     current level and re-derives subrace ability bonuses.
     """
+
     await progression_service.set_subrace(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
 
@@ -217,6 +220,7 @@ async def level_up(
     ``choice`` (ASI increments or a feat) is required and is recorded in
     ``character_asi_choices``.
     """
+
     await progression_service.level_up(character_id, data, current_user)
     return await character_service.get_character(character_id, current_user)
 
@@ -239,6 +243,7 @@ async def can_level_up(
     Returns whether the character's level is below the GM-set maximum
     (``character_max_levels``), along with both values.
     """
+
     return await progression_service.can_level_up(character_id, current_user)
 
 
@@ -257,4 +262,5 @@ async def get_asi_choices(
     current_user: CurrentUserDep,
 ):
     """Audit trail of every Ability Score Improvement resolution, ordered by level."""
+
     return await progression_service.get_asi_choices(character_id, current_user)

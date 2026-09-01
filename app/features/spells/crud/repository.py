@@ -17,6 +17,8 @@ class SpellRepository(BaseRepository[Spell]):
     """Spell-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
+        """Initialise with default load options and name uniqueness."""
+
         super().__init__(
             Spell,
             db,
@@ -51,20 +53,7 @@ class SpellRepository(BaseRepository[Spell]):
         return await self.get_many_by_ids(Subrace, subrace_ids)
 
     async def set_classes(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> Spell:
-        """
-        Replace all classes a spell is available to.
-
-        Written through the association table (delete + insert) instead of
-        assigning the ORM ``available_classes`` relationship: assigning an
-        unloaded many-to-many collection would trigger a lazy load, which
-        is not supported on the async stack.
-
-        ``commit`` lets callers that need atomicity across multiple writes
-        (e.g. creating a spell + its class/race availability together)
-        defer the commit and flush instead, without duplicating this
-        method. See ``RaceRepository.set_ability_bonuses`` for the same
-        pattern.
-        """
+        """Replace all classes a spell is available to, via the association table to avoid a lazy load."""
 
         await self.replace_association(
             spell_classes,
@@ -78,7 +67,7 @@ class SpellRepository(BaseRepository[Spell]):
         return spell
 
     async def set_subclasses(self, spell: Spell, subclasses: list[Subclass], *, commit: bool = True) -> Spell:
-        """Replace all subclasses a spell is available to. See ``set_classes`` for ``commit`` semantics."""
+        """Replace all subclasses a spell is available to."""
 
         await self.replace_association(
             spell_subclasses,
@@ -92,7 +81,7 @@ class SpellRepository(BaseRepository[Spell]):
         return spell
 
     async def set_races(self, spell: Spell, races: list[Race], *, commit: bool = True) -> Spell:
-        """Replace all races a spell is available to. See ``set_classes`` for ``commit`` semantics."""
+        """Replace all races a spell is available to."""
 
         await self.replace_association(
             spell_races,
@@ -106,7 +95,7 @@ class SpellRepository(BaseRepository[Spell]):
         return spell
 
     async def set_subraces(self, spell: Spell, subraces: list[Subrace], *, commit: bool = True) -> Spell:
-        """Replace all subraces a spell is available to. See ``set_classes`` for ``commit`` semantics."""
+        """Replace all subraces a spell is available to."""
 
         await self.replace_association(
             spell_subraces,

@@ -6,13 +6,7 @@ from app.constants import CHARACTER_MAX_LEVEL
 
 
 class MaxLevelUpdate(BaseModel):
-    """
-    Raise a character's maximum allowed level (GM-only).
-
-    The value must be strictly greater than the currently stored maximum
-    and can never exceed :data:`app.constants.CHARACTER_MAX_LEVEL` (20).
-    Lowering the cap is not allowed.
-    """
+    """Raise a character's maximum allowed level (GM-only); must be strictly above the stored max, capped at ``CHARACTER_MAX_LEVEL``."""
 
     max_level: int = Field(ge=1, le=CHARACTER_MAX_LEVEL)
 

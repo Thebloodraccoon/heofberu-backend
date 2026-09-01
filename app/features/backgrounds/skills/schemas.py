@@ -2,7 +2,6 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
     """Reject lists containing duplicate skill IDs."""
 
@@ -10,7 +9,6 @@ def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
         raise ValueError("Duplicate skill IDs are not allowed.")
 
     return skill_ids
-
 
 class SkillsUpdate(BaseModel):
     """Full replacement list of skill IDs granted by a background."""
@@ -22,7 +20,6 @@ class SkillsUpdate(BaseModel):
         """Reject lists containing duplicate skill IDs."""
 
         return _validate_unique_skill_ids(skill_ids)
-
 
 class SkillResponse(BaseModel):
     """Brief skill representation embedded in background responses."""

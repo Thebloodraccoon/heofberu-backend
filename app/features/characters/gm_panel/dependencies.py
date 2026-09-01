@@ -15,7 +15,7 @@ from app.features.characters.gm_panel.skills.service import GmPanelSkillsService
 
 
 def get_gm_panel_feat_service(db: DatabaseDep) -> GmPanelFeatService:
-    """Get the GM feat-grant service instance."""
+    """Get the GM feat-grant service."""
 
     return GmPanelFeatService(db)
 
@@ -24,7 +24,7 @@ GmPanelFeatsDep = Annotated[GmPanelFeatService, Depends(get_gm_panel_feat_servic
 
 
 def get_gm_panel_feature_service(db: DatabaseDep) -> GmPanelFeatureService:
-    """Get the GM feature-grant service instance."""
+    """Get the GM feature-grant service."""
 
     return GmPanelFeatureService(db)
 
@@ -33,7 +33,7 @@ GmPanelFeaturesDep = Annotated[GmPanelFeatureService, Depends(get_gm_panel_featu
 
 
 def get_gm_panel_item_service(db: DatabaseDep) -> GmPanelItemService:
-    """Get the GM-panel item (inventory) service instance."""
+    """Get the GM-panel item service."""
 
     return GmPanelItemService(db)
 
@@ -42,7 +42,7 @@ GmPanelItemsDep = Annotated[GmPanelItemService, Depends(get_gm_panel_item_servic
 
 
 def get_gm_panel_asi_service(db: DatabaseDep) -> GmPanelAsiService:
-    """Get the GM free-form ASI adjustment service instance."""
+    """Get the GM free-form ASI adjustment service."""
 
     return GmPanelAsiService(db)
 
@@ -51,7 +51,7 @@ GmPanelAsiDep = Annotated[GmPanelAsiService, Depends(get_gm_panel_asi_service)]
 
 
 def get_gm_panel_hp_service(db: DatabaseDep) -> GmPanelHpService:
-    """Get the GM max-HP service instance."""
+    """Get the GM max-HP service."""
 
     return GmPanelHpService(db)
 
@@ -60,7 +60,7 @@ GmPanelHpDep = Annotated[GmPanelHpService, Depends(get_gm_panel_hp_service)]
 
 
 def get_gm_panel_skills_service(db: DatabaseDep) -> GmPanelSkillsService:
-    """Get the GM skill-expertise service instance."""
+    """Get the GM skill-expertise service."""
 
     return GmPanelSkillsService(db)
 
@@ -69,7 +69,7 @@ GmPanelSkillsDep = Annotated[GmPanelSkillsService, Depends(get_gm_panel_skills_s
 
 
 def get_gm_panel_level_service(db: DatabaseDep) -> GmPanelLevelService:
-    """Get the GM max-level service instance."""
+    """Get the GM max-level service."""
 
     return GmPanelLevelService(db)
 

@@ -1,9 +1,4 @@
-"""
-Subclass feature read endpoint: list SUBCLASS-source features.
-
-Write endpoints (POST/PATCH/DELETE) have been removed — features are
-managed centrally through the features catalog.
-"""
+"""Subclass feature read endpoint: list SUBCLASS-source features (writes go through the features catalog)."""
 
 from typing import Annotated
 

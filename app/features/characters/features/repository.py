@@ -9,15 +9,11 @@ from app.models.character_feature_model import CharacterFeature
 
 
 class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
-    """
-    Repository for the features recorded on a character
-    (``character_features``).
-
-    Split out of ``CharacterRepository`` — feature grants are their own
-    association table, unrelated to the ``Character`` row's own columns.
-    """
+    """Repository for the features recorded on a character (``character_features``)."""
 
     def __init__(self, db: AsyncSession):
+        """Create the feature-grant repository."""
+
         super().__init__(
             CharacterFeature,
             db,

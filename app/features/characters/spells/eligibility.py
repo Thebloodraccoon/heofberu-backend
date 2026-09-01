@@ -13,17 +13,11 @@ from app.models import Character, Spell
 
 class CharacterSpellEligibilityChecker:
     """
-    Pure(ish) rule-checker for whether a character may learn a given spell.
-
-    Extracted out of ``CharacterSpellService`` so these two rules —
-    class/subclass/race/subrace restriction, and spell-slot capacity — are
-    testable in isolation from the service's DB-session wiring, and
-    reusable if more eligibility rules are added later (e.g. a cap on
-    total known spells regardless of level). Takes the two spell
-    sub-repositories since the slot-capacity check needs both existing
-    slots and known-spell counts, but has no other service-layer
-    responsibilities (no access control, no persistence of the spell
-    itself).
+    Pure(ish) rule-checker for whether a character may learn a spell:
+    the class/race restriction check and the spell-slot capacity check,
+    extracted out of ``CharacterSpellService`` for testability. Takes the
+    two spell sub-repositories since capacity needs both slots and known
+    spells, but has no access-control or persistence responsibility.
     """
 
     def __init__(
@@ -31,14 +25,16 @@ class CharacterSpellEligibilityChecker:
         slot_repository: CharacterSpellSlotRepository,
         known_spell_repository: CharacterSpellRepository,
     ):
+        """Create the eligibility checker with its two repositories."""
+
         self.slot_repository = slot_repository
         self.known_spell_repository = known_spell_repository
 
     async def check(self, character: Character, spell: Spell) -> None:
         """
         Raise the appropriate exception if ``character`` may not learn
-        ``spell``. Runs the class/race restriction check first, then the
-        slot-capacity check — both must pass for a spell to be learnable.
+        ``spell``: the class/race restriction check first, then the
+        slot-capacity check — both must pass.
         """
 
         self._check_spell_available_to_character(character, spell)
@@ -47,17 +43,10 @@ class CharacterSpellEligibilityChecker:
     def _check_spell_available_to_character(self, character: Character, spell: Spell) -> None:
         """
         Raise ``SpellNotAvailableToCharacterException`` unless ``spell`` is
-        available to ``character``'s class, subclass, race, or subrace.
-
-        Each dimension (class, subclass, race, subrace) is independently
-        unrestricted when ``spell.available_classes`` /
-        ``available_subclasses`` / ``available_races`` /
-        ``available_subraces`` is empty. A spell is available to the
-        character if it is unrestricted (or matches) on *all four*
-        dimensions — i.e. an empty list never excludes, a non-empty list
-        requires membership. A character without a subclass/subrace (the
-        columns are nullable) fails any dimension restricted to at least
-        one subclass/subrace.
+        available on ALL four dimensions (class, subclass, race, subrace):
+        an empty ``available_*`` list never excludes, a non-empty one
+        requires membership, and a missing subclass/subrace fails any
+        dimension restricted to at least one entry.
         """
 
         class_ok = not spell.available_classes or any(c.id == character.class_id for c in spell.available_classes)
@@ -76,11 +65,9 @@ class CharacterSpellEligibilityChecker:
 
     async def _check_slot_available(self, character_id: int, spell: Spell) -> None:
         """
-        Raise ``NoSpellSlotAvailableException`` unless the character has a
-        free spell slot at ``spell.level`` to know another spell of that
-        level. "Free" = ``CharacterSpellSlot.total`` at that level minus
-        the number of spells already known at that level. A missing slot
-        entry for the level is treated as 0 total slots.
+        Raise ``NoSpellSlotAvailableException`` if the character already
+        knows as many spells of ``spell.level`` as slots of that level
+        (``total`` minus known-at-level; a missing slot entry = 0).
         """
 
         slot = await self.slot_repository.get_spell_slot(character_id, spell.level)

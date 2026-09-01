@@ -10,10 +10,6 @@ from app.models.character_model import Character
 async def get_character_or_404(repository: CharacterRepository, character_id: int, *, light: bool = False) -> Character:
     """
     Fetch a character by ID, or raise ``CharacterNotFoundException``.
-
-    ``light=True`` skips the eager-loaded collections
-    (``get_by_id_light``) — for callers that only need the scalar
-    columns (sub-domain access checks and writes).
     """
 
     character = await repository.get_by_id_light(character_id) if light else await repository.get_by_id(character_id)
@@ -26,8 +22,6 @@ async def get_character_or_404(repository: CharacterRepository, character_id: in
 def check_character_access(character: Character, current_user: UserResponse) -> None:
     """
     Raise ``CharacterAccessDeniedException`` unless the user is GM or the owner.
-
-    GM can access any character. Players can only access their own.
     """
 
     if current_user.role in (UserRole.GM, UserRole.FOUND_FATHER):
@@ -46,11 +40,6 @@ async def get_character_for_user(
 ) -> Character:
     """
     Fetch a character by ID and enforce access control in one call.
-
-    Combines :func:`get_character_or_404` and :func:`check_character_access`,
-    since almost every character-related operation needs both.
-    ``light=True`` skips the eager-loaded collections — for sub-domain
-    paths that only read scalar columns.
     """
 
     character = await get_character_or_404(repository, character_id, light=light)

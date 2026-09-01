@@ -9,6 +9,8 @@ class CharacterRebuildNotImplementedException(AppError):
     status_code = 501
 
     def __init__(self, character_id: int):
+        """Initialize with the character id."""
+
         self.character_id = character_id
         super().__init__(
             f"Character rebuild is not implemented yet. A full class/race change will be "
@@ -23,6 +25,8 @@ class BackgroundAlreadySetException(AppError):
     status_code = 409
 
     def __init__(self, character_id: int, background_id: int):
+        """Initialize with the character and background ids."""
+
         self.character_id = character_id
         self.background_id = background_id
         super().__init__(
@@ -33,19 +37,13 @@ class BackgroundAlreadySetException(AppError):
 
 
 class BackgroundItemChoicesNotSupportedException(AppError):
-    """
-    Raised when a background with starting-equipment choice groups is set
-    after character creation.
-
-    The set-background path grants a background's guaranteed starting
-    equipment but has no "pick N of M" surface, so a background with
-    choice groups is rejected up front instead of silently dropping its
-    options.
-    """
+    """Raised when a background with starting-equipment choice groups is set after character creation (no "pick N of M" surface exists there)."""
 
     status_code = 400
 
     def __init__(self, background_id: int):
+        """Initialize with the background id."""
+
         self.background_id = background_id
         super().__init__(
             f"Background {background_id} defines starting-equipment choice groups, which cannot "
@@ -59,6 +57,8 @@ class CharacterAlreadyAtMaxLevelException(AppError):
     status_code = 400
 
     def __init__(self, character_id: int, max_level: int = 20):
+        """Initialize with the character id and cap."""
+
         self.character_id = character_id
         self.max_level = max_level
         super().__init__(
@@ -73,6 +73,8 @@ class LevelUpChoiceRequiredException(AppError):
     status_code = 400
 
     def __init__(self, class_level: int):
+        """Initialize with the class level."""
+
         self.class_level = class_level
         super().__init__(
             f"Level {class_level} grants an Ability Score Improvement — provide a `choice` with type `ASI` or `FEAT`."
@@ -85,6 +87,8 @@ class LevelUpChoiceNotAllowedException(AppError):
     status_code = 400
 
     def __init__(self, class_level: int):
+        """Initialize with the class level."""
+
         self.class_level = class_level
         super().__init__(
             f"Level {class_level} does not grant an Ability Score Improvement, so no `choice` may be provided."
@@ -97,6 +101,8 @@ class InvalidASIException(AppError):
     status_code = 400
 
     def __init__(self, detail: str):
+        """Initialize with the failure detail."""
+
         super().__init__(detail)
 
 
@@ -106,6 +112,8 @@ class AbilityScoreCapExceededException(AppError):
     status_code = 400
 
     def __init__(self, ability: str, current_total: int, requested: int):
+        """Initialize with the ability and its current/requested totals."""
+
         self.ability = ability
         self.current_total = current_total
         self.requested = requested
@@ -121,6 +129,8 @@ class InvalidHitPointGainException(AppError):
     status_code = 400
 
     def __init__(self, minimum: int, maximum: int):
+        """Initialize with the allowed min/max."""
+
         super().__init__(
             f"hit_points_gained must be between {minimum} and {maximum} for this class's hit die and CON modifier."
         )

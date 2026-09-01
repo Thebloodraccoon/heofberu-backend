@@ -12,6 +12,8 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
     """Repository for the conditions a character is currently under (``character_conditions``)."""
 
     def __init__(self, db: AsyncSession):
+        """Create the condition repository."""
+
         super().__init__(CharacterCondition, db)
 
     async def get_character_conditions(self, character_id: int) -> list[CharacterCondition]:

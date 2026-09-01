@@ -10,6 +10,8 @@ class CharacterConditionNotFoundException(AppError):
     status_code = 404
 
     def __init__(self, character_id: int, condition: ConditionType):
+        """Initialize with the character id and condition."""
+
         self.character_id = character_id
         self.condition = condition
         super().__init__(f"Character {character_id} is not under condition {condition.value}.")
@@ -21,6 +23,8 @@ class CharacterConditionAlreadyExistsException(AppError):
     status_code = 409
 
     def __init__(self, character_id: int, condition: ConditionType):
+        """Initialize with the character id and condition."""
+
         self.character_id = character_id
         self.condition = condition
         super().__init__(f"Character {character_id} is already under condition {condition.value}.")
@@ -32,4 +36,6 @@ class InvalidConditionException(AppError):
     status_code = 400
 
     def __init__(self, detail: str):
+        """Initialize with the failure detail."""
+
         super().__init__(detail)

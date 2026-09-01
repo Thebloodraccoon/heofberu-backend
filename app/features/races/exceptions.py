@@ -9,6 +9,8 @@ class RaceNotFoundException(AppError):
     status_code = 404
 
     def __init__(self, race_id: int):
+        """Raise a 404 for a missing race."""
+
         self.race_id = race_id
         super().__init__(f"Race with id {race_id} not found.")
 
@@ -19,6 +21,8 @@ class SubraceNotFoundException(AppError):
     status_code = 404
 
     def __init__(self, race_id: int, subrace_id: int):
+        """Raise a 404 for a missing subrace under the given race."""
+
         self.race_id = race_id
         self.subrace_id = subrace_id
         super().__init__(f"Subrace with id {subrace_id} not found for race {race_id}.")

@@ -1,4 +1,4 @@
-"""Reusable skills mixins shared by the skill/race/background/class features."""
+"""Shared skills mixins for lookup and full-replace operations."""
 
 from typing import Any
 
@@ -6,7 +6,7 @@ from app.models.skill_model import Skill
 
 
 class SkillLookupMixin:
-    """Repository mixin: resolve skill ids to ``Skill`` rows via the generic id-IN lookup."""
+    """Resolve skill IDs to Skill rows via the generic id-IN lookup."""
 
     async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         """Fetch the skills matching ``skill_ids`` (order not guaranteed)."""
@@ -15,13 +15,7 @@ class SkillLookupMixin:
 
 
 class SkillsManagerMixin:
-    """
-    Service mixin: fully replace the skills attached to a source record.
-
-    Used by the race/background/class services (via ``set_skills`` /
-    ``set_available_skills``). Concrete services set ``_set_skills_method``
-    to the repository method name when it differs from ``set_skills``.
-    """
+    """Fully replace the skills attached to a source record."""
 
     _set_skills_method: str = "set_skills"
 

@@ -10,28 +10,15 @@ from app.models.item_model import Item
 
 
 class ItemCrudService(CachedService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGetAllResponse]):
-    """
-    Item-specific CRUD service built on :class:`CachedService`.
-
-    Adds behaviors the generic base class doesn't provide:
-      - a uniqueness check on ``name`` before create/update;
-      - a delete guard that blocks removing an item still owned by any
-        character, since the FK on ``character_items.item_id`` is
-        ``ON DELETE RESTRICT`` (unlike Background, whose FK is
-        ``SET NULL`` — see ``BackgroundCrudService`` for the contrasting case).
-
-    ``get_by_id``, ``get_all``, and ``delete`` are all inherited
-    unchanged from ``CachedService`` — the in-use delete guard is enforced
-    by ``BaseRepository.delete`` via ``check_in_use_on_delete=True`` +
-    ``ItemRepository.is_in_use``. Listing and detail reads are cached via
-    ``@use_cache``.
-    """
+    """Item-specific CRUD service. Adds a name-uniqueness check and an in-use delete guard."""
 
     repository: ItemRepository
 
     cache_namespaces = ITEM_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Wire up the item repository, response schema, and get-all schema."""
+
         super().__init__(
             repository=ItemRepository(db),
             response_schema=ItemResponse,

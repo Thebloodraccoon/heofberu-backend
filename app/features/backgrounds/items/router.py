@@ -1,7 +1,4 @@
-"""
-Background starting-equipment endpoints.
-``background_id`` is a path parameter supplied via the router prefix.
-"""
+"""Background starting-equipment endpoints."""
 
 from typing import Annotated
 
@@ -14,7 +11,6 @@ from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
-
 @router.get(
     "/items",
     response_model=list[SourceItemResponse],
@@ -25,7 +21,6 @@ async def list_background_items(background_id: int, background_service: Backgrou
     """Return every starting-equipment entry owned by the background. Open endpoint."""
 
     return await background_service.list_items(background_id)
-
 
 @router.put(
     "/items",
@@ -59,9 +54,8 @@ async def set_background_items(
     """
     Replace all starting equipment for a background. **GM only.**
 
-    Full replace, not merge: the ``items`` in the request body become the
-    complete set of starting items this background grants — any item not
-    included is removed. Send an empty list to clear them all.
+    Full replace (not merge): the given `items` become the complete set;
+    send an empty list to clear them all.
     """
 
     return await background_service.set_items(background_id, data)

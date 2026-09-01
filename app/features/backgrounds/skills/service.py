@@ -9,20 +9,15 @@ from app.features.backgrounds.skills.repository import BackgroundSkillsRepositor
 from app.features.shared.skills.mixins import SkillsManagerMixin
 from app.models import Background, Skill
 
-
 class BackgroundSkillsService(
     SkillsManagerMixin,
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
 ):
     """
-    Everything about a background's granted skills.
+    Background granted-skill service: full replacement and skill-id resolution.
 
-    ``set_skills`` (full replacement) and skill-id resolution are inherited
-    from :class:`SkillsManagerMixin`; the generic CRUD machinery
-    (``_get_or_404``/``_get_response``/``_invalidate_cache``) comes from
-    :class:`BaseService`. Any write purges the ``backgrounds``,
-    ``background_features``, ``features`` and ``nested_items`` namespaces via
-    ``cache_namespaces``.
+    ``set_skills`` and skill-id resolution come from :class:`SkillsManagerMixin`;
+    generic CRUD machinery comes from :class:`BaseService`.
     """
 
     repository: BackgroundSkillsRepository
@@ -30,19 +25,15 @@ class BackgroundSkillsService(
     cache_namespaces = BACKGROUND_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with the skills repository."""
+
         super().__init__(
             repository=BackgroundSkillsRepository(db),
             response_schema=BackgroundResponse,
         )
 
     async def resolve_skills(self, skill_ids: list[int] | None) -> list[Skill] | None:
-        """
-        Resolve ``skill_ids`` to ``Skill`` rows, or ``None`` when absent/empty.
-
-        Raises ``RecordIdsInvalidError`` if any id doesn't correspond to an
-        existing skill. Shared with ``create_background`` so it can seed the
-        granted skills in the same transaction.
-        """
+        """Resolve ``skill_ids`` to ``Skill`` rows, or ``None`` when absent/empty."""
 
         return await self._resolve_skills(skill_ids)
 

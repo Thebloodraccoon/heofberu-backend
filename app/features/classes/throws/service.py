@@ -14,9 +14,8 @@ class ClassThrowsService(BaseService[Class, ClassCreate, ClassUpdate, ClassRespo
     Everything about a class's saving throw proficiencies.
 
     ``set_saving_throws`` is the public full-replace write; the
-    ``commit=False`` variant is shared with ``create_class``/``update_class``
-    so saving throws seed in the same transaction as the class row. Any
-    write purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES`.
+    ``commit=False`` variant seeds them in the same transaction as the
+    class row. Writes purge ``CLASS_CACHE_NAMESPACES``.
     """
 
     repository: ClassRepository
@@ -24,12 +23,16 @@ class ClassThrowsService(BaseService[Class, ClassCreate, ClassUpdate, ClassRespo
     cache_namespaces = CLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with a repository over the session."""
+
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,
         )
 
     async def set_saving_throws(self, class_id: int, data: SavingThrowsUpdate) -> ClassResponse:
+        """Fully replace a class's saving throw proficiencies."""
+
         character_class = await self._get_or_404(class_id)
 
         await self.repository.set_saving_throws(character_class, data.saving_throws)

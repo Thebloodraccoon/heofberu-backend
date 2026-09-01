@@ -22,22 +22,14 @@ from app.models.character_condition_model import CharacterCondition
 
 class CharacterConditionService(CharacterSubDomainService):
     """
-    Manage the conditions a character is currently under
-    (``character_conditions``).
-
-    Uses two collaborators:
-      - the inherited ``CharacterSubDomainService`` — access control
-        only (fetching the owning character to check GM/owner permission
-        via ``get_character_for_user``); no condition data lives there.
-      - ``CharacterConditionRepository`` — the active-condition rows
-        (CRUD).
-
-    ``exhaustion_level`` follows 5e's rules: it is only meaningful (and
-    therefore only accepted) when the condition is ``EXHAUSTION``, where
-    it is required and must be between 1 and 6.
+    Manage the conditions a character is currently under. Uses the
+    inherited base for access control only; ``exhaustion_level`` follows
+    5e rules (required and 1-6 for EXHAUSTION, rejected otherwise).
     """
 
     def __init__(self, db: AsyncSession):
+        """Create the condition repository."""
+
         super().__init__(db)
         self.condition_repository = CharacterConditionRepository(db)
 

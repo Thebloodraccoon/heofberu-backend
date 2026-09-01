@@ -29,26 +29,14 @@ from app.models.feat_model import Feat
 
 class GmPanelFeatService(CharacterSubDomainService):
     """
-    Grant management for reference feats (``character_feats``).
-
-    Split out of the former ``CharacterGmPanelService`` — this capability
-    owns the POST/PATCH/DELETE ``/gm-panel/feats`` endpoints. The level-up
-    path (``CharacterProgressionService._apply_feat``) writes the same
-    table through the same repository, with ``source_type=ASI``.
-
-    A feat offering ability-score increase options must be granted with
-    an explicit ``ability_score_increase_id``; every such grant also
-    writes an audit row into ``character_asi_choices``
-    (``class_level IS NULL``, choice type FEAT) so the log shows where
-    each stat point came from.
-
-    Feat grant/update/remove refresh the ability-score cache (a feat can
-    carry an ASI choice — it is counted from the ``character_feats`` row,
-    which remains the source of truth) and re-sync auto-granted features
-    via ``sync_progression_features``.
+    Grant management for reference feats (``character_feats``); each grant
+    writes an audit row into ``character_asi_choices`` and refreshes the
+    ability-score cache plus auto-granted features.
     """
 
     def __init__(self, db: AsyncSession):
+        """Wire up the feat/ASI/reference repositories and the ability-score service."""
+
         super().__init__(db)
         self.feat_grant_repository = CharacterFeatRepository(db)
         self.stats_service = CharacterStatsService(db)
@@ -59,12 +47,8 @@ class GmPanelFeatService(CharacterSubDomainService):
         self, character_id: int, data: CharacterFeatAdd, current_user: UserResponse
     ) -> CharacterFeatResponse:
         """
-        Grant a feat to a character outside any level-up flow.
-
-        A feat offering ASI options must come with an explicit choice.
-        The grant and its ``character_asi_choices`` audit row (no class
-        level — GM grants are level-independent) commit atomically,
-        together with the auto-granted feature re-sync.
+        Grant a feat outside any level-up flow, committing its
+        ``character_asi_choices`` audit row and feature re-sync atomically.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -141,11 +125,7 @@ class GmPanelFeatService(CharacterSubDomainService):
     async def _validate_asi_choice(
         self, feat: Feat, ability_score_increase_id: int | None, character: Character
     ) -> None:
-        """
-        Validate the ASI choice carried by a grant write: a feat offering
-        ASI options requires an explicit choice, the choice must belong
-        to the feat, and applying it must respect the ability's cap.
-        """
+        """Validate the ASI choice carried by a grant write (required, belongs to the feat, within cap)."""
 
         validate_asi_choice_required(feat, ability_score_increase_id)
         if ability_score_increase_id is not None:

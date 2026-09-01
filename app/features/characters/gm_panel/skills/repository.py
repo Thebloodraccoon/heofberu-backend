@@ -7,17 +7,11 @@ from app.models.character_association_models import CharacterSkillProficiency
 
 
 class CharacterSkillProficiencyRepository:
-    """
-    Owns the ``character_skill_proficiencies`` rows (composite PK
-    ``(character_id, skill_id)``, so the generic ``BaseRepository`` CRUD —
-    keyed on a scalar ``id`` — does not apply).
-
-    Proficiency rows are written once at creation by
-    ``CharacterService._apply_skill_proficiencies``; this repository backs
-    the GM panel's expertise toggle, the only post-creation write path.
-    """
+    """Owns character_skill_proficiencies rows (composite PK; generic BaseRepository CRUD does not apply)."""
 
     def __init__(self, db: AsyncSession):
+        """Hold the session backing proficiency rows."""
+
         self.db = db
 
     async def get_proficiency(self, character_id: int, skill_id: int) -> CharacterSkillProficiency | None:
@@ -34,7 +28,7 @@ class CharacterSkillProficiencyRepository:
     async def set_expertise(
         self, proficiency: CharacterSkillProficiency, is_expertise: bool, *, commit: bool = True
     ) -> CharacterSkillProficiency:
-        """Set ``is_expertise`` on a proficiency row and persist it."""
+        """Set is_expertise on a proficiency row and persist it."""
 
         proficiency.is_expertise = is_expertise
 

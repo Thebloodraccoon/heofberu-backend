@@ -22,26 +22,14 @@ from app.models.subrace_association_models import SubraceAbilityBonus
 
 class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
     """
-    Repository backing ``CharacterStatsService``: the ``character_ability_scores``
-    cache table plus the reference-data queries the derived combat stats need.
-
-    Split out of ``CharacterRepository`` — the cache table is a
-    derived/cached table (effective ability scores after race/feat bonuses),
-    distinct from both the base ``Character`` row and from
-    ``CharacterAbilityScoreCalculator`` (which computes the values but
-    never persists them itself). See ``CharacterStatsService`` for the
-    single point that decides *when* to recompute + persist.
-
-    Also owns the source-bonus queries the calculator needs
-    (``get_race_bonuses`` / ``get_feat_increases``) — these moved here
-    from the old calculator so it could become fully pure (no ``Session``).
-
-    The derived combat stats (hit dice, speed) load their references
-    (class, race) through the same batch queries, so a listing page costs
-    a constant number of queries.
+    Repository backing ``CharacterStatsService``: the
+    ``character_ability_scores`` cache table plus the source-bonus and
+    reference-data queries the calculator and derived stats need.
     """
 
     def __init__(self, db: AsyncSession):
+        """Create the stats repository."""
+
         super().__init__(CharacterAbilityScore, db)
 
     async def get_by_character_id(self, character_id: int) -> CharacterAbilityScore | None:
@@ -54,12 +42,8 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
 
     async def get_many_by_character_ids(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
         """
-        Fetch the cache rows for many characters in a single query,
-        keyed by ``character_id``. Empty input returns ``{}``.
-
-        This is what lets ``CharacterService.get_characters`` attach
-        cached ability scores to a whole listing page in one query
-        instead of one ``get_by_character_id`` per row (the old N+1).
+        Fetch the cache rows for many characters in one query, keyed by
+        ``character_id`` (kills the old per-row N+1 on listing).
         """
 
         if not character_ids:
@@ -101,12 +85,9 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
 
     async def get_asi_increases(self, character_id: int) -> list[CharacterASIChoiceIncrease]:
         """
-        Fetch the counted increments of the character's ASI-choice log:
-        every ``CharacterASIChoiceIncrease`` whose parent choice has
-        ``applied_to_base == False`` (level-up ASIs and GM ±adjustments
-        recorded after the log-based rework). Legacy rows — pre-rework
-        choices whose points were folded into the base columns — are
-        excluded here so their points don't apply twice.
+        Fetch the counted increments of the character's ASI-choice log
+        (choices with ``applied_to_base == False``). Legacy pre-rework
+        choices are excluded so their points don't apply twice.
         """
 
         result = await self.db.execute(
@@ -122,10 +103,9 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
 
     async def get_feature_increases(self, character_id: int) -> list[FeatureAbilityIncrease]:
         """
-        Fetch the fixed ability-score effects of every feature currently
-        granted to the character (``character_features``), e.g. Primal
-        Champion's +4 STR/CON rows. Purely automatic — no choice log
-        involved; the effect applies exactly while the grant exists.
+        Fetch the fixed ability-score effects of every feature granted to
+        the character — e.g. Primal Champion's +4 STR/CON. They apply
+        automatically while the grant exists.
         """
 
         result = await self.db.execute(
@@ -139,12 +119,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
     async def upsert(self, character_id: int, totals: dict, *, commit: bool = True) -> CharacterAbilityScore:
         """
         Create or update the cached effective ability scores for a
-        character. ``totals`` keys are ``strength_total``,
-        ``dexterity_total``, ``constitution_total``,
-        ``intelligence_total``, ``wisdom_total``, ``charisma_total``.
-
-        ``commit=False`` flushes instead — for bulk refreshes running
-        inside a caller's transaction (e.g. source reconciliation).
+        character, keyed by ``strength_total`` .. ``charisma_total``.
         """
 
         cache = await self.get_by_character_id(character_id)

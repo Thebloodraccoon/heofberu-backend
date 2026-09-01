@@ -9,6 +9,8 @@ class UserNotFoundException(AppError):
     status_code = 404
 
     def __init__(self, email: str | None = None):
+        """Build the not-found message, optionally including the email."""
+
         detail = "404 User is not found"
 
         if email:
@@ -23,6 +25,8 @@ class InvalidPasswordException(AppError):
     status_code = 400
 
     def __init__(self, message: str = "Invalid password"):
+        """Set the invalid-password message."""
+
         super().__init__(message)
 
 
@@ -32,6 +36,8 @@ class DefaultUserProtectedException(AppError):
     status_code = 403
 
     def __init__(self, message: str = "The default admin user cannot be updated or deleted."):
+        """Set the default-user-protected message."""
+
         super().__init__(message)
 
 
@@ -41,4 +47,6 @@ class SelfDeletionException(AppError):
     status_code = 403
 
     def __init__(self, message: str = "You cannot delete your own account."):
+        """Set the self-deletion message."""
+
         super().__init__(message)

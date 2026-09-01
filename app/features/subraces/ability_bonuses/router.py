@@ -1,7 +1,4 @@
-"""
-Subrace ability-bonus endpoints: full replacement of a subrace's bonuses
-(query-style IDs).
-"""
+"""Subrace ability-bonus endpoints: full replacement of a subrace's bonuses."""
 
 from typing import Annotated
 
@@ -40,12 +37,6 @@ async def set_ability_bonuses(
     race_service: SubraceAbilityBonusesDep,
     _: GmUserDep,
 ):
-    """
-    Replace all ability score bonuses for a subrace. **GM only.**
-
-    Full replace, not merge: the list in the request body becomes the
-    complete set of bonuses for this subrace. Send an empty list to clear
-    all bonuses.
-    """
+    """Replace all ability score bonuses for a subrace. **GM only.**"""
 
     return await race_service.set_ability_bonuses(subrace_id, data)

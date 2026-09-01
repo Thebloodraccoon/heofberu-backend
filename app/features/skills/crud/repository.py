@@ -12,6 +12,8 @@ class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
     """Skill-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
+        """Initialise the skill repository with name/key uniqueness."""
+
         super().__init__(
             Skill,
             db,
@@ -21,13 +23,7 @@ class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
         )
 
     async def is_in_use(self, skill_id: int) -> bool:
-        """
-        Check whether the skill is currently referenced anywhere that would
-        block deletion at the DB level via ON DELETE RESTRICT: granted by a
-        race (race_skills), available to a class (class_available_skills),
-        granted by a background (background_skills), or held as a
-        proficiency by a character (character_skill_proficiencies).
-        """
+        """Check whether the skill is referenced anywhere that blocks deletion."""
 
         query = select(
             or_(

@@ -57,36 +57,24 @@ from app.models.character_model import Character
 
 class CharacterProgressionService(CharacterSubDomainService):
     """
-    Character progression: subclass change, subrace change, late background
-    setup, leveling up, and the (stubbed) full rebuild.
+    Character progression: subclass/subrace change, late background setup,
+    leveling up, and the (stubbed) full rebuild. Class and race are fixed
+    once chosen; empty subclass/subrace/background slots can still be
+    filled later.
 
-    A character's class and race are fixed once chosen: a full swap will be
-    possible only through the point-rebuild endpoint (currently a 501
-    stub). While a slot is still empty, the missing subclass, subrace, or
-    background can still be added afterwards.
-
-    Leveling up is the entry point for ability score improvements: an
-    ASI level (see ``ASI_LEVELS``) *requires* a ``choice`` in the
-    request, and the resolved ASI-or-feat is recorded in
-    ``character_asi_choices`` — the counted source of the improvement
-    points (the base columns stay untouched) as well as the audit trail
-    that makes a future level-down a plain row deletion.
-
-    Source-owned feature grants are kept in sync automatically: every
-    level-up, subclass change, subrace change, and background setup
-    reconciles ``character_features`` against the CLASS features of the
-    character's class plus the SUBCLASS features of its subclass, the
-    RACE/SUBRACE features of its race/subrace, its BACKGROUND features,
-    and the FEAT grants themselves (feats grant no features — a feat is
-    de facto its own feature; see ``sync_progression_features``).
-
-    Writes are transactional: the level bump, HP gain, ASI/feat grant,
-    audit row, feature grants, and spell-slot re-application all happen
-    in one commit (via :meth:`_atomic`); any validation failure rolls the
-    whole thing back.
+    Leveling up is the entry point for ability improvements: an ASI level
+    (see ``ASI_LEVELS``) *requires* the request's ``choice``; the resolved
+    ASI-or-feat is recorded in ``character_asi_choices``, the counted
+    source of the points (the base columns stay untouched) and the audit
+    trail that makes a future level-down a plain row deletion. Source-owned
+    feature grants are reconciled automatically against the class, subclass,
+    race/subrace, background, and feat grants; writes are transactional
+    (one commit via :meth:`_atomic`, rolled back on validation failure).
     """
 
     def __init__(self, db: AsyncSession):
+        """Create the progression service and its collaborators."""
+
         super().__init__(db)
         self.character_service = CharacterService(db)
         self.class_repository = ClassRepository(db)
@@ -101,14 +89,10 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
         """
-        Set or clear a character's subclass.
-
-        ``subclass_id`` must reference a subclass of the character's
-        current class — otherwise ``SubclassNotFoundException``.
-        Setting a subclass grants its features at or below the current
-        level; clearing it revokes that subclass's auto-granted features.
-        The ability-score cache is refreshed because granted features can
-        carry fixed ability effects.
+        Set or clear a character's subclass: ``subclass_id`` must reference
+        a subclass of the current class, setting grants its features at or
+        below the current level, clearing revokes them. Cache + stats
+        refreshed because granted features can carry fixed ability effects.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -128,14 +112,10 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def set_subrace(self, character_id: int, data: SubraceChange, current_user: UserResponse) -> None:
         """
-        Set or clear a character's subrace.
-
-        ``subrace_id`` must reference a subrace of the character's
-        current race — otherwise ``SubraceNotFoundException`` (a
-        character without a race can't hold a subrace). Setting a
-        subrace grants its features at or below the current level;
-        clearing it revokes that subrace's auto-granted features. The
-        ability score cache is refreshed to re-derive subrace bonuses.
+        Set or clear a character's subrace: ``subrace_id`` must reference a
+        subrace of the current race (the character must have a race). Setting
+        grants its features at or below the current level, clearing revokes
+        them. The ability-score cache is refreshed to re-derive bonuses.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -155,16 +135,13 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def set_background(self, character_id: int, data: BackgroundChange, current_user: UserResponse) -> None:
         """
-        Set a character's background — only while it has none.
-
-        Grants everything a background grants at creation, in one
-        transaction: its features (via ``sync_progression_features``), its
-        granted skills (deduplicated against the proficiencies the
-        character already holds), and its starting equipment (merged into
-        existing stacks). The background is then fixed: re-choosing will
-        only ever be possible through the (future) rebuild endpoint. The
-        ability-score cache is refreshed because granted features can
-        carry fixed ability effects.
+        Set a character's background — only while it has none. In one
+        transaction it grants the background's features
+        (``sync_progression_features``), its skills (deduped against current
+        proficiencies), and its starting equipment (merged into stacks). A
+        background whose equipment is built on "pick N of M" choice groups
+        is rejected up front (no late-choice surface). Re-choosing is only
+        possible through the future rebuild endpoint.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -197,11 +174,9 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def request_rebuild(self, character_id: int, current_user: UserResponse) -> None:
         """
-        Point-rebuild placeholder.
-
-        A full class/race swap is planned as a single "rebuild" operation
-        that resets every derived choice while keeping the character row.
-        Until it is implemented this raises 501.
+        Point-rebuild placeholder: a full class/race swap is planned as a
+        single rebuild operation that resets derived choices while keeping
+        the character row; until implemented this raises 501.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -263,16 +238,13 @@ class CharacterProgressionService(CharacterSubDomainService):
 
     async def level_up(self, character_id: int, data: LevelUpRequest, current_user: UserResponse) -> None:
         """
-        Advance a character exactly one level.
-
-        Leveling up is only allowed while the character's level is below
-        the GM-set maximum in ``character_max_levels`` (raised via the
-        GM panel's ``PATCH /gm-panel/max-level``). At an ASI level
-        (4/8/12/16/19) a ``choice`` is required and at any other level it
-        is rejected. HP defaults to the class's standard average (half
-        hit die + 1 + CON modifier) unless ``hit_points_gained`` is given
-        (bounded by the hit die + CON). Class/subclass features unlocked
-        by the new level are granted, and spell slots are re-applied.
+        Advance a character exactly one level, only while below the
+        GM-set maximum (``character_max_levels``). At an ASI level
+        (4/8/12/16/19) a ``choice`` is required, at any other level it is
+        rejected. HP defaults to the class's standard average (half hit
+        die + 1 + CON) unless ``hit_points_gained`` is given (bounded by
+        the hit die + CON). Features unlocked by the new level are granted
+        and spell slots re-applied.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -347,17 +319,13 @@ class CharacterProgressionService(CharacterSubDomainService):
     async def _apply_asi(self, character: Character, increases: list[ASIIncreaseItem], class_level: int) -> None:
         """
         Apply an Ability Score Improvement: validate that no ability's
-        *effective* total would exceed the standard
-        ``ABILITY_SCORE_CAP`` (20) — the player's own level-up choices are
-        always capped at 20, regardless of any feature ``new_cap`` that
-        lets the score reach 30 via GM intervention or a granted feature —
-        then record the choice.
-
-        The base ability columns are NOT touched — the increments live
-        only in the ``character_asi_choices`` log (as typed child rows)
-        and are counted from there by the ability-score calculator. This
-        keeps the base columns at their originally entered values (easy
-        rebuild) and makes a future level-down a plain row deletion.
+        *effective* total would exceed the standard ``ABILITY_SCORE_CAP``
+        (20) — player level-up choices are always capped at 20 regardless
+        of any feature ``new_cap`` that lets a score reach 30 via GM
+        intervention — then record the choice. The base columns are NOT
+        touched; increments live only in the ``character_asi_choices`` log
+        and are counted from there, keeping the base columns easy to rebuild
+        and a future level-down a plain row deletion.
         """
 
         totals = await self.stats_service.compute(character)

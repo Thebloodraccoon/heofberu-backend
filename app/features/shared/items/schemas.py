@@ -1,11 +1,4 @@
-"""
-Shared starting-equipment schemas for the cross-catalog nested flows.
-
-Used by the class/background services, their per-source item endpoints,
-and the ``shared.items`` mixins/nested service. The public ``Item*``
-request/response schemas are owned by the ``items`` catalog
-(``app.features.items.crud.schemas``).
-"""
+"""Shared starting-equipment schemas for cross-catalog nested flows."""
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -20,6 +13,8 @@ class SourceItemEntry(BaseModel):
 
 
 def _validate_unique_item_ids(entries: list[SourceItemEntry]) -> list[SourceItemEntry]:
+    """Raise ``ValueError`` on duplicate item IDs."""
+
     item_ids = [entry.item_id for entry in entries]
     if len(item_ids) != len(set(item_ids)):
         raise ValueError("Duplicate item IDs are not allowed.")
@@ -28,13 +23,13 @@ def _validate_unique_item_ids(entries: list[SourceItemEntry]) -> list[SourceItem
 
 
 class SourceItemsUpdate(BaseModel):
-    """Full replacement list of starting items for a class or background."""
+    """Full replacement list of starting items."""
 
     items: list[SourceItemEntry]
 
     @field_validator("items")
     def validate_unique_item_ids(cls, items):
-        """Reject lists containing duplicate item IDs."""
+        """Reject duplicate item IDs in the starting-items list."""
 
         return _validate_unique_item_ids(items)
 
@@ -50,16 +45,13 @@ class ItemBriefResponse(BaseModel):
 
 
 class SourceItemResponse(BaseModel):
-    """A starting-equipment entry as returned by ``GET /{source}/{id}/items``."""
+    """A starting-equipment entry as returned by the API."""
 
     model_config = ConfigDict(from_attributes=True)
 
     item_id: int
     quantity: int
     item: ItemBriefResponse
-
-
-# ── Choice groups ──────────────────────────────────────────────────
 
 
 class ChoiceOptionEntry(BaseModel):
@@ -70,21 +62,7 @@ class ChoiceOptionEntry(BaseModel):
 
 
 class ChoiceGroupEntry(BaseModel):
-    """
-    A full choice group: a pick count, an ordered list of options, and an
-    optional sort order.
-
-    Example — a Bard's weapon choice::
-
-        {
-            "pick_count": 1,
-            "sort_order": 1,
-            "options": [
-                {"item_id": 10, "quantity": 1},
-                {"item_id": 20, "quantity": 1},
-            ]
-        }
-    """
+    """A choice group: a pick count, ordered options, and optional sort order."""
 
     pick_count: int = Field(default=1, ge=1)
     sort_order: int = 0
@@ -92,6 +70,8 @@ class ChoiceGroupEntry(BaseModel):
 
     @field_validator("options")
     def validate_unique_item_ids(cls, options: list[ChoiceOptionEntry], info):
+        """Reject duplicate item IDs and pick_count exceeding option count."""
+
         item_ids = [o.item_id for o in options]
         if len(item_ids) != len(set(item_ids)):
             raise ValueError("Duplicate item IDs within a choice group are not allowed.")
@@ -103,7 +83,7 @@ class ChoiceGroupEntry(BaseModel):
 
 
 class ChoiceGroupsUpdate(BaseModel):
-    """Full replacement list of choice groups for a class or background."""
+    """Full replacement list of choice groups."""
 
     choice_groups: list[ChoiceGroupEntry]
 

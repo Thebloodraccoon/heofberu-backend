@@ -1,13 +1,4 @@
-"""
-Assembled ``/classes/subclasses`` router (query-style parent ID).
-
-Sub-routers declare no prefix of their own; the static ``/subclasses``
-prefix is applied here, and the whole subdomain is mounted onto the
-``/classes`` router by ``app.features.classes.router`` — combined,
-a path here like ``"/features"`` resolves to
-``/classes/subclasses/features?class_id=...&subclass_id=...``. The
-owning class is identified by the required ``class_id`` query parameter.
-"""
+"""Assembled ``/classes/subclasses`` router (query-style parent ID)."""
 
 from fastapi import APIRouter
 

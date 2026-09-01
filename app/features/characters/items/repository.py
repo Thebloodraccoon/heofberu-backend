@@ -11,17 +11,18 @@ from app.models.character_item_model import CharacterItem
 class CharacterItemRepository(BaseRepository[CharacterItem]):
     """
     Repository for the items owned by a character (``character_items``).
-
     Each row is an independent stack, so the same item may be owned
-    several times (e.g. an equipped sword and a spare). Every read
-    eager-loads the referenced ``Item`` because the shared response
-    schema embeds the full item record.
+    several times. Every read eager-loads the referenced ``Item``.
     """
 
     def __init__(self, db: AsyncSession):
+        """Create the item-stack repository."""
+
         super().__init__(CharacterItem, db)
 
     def _stack_with_item(self, statement):
+        """Return the query with the ``Item`` eager-loaded."""
+
         return statement.options(selectinload(CharacterItem.item))
 
     async def get_character_items(self, character_id: int) -> list[CharacterItem]:

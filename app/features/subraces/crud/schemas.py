@@ -20,12 +20,7 @@ class SubraceBase(BaseModel):
 
 
 class SubraceCreate(SubraceBase):
-    """
-    Create payload for a subrace (nested under a race).
-
-    ``ability_bonuses`` and ``features`` are optional — they can be supplied
-    up front or filled later through the dedicated PUT/POST endpoints.
-    """
+    """Create payload for a subrace (nested under a race)."""
 
     ability_bonuses: list[AbilityBonusItem] | None = None
     features: list[NestedFeatureCreate] | None = None
@@ -41,12 +36,7 @@ class SubraceCreate(SubraceBase):
 
 
 class SubraceUpdate(BaseModel):
-    """
-    All fields optional — only provided fields are updated (PATCH semantics).
-
-    Deliberately does NOT include ability_bonuses: that list keeps its own
-    PUT endpoint with explicit full-replace semantics.
-    """
+    """All fields optional — only provided fields are updated (PATCH semantics)."""
 
     name: str | None = None
     description: str | None = None

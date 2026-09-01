@@ -12,6 +12,8 @@ class UserRepository(BaseRepository[User]):
     """User persistence: generic CRUD plus email/username lookups and last-login stamping."""
 
     def __init__(self, db: AsyncSession):
+        """Initialise the user repository with email/username uniqueness."""
+
         super().__init__(User, db, search_fields=["username", "email"], unique_fields=["username", "email"])
 
     async def get_by_email(self, email: str) -> User | None:

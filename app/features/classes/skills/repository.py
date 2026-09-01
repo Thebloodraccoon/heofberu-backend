@@ -15,12 +15,8 @@ class ClassSkillsRepository(SkillLookupMixin, ClassRepository):
         Replace all skills a class may choose proficiencies from.
 
         Written through the association table (delete + insert) instead of
-        assigning the ORM ``available_skills`` relationship: assigning an
-        unloaded many-to-many collection would trigger a lazy load, which
-        is not supported on the async stack.
-
-        See ``ClassRepository.set_saving_throws`` for the meaning of
-        ``commit=False``.
+        assigning the ORM relationship, which would trigger an unsupported
+        lazy load on the async stack.
         """
 
         await self.replace_association(

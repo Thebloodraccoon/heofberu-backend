@@ -9,7 +9,7 @@ from app.features.items.crud.service import ItemCrudService
 
 
 def get_item_crud_service(db: DatabaseDep) -> ItemCrudService:
-    """Get the item CRUD service instance."""
+    """Build the item CRUD service instance."""
 
     return ItemCrudService(db)
 

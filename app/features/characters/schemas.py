@@ -62,37 +62,12 @@ class CharacterBase(BaseModel):
 
 class CharacterCreate(CharacterBase):
     """
-    One-shot creation payload for a level-1 character.
-
-    ``level`` is not accepted — every character starts at level 1 and
-    grows only through the level-up endpoint. HP is fully server-derived
-    and not part of the payload at all: at level 1 the maximum is fixed
-    (class hit-die faces + effective CON modifier), ``current_hp`` starts
-    equal to it and ``temp_hp`` at 0.
-
-    ``extra="forbid"`` rejects unknown fields with a 422 so stale clients
-    that still send removed fields (e.g. ``level``/``max_hp``) fail loudly
-    instead of being silently ignored.
-
-    ``skill_ids`` are the class skill-proficiency choices: each must exist,
-    belong to the class's ``available_skills``, and the total must not
-    exceed the class's ``skill_choice_count``. The background's granted
-    skills (when ``background_id`` is set) are added automatically.
-
-    ``item_choice_ids`` are the starting-equipment "pick N of M" choices
-    (the ids of the ``SourceItemChoiceOption`` rows the player picked from
-    the class's/background's choice groups). Each id must belong to one of
-    the character's sources' choice groups, and every such group must be
-    answered with exactly ``pick_count`` selected options — anything else
-    is rejected with a 400 so no requested choice is ever silently
-    dropped.
+    One-shot creation payload for a level-1 character. ``level`` and HP
+    are server-derived; ``extra="forbid"`` rejects unknown/stale fields.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # Base ability scores — what the player entered, before racial or
-    # feat bonuses. Effective (post-bonus) totals are exposed separately
-    # on CharacterResponse via the ability_scores field.
     strength: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     dexterity: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     constitution: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
@@ -125,29 +100,7 @@ class CharacterCreate(CharacterBase):
 class CharacterUpdate(BaseModel):
     """
     All fields optional — only provided fields are updated (PATCH semantics).
-
-    Note: ``class_id``, ``subclass_id``, ``race_id``, ``subrace_id``, and
-    ``background_id`` cannot be changed via this schema — a character's
-    class, subclass, race, subrace, and background are set at creation and
-    only the subclass/subrace can be changed afterwards, through the
-    dedicated ``PATCH /characters/{id}/progression/subclass`` and
-    ``PATCH /characters/{id}/progression/subrace`` endpoints (which also
-    keep the character's granted class/subclass/subrace features in sync).
-    ``level`` and the base ability scores (``strength``..``charisma``) are
-    likewise not editable here: level changes go through the dedicated
-    level-up endpoint, and base scores only change via that endpoint's
-    Ability Score Improvement choice or a GM ASI grant.
-    ``max_hp`` is GM-only — see ``PATCH /characters/{id}/gm-panel/max-hp``.
-    Skill proficiencies are fixed at creation (class choices + background
-    grants); saving throws come from the class — neither is editable.
-    ``hit_dice`` and ``speed`` are not editable either — they are derived
-    from the character's class and race on every read (see
-    ``CharacterStatsService``). ``armor_class`` and ``shield`` are plain
-    editable columns — there is no dynamic armor calculation anymore.
-    ``inspiration`` (5e's per-session advantage boolean) is editable here.
-    The backstory is NOT a field of this schema — it is managed through the
-    dedicated ``GET/PUT /characters/{id}/backstory`` endpoints (it can be
-    several pages of text and is never included in the cached character).
+    Class/race/background, level, and base ability scores are not editable here.
     """
 
     name: str | None = None
@@ -175,12 +128,8 @@ class CharacterUpdate(BaseModel):
 
 class AbilityScoresResponse(BaseModel):
     """
-    Effective (post-bonus) ability score totals — base value plus race
-    and feat bonuses. Backed by the ``character_ability_scores`` cache
-    table; see ``CharacterAbilityScoreCalculator`` for how it's computed
-    and ``CharacterStatsService`` for the write paths that refresh it
-    (character create, feat grant/update/remove, level-up ASI, GM ASI
-    grant, race change). Reads never recompute the cache.
+    Effective (post-bonus) ability score totals, backed by the
+    ``character_ability_scores`` cache — reads never recompute it.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -195,13 +144,8 @@ class AbilityScoresResponse(BaseModel):
 
 class StatSourceContribution(BaseModel):
     """
-    One source's contribution to an ability's effective total — the
-    "what is calculated from what" row shown to the player.
-
-    ``source`` is a stable machine-readable kind ("race", "subrace",
-    "feat", "asi", "feature"); ``label`` is the human-readable source
-    (e.g. race/feat/feature name, or "Level 4 (ASI)"); ``amount`` is the
-    signed points this source contributed to the total.
+    One source's contribution to an ability's effective total, shown as
+    a human-readable "what is calculated from what" row.
     """
 
     source: str
@@ -210,11 +154,7 @@ class StatSourceContribution(BaseModel):
 
 
 class AbilityStatsView(BaseModel):
-    """
-    One ability's score view: the ORIGINAL base value (what the player
-    entered at creation, never mutated) next to the COMPUTED total and
-    the list of ``StatSourceContribution`` entries that produced it.
-    """
+    """One ability's score view: the ORIGINAL base value next to its COMPUTED total and source contributions."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -225,11 +165,8 @@ class AbilityStatsView(BaseModel):
 
 class CharacterStatsResponse(BaseModel):
     """
-    Player-facing view of a character's six abilities: the ORIGINAL base
-    values alongside the COMPUTED effective totals, each with the list of
-    sources that contributed to it. Totals are freshly calculated from the
-    current bonus sources (race/subrace bonuses + feat ASI + ASI-log
-    increases + feature increases) — never the possibly-stale cache row.
+    Player-facing view of the six abilities: ORIGINAL base values next
+    to COMPUTED totals, freshly calculated (never the stale cache row).
     """
 
     strength: AbilityStatsView
@@ -260,21 +197,8 @@ class SavingThrowProficiencyResponse(BaseModel):
 class CharacterResponse(CharacterBase):
     """
     Aggregates response schemas from every sub-domain into one payload.
-
-    The raw base ability scores are accepted on input (and read from the
-    row via ``from_attributes``) but are EXCLUDED from serialized output —
-    clients consume the effective totals from ``ability_scores`` instead,
-    and the original base values are exposed through
-    ``GET /characters/{id}/stats``. They carry inert defaults so
-    the cached-response JSON round-trips without them.
-
-    ``hit_dice`` and ``speed`` are not read from the character row (the
-    row holds no such columns anymore) — they are derived from the class
-    and race by ``CharacterStatsService`` and written onto the response in
-    ``CharacterService._to_response``. They are declared here (with
-    defaults) so the response stays flat, but are never accepted by
-    ``CharacterCreate``/``CharacterUpdate``. ``armor_class``/``shield``
-    come straight off the row — they are plain editable columns.
+    Base ability scores are excluded from output; ``hit_dice``/``speed``
+    are derived from class/race on every read.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -321,10 +245,8 @@ class FeatBriefResponse(BaseModel):
 
 class FeatAbilityScoreIncreaseResponse(BaseModel):
     """
-    The ability score a granted feat improved (the ASI option chosen for
-    the feat). Backed by the ``FeatAbilityScoreIncrease`` row pointed at by
-    ``CharacterFeat.ability_score_increase_id`` — ``None`` on the grant when
-    the feat improves no ability (or none was chosen).
+    The ability score a granted feat improved (its chosen ASI option),
+    backed by the ``FeatAbilityScoreIncrease`` row.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -350,11 +272,8 @@ class CharacterFeatResponse(BaseModel):
 
 class CharacterFeatureBriefResponse(BaseModel):
     """
-    Feature summary embedded in a character's feature grant row.
-
-    Unlike the catalog listing row (``FeatureGetAllResponse``) this
-    carries ``description`` so the sheet can render details without a
-    follow-up call.
+    Feature summary embedded in a character's feature grant row, carrying
+    ``description`` so the sheet renders details without a follow-up call.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -381,8 +300,7 @@ class CharacterFeatureResponse(BaseModel):
 class CharacterItemResponse(BaseModel):
     """
     Aggregates an owned item stack with its quantity/state flags and the
-    full item record (``ItemResponse``) so the sheet can render details
-    without a follow-up call.
+    full item record so the sheet renders without a follow-up call.
     """
 
     model_config = ConfigDict(from_attributes=True)

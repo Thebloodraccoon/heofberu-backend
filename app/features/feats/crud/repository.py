@@ -8,17 +8,17 @@ from app.core.base.repository import BaseRepository
 from app.models.character_association_models import CharacterFeat
 from app.models.feat_model import Feat, FeatAbilityScoreIncrease
 
-
 class FeatRepository(BaseRepository[Feat]):
     """
     Feat-specific repository built on :class:`BaseRepository`.
 
     ``ability_score_increases`` is always part of ``FeatResponse``, so it's
-    wired up as ``default_load_options`` rather than re-implemented via a
-    hand-rolled ``get_all`` override — same reasoning as ``RaceRepository``.
+    wired up via ``default_load_options``.
     """
 
     def __init__(self, db: AsyncSession):
+        """Configure the repository with its model, eager loads, and delete guard."""
+
         super().__init__(
             Feat,
             db,
@@ -31,22 +31,13 @@ class FeatRepository(BaseRepository[Feat]):
         )
 
     async def is_in_use(self, feat_id: int) -> bool:
-        """
-        Check whether the feat is currently granted to any character
-        (``character_feats.feat_id``), which blocks deletion.
-        """
+        """Check whether the feat is currently granted to any character, which blocks deletion."""
 
         granted = await self.db.execute(select(CharacterFeat).where(CharacterFeat.feat_id == feat_id))
         return granted.scalar_one_or_none() is not None
 
     async def set_ability_score_increases(self, feat: Feat, increases: list[dict], *, commit: bool = True) -> Feat:
-        """
-        Replace all ASI choices for a feat with the given list.
-
-        ``commit`` lets callers that need atomicity across multiple writes
-        (e.g. creating a feat + its ASI choices together) defer the commit
-        and flush instead, without duplicating this method.
-        """
+        """Replace all ASI choices for a feat with the given list."""
 
         await self.replace_child_rows(
             FeatAbilityScoreIncrease,

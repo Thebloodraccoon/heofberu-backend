@@ -13,6 +13,8 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
     """CRUD for ``character_asi_choices`` (one row per resolved ASI level)."""
 
     def __init__(self, db: AsyncSession):
+        """Create the ASI-choice repository."""
+
         super().__init__(CharacterASIChoice, db)
 
     async def get_character_choices(self, character_id: int) -> list[CharacterASIChoice]:
@@ -38,20 +40,14 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         commit: bool = True,
     ) -> CharacterASIChoice:
         """
-        Record one resolved ASI-level choice.
-
-        ``class_level`` is the ASI class level for level-up resolutions,
-        or ``None`` for a GM adjustment from the GM panel.
-        ``increases`` holds the ASI increments as
-        ``[{"ability": "STR", "amount": 2}]`` and is written as typed
-        ``CharacterASIChoiceIncrease`` child rows — these are the rows the
-        ability-score calculator counts (only ``choice_type == ASI``
-        carries them); ``feat_id`` / ``ability_score_increase_id`` are set
-        for ``FEAT`` choices, whose stat effect flows through the granted
-        ``character_feats`` row instead. New choices are always recorded
-        with ``applied_to_base = False``: the base columns are never
-        touched, the log IS the counted source. ``commit=False`` defers
-        the commit for callers wrapping the write in a transaction.
+        Record one resolved ASI-level choice: ``class_level`` is the ASI
+        class level for level-up resolutions or ``None`` for a GM-panel
+        adjustment. ``increases`` (ASI choices) are written as typed
+        ``CharacterASIChoiceIncrease`` children — the rows the calculator
+        counts; ``feat_id``/``ability_score_increase_id`` describe FEAT
+        choices, whose stat effect flows through the granted feature row.
+        New choices are always recorded with ``applied_to_base = False``:
+        the base columns are never touched, the log IS the counted source.
         """
 
         row = CharacterASIChoice(
@@ -90,9 +86,8 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
 
     async def remove_choice(self, choice: CharacterASIChoice) -> bool:
         """
-        Delete a choice row together with its increment children (the
-        cascade removes them). Since counted points live ONLY in these
-        rows, deletion is all it takes to revert an adjustment's stat
+        Delete a choice row with its increment children (cascade). Since
+        counted points live only in these rows, deletion reverts the stat
         effect — the caller just refreshes the ability-score cache.
         """
 

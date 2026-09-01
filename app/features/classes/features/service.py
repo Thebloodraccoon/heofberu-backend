@@ -18,13 +18,9 @@ class ClassFeatureService(
     """
     Read-only service for a class's CLASS-source features.
 
-    Write endpoints (add/update/remove) have been removed from the
-    per-catalog surface — features are managed centrally through the
-    features catalog. This service only provides the cached
-    ``list_features`` for the ``GET /classes/features?class_id=...`` read
-    endpoint: the list is cached under the dedicated ``class_features``
-    namespace, which the central feature writes invalidate (only for this
-    class's list) via ``FeatureCrudService``.
+    Features are managed centrally through the features catalog. The
+    cached ``list_features`` list lives under the ``class_features``
+    namespace, which central feature writes invalidate.
     """
 
     repository: ClassRepository
@@ -32,6 +28,8 @@ class ClassFeatureService(
     cache_namespaces = ("class_features",)
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with its repository and the central feature catalog."""
+
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,

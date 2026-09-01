@@ -1,23 +1,17 @@
 """
 Auto-grant/revoke source-owned features for a character.
 
-A character automatically holds every feature owned by its class
-(CLASS), chosen subclass (SUBCLASS), race (RACE), chosen subrace
-(SUBRACE) and background (BACKGROUND), filtered by ``level``: ``NULL``
-(gained at level 1) or ``<= character.level``. This module reconciles
-``character_features`` against that target set. Feats grant no features
-(a feat is de facto its own feature).
+A character automatically holds every feature owned by its class,
+subclass, race, subrace, and background, filtered by ``level`` (``NULL``
+or ``<= character.level``); this module reconciles ``character_features``
+against that target set. Feats grant no features (a feat is de facto its
+own feature).
 
 It is deliberately small and side-effect free (never commits): callers
 wrap it in their own transaction — ``CharacterService.create_character``,
-``CharacterProgressionService`` (level-up, subclass/subrace change),
-``GmPanelFeatService`` (feat grant/revoke) and the central
-``FeatureCrudService`` (feature create/edit/delete).
-
-Rows it does not own are left untouched: features created manually from
-OTHER sources, and any notes a player wrote on a grant, survive
-reconciliation unless the grant's own feature leaves the auto-granted
-set (e.g. the character changes class or drops a subclass).
+``CharacterProgressionService``, ``GmPanelFeatService``, and the central
+``FeatureCrudService``. Rows it does not own (manual features from other
+sources, player notes on a grant) are left untouched.
 """
 
 from sqlalchemy import or_, select
@@ -111,32 +105,15 @@ async def sync_progression_features(db: AsyncSession, character: Character) -> N
 
 async def reconcile_characters_for_source(db: AsyncSession, source_type: FeatureSourceType, source_id: int) -> None:
     """
-    Re-run :func:`sync_progression_features` for every character affected
-    by a change to a source's feature set.
-
-    Called by the central ``FeatureCrudService``'s ``create``,
-    ``update_feature`` and ``delete`` in the caller's transaction, so a GM
-    adding/editing/removing a class/race/subrace/background feature
-    reconciles the affected characters' grants in the same transaction:
-
-      - features added to the source are granted to qualifying characters
-        (level-gated by :func:`_desired_features`);
-      - features whose ``level`` was raised are revoked from characters
-        below the new level (the row survives, so the DB cascade alone
-        wouldn't clean the grant);
-      - features dropped from the source are removed — their ``Feature``
-        row is deleted by ``FeatureCrudService.delete``, so the
-        ``ON DELETE CASCADE`` clears the grants.
-
-    It is also the seed of the ``RaceAbilityBonusService`` and
-    ``SubraceAbilityBonusService`` ability-bonus writes (a known one-way
-    catalog → characters import): there the per-character run produces no
-    grant changes, but the stat-cache refresh below is exactly the fix for
-    a bonus edit that would otherwise leave existing characters' totals
-    stale until a GM-panel read.
-
-    Each source filters ``Character`` by its own FK. Never commits — the
-    caller's transaction owns persistence.
+    Re-run ``sync_progression_features`` for every character affected by a
+    change to a source's feature set (called by ``FeatureCrudService`` in
+    its transaction), so newly added features are granted, features whose
+    ``level`` was raised are revoked from characters below it, and dropped
+    features clear their grants via ``ON DELETE CASCADE``. Also the seed of
+    the ``RaceAbilityBonusService``/``SubraceAbilityBonusService`` bonus
+    writes (a known one-way catalog → characters import), where the
+    per-character stat-cache refresh is exactly the fix for a bonus edit
+    that would otherwise leave existing totals stale. Never commits.
     """
 
     source_filter = _SOURCE_CHARACTER_FILTER.get(source_type)

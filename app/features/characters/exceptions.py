@@ -9,6 +9,8 @@ class CharacterNotFoundException(AppError):
     status_code = 404
 
     def __init__(self, character_id: int):
+        """Initialize with the missing character id."""
+
         self.character_id = character_id
         super().__init__(f"Character with id {character_id} not found.")
 
@@ -19,6 +21,8 @@ class CharacterAccessDeniedException(AppError):
     status_code = 403
 
     def __init__(self):
+        """Initialize with the default access-denied message."""
+
         super().__init__("You do not have access to this character.")
 
 
@@ -28,5 +32,7 @@ class BackgroundNotFoundException(AppError):
     status_code = 404
 
     def __init__(self, background_id: int):
+        """Initialize with the missing background id."""
+
         self.background_id = background_id
         super().__init__(f"Background with id {background_id} not found.")

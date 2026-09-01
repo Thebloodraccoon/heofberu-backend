@@ -20,17 +20,14 @@ from app.models.character_feature_model import CharacterFeature
 
 class GmPanelFeatureService(CharacterSubDomainService):
     """
-    Grant management for reference features (``character_features``).
-
-    Split out of the former ``CharacterGmPanelService`` — this capability
-    owns the POST/PATCH/DELETE ``/gm-panel/features`` endpoints. Feature
-    grants can carry fixed ability-score effects
-    (``feature_ability_increases``), so every add/remove refreshes the
-    ability-score cache; note updates don't (they change nothing the
-    calculator reads). The player-facing read lives in ``crud/``.
+    Grant management for reference features (``character_features``);
+    adds/removals refresh the ability-score cache (grants can carry fixed
+    ability-score effects), notes updates don't.
     """
 
     def __init__(self, db: AsyncSession):
+        """Wire up the feature/repo repositories and ability-score service."""
+
         super().__init__(db)
         self.feature_grant_repository = CharacterFeatureRepository(db)
         self.feature_repository = FeatureRepository(db)

@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
 
-
 class FeatBase(BaseModel):
     """Base feat fields shared by create, update, and response schemas."""
 
@@ -15,8 +14,7 @@ class FeatBase(BaseModel):
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str = ""
 
-    # Minimum character level required to take the feat; NULL when the
-    # feat has no level requirement.
+    # Minimum character level required to take the feat; NULL when none.
     min_level: int | None = None
 
     @field_validator("min_level")
@@ -29,17 +27,17 @@ class FeatBase(BaseModel):
 
         return value
 
-
 class AbilityScoreIncreaseItem(BaseModel):
     """A single ASI choice granted by a feat, e.g. {"ability": "STR", "amount": 1}."""
 
     ability: AbilityScore
     amount: int = 1
 
-
 def _validate_unique_asi_abilities(
     ability_score_increases: list[AbilityScoreIncreaseItem],
 ) -> list[AbilityScoreIncreaseItem]:
+    """Reject lists containing duplicate abilities."""
+
     abilities = [item.ability for item in ability_score_increases]
 
     if len(abilities) != len(set(abilities)):
@@ -48,16 +46,12 @@ def _validate_unique_asi_abilities(
 
     return ability_score_increases
 
-
 class FeatCreate(FeatBase):
     """
     Create payload for a feat.
 
-    ``ability_score_increases`` is optional — a feat can be created
-    without any ASI of its own (e.g. Alert) or with a set of choices
-    supplied up front (e.g. Resilient offers "choose one ability"), same
-    "full replace from empty" semantics as ``RaceCreate.ability_bonuses``.
-    It's a simple child table, not a nested dependency, so it stays here.
+    ``ability_score_increases`` is optional with full-replace-from-empty
+    semantics; it is a simple child table, not a nested dependency.
     """
 
     ability_score_increases: list[AbilityScoreIncreaseItem] | None = None
@@ -71,14 +65,12 @@ class FeatCreate(FeatBase):
 
         return _validate_unique_asi_abilities(value)
 
-
 class FeatUpdate(BaseModel):
     """
     All fields optional — only provided fields are updated (PATCH semantics).
 
-    Deliberately does NOT include ability_score_increases: that keeps its
-    own PUT endpoint with explicit full-replace semantics, same reasoning
-    as ``RaceUpdate`` and ability_bonuses.
+    Excludes ``ability_score_increases`` so that list keeps its own PUT
+    full-replace endpoint.
     """
 
     name: str | None = None
@@ -98,7 +90,6 @@ class FeatUpdate(BaseModel):
 
         return value
 
-
 class AbilityScoreIncreasesUpdate(BaseModel):
     """Full replacement list of ASI choices for a feat."""
 
@@ -110,7 +101,6 @@ class AbilityScoreIncreasesUpdate(BaseModel):
 
         return _validate_unique_asi_abilities(ability_score_increases)
 
-
 class AbilityScoreIncreaseResponse(BaseModel):
     """A feat's ASI choice as returned in responses."""
 
@@ -120,7 +110,6 @@ class AbilityScoreIncreaseResponse(BaseModel):
     ability: AbilityScore
     amount: int
 
-
 class FeatResponse(FeatBase):
     """Full feat representation returned by the API."""
 
@@ -128,7 +117,6 @@ class FeatResponse(FeatBase):
 
     id: int
     ability_score_increases: list[AbilityScoreIncreaseResponse] = []
-
 
 class FeatGetAllResponse(BaseModel):
     """Lightweight listing row: no description."""

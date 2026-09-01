@@ -32,20 +32,8 @@ async def get_skills(
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
-    Return a paginated list of skills with `id`, `key`, `name`, and
-    `ability`.
-
-    Open endpoint, no authentication required.
-
-    `search` is a case-insensitive partial match against the skill name
-    and key. `ability` is an exact match (e.g. `ability=WIS`) and can be
-    combined with `search`.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching skills across every page, not just this one.
-
-    Does not include the description — use `GET /skills/{skill_id}` for
-    the full record.
+    Return a paginated list of lightweight skills, with filters and search.
+    Open endpoint.
     """
 
     return await skill_service.get_all(page=page, size=size, search=search, filters={"ability": ability})
@@ -62,8 +50,7 @@ async def get_skills(
 async def get_skill(skill_id: int, skill_service: SkillCrudDep):
     """
     Return a single skill by ID, with full detail.
-
-    Open endpoint, no authentication required.
+    Open endpoint.
     """
 
     return await skill_service.get_by_id(skill_id)
@@ -146,10 +133,8 @@ async def update_skill(
     _: GmUserDep,
 ):
     """
-    Partially update a skill. **GM only.**
-
-    Only fields included in the request body are changed; omitted fields
-    are left as-is.
+    Partially update a skill only with the provided fields.
+    **GM only.**
     """
 
     return await skill_service.update(skill_id, data)
@@ -166,11 +151,8 @@ async def update_skill(
 )
 async def delete_skill(skill_id: int, skill_service: SkillCrudDep, _: FounderDep):
     """
-    Delete a skill. **Founder only.**
-
-    Blocked if the skill is still referenced by a race, class, background,
-    or a character's skill proficiencies (the service raises
-    ``RecordInUseError``, mapped to a 409 by the global exception handler).
+    Delete a skill, unless still in use by a source or character.
+    **Founder only.**
     """
 
     await skill_service.delete(skill_id)

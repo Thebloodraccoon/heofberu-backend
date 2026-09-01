@@ -20,15 +20,11 @@ from app.models.subclass_model import Subclass
 
 
 class ClassRepository(BaseRepository[Class]):
-    """
-    Class-specific repository built on :class:`BaseRepository`.
-
-    Skill lookup and ``set_available_skills`` moved to
-    ``app.features.classes.skills.repository.ClassSkillsRepository`` (which
-    inherits this one) when the capabilities were split into subpackages.
-    """
+    """Class-specific repository built on :class:`BaseRepository` (skill management lives in ``ClassSkillsRepository``)."""
 
     def __init__(self, db: AsyncSession):
+        """Initialize the repository with the class's default load options and search fields."""
+
         super().__init__(
             Class,
             db,
@@ -50,23 +46,16 @@ class ClassRepository(BaseRepository[Class]):
         )
 
     async def is_in_use(self, class_id: int) -> bool:
-        """
-        Check whether the class is currently assigned to any character
-        (characters.class_id), which would block deletion at the DB level
-        via ON DELETE RESTRICT.
-        """
+        """Check whether any character references the class (blocks deletion via ON DELETE RESTRICT)."""
 
         return await self.exists_referencing(Character, "class_id", class_id)
 
     async def get_spell_slot_progression(self, class_id: int, class_level: int) -> dict[str, int]:
         """
-        Return ``{spell_level: slots}`` for a single ``(class_id, class_level)`` pair.
+        Return ``{spell_level: slots}`` for a single ``(class_id, class_level)``.
 
-        Only levels with an explicit ``ClassSpellSlotProgression`` row are
-        included — a non-caster class (or a caster with no row for this
-        level) simply returns ``{}``. Used by
-        ``CharacterService`` to apply/refresh a character's actual spell
-        slot totals whenever their level or class changes.
+        Only levels with a ``ClassSpellSlotProgression`` row are included —
+        a non-caster class returns ``{}``.
         """
 
         result = await self.db.execute(
@@ -83,6 +72,7 @@ class ClassRepository(BaseRepository[Class]):
     ) -> Class:
         """
         Replace spell slot rows for a single ``class_level``.
+
         Full replace: existing rows for this level are deleted first.
         """
 
@@ -101,11 +91,7 @@ class ClassRepository(BaseRepository[Class]):
         return character_class
 
     async def set_saving_throws(self, character_class: Class, abilities: list[str], *, commit: bool = True) -> Class:
-        """
-        Replace all saving throw proficiencies for a class with the given list.
-
-        See ``set_saving_throws`` for the meaning of ``commit=False``.
-        """
+        """Replace all saving throw proficiencies for a class."""
 
         await self.replace_child_rows(
             ClassSavingThrow,
@@ -120,11 +106,7 @@ class ClassRepository(BaseRepository[Class]):
     async def set_armor_proficiencies(
         self, character_class: Class, armor_types: list[str], *, commit: bool = True
     ) -> Class:
-        """
-        Replace all armor proficiencies for a class with the given list.
-
-        See ``set_saving_throws`` for the meaning of ``commit=False``.
-        """
+        """Replace all armor proficiencies for a class."""
 
         await self.replace_child_rows(
             ClassArmorProficiency,
@@ -139,11 +121,7 @@ class ClassRepository(BaseRepository[Class]):
     async def set_weapon_proficiencies(
         self, character_class: Class, weapon_categories: list[str], *, commit: bool = True
     ) -> Class:
-        """
-        Replace all weapon proficiencies for a class with the given list.
-
-        See ``set_saving_throws`` for the meaning of ``commit=False``.
-        """
+        """Replace all weapon proficiencies for a class."""
 
         await self.replace_child_rows(
             ClassWeaponProficiency,
@@ -158,6 +136,7 @@ class ClassRepository(BaseRepository[Class]):
     async def create_subclass(self, character_class: Class, payload: dict, *, commit: bool = True) -> Subclass:
         """
         Insert a ``Subclass`` row linked to ``character_class``.
+
         ``commit=False`` leaves the transaction open for the caller.
         """
 
@@ -213,10 +192,7 @@ class ClassRepository(BaseRepository[Class]):
         await self.db.commit()
 
     async def get_progression_features(self, class_id: int) -> list[Feature]:
-        """
-        Return all CLASS and SUBCLASS features for ``class_id``, ordered by level.
-        Used to build the progression table in the service.
-        """
+        """Return all CLASS and SUBCLASS features for ``class_id``, ordered by level."""
 
         subclass_ids = select(Subclass.id).where(Subclass.class_id == class_id)
 

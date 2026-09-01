@@ -6,13 +6,7 @@ from app.constants import BACKSTORY_MAX_LENGTH
 
 
 class CharacterBackstoryUpdate(BaseModel):
-    """
-    Set or replace a character's backstory.
-
-    ``content`` is limited to ``BACKSTORY_MAX_LENGTH`` (12000) characters —
-    roughly four pages of Word text. The limit is enforced both here (a 422
-    at the schema layer) and by a DB check constraint.
-    """
+    """Set or replace a backstory; ``content`` is capped at ``BACKSTORY_MAX_LENGTH`` by schema and DB constraint."""
 
     content: str = Field(default="", max_length=BACKSTORY_MAX_LENGTH)
 

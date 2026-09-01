@@ -18,6 +18,8 @@ from app.constants import (
 
 
 def _validate_unique_components(components: list[Component]) -> list[Component]:
+    """Reject duplicate spell components."""
+
     if len(components) != len(set(components)):
         raise ValueError("Duplicate spell component(s) are not allowed.")
 
@@ -67,16 +69,7 @@ class SpellBase(BaseModel):
 
 
 class SpellCreate(SpellBase):
-    """
-    Create payload for a spell.
-
-    ``available_classes`` / ``available_subclasses`` / ``available_races`` /
-    ``available_subraces`` are optional. If omitted (or left empty), the
-    spell is unrestricted — available to every class, subclass, race, and
-    subrace. If provided, they're saved together with the spell in a
-    single transaction, matching how ``RaceCreate`` handles ability bonuses
-    and granted skills.
-    """
+    """Create payload for a spell; empty availability lists mean unrestricted."""
 
     available_classes: list[int] | None = None
     available_subclasses: list[int] | None = None
@@ -85,14 +78,7 @@ class SpellCreate(SpellBase):
 
 
 class SpellUpdate(BaseModel):
-    """
-    All fields optional — only provided fields are updated (PATCH semantics).
-
-    Deliberately does NOT include available_classes/available_subclasses/
-    available_races/available_subraces: those keep their own PUT endpoints
-    with explicit full-replace semantics, same reasoning as Race's
-    ability-bonuses/granted-skills split.
-    """
+    """All fields optional — only provided fields are updated (PATCH semantics). Availability excluded."""
 
     name: str | None = None
     school: SpellSchool | None = None
@@ -119,7 +105,7 @@ class SpellUpdate(BaseModel):
 
     @field_validator("components")
     def validate_unique_components(cls, value):
-        """Reject duplicate spell components (skipping the ``None`` PATCH case)."""
+        """Reject duplicate spell components, skipping the ``None`` PATCH case."""
 
         if value is None:
             return value
@@ -176,15 +162,7 @@ class SpellResponse(SpellBase):
 
 
 class SpellGetAllResponse(BaseModel):
-    """
-    Lightweight listing row.
-
-    Includes available_classes/available_subclasses/available_races/
-    available_subraces so listing/dropdown UI can filter or badge spells
-    by availability without a follow-up call to `GET /spells/{spell_id}`.
-    Still excludes components, description, dice, and other heavier
-    detail fields.
-    """
+    """Lightweight listing row, including availability summaries but no heavy detail fields."""
 
     model_config = ConfigDict(from_attributes=True)
 

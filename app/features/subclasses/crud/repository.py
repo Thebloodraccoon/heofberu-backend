@@ -7,19 +7,11 @@ from app.models.subclass_model import Subclass
 
 
 class SubclassRepository(BaseRepository[Subclass]):
-    """
-    ``BaseRepository``-backed repository for ``Subclass`` rows.
-
-    Self-contained, same shape as ``ClassRepository``: ``get_by_id``,
-    ``get_all``, ``create``, ``update``, ``delete`` all come straight from
-    ``BaseRepository`` with no signature changes. ``class_id`` scoping
-    (a subclass always belongs to exactly one class) is handled by the
-    service layer via ``filters={"class_id": ...}`` / an explicit
-    ownership check — the repository itself stays a plain single-model
-    CRUD surface.
-    """
+    """``BaseRepository``-backed repository for ``Subclass`` rows; ``class_id`` scoping is handled by the service layer."""
 
     def __init__(self, db: AsyncSession):
+        """Initialize the repository with ``Subclass``'s search fields."""
+
         super().__init__(
             Subclass,
             db,

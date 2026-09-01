@@ -23,6 +23,8 @@ class RaceBase(BaseModel):
 
 
 def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
+    """Reject lists containing duplicate skill IDs."""
+
     if len(skill_ids) != len(set(skill_ids)):
         raise ValueError("Duplicate skill IDs are not allowed.")
 
@@ -30,14 +32,7 @@ def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
 
 
 class RaceCreate(RaceBase):
-    """
-    Create payload for a race.
-
-    ``ability_bonuses`` and ``granted_skills`` are optional — a race can be
-    created without them (matching prior behavior) or with them supplied
-    up front, avoiding the extra PUT round-trips. When provided, semantics
-    are "full replace from empty", same as the dedicated PUT endpoints.
-    """
+    """Create payload for a race with optional bonuses, skills, and features."""
 
     ability_bonuses: list[AbilityBonusItem] | None = None
     granted_skills: list[int] | None = None
@@ -63,13 +58,7 @@ class RaceCreate(RaceBase):
 
 
 class RaceUpdate(BaseModel):
-    """
-    All fields optional — only provided fields are updated (PATCH semantics).
-
-    Deliberately does NOT include ability_bonuses/granted_skills: those keep
-    their own PUT endpoints with explicit full-replace semantics, since PATCH's
-    "only touch what's set" doesn't map cleanly onto "replace the whole list".
-    """
+    """All fields optional — only provided fields are updated (PATCH semantics)."""
 
     name: str | None = None
     size: RaceSize | None = None
@@ -127,13 +116,7 @@ class RaceResponse(RaceBase):
 
 
 class RaceGetAllResponse(BaseModel):
-    """
-    Lightweight listing row: no ability bonuses / granted skills, no description.
-
-    Served by the inherited ``BaseService.get_all`` column-select path
-    (``BaseRepository.get_brief``), which loads only these columns, is
-    paginated, and is ordered by ``Race.id``.
-    """
+    """Lightweight listing row returned by the paginated ``GET /races`` endpoint."""
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -9,18 +9,11 @@ from app.models.subrace_model import Subrace
 
 
 class SubraceRepository(BaseRepository[Subrace]):
-    """
-    ``BaseRepository``-backed repository for ``Subrace`` rows.
-
-    ``ability_bonuses`` are always part of ``SubraceResponse``, so they're
-    wired up as ``default_load_options`` rather than re-implemented here.
-    ``race_id`` scoping (a subrace always belongs to exactly one race) is
-    handled by the service layer via an explicit ownership check — the
-    repository itself stays a plain single-model CRUD surface, same shape
-    as ``SubclassRepository``.
-    """
+    """Repository for ``Subrace`` rows with eager-loaded ability bonuses."""
 
     def __init__(self, db: AsyncSession):
+        """Initialize the repository with eager-loaded ability bonuses."""
+
         super().__init__(
             Subrace,
             db,
@@ -34,13 +27,7 @@ class SubraceRepository(BaseRepository[Subrace]):
         return await self.get_all(filters={"race_id": race_id}, order_by=Subrace.name, limit=None)
 
     async def set_ability_bonuses(self, subrace: Subrace, bonuses: list[dict], *, commit: bool = True) -> Subrace:
-        """
-        Replace all ability bonuses for a subrace with the given list.
-
-        ``commit`` lets callers that need atomicity across multiple writes
-        (e.g. creating a subrace + its bonuses together) defer the commit
-        and flush instead, without duplicating this method.
-        """
+        """Replace all ability bonuses for a subrace with the given list."""
 
         await self.replace_child_rows(
             SubraceAbilityBonus,

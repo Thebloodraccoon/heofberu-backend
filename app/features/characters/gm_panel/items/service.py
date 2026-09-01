@@ -16,25 +16,14 @@ from app.models.character_item_model import CharacterItem
 
 class GmPanelItemService(CharacterSubDomainService):
     """
-    Manage the items a character owns (``character_items``) — a GM-panel
-    capability.
-
-    Each row is an independent stack of an item, so the same item may be
-    owned several times. Every WRITE is GM-only (routed through
-    ``GmUserDep``) — inventory changes are a GM-panel concern; the
-    inventory listing is served by the character CRUD
-    (``GET /characters/{character_id}/items``). Uses three collaborators:
-
-      - the inherited ``CharacterSubDomainService`` — access control
-        only (fetching the owning character to check ownership via
-        ``get_character_for_user``); no inventory data lives there.
-      - ``CharacterItemRepository`` — the ``character_items`` stack rows
-        (CRUD).
-      - ``ItemRepository`` — looking up the reference item being added,
-        so stacks always point at an existing item.
+    Manage the items a character owns (``character_items``), each an
+    independent stack of an item. All writes are GM-only; the inventory
+    listing is served by character CRUD.
     """
 
     def __init__(self, db: AsyncSession):
+        """Wire up the item-stack and item repositories."""
+
         super().__init__(db)
         self.character_item_repository = CharacterItemRepository(db)
         self.item_repository = ItemRepository(db)

@@ -11,7 +11,6 @@ from app.models.item_model import Item
 from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 from app.models.source_item_model import SourceItem
 
-# Which FK must be set for each starting-equipment source type.
 SOURCE_ITEM_FK_BY_SOURCE_TYPE: dict[FeatureSourceType, str] = {
     FeatureSourceType.CLASS: "class_id",
     FeatureSourceType.BACKGROUND: "background_id",
@@ -22,6 +21,8 @@ class ItemRepository(BaseRepository[Item]):
     """Item-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
+        """Initialise the item repository with name uniqueness and in-use guard."""
+
         super().__init__(
             Item,
             db,
@@ -36,13 +37,7 @@ class ItemRepository(BaseRepository[Item]):
         return await self.get_many_by_ids(Item, item_ids)
 
     async def get_source_items_for_sources(self, sources: list[tuple[FeatureSourceType, int]]) -> list[SourceItem]:
-        """
-        Return every ``SourceItem`` row owned by the given
-        ``(source_type, source_id)`` pairs.
-
-        Used by character creation to collect all starting equipment the
-        character's class/background grant in one query.
-        """
+        """Return the starting-equipment rows owned by the given ``(source_type, source_id)`` pairs."""
 
         if not sources:
             return []
@@ -58,14 +53,7 @@ class ItemRepository(BaseRepository[Item]):
     async def get_choice_groups_for_sources(
         self, sources: list[tuple[FeatureSourceType, int]]
     ) -> list[SourceItemChoiceGroup]:
-        """
-        Return every choice group (with their eager-loaded options) owned
-        by the given ``(source_type, source_id)`` pairs.
-
-        Used by character creation to collect all "pick N of M" starting-
-        equipment decisions the character's class/background define, in
-        one query.
-        """
+        """Return the choice groups (with options) owned by the given ``(source_type, source_id)`` pairs."""
 
         if not sources:
             return []
@@ -84,13 +72,7 @@ class ItemRepository(BaseRepository[Item]):
         return list(result.scalars().all())
 
     async def is_in_use(self, item_id: int) -> bool:
-        """
-        Return whether the item is referenced by any character inventory
-        (``character_items``), as starting equipment by a class or
-        background (``source_items``), or as a choice-group option
-        (``source_item_choice_options``). All FKs are ``ON DELETE
-        RESTRICT``, so any reference blocks deletion.
-        """
+        """Return whether the item is referenced anywhere that blocks deletion."""
 
         if await self.exists_referencing(CharacterItem, "item_id", item_id):
             return True

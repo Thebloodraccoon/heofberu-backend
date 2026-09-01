@@ -1,9 +1,4 @@
-"""
-Race feature read endpoint: list RACE-source features for a race.
-
-Write endpoints (POST/PATCH/DELETE) have been removed — features are
-managed centrally through the features catalog.
-"""
+"""Race feature read endpoint: list RACE-source features for a race."""
 
 from typing import Annotated
 

@@ -1,10 +1,4 @@
-"""
-GM max-level endpoints under ``/gm-panel/max-level`` (query-style ID).
-
-The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/gm-panel``. The character is identified by the
-required ``character_id`` query parameter.
-"""
+"""GM max-level endpoints under ``/gm-panel/max-level`` (query-style ID)."""
 
 from typing import Annotated
 
@@ -44,10 +38,8 @@ async def set_character_max_level(
     current_user: GmUserDep,
 ):
     """
-    Raise the maximum level a character may reach. The cap can only move
-    up: a value at or below the currently stored maximum — or below the
-    character's current level — is rejected. The character can then level
-    up to it via the progression endpoint. **GM only.**
+    Raise the maximum level a character may reach; it can only move up
+    (never below the stored cap or current level). **GM only.**
     """
 
     return await level_service.set_max_level(character_id, data, current_user)

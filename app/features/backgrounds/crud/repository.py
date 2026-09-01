@@ -8,11 +8,12 @@ from app.core.base.repository import BaseRepository
 from app.models import Background, CharacterFeature, Feature, SourceItem
 from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 
-
 class BackgroundRepository(BaseRepository[Background]):
     """Background-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
+        """Configure the repository with its model, eager loads, and delete guard."""
+
         super().__init__(
             Background,
             db,
@@ -31,9 +32,7 @@ class BackgroundRepository(BaseRepository[Background]):
     async def is_in_use(self, background_id: int) -> bool:
         """
         Check whether any of the background's features is currently granted
-        to a character (``character_features``). Characters may keep being
-        detached via ``characters.background_id`` ``ON DELETE SET NULL`` —
-        only granting its features blocks deletion.
+        to a character (``character_features``), which blocks deletion.
         """
 
         result = await self.db.execute(select(Feature.id).where(Feature.background_id == background_id))

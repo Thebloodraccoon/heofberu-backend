@@ -27,24 +27,11 @@ class SubclassCrudService(
     """
     Subclass catalog CRUD built on :class:`BaseService`.
 
-    Extends the generic base with:
-      - class-scoped 404s (``SubclassNotFoundException`` instead of the
-        base ``RecordNotFoundError``, and belonging to the right
-        ``class_id``) via :class:`SubclassScopedMixin`;
-      - atomic creation of the subclass row alongside its nested
-        SUBCLASS-source features;
-      - ``get_by_id`` overridden to return the full picture
-        (``SubclassFullResponse``): base fields plus its own
-        SUBCLASS-source ``features``.
-
-    Per-subclass feature writes (add/update/remove) live in
-    :class:`SubclassFeatureService` (the ``features/`` subpackage);
-    the reads here go through the central :class:`FeatureCrudService`.
-
-    Writes purge the ``classes``, ``subclass_features`` and ``features``
-    cache namespaces via :func:`invalidate_subclass_cache` — a superset of
-    what ``ClassCrudService`` uses, since subclasses (and their features)
-    are embedded in cached class responses.
+    Extends the base with class-scoped 404s, atomic creation of the
+    subclass row, and a ``get_by_id`` that returns the subclass with its
+    own SUBCLASS-source ``features``. Reads go through the central
+    :class:`FeatureCrudService`; per-subclass feature writes live in
+    ``features/``. Writes purge ``SUBCLASS_CACHE_NAMESPACES``.
     """
 
     repository: SubclassRepository
@@ -52,6 +39,8 @@ class SubclassCrudService(
     cache_namespaces = SUBCLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with its repositories and the central feature catalog."""
+
         super().__init__(
             repository=SubclassRepository(db),
             response_schema=SubclassResponse,
@@ -60,10 +49,7 @@ class SubclassCrudService(
         self._class_repository = ClassRepository(db)
 
     async def create_subclass(self, data: SubclassCreate) -> SubclassResponse:
-        """
-        Create a subclass (and its nested features) for an existing class.
-        Uses ``_atomic()`` so the subclass row and its features commit together.
-        """
+        """Create a subclass for an existing class, atomically with its nested features."""
 
         await self._ensure_class_exists(data.class_id)
         payload = data.model_dump(exclude={"features"})
@@ -78,15 +64,10 @@ class SubclassCrudService(
     @use_cache(key_builder=lambda self, item_id: f"{cache_prefix()}:classes:subclass:get_by_id:{item_id}")
     async def get_by_id(self, item_id: int) -> SubclassFullResponse:
         """
-        Return a subclass with its own SUBCLASS-source ``features``
-        included — overrides ``BaseService.get_by_id`` (bare
-        ``SubclassResponse``) the same way ``ClassCrudService.get_by_id``
-        overrides its base to return the full picture.
+        Return the subclass plus its own SUBCLASS-source ``features``.
 
         Cached under the ``classes`` namespace — every write in this
-        subdomain purges it via :func:`invalidate_subclass_cache`, so a
-        feature or base-field write on this subclass invalidates this
-        cached read too.
+        subdomain purges it via :func:`invalidate_subclass_cache`.
         """
 
         subclass = await self._get_or_404(item_id)
@@ -97,22 +78,18 @@ class SubclassCrudService(
         )
 
     async def get_subclass(self, subclass_id: int) -> SubclassFullResponse:
-        """Class-scoped variant of :meth:`get_by_id`: 404s if the subclass belongs to a different class."""
+        """Return a subclass's full picture, 404ing if it belongs to a different class."""
 
         return await self.get_by_id(subclass_id)
 
     async def list_for_class(self, class_id: int) -> list[SubclassBriefResponse]:
+        """Return all subclasses for ``class_id`` as brief rows."""
+
         subclasses = await self.repository.list_for_class(class_id)
         return [SubclassBriefResponse.model_validate(s) for s in subclasses]
 
     async def _ensure_class_exists(self, class_id: int) -> None:
-        """
-        Raise ``RecordNotFoundError`` when no class with ``class_id`` exists.
-
-        Used by operations that don't target an existing subrace row yet
-        (create/list) so a missing class 404s exactly as it did before the
-        subdomain split.
-        """
+        """Raise ``RecordNotFoundError`` when no class with ``class_id`` exists."""
 
         if not await self._class_repository.exists_by_id(class_id):
             raise RecordNotFoundError(model_name="Class", model_id=str(class_id))

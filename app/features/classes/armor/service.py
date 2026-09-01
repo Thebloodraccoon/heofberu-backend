@@ -14,9 +14,8 @@ class ClassArmorService(BaseService[Class, ClassCreate, ClassUpdate, ClassRespon
     Everything about a class's armor proficiencies.
 
     ``set_armor_proficiencies`` is the public full-replace write; the
-    ``commit=False`` variant is shared with ``create_class``/``update_class``
-    so armor proficiencies seed in the same transaction as the class row.
-    Any write purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES`.
+    ``commit=False`` variant seeds them in the same transaction as the
+    class row. Writes purge ``CLASS_CACHE_NAMESPACES``.
     """
 
     repository: ClassRepository
@@ -24,12 +23,16 @@ class ClassArmorService(BaseService[Class, ClassCreate, ClassUpdate, ClassRespon
     cache_namespaces = CLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with a repository over the session."""
+
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,
         )
 
     async def set_armor_proficiencies(self, class_id: int, data: ArmorProficienciesUpdate) -> ClassResponse:
+        """Fully replace a class's armor proficiencies."""
+
         character_class = await self._get_or_404(class_id)
 
         await self.repository.set_armor_proficiencies(character_class, data.armor_proficiencies)

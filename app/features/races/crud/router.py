@@ -28,22 +28,7 @@ async def get_races(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
-    """
-    Return a paginated list of races with only `id`, `name`, and `size`.
-
-    Open endpoint, no authentication required.
-
-    `race_size` is an any-of match (repeat the key, e.g.
-    `race_size=SMALL&race_size=MEDIUM`). `search` is a
-    case-insensitive partial match against the race name; both can be
-    combined.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching races across every page, not just this one.
-
-    Does not include ability bonuses or granted skills — use
-    `GET /races/{race_id}` for the full record.
-    """
+    """Return a paginated list of races with basic fields. Open endpoint."""
 
     return await race_service.get_all(page=page, size=size, filters={"size": race_size}, search=search)
 
@@ -57,12 +42,7 @@ async def get_races(
     },
 )
 async def get_race(race_id: int, race_service: RaceCrudDep):
-    """
-    Return a single race by ID, with full detail — including ability
-    bonuses, granted skills, and the race's own features.
-
-    Open endpoint, no authentication required.
-    """
+    """Return a single race by ID with full detail. Open endpoint."""
 
     return await race_service.get_by_id(race_id)
 
@@ -106,14 +86,7 @@ async def create_race(
     race_service: RaceCrudDep,
     _: GmUserDep,
 ):
-    """
-    Create a new race. **GM only.**
-
-    `ability_bonuses` and `granted_skills` are optional. If provided,
-    they're saved together with the race in a single transaction — the
-    race is fully set up in one call instead of a `POST` followed by two
-    `PUT` calls.
-    """
+    """Create a new race. **GM only.**"""
 
     return await race_service.create_race(data)
 
@@ -150,14 +123,7 @@ async def update_race(
     race_service: RaceCrudDep,
     _: GmUserDep,
 ):
-    """
-    Partially update a race's base fields. **GM only.**
-
-    Only fields included in the request body are changed; omitted fields
-    are left as-is. Does not touch ability bonuses or granted skills — use
-    `PUT /races/{race_id}/ability-bonuses` and `PUT /races/{race_id}/skills`
-    for those.
-    """
+    """Partially update a race's base fields. **GM only.**"""
 
     return await race_service.update(race_id, data)
 
@@ -172,13 +138,7 @@ async def update_race(
     },
 )
 async def delete_race(race_id: int, race_service: RaceCrudDep, _: FounderDep):
-    """
-    Delete a race. **Founder only.**
-
-    Also removes its ability bonuses, granted skills, subraces, and
-    features (cascade). Blocked if the race is still assigned to one or
-    more characters.
-    """
+    """Delete a race. **Founder only.**"""
 
     await race_service.delete(race_id)
     return None

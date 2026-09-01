@@ -81,6 +81,8 @@ class ASIChoice(BaseModel):
 
     @field_validator("increases")
     def validate_increases(cls, increases):
+        """Validate the ASI increments against the +1..+2 budget."""
+
         return _validate_asi_increases(increases)
 
 

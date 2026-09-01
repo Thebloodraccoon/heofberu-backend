@@ -1,24 +1,4 @@
-"""
-Assembled ``/characters/gm-panel`` router (query-style resource IDs).
-
-Sub-routers declare no prefix of their own; the static ``/gm-panel``
-prefix is applied here, and the whole subdomain is mounted onto the
-``/characters`` router by ``app.features.characters.router`` — combined,
-a path here like ``"/feats"`` resolves to
-``/characters/gm-panel/feats?character_id=...``. The owning character is
-identified by the required ``character_id`` query parameter on every
-endpoint; per-grant operations additionally take their grant ID as a
-query parameter (``feat_id``, ``item_id``, ...).
-
-Every route is a GM-only write via ``GmUserDep``, except the read-only
-``GET /max-level`` listing (GM/owner).
-The matching player-facing reads live in the plain character CRUD
-(``GET /characters/{character_id}/feats``,
-``GET /characters/{character_id}/features``,
-``GET /characters/{character_id}/items`` and
-``GET /characters/{character_id}/stats`` — the latter surfaces recorded
-ASI adjustments/choices as ``asi`` contributions).
-"""
+"""Assembled /characters/gm-panel router — GM-only writes; player reads in character CRUD."""
 
 from fastapi import APIRouter
 

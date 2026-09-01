@@ -106,6 +106,13 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     cache_namespaces: tuple[str, ...] = ()
 
+    # Optional default ordering for ``get_all`` listings: the NAME of the
+    # model column to order by (e.g. ``"name"`` for alphabetical catalog
+    # listings). Set to ``None`` to keep the default ``model.id`` order.
+    # Stored as a string (not a resolved column) so it never embeds a
+    # mapped ``InstrumentedAttribute`` as a class attribute.
+    get_all_order_by: str | None = None
+
     def __init__(
         self,
         repository: BaseRepository[ModelType],
@@ -162,14 +169,27 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         mapper = inspect(model)
         relationship_fields = [name for name in self.get_all_schema.model_fields if name in mapper.relationships]
 
+        order_by = getattr(model, self.get_all_order_by) if self.get_all_order_by else None
+
         if not relationship_fields:
             columns = [getattr(model, field_name) for field_name in self.get_all_schema.model_fields]
             rows = await self.repository.get_brief(
-                *columns, order_by=model.id, skip=skip, limit=limit, filters=filters, search=search
+                *columns,
+                order_by=order_by,
+                skip=skip,
+                limit=limit,
+                filters=filters,
+                search=search,
             )
             items = [self.get_all_schema.model_validate(row, from_attributes=True) for row in rows]
         else:
-            records = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+            records = await self.repository.get_all(
+                skip=skip,
+                limit=limit,
+                filters=filters,
+                search=search,
+                order_by=order_by,
+            )
             items = [self.get_all_schema.model_validate(record) for record in records]
 
         return Page(items=items, total=total, page=page, size=size)

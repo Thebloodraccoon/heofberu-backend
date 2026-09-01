@@ -1,13 +1,4 @@
-"""
-Character condition endpoints: manage active conditions on a character
-(query-style IDs).
-
-The router declares no prefix of its own; ``app.features.characters.router``
-applies the ``/characters`` prefix — combined, ``"/conditions"`` resolves
-to ``/characters/conditions?character_id=...``. The character is
-identified by the required ``character_id`` query parameter; per-condition
-operations additionally take the ``condition`` enum as a query parameter.
-"""
+"""Character condition endpoints: manage active conditions on a character (query-style IDs)."""
 
 from typing import Annotated
 

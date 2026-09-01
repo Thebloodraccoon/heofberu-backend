@@ -6,13 +6,7 @@ SPELL_CACHE_NAMESPACES = ("spells",)
 
 
 async def invalidate_spell_cache() -> None:
-    """
-    Purge every cache namespace a spell read can hit.
-
-    ``GET /spells`` (``spells`` namespace) is served from cache. Any write
-    to a spell — catalog CRUD via ``/spells`` or a class/race availability
-    change — must call this after its transaction commits.
-    """
+    """Purge every cache namespace a spell read can hit."""
 
     for namespace in SPELL_CACHE_NAMESPACES:
         await invalidate(namespace)

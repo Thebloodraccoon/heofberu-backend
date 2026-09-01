@@ -1,7 +1,4 @@
-"""
-Background granted-skill endpoints.
-``background_id`` is a path parameter supplied via the router prefix.
-"""
+"""Background granted-skill endpoints."""
 
 from typing import Annotated
 
@@ -13,7 +10,6 @@ from app.features.backgrounds.skills.schemas import SkillsUpdate
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
-
 
 @router.put(
     "/skills",
@@ -47,9 +43,8 @@ async def set_background_skills(
     """
     Replace all granted skills for a background. **GM only.**
 
-    Full replace, not merge: the `skill_ids` in the request body become
-    the complete set of skills this background grants — any skill not
-    included is removed. Send an empty list to clear all granted skills.
+    Full replace (not merge): the given `skill_ids` become the complete
+    set; send an empty list to clear them all.
     """
 
     return await background_service.set_skills(background_id, data)

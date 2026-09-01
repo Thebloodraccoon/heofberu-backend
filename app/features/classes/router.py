@@ -1,9 +1,4 @@
-"""
-Assembled ``/classes`` router.
-
-Subclasses are now a standalone module mounted separately — not nested
-under ``/classes/{class_id}``.
-"""
+"""Assembled ``/classes`` router (subclasses mounted separately)."""
 
 from fastapi import APIRouter
 

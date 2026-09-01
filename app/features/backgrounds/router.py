@@ -1,12 +1,4 @@
-"""
-Assembled ``/backgrounds`` router.
-
-Each capability sub-router declares no prefix of its own; the
-``/backgrounds`` prefix is applied here via ``include_router(..., prefix=...)``
-so empty-path routes (``GET ""`` etc.) resolve to ``/backgrounds``. The
-mounted surface exposes the exact same paths as the previous monolithic
-endpoints package.
-"""
+"""Assembled ``/backgrounds`` router."""
 
 from fastapi import APIRouter
 

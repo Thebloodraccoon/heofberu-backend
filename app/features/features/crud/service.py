@@ -25,7 +25,7 @@ from app.features.features.exceptions import InvalidFeatureSourceException
 from app.models.feature_model import Feature
 
 # The per-catalog cache namespace holding that catalog's own feature list.
-# A central feature write purges the blocking catalog's list namespace (and
+# A central feature write purges the owning catalog's list namespace (and
 # only that one) so its cached ``GET /{source}/features`` goes stale.
 SOURCE_FEATURE_LIST_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.CLASS: "class_features",
@@ -36,13 +36,10 @@ SOURCE_FEATURE_LIST_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.OTHER: None,
 }
 
-# The parent catalog read namespace holding that source's cached FULL
-# response. A central feature write must also purge it: the parent detail
-# reads embed their features (``RaceResponse``, ``ClassFullResponse``,
-# ``SubclassFullResponse``, ``SubraceFullResponse``,
-# ``BackgroundFullResponse``), so the whole cached payload would go stale
-# otherwise. Subrace detail is cached under ``races`` (subraces are also
-# embedded in race responses) and subclass detail under ``classes``.
+# The parent catalog read namespace holding that source's cached FULL response.
+# A central feature write must also purge it: the parent detail reads embed
+# their features, so the whole cached payload would go stale otherwise.
+# Subrace detail is cached under ``races`` and subclass detail under ``classes``.
 SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.CLASS: "classes",
     FeatureSourceType.SUBCLASS: "classes",
@@ -51,7 +48,6 @@ SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.BACKGROUND: "backgrounds",
     FeatureSourceType.OTHER: None,
 }
-
 
 def _get_fk_name(source_type: FeatureSourceType) -> str:
     """The source-FK column for ``source_type`` (raises for OTHER)."""
@@ -64,39 +60,21 @@ def _get_fk_name(source_type: FeatureSourceType) -> str:
 
     return fk_name
 
-
 class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureGetAllResponse]):
     """
-    The single feature service. Everything about features — standalone
-    (OTHER) or owned by a class/subclass/race/subrace/background — is
-    created, read, updated and deleted through this one class, served by
-    the centralized ``/features`` endpoints.
+    The single feature service: every feature — standalone (OTHER) or owned by
+    a class/subclass/race/subrace/background — is created, read, updated and
+    deleted through this one class.
 
-    - create/update/delete accept ANY ``source_type`` (no more
-      standalone-only guard): ``POST /features`` pins the parent FK via the
-      ``FeatureCreate`` consistency validator, ``PATCH``/``DELETE`` work on
-      the row by id.
-    - ``list_for_source`` is a plain read (no cache of its own): each parent
-      catalog caches its own feature LIST under a dedicated namespace
-      (``race_features``/``subrace_features``/``class_features``/
-      ``subclass_features``/``background_features``); a feature write here
-      invalidates the owning catalog's list namespace via
-      :data:`SOURCE_FEATURE_LIST_NAMESPACE` plus its read namespace via
-      :data:`SOURCE_PARENT_READ_NAMESPACE` and the shared ``features``
-      namespace (cached ``GET /features`` and ``GET /features/{id}``).
-    - ``create_feature_for_source``/``create_features_for_source`` remain for
-      seeding nested ``features`` inside a parent create payload; they run
-      inside the caller's ``_atomic()`` transaction (``commit=False``) and
-      the caller invalidates its own namespaces.
-    - ``level`` is mandatory for CLASS/SUBCLASS features (1-20) and optional
-      for every other source type.
-    - ``create``/``update_feature``/``delete`` for a source-owned feature
-      (CLASS/SUBCLASS/RACE/SUBRACE/BACKGROUND) reconcile affected characters'
-      auto-granted ``character_features`` in the same transaction via
-      ``reconcile_characters_for_source`` — a feature added to a class is
-      granted to its characters, a level raise revokes it below the new
-      level, a delete removes its grants and refreshes the characters' stat
-      caches.
+    ``list_for_source`` is an uncached read; the parent catalogs cache their
+    own feature lists and a feature write here invalidates the owning
+    catalog's lists via :data:`SOURCE_FEATURE_LIST_NAMESPACE`, its read
+    namespace via :data:`SOURCE_PARENT_READ_NAMESPACE`, and the shared
+    ``features`` namespace. ``create_feature_for_source``/
+    ``create_features_for_source`` run inside the caller's ``_atomic()``
+    transaction (``commit=False``). Source-owned feature writes also
+    reconcile affected characters' auto-granted ``character_features`` in the
+    same transaction via ``reconcile_characters_for_source``.
     """
 
     repository: FeatureRepository
@@ -104,6 +82,8 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
     cache_namespaces = FEATURE_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with the feature repository."""
+
         super().__init__(
             repository=FeatureRepository(db),
             response_schema=FeatureResponse,
@@ -114,14 +94,8 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Purge every cached read a feature write can hit.
 
-        ``invalidate_feature_cache`` clears the shared ``features``
-        namespace (feature list + by-id detail). If the feature belongs to a
-        parent record, the owning catalog's feature-list cache
-        (``race_features`` etc.) is purged too — only that catalog, so a
-        feature write never nukes its neighbors' caches. The owning
-        catalog's read namespace (``races``/``classes``/``backgrounds``) is
-        additionally purged because those detail responses embed their
-        features.
+        Clears the shared ``features`` namespace, plus (for source-owned
+        features) the owning catalog's feature-list and read namespaces.
         """
 
         await invalidate_feature_cache()
@@ -138,13 +112,9 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Return every ``Feature`` row owned by ``source_id`` (ordered by id).
 
-        Uncached on purpose: the parent catalogs cache their own feature
-        LISTS under their dedicated namespaces, and this uncached read also
-        feeds their ``get_by_id`` full responses (which are cached at the
-        catalog level), so caching here would double-cache every row.
-
-        Raises:
-            ValueError: ``source_type`` has no source FK (OTHER).
+        Uncached on purpose: parent catalogs cache their own feature lists
+        under dedicated namespaces, so caching here would double-cache.
+        Raises ``ValueError`` when ``source_type`` is OTHER (no source FK).
         """
 
         fk_name = _get_fk_name(source_type)
@@ -169,10 +139,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Reconcile auto-granted character features after a source-owned feature write.
 
-        Runs in the caller's open transaction (never commits here): characters
-        of the owning class/subclass/race/subrace/background gain newly added
-        features, lose revokes below their level, and their stat caches are
-        refreshed (features can carry fixed ability-score effects). OTHER
+        Runs in the caller's open transaction (never commits here); OTHER
         features are never auto-granted, so they need no reconciliation.
         """
 
@@ -185,10 +152,9 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Create a feature of any source type.
 
-        The ``FeatureCreate`` validator pins the source FK for source-owned
-        features (CLASS → class_id, ...) and enforces the level rules
-        (mandatory 1-20 for CLASS/SUBCLASS). A source-owned feature is
-        granted to the owning record's characters in the same transaction.
+        The ``FeatureCreate`` validator pins the source FK and enforces the
+        level rules; a source-owned feature is granted to the owning
+        record's characters in the same transaction.
         """
 
         item = await self.repository.create(create_data.model_dump(), commit=False)
@@ -196,9 +162,8 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             create_data.source_type, self._source_fk_value(create_data.source_type, create_data)
         )
         await self.repository.commit_or_flush()
-        # The commit expires the row; refetch it with the repository's default
-        # eager loads so serialization never trips an async lazy load on the
-        # (just-created, empty) ``ability_increases`` collection.
+        # The commit expires the row; refetch with eager loads so serialization
+        # never trips an async lazy load on the empty ``ability_increases`` collection.
         item = await self.repository.get_by_id(item.id)
         await self._purge_feature_cache(create_data.source_type)
 
@@ -212,25 +177,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         *,
         commit: bool = False,
     ) -> list[Feature]:
-        """
-        Create ``Feature`` rows attached to a source record inside an open transaction.
-
-        Called by race/subrace/class/subclass/background create
-        services so a client can supply features up front in the same
-        request that creates the source.
-
-        Args:
-            source_type: Which source the features belong to. Determines the
-                FK column that gets set (CLASS→class_id, SUBCLASS→subclass_id,
-                ...).
-            source_id: ID of the owning record.
-            items: Nested feature payloads. ``None`` or empty returns ``[]``.
-            commit: Pass ``False`` when called from within the caller's
-                ``_atomic()`` block so rows share the parent transaction.
-
-        Returns:
-            The created ``Feature`` model instances.
-        """
+        """Create ``Feature`` rows attached to a source record inside an open transaction."""
 
         if not items:
             return []
@@ -260,19 +207,8 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Create a single ``Feature`` row attached to a source record.
 
-        Used by :meth:`create_features_for_source` (nested create payloads).
         No cache invalidation happens here — the caller owns its transaction
         and purges its own namespaces after commit.
-
-        Args:
-            source_type: Which source the feature belongs to.
-            source_id: ID of the owning record.
-            item: The feature payload (name/description/level).
-            commit: Pass ``False`` when called from within the caller's
-                ``_atomic()`` block.
-
-        Returns:
-            The created ``Feature`` model instance.
         """
 
         fk_name = _get_fk_name(source_type)
@@ -284,13 +220,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         return await self.repository.create(feature.model_dump(), commit=commit)
 
     def _validate_level_update(self, feature: Feature, fields: dict) -> None:
-        """
-        Reject ``level`` patches that would break the level rules.
-
-        A CLASS/SUBCLASS feature's ``level`` is mandatory: it can be changed
-        (within 1-20) but never cleared. For every other source type
-        ``level`` stays optional and may be set or cleared freely.
-        """
+        """Reject ``level`` patches that would break the level rules."""
 
         if "level" not in fields:
             return
@@ -317,11 +247,9 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         Update a feature of any source type, keeping its id.
 
         ``source_type`` and its FK can't change — ownership is permanent.
-        Only ``name``, ``level`` and ``description`` are editable. A
-        CLASS/SUBCLASS feature's ``level`` is mandatory (1-20): it may be
-        changed but never cleared; for other source types ``level`` is
-        optional. A ``level`` change (or any edit) re-reconciles the owning
-        record's characters in the same transaction.
+        A CLASS/SUBCLASS feature's ``level`` is mandatory (1-20) and may be
+        changed but never cleared. Any edit re-reconciles the owning record's
+        characters in the same transaction.
         """
 
         feature = await self._get_or_404(feature_id)
@@ -347,8 +275,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
     async def delete(self, feature_id: int) -> bool:
         """
         Delete a feature of any source type, cascading away any
-        ``CharacterFeature`` grants on it and refreshing the affected
-        characters' grants/stat caches.
+        ``CharacterFeature`` grants and refreshing affected characters.
         """
 
         feature = await self._get_or_404(feature_id)

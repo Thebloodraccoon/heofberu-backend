@@ -9,6 +9,8 @@ class CharacterFeatAlreadyKnownException(AppError):
     status_code = 409
 
     def __init__(self, character_id: int, feat_id: int):
+        """Initialize with the character and feat ids."""
+
         self.character_id = character_id
         self.feat_id = feat_id
         super().__init__(f"Character {character_id} already has feat {feat_id}.")
@@ -20,6 +22,8 @@ class InvalidAbilityScoreIncreaseException(AppError):
     status_code = 400
 
     def __init__(self, feat_id: int, ability_score_increase_id: int):
+        """Initialize with the feat and ASI-choice ids."""
+
         self.feat_id = feat_id
         self.ability_score_increase_id = ability_score_increase_id
         super().__init__(
@@ -28,15 +32,13 @@ class InvalidAbilityScoreIncreaseException(AppError):
 
 
 class FeatAsiChoiceRequiredException(AppError):
-    """
-    Raised when granting (or taking at level-up) a feat that offers
-    ability-score increases without picking one — the choice must be
-    explicit so the granted points are never silently lost.
-    """
+    """Raised when a feat offering ASI options is granted/taken without picking one explicitly."""
 
     status_code = 422
 
     def __init__(self, feat_id: int, choices: int):
+        """Initialize with the feat id and available choice count."""
+
         self.feat_id = feat_id
         self.choices = choices
         super().__init__(
@@ -51,6 +53,8 @@ class FeatPrerequisiteNotMetException(AppError):
     status_code = 400
 
     def __init__(self, feat_id: int, ability: str, required_minimum: int, actual: int):
+        """Initialize with the feat id, ability, and required/actual scores."""
+
         self.feat_id = feat_id
         self.ability = ability
         self.required_minimum = required_minimum

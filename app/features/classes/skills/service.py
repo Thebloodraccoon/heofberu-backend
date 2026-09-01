@@ -23,12 +23,9 @@ class ClassSkillService(
     """
     Everything about the skills a class may choose proficiencies from.
 
-    Full replacement comes from :class:`SkillsManagerMixin` (pinned to the
-    repository's ``set_available_skills`` via ``_set_skills_method``); the
-    generic CRUD machinery (``_get_or_404``/``_get_response``/
-    ``_invalidate_cache``) comes from :class:`BaseService`. Any write
-    purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES` via
-    ``cache_namespaces``.
+    Full replacement comes from :class:`SkillsManagerMixin`; the generic
+    CRUD machinery comes from :class:`BaseService`. Writes purge
+    ``CLASS_CACHE_NAMESPACES`` via ``cache_namespaces``.
     """
 
     repository: ClassSkillsRepository
@@ -38,6 +35,8 @@ class ClassSkillService(
     cache_namespaces = CLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with a repository over the session."""
+
         super().__init__(
             repository=ClassSkillsRepository(db),
             response_schema=ClassResponse,
@@ -52,9 +51,8 @@ class ClassSkillService(
         """
         Resolve ``skill_ids`` to ``Skill`` rows, or ``None`` when absent/empty.
 
-        Raises ``RecordIdsInvalidError`` if any id doesn't correspond to an
-        existing skill. Shared with ``create_class`` so it can seed the
-        available skills in the same transaction.
+        Raises ``RecordIdsInvalidError`` if any id is unknown. Shared with
+        ``create_class`` so it can seed skills in the same transaction.
         """
 
         return await self._resolve_skills(skill_ids)

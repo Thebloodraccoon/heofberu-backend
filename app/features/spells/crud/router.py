@@ -64,33 +64,8 @@ async def get_spells(
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
-    Return a paginated list of spells with only `id`, `name`, `school`,
-    `level`, and the four availability lists (`available_classes`,
-    `available_subclasses`, `available_races`, `available_subraces`).
-
-    Open endpoint, no authentication required.
-
-    All filters below are any-of matches (repeat the query key to pass
-    several values, e.g. `?school=EVOCATION&school=ILLUSION`); values
-    within one filter are OR'd, different filters are combined AND'd.
-    `search` is a case-insensitive partial match
-    against the spell name, combined with any filters.
-
-    - `school` — e.g. `EVOCATION`
-    - `level` — e.g. `LEVEL_1`, `CANTRIP`
-    - `cast_time` — e.g. `ACTION`, `BONUS_ACTION`, `REACTION`
-    - `range_type` — e.g. `RANGED`, `TOUCH`, `SELF`
-    - `duration` — e.g. `INSTANTANEOUS`, `ONE_MINUTE`
-    - `attack_type` — e.g. `RANGED_ATTACK`, `MELEE_ATTACK`
-    - `damage_type` — e.g. `FIRE`, `RADIANT`
-    - `healing_target` — e.g. `HP`, `TEMP_HP`
-    - `is_ritual` / `is_concentration` — boolean flags
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching spells across every page, not just this one.
-
-    Does not include components, description, dice, or other heavier
-    detail fields — use `GET /spells/{spell_id}` for the full record.
+    Return a paginated list of lightweight spells, with filters and search.
+    Open endpoint.
     """
 
     filters = {
@@ -118,10 +93,8 @@ async def get_spells(
 )
 async def get_spell(spell_id: int, spell_service: SpellCrudDep):
     """
-    Return a single spell by ID, with full detail — including its
-    availability lists (available classes, subclasses, races, subraces).
-
-    Open endpoint, no authentication required.
+    Return a single spell by ID, with full detail and availability lists.
+    Open endpoint.
     """
 
     return await spell_service.get_by_id(spell_id)
@@ -241,14 +214,8 @@ async def create_spell(
     _: GmUserDep,
 ):
     """
-    Create a new spell. **GM only.**
-
-    The four availability lists (`available_classes`,
-    `available_subclasses`, `available_races`, `available_subraces`) are
-    optional. If provided, they're saved together with the spell in a
-    single transaction — the spell is fully set up in one call instead of
-    a `POST` followed by `PUT` calls. An empty (or omitted) list means the
-    spell is unrestricted for that dimension.
+    Create a new spell, optionally saving its availability lists in one transaction.
+    **GM only.**
     """
 
     return await spell_service.create_spell(data)
@@ -290,13 +257,8 @@ async def update_spell(
     _: GmUserDep,
 ):
     """
-    Partially update a spell. **GM only.**
-
-    Only fields included in the request body are changed; omitted fields
-    are left as-is. Does not touch the availability lists — use
-    `PUT /spells/{spell_id}/classes`, `PUT /spells/{spell_id}/subclasses`,
-    `PUT /spells/{spell_id}/races`, and `PUT /spells/{spell_id}/subraces`
-    for those.
+    Partially update a spell only with the provided fields (availabilty via the PUT endpoints).
+    **GM only.**
     """
 
     return await spell_service.update(spell_id, data)
@@ -312,9 +274,8 @@ async def update_spell(
 )
 async def delete_spell(spell_id: int, spell_service: SpellCrudDep, _: FounderDep):
     """
-    Delete a spell. **Founder only.**
-
-    Also removes its class/race availability links (cascade).
+    Delete a spell, also removing its availability links.
+    **Founder only.**
     """
 
     await spell_service.delete(spell_id)

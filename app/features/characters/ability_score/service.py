@@ -19,66 +19,22 @@ from app.models import Character, CharacterAbilityScore
 
 class CharacterStatsService:
     """
-    Single point of decision for "when does the effective-ability-score
-    cache need recomputing", and the only place that writes to
-    ``character_ability_scores``.
-
-    Before this existed, three call sites each decided independently
-    when to recalculate: ``CharacterService._to_response`` (via
-    ``_ABILITY_AFFECTING_FIELDS``), the feat-grant writes (always,
-    on every feat write), and race changes (indirectly, via the same
-    field set). Consolidating them here means a new ability-affecting
-    change (e.g. a future background bonus source) only needs to be
-    wired into this one class, not hunted down across every sub-service.
-
-    Entry points:
-      - ``compute`` — recompute a character's effective scores from the
-        current source rows WITHOUT persisting (read-only use, e.g. the
-        feat-prerequisite check in ``characters.feats.validation``, or the
-        progression service's ASI cap / hit-point modifier checks).
-      - ``refresh`` — ``compute`` + persist. Used by every write path
-        that's already known to affect ability scores (feat
-        grant/update/remove; character create; race change; level-up
-        ASI, via ``CharacterProgressionService``).
-      - ``get_or_stale`` — read the existing cache row without
-        recomputing. Used by list views that intentionally trade
-        freshness for avoiding N recalculations per page.
-      - ``get_many_or_stale`` — same as ``get_or_stale`` but for a whole
-        listing page in one query (kills the N+1 in
-        ``CharacterService.get_characters``).
-      - ``for_response`` — thin dispatcher used by
-        ``CharacterService._to_response``: ``refresh`` when ``refresh``
-        is ``True``, else ``get_or_stale``.
-
-    This service is also the home of the remaining derived combat stats
-    that a ``CharacterResponse`` exposes instead of class/race lookups on
-    every consumer:
-      - ``compute_derived`` — for a single character;
-      - ``get_many_derived`` — for a listing page, so a page costs a
-        constant number of queries regardless of page size.
-
-    Because these are derived on every read, no write path needs to keep
-    them in sync, and a GM editing a class's hit die or a race's speed
-    shows up the next time the character is fetched. Armor class is NOT
-    derived here (or anywhere) — it's a plain editable
-    ``Character.armor_class`` column.
+    Single point that decides when the effective-ability-score cache needs
+    recomputing, and the only place that writes ``character_ability_scores``.
+    Also computes the derived combat stats (hit dice, speed).
     """
 
     def __init__(self, db: AsyncSession):
+        """Create the calculator and the stats repository."""
+
         self.calculator = CharacterAbilityScoreCalculator()
         self.repository = CharacterStatsRepository(db)
 
     async def compute(self, character: Character) -> dict[str, int]:
         """
         Recompute a character's effective ability scores WITHOUT writing
-        to the cache table.
-
-        Loads the source bonus rows (race + subrace bonuses + feat ASI
-        choices + counted ASI-choice log increases) and feeds them to
-        the pure :class:`CharacterAbilityScoreCalculator`. Used by
-        read-only callers that need "what would the current scores be" —
-        e.g. the feat prerequisite check, which must be based on fresh
-        data even if the cache is stale.
+        to the cache table — for read-only callers (fresh data even if
+        the cache is stale).
         """
 
         race_bonuses = await self.repository.get_race_bonuses(character.race_id)
@@ -92,14 +48,8 @@ class CharacterStatsService:
 
     async def compute_breakdown(self, character: Character) -> dict[AbilityScore, AbilityBreakdown]:
         """
-        Compute each ability's ORIGINAL base, its COMPUTED total, and the
-        list of ``StatContribution`` sources that produced that total —
-        the "what is calculated from what" view shown to the player.
-
-        Loads the same source rows as :meth:`compute` (race/subrace
-        bonuses + feat ASI + counted ASI-log increases + feature
-        increases) and labels them for display (race/subrace/feature/feat
-        names, or "Level N (CHOICE)"). Does NOT persist anything — read-only.
+        Compute each ability's ORIGINAL base, COMPUTED total, and the
+        labeled ``StatContribution`` sources that produced it (read-only).
         """
 
         race_bonuses = await self.repository.get_race_bonuses(character.race_id)
@@ -167,29 +117,22 @@ class CharacterStatsService:
         """
         Resolve each ability's maximum score for ``character``: the
         standard 20 raised by any granted feature effect carrying a
-        ``new_cap`` (e.g. 24 for STR/CON under Primal Champion). Computed
-        fresh from the current feature grants — used by every cap check
-        (level-up ASI, GM ±adjustments, feat ASI choices).
+        ``new_cap``. Computed fresh from the current feature grants.
         """
 
         feature_increases = await self.repository.get_feature_increases(character.id)
         return resolve_ability_caps(feature_increases)
 
     async def refresh(self, character: Character, *, commit: bool = True) -> CharacterAbilityScore:
-        """
-        Recompute effective ability scores for ``character`` and persist
-        them. ``commit=False`` defers persistence to the caller's
-        transaction (bulk refreshes inside a source reconciliation).
-        """
+        """Recompute effective ability scores for ``character`` and persist them."""
 
         totals = await self.compute(character)
         return await self.repository.upsert(character.id, totals, commit=commit)
 
     async def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
         """
-        Return the existing cache row as-is, without recomputing.
-        ``None`` if the character has never had its scores computed
-        (e.g. never fetched individually via ``GET /{character_id}``).
+        Return the existing cache row as-is, without recomputing, or
+        ``None`` if it was never computed.
         """
 
         return await self.repository.get_by_character_id(character_id)
@@ -222,11 +165,8 @@ class CharacterStatsService:
 
     async def get_many_derived(self, characters: list[Character]) -> dict[int, DerivedStats]:
         """
-        Return ``{character_id: DerivedStats}`` for the given characters.
-
-        Hit dice come from the character's class, speed from its race
-        (falling back to the standard 30 ft without one). Armor class is
-        not derived — it lives on the ``Character.armor_class`` column.
+        Return ``{character_id: DerivedStats}`` for the given characters:
+        hit dice from the class, speed from the race (30 ft default).
         """
 
         class_ids = [character.class_id for character in characters if character.class_id is not None]

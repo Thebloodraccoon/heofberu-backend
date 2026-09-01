@@ -11,6 +11,8 @@ class CharacterBackstoryRepository(BaseRepository[CharacterBackstory]):
     """Repository for a character's backstory (``character_backstories``, one row per character)."""
 
     def __init__(self, db: AsyncSession):
+        """Create the backstory repository."""
+
         super().__init__(CharacterBackstory, db)
 
     async def get_for_character(self, character_id: int) -> CharacterBackstory | None:

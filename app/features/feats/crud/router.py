@@ -16,7 +16,6 @@ from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
-
 @router.get(
     "",
     response_model=Page[FeatGetAllResponse],
@@ -33,21 +32,12 @@ async def get_feats(
 ):
     """
     Return a paginated list of feats with `id`, `name`, and the ASI choices
-    (`ability_score_increases`) that change a character's characteristics.
-
-    Open endpoint, no authentication required.
-
-    `search` is a case-insensitive partial match against the feat name.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching feats across every page, not just this one.
-
-    Does not include prerequisites or the full description — use
-    `GET /feats/{feat_id}` for the full record.
+    (`ability_score_increases`). `search` matches the name; response is
+    `{items, total, page, size}`.
+    Open endpoint.
     """
 
     return await feat_service.get_all(page=page, size=size, search=search)
-
 
 @router.get(
     "/{feat_id:int}",
@@ -60,15 +50,11 @@ async def get_feats(
 async def get_feat(feat_id: int, feat_service: FeatCrudDep):
     """
     Return a single feat by ID, with everything about it: base fields and
-    ability score increase choices.
-
-    Cached as a single unit.
-
-    Open endpoint, no authentication required.
+    ability score increase choices. Cached as a single unit.
+    Open endpoint.
     """
 
     return await feat_service.get_by_id(feat_id)
-
 
 @router.post(
     "",
@@ -128,12 +114,11 @@ async def create_feat(
     """
     Create a new feat. **GM only.**
 
-    `ability_score_increases` is optional. If provided, it's saved
-    together with the feat in a single transaction.
+    `ability_score_increases` is optional and saved with the feat in a
+    single transaction.
     """
 
     return await feat_service.create_feat(data)
-
 
 @router.patch(
     "/{feat_id:int}",
@@ -174,13 +159,11 @@ async def update_feat(
     """
     Partially update a feat's base fields. **GM only.**
 
-    Only fields included in the request body are changed; omitted fields
-    are left as-is. Does not touch ability score increase choices — use
-    `PUT /feats/{feat_id}/ability-score-increases` for those.
+    Only fields included in the request body are changed; use
+    `PUT /feats/{feat_id}/ability-score-increases` for ASI choices.
     """
 
     return await feat_service.update(feat_id, data)
-
 
 @router.delete(
     "/{feat_id:int}",
@@ -195,7 +178,7 @@ async def delete_feat(feat_id: int, feat_service: FeatCrudDep, _: FounderDep):
     """
     Delete a feat. **Founder only.**
 
-    Also removes its ability score increase choices (cascade). Blocked if
+    Also removes its ability score increase choices (cascade); blocked if
     the feat is still granted to one or more characters.
     """
 

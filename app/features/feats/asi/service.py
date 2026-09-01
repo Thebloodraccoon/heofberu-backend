@@ -8,15 +8,12 @@ from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.schemas import AbilityScoreIncreasesUpdate, FeatCreate, FeatResponse, FeatUpdate
 from app.models.feat_model import Feat
 
-
 class FeatAsiService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, None]):
     """
-    Everything about a feat's ability score increase choices.
+    Feat ASI service: full replacement of a feat's ability score increases.
 
     ``set_ability_score_increases`` is the public full-replace write; the
-    ``commit=False`` variant is shared with ``create_feat`` so ASI choices
-    seed in the same transaction as the feat row. Any write purges the
-    ``feats`` namespace.
+    ``commit=False`` variant is shared with ``create_feat``.
     """
 
     repository: FeatRepository
@@ -24,6 +21,8 @@ class FeatAsiService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, Non
     cache_namespaces = FEAT_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with the feat repository."""
+
         super().__init__(
             repository=FeatRepository(db),
             response_schema=FeatResponse,

@@ -13,25 +13,20 @@ from app.features.users.schemas import UserResponse
 
 class GmPanelSkillsService(CharacterSubDomainService):
     """
-    Toggle expertise flags on a character's existing skill proficiencies
-    (GM-only).
-
-    Expertise is never derived automatically — class feature choices are
-    not modeled as selectable options — so a GM sets the flag explicitly
-    per proficiency row (e.g. a Rogue's expertise picks). Rows themselves
-    are created once at creation (class choices plus background/race
-    grants); this capability only flips ``is_expertise`` on an existing
-    row, so expertise requires and implies proficiency.
+    Toggle expertise flags on a character's skill proficiencies (GM-only);
+    expertise is never derived automatically and requires proficiency.
     """
 
     def __init__(self, db: AsyncSession):
+        """Wire up the proficiency repository."""
+
         super().__init__(db)
         self.proficiency_repository = CharacterSkillProficiencyRepository(db)
 
     async def set_expertise(
         self, character_id: int, skill_id: int, data: SkillExpertiseUpdate, current_user: UserResponse
     ) -> SkillProficiencyResponse:
-        """Set ``is_expertise`` on one of the character's skill proficiencies."""
+        """Set is_expertise on one of the character's skill proficiencies."""
 
         await self.get_character_for_user(character_id, current_user)
 

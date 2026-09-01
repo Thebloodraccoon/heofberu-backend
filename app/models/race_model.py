@@ -44,7 +44,7 @@ class Race(settings.Base):  # type: ignore
         back_populates="race",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="Subrace.name",
+        order_by="Subrace.name, Subrace.id",
     )
 
     def __repr__(self):

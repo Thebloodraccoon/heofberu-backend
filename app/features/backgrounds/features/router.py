@@ -1,9 +1,4 @@
-"""
-Background feature read endpoint: list BACKGROUND-source features.
-
-Write endpoints (POST/PATCH/DELETE) have been removed — features are
-managed centrally through the features catalog.
-"""
+"""Background feature read endpoint: list BACKGROUND-source features."""
 
 from fastapi import APIRouter
 
@@ -11,7 +6,6 @@ from app.features.backgrounds.dependencies import BackgroundFeaturesDep
 from app.features.features.crud.schemas import NestedFeatureResponse
 
 router = APIRouter()
-
 
 @router.get(
     "/features",

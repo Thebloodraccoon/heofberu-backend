@@ -1,9 +1,4 @@
-"""
-Subrace feature read endpoint: list SUBRACE-source features.
-
-Write endpoints (POST/PATCH/DELETE) have been removed — features are
-managed centrally through the features catalog.
-"""
+"""Subrace feature read endpoint: list SUBRACE-source features."""
 
 from typing import Annotated
 
