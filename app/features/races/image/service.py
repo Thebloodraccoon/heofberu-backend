@@ -1,5 +1,7 @@
 """Race image service: upload/remove a race's catalog image."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import RecordNotFoundError
@@ -7,20 +9,17 @@ from app.core.storage.service import ImageStorageService
 from app.features.races.cache import invalidate_race_cache
 from app.features.races.crud.repository import RaceRepository
 
+logger = logging.getLogger(__name__)
+
 ENTITY = "races"
 
 
 class RaceImageService:
-    """
-    Upload/remove a race's image.
-
-    The image is stored in Supabase under the ``races`` folder (pinned to
-    ``races/{race_id}.{ext}``) and its public URL is persisted on the race's
-    ``image_url`` column. DB writes flow through ``RaceRepository`` and the
-    shared race cache is invalidated on every mutation.
-    """
+    """Upload/remove a race's catalog image via Supabase Storage."""
 
     def __init__(self, db: AsyncSession, storage: ImageStorageService):
+        """Initialize with a race repository and the shared image storage service."""
+
         self._repository = RaceRepository(db)
         self._storage = storage
 
@@ -38,7 +37,7 @@ class RaceImageService:
 
         url = await self._storage.upload_image(ENTITY, race_id, content, content_type)
         await self._repository.update(race, {"image_url": url})
-        await invalidate_race_cache()
+        await self._invalidate_cache(race_id)
 
         return url
 
@@ -51,4 +50,16 @@ class RaceImageService:
 
         await self._storage.delete_image(ENTITY, race_id)
         await self._repository.update(race, {"image_url": None})
-        await invalidate_race_cache()
+        await self._invalidate_cache(race_id)
+
+    async def _invalidate_cache(self, race_id: int) -> None:
+        """Invalidate the shared race cache; failures are logged rather than raised."""
+
+        try:
+            await invalidate_race_cache()
+        except Exception as exc:  # noqa: BLE001 - cache failure must never fail the write path
+            logger.error(
+                "Failed to invalidate race cache after mutating race %s: %s",
+                race_id,
+                exc,
+            )

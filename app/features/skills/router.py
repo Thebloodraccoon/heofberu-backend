@@ -1,11 +1,4 @@
-"""
-Assembled ``/skills`` router.
-
-The CRUD sub-router declares no prefix of its own; the ``/skills`` prefix
-is applied here via ``include_router(..., prefix=...)`` so empty-path
-routes (``GET ""`` etc.) resolve to ``/skills``. The mounted surface
-exposes the exact same paths as the previous monolithic endpoints package.
-"""
+"""Assembled ``/skills`` router."""
 
 from fastapi import APIRouter
 

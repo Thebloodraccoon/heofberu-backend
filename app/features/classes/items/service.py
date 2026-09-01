@@ -20,12 +20,10 @@ class ClassItemsService(
     """
     Everything about a class's starting equipment: flat items + choice groups.
 
-    ``list_items``/``set_items`` come from :class:`SourceItemManagerMixin`;
-    ``list_choice_groups``/``set_choice_groups`` come from
-    :class:`ChoiceGroupManagerMixin`; the generic CRUD machinery
-    (``_get_or_404``/``_get_response``/``_invalidate_cache``) comes from
-    :class:`BaseService`. Any write purges every namespace listed in
-    :data:`CLASS_CACHE_NAMESPACES` via ``cache_namespaces``.
+    Item CRUD comes from :class:`SourceItemManagerMixin`,
+    choice-group CRUD from :class:`ChoiceGroupManagerMixin`, and the
+    generic CRUD machinery from :class:`BaseService`. Writes purge
+    ``CLASS_CACHE_NAMESPACES`` via ``cache_namespaces``.
     """
 
     repository: ClassRepository
@@ -35,6 +33,8 @@ class ClassItemsService(
     cache_namespaces = CLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with its repository and the nested item service."""
+
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,

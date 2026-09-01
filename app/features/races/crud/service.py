@@ -21,38 +21,16 @@ from app.models.race_model import Race
 class RaceCrudService(
     CachedService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGetAllResponse],
 ):
-    """
-    Race catalog CRUD built on :class:`CachedService`.
-
-    The capability services are composed explicitly in ``__init__`` (no
-    mixin MRO):
-      - ``create_race`` seeds ability bonuses, granted skills, and nested
-        RACE-source features through the dedicated capability services in
-        the same ``_atomic()`` transaction.
-
-    Subrace management — full subrace CRUD, per-subrace ability bonuses,
-    and per-subrace features (``source_type=SUBRACE``) — lives in the
-    self-contained ``app.features.races.subraces`` subdomain, which is
-    mounted on the ``/races`` router with its own per-capability service
-    dependencies.
-
-    ``get_by_id``, ``get_all``, and ``delete`` are all inherited unchanged
-    from ``CachedService``/``BaseService`` — the in-use delete guard lives
-    in ``BaseRepository.delete`` (via ``check_in_use_on_delete=True`` +
-    ``RaceRepository.is_in_use``).
-
-    The race responses embed their ``subraces`` and their RACE-source
-    ``features`` (eager-loaded via ``RaceRepository.default_load_options``);
-    ``cache_namespaces`` covers the namespaces any race read hits, and the
-    capability services use :func:`invalidate_race_cache` explicitly for
-    their own writes.
-    """
+    """Race catalog CRUD with composed capability reads."""
 
     repository: RaceRepository
 
     cache_namespaces = RACE_CACHE_NAMESPACES
+    get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
+        """Initialize composed skill, ability-bonus, and feature services."""
+
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,
@@ -63,22 +41,7 @@ class RaceCrudService(
         self._features = FeatureCrudService(db)
 
     async def create_race(self, race_data: RaceCreate) -> RaceResponse:
-        """
-        Create a race after checking its name isn't already taken.
-
-        ``race_data.ability_bonuses`` / ``race_data.granted_skills`` /
-        ``race_data.features`` are optional. If supplied, they're set in the
-        *same transaction* as the race itself (base fields + bonuses +
-        skills + features all commit together, or none do) via
-        ``BaseService._atomic()`` — this is what lets a client create a
-        fully-formed race in one request instead of one POST plus extra PUTs.
-        Nested features are created through ``create_features_for_source``
-        with ``source_type=RACE``.
-
-        Every write inside ``_atomic()`` passes ``commit=False`` —
-        including ``repository.create`` itself — per the hazard documented
-        on ``_atomic()``/``BaseRepository.create``.
-        """
+        """Create a race, optionally seeding ability bonuses, skills, and features in one transaction."""
 
         skills = await self._skills.resolve_skills(race_data.granted_skills)
 

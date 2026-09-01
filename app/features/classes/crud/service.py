@@ -26,30 +26,21 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
     """
     Class catalog CRUD built on :class:`CachedService`.
 
-    The capability services are composed explicitly in ``__init__`` (no
-    mixin MRO):
-      - ``get_by_id`` reads the CLASS-source ``features`` through
-        :class:`ClassFeatureService` and a brief reference to every
-        subclass through ``self.subclasses``, and assembles
-        :class:`ClassFullResponse`;
-      - ``create_class`` seeds saving throws, armor and weapon
-        proficiencies, and available skills through the dedicated
-        capability services in the same ``_atomic()`` transaction;
-      - subclass CRUD and subclass-feature endpoints delegate to
-        ``self.subclasses`` (a :class:`SubclassCrudService`) — see that
-        module for ``create_subclass``/``get_subclass``/``list_subclasses``/etc.
-
-    ``cache_namespaces`` covers the three namespaces any class read hits
-    (the same blunt whole-namespace invalidation the previous service
-    used); the capability services use :func:`invalidate_class_cache`
-    explicitly for their own writes.
+    Capability services are composed in ``__init__``: ``get_by_id`` reads
+    CLASS-source ``features`` and a brief subclass reference;
+    ``create_class`` seeds throws/proficiencies/skills in the same
+    ``_atomic()`` transaction; subclass CRUD and subclass-feature
+    endpoints delegate to ``self.subclasses``.
     """
 
     repository: ClassRepository
 
     cache_namespaces = CLASS_CACHE_NAMESPACES
+    get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service, composing the capability services."""
+
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,
@@ -64,19 +55,10 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
 
     async def create_class(self, class_data: ClassCreate) -> ClassResponse:
         """
-        Create a class with only its own scalar fields and directly-owned
-        simple child rows, atomically.
+        Create a class with its scalar fields and simple child rows, atomically.
 
-        Within ``_atomic()``:
-          1. Insert the ``Class`` row.
-          2. Set saving_throws, armor/weapon proficiencies,
-             available_skills (through the dedicated capability services).
-
-        Features, subclasses, spell_slot_progression, and starting_items
-        are NOT created here — attach them afterwards through their own
-        endpoints (``add_feature``, ``self.subclasses.create_subclass``,
-        ``set_spell_slots``, ``set_items``). Keeping create minimal avoids
-        pulling in every nested dependency just to add a bare class.
+        Features, subclasses, spell slots, and starting items are NOT
+        created here — attach them through their dedicated endpoints.
         """
 
         skills = await self._skills.resolve_skills(class_data.available_skills)
@@ -110,21 +92,14 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
         await invalidate_class_cache()
         response = await self._get_response(item.id)
 
-        # Warm the cache immediately: the write already paid for the
-        # transaction, so pre-populating it here means the very next GET
-        # (which is likely right after a create) hits cache instead of
+        # Warm the cache immediately so the next GET hits cache instead of
         # racing the invalidation into a cold read.
         await self.get_by_id(item.id)
 
         return response
 
     async def update_class(self, class_id: int, update_data: ClassUpdate) -> ClassResponse:
-        """
-        Partially update a class (PATCH semantics).
-
-        ``saving_throws``/``armor_proficiencies``/``weapon_proficiencies``
-        are full-replace when set.
-        """
+        """Partially update a class (PATCH semantics); the proficiency lists are full-replace when set."""
 
         character_class = await self._get_or_404(class_id)
         fields = update_data.model_dump(
@@ -155,22 +130,13 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
     @use_cache()
     async def get_by_id(self, item_id: int) -> ClassFullResponse:
         """
-        Return everything about a class in one payload — this overrides
-        ``BaseService.get_by_id`` (which only returns bare ``ClassResponse``
-        fields via a plain ``model_validate``) so ``GET /classes/{id}``
-        itself is the full picture: base fields, saving
-        throws/armor proficiencies/available skills/starting items/spell
-        slots, CLASS-source ``features``, and a brief reference to every
-        ``subclass`` (the full per-subclass picture — its own
-        SUBCLASS-source features — lives on
-        ``GET /classes/{id}/subclasses/{subclass_id}``).
+        Return everything about a class in one payload: base fields,
+        child rows, CLASS-source ``features``, and a brief reference to
+        every subclass.
 
-        Any write that touches this class (base fields, throws/proficiencies/skills, features, subclasses,
-        subclass features, starting items, spell slots) invalidates the
-        ``classes`` namespace via ``cache_namespaces`` /
-        :func:`invalidate_class_cache` — the same blunt, whole-namespace
-        invalidation the rest of this service uses for reference-catalog
-        data (infrequent writes, frequent reads).
+        Any write that touches this class (base fields, lists, features,
+        subclasses, items, spell slots) invalidates the ``classes``
+        namespace via ``cache_namespaces``.
         """
 
         character_class = await self._get_or_404(item_id)

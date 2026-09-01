@@ -58,10 +58,10 @@ class Spell(settings.Base):  # type: ignore
     description = Column(Text, nullable=False)
     higher_levels = Column(Text)
 
-    available_classes = relationship("Class", secondary=spell_classes)
-    available_subclasses = relationship("Subclass", secondary=spell_subclasses)
-    available_races = relationship("Race", secondary=spell_races)
-    available_subraces = relationship("Subrace", secondary=spell_subraces)
+    available_classes = relationship("Class", secondary=spell_classes, order_by="Class.name")
+    available_subclasses = relationship("Subclass", secondary=spell_subclasses, order_by="Subclass.name")
+    available_races = relationship("Race", secondary=spell_races, order_by="Race.name")
+    available_subraces = relationship("Subrace", secondary=spell_subraces, order_by="Subrace.name")
 
     def __repr__(self):
         return f"<Spell(id={self.id}, name='{self.name}', level='{self.level}')>"

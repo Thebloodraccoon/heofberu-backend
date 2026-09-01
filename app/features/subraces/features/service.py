@@ -15,22 +15,15 @@ from app.models.subrace_model import Subrace
 class SubraceFeatureService(
     BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
 ):
-    """
-    Read-only service for a subrace's SUBRACE-source features.
-
-    Write endpoints have been removed — features are managed centrally
-    through the features catalog. This service only provides the cached
-    ``list_features`` for the ``GET /races/subraces/features`` read
-    endpoint: the list is cached under the dedicated ``subrace_features``
-    namespace, which the central feature writes invalidate (only for this
-    subrace's list) via ``FeatureCrudService``.
-    """
+    """Read-only cached listing for a subrace's SUBRACE-source features."""
 
     repository: SubraceRepository
 
     cache_namespaces = ("subrace_features",)
 
     def __init__(self, db: AsyncSession):
+        """Initialize with a subrace repository and a composed feature CRUD service."""
+
         super().__init__(
             repository=SubraceRepository(db),
             response_schema=SubraceResponse,

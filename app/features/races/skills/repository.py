@@ -11,17 +11,7 @@ class RaceSkillsRepository(SkillLookupMixin, RaceRepository):
     """Race repository extended with granted-skill management."""
 
     async def set_skills(self, race: Race, skills: list[Skill], *, commit: bool = True) -> Race:
-        """
-        Replace all granted skills for a race with the given list.
-
-        Written through the association table (delete + insert) instead of
-        assigning the ORM ``granted_skills`` relationship: assigning an
-        unloaded many-to-many collection would trigger a lazy load, which
-        is not supported on the async stack.
-
-        See ``RaceRepository.set_ability_bonuses`` for the meaning of
-        ``commit=False``.
-        """
+        """Replace all granted skills for a race with the given list."""
 
         await self.replace_association(
             race_skills,

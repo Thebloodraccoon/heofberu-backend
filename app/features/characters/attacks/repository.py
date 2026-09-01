@@ -8,17 +8,11 @@ from app.models.attack_model import Attack
 
 
 class CharacterAttackRepository(BaseRepository[Attack]):
-    """
-    Repository for the ``Attack`` model. Used by the attacks sub-domain
-    (CRUD).
-
-    Inherits the base ``create`` unchanged — the service injects
-    ``character_id`` into the create payload before calling it, mirroring
-    how ``owner_id`` is injected for characters (the old
-    ``create(data, character_id)`` signature override is gone).
-    """
+    """Repository for the ``Attack`` model, used by the attacks sub-domain (character-scoped CRUD)."""
 
     def __init__(self, db: AsyncSession):
+        """Create the attack repository."""
+
         super().__init__(Attack, db)
 
     async def get_all_by_character(self, character_id: int) -> list[Attack]:

@@ -1,7 +1,4 @@
-"""
-Class weapon-proficiencies endpoint (query-style ID — the class is
-identified by the required ``class_id`` query parameter).
-"""
+"""Class weapon-proficiencies endpoint (query-style ``class_id``)."""
 
 from typing import Annotated
 
@@ -49,9 +46,7 @@ async def set_class_weapon_proficiencies(
     """
     Replace all weapon proficiencies for a class. **GM only.**
 
-    Full replace, not merge: the list in the request body becomes the
-    complete set of weapon proficiencies for this class — any weapon
-    category not included is removed. Send an empty list to clear them all.
+    Full replace: any weapon category not included is removed.
     """
 
     return await class_service.set_weapon_proficiencies(class_id, data)

@@ -19,26 +19,17 @@ from app.models.subrace_model import Subrace
 class SubraceAbilityBonusService(
     BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
 ):
-    """
-    Everything about a subrace's ability score bonuses.
+    """Full replacement of a subrace's ability score bonuses.
 
-    ``set_ability_bonuses`` is the public full-replace write; the
-    ``commit=False`` variant is shared with ``create_subrace`` so bonuses
-    seed in the same transaction as the subrace row. Any write purges the
-    ``races``, ``subrace_features``, ``features`` and ``characters``
-    namespaces via :func:`invalidate_subrace_cache`.
-
-    A bonus change also flows into every existing character of that
-    subrace: the write reconciles the affected characters via the known
-    one-way ``characters.progression.feature_sync`` import, so their
-    ``character_ability_scores`` cache rows (and per-character Redis
-    payloads) refresh in the same transaction instead of staying stale
-    until a GM-panel read recomputes them.
+    Bonus changes reconcile affected characters via the one-way
+    ``characters.progression.feature_sync`` import.
     """
 
     repository: SubraceRepository
 
     def __init__(self, db: AsyncSession):
+        """Initialize with a subrace repository and the subrace response schema."""
+
         super().__init__(
             repository=SubraceRepository(db),
             response_schema=SubraceResponse,

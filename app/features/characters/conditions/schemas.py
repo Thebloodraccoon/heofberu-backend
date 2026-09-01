@@ -6,14 +6,7 @@ from app.constants import ConditionType
 
 
 class CharacterConditionAdd(BaseModel):
-    """
-    Record an active condition on a character.
-
-    ``exhaustion_level`` (1-6) is required iff ``condition`` is
-    ``EXHAUSTION`` — 5e tracks exhaustion in levels rather than as a
-    boolean. ``source`` is a free-text note about where the condition
-    came from.
-    """
+    """Record an active condition. ``exhaustion_level`` (1-6) is required iff the condition is ``EXHAUSTION``."""
 
     condition: ConditionType
     exhaustion_level: int | None = Field(default=None, ge=1, le=6)
@@ -21,6 +14,8 @@ class CharacterConditionAdd(BaseModel):
 
     @model_validator(mode="after")
     def _validate_exhaustion_level(self):
+        """Enforce the EXHAUSTION exhaustion-level rules on the payload."""
+
         if self.condition == ConditionType.EXHAUSTION and self.exhaustion_level is None:
             raise ValueError("exhaustion_level is required when condition is EXHAUSTION (1-6).")
         if self.condition != ConditionType.EXHAUSTION and self.exhaustion_level is not None:
@@ -29,14 +24,7 @@ class CharacterConditionAdd(BaseModel):
 
 
 class CharacterConditionUpdate(BaseModel):
-    """
-    Change a condition's ``exhaustion_level`` or ``source``.
-
-    The condition itself is fixed by the URL path — remove it and re-add
-    if the effect changes. ``exhaustion_level`` follows the same rules as
-    on add (only valid for EXHAUSTION), validated against the resulting
-    row in the service.
-    """
+    """Change a condition's ``exhaustion_level`` or ``source`` (the condition itself is fixed by the path)."""
 
     exhaustion_level: int | None = Field(default=None, ge=1, le=6)
     source: str | None = None

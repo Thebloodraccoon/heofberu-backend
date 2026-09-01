@@ -6,13 +6,7 @@ from app.constants import AbilityScore
 
 
 class GmAsiIncreaseItem(BaseModel):
-    """
-    One free-form ability adjustment applied by a GM.
-
-    Unlike the level-up ASI there is no +1..+2 budget: amounts may be
-    negative (lowering an ability) or arbitrarily large. The 20 cap is
-    enforced by the service, not the schema.
-    """
+    """One free-form ability adjustment applied by a GM (amounts may be negative)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,6 +21,8 @@ class GmAsiChoiceAdd(BaseModel):
 
     @field_validator("increases")
     def validate_increases(cls, increases):
+        """Reject a choice that lists the same ability more than once."""
+
         abilities = [item.ability for item in increases]
         if len(abilities) != len(set(abilities)):
             raise ValueError("Duplicate ability in an ASI choice is not allowed.")
@@ -34,11 +30,7 @@ class GmAsiChoiceAdd(BaseModel):
 
 
 class GmAsiChoiceResponse(BaseModel):
-    """
-    A recorded GM ASI adjustment (``character_asi_choices`` row with no
-    class level). ``increases`` serializes the typed
-    ``CharacterASIChoiceIncrease`` child rows.
-    """
+    """A recorded GM ASI adjustment (``character_asi_choices`` row with no class level)."""
 
     model_config = ConfigDict(from_attributes=True)
 

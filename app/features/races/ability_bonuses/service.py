@@ -12,20 +12,10 @@ from app.models.race_model import Race
 
 
 class RaceAbilityBonusService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, None]):
-    """
-    Everything about a race's ability score bonuses.
+    """Full replacement of a race's ability score bonuses.
 
-    ``set_ability_bonuses`` is the public full-replace write; the
-    ``commit=False`` variant is shared with ``create_race`` so bonuses seed
-    in the same transaction as the race row. Any write purges the ``races``,
-    ``race_features``, ``features`` and ``characters`` namespaces.
-
-    A bonus change also flows into every existing character of that race:
-    the write reconciles the affected characters via the known one-way
-    ``characters.progression.feature_sync`` import, so their
-    ``character_ability_scores`` cache rows (and per-character Redis
-    payloads) refresh in the same transaction instead of staying stale
-    until a GM-panel read recomputes them.
+    Bonus changes reconcile affected characters via the one-way
+    ``characters.progression.feature_sync`` import.
     """
 
     repository: RaceRepository
@@ -33,6 +23,8 @@ class RaceAbilityBonusService(BaseService[Race, RaceCreate, RaceUpdate, RaceResp
     cache_namespaces = RACE_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize with a race repository and the race response schema."""
+
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,

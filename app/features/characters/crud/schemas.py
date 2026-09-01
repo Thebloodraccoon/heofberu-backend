@@ -7,8 +7,7 @@ from pydantic import BaseModel
 
 class HpUpdate(BaseModel):
     """
-    Update a character's HP either by a relative delta or by setting
-    absolute values. Provide either `delta` or one/both of
+    Update HP either by a relative `delta` or by setting absolute
     `current_hp`/`temp_hp` — not both styles at once.
     """
 
@@ -18,12 +17,6 @@ class HpUpdate(BaseModel):
 
 
 class RestRequest(BaseModel):
-    """
-    Rest request body: ``type`` must be ``"short"`` or ``"long"``.
-
-    Validated by the ``Literal`` type, so any other value is rejected
-    with a 422 at the schema layer — the old free-form ``str`` needed a
-    manual check (and the ``InvalidRestTypeException``) in the service.
-    """
+    """Rest request body: ``type`` must be ``"short"`` or ``"long"`` (rejected by ``Literal`` with a 422)."""
 
     type: Literal["short", "long"]

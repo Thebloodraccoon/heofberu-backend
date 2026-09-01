@@ -11,6 +11,8 @@ class CharacterMaxLevelRepository(BaseRepository[CharacterMaxLevel]):
     """CRUD for ``character_max_levels`` (one row per character)."""
 
     def __init__(self, db: AsyncSession):
+        """Create the max-level repository."""
+
         super().__init__(CharacterMaxLevel, db)
 
     async def get_by_character_id(self, character_id: int) -> CharacterMaxLevel | None:
@@ -28,9 +30,6 @@ class CharacterMaxLevelRepository(BaseRepository[CharacterMaxLevel]):
     ) -> CharacterMaxLevel:
         """
         Seed a max-level row for a character.
-
-        ``commit=False`` defers the commit for callers wrapping the write
-        in a transaction (e.g. ``create_character``).
         """
 
         row = CharacterMaxLevel(character_id=character_id, max_level=max_level)

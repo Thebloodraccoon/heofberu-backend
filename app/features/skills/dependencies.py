@@ -9,7 +9,7 @@ from app.features.skills.crud.service import SkillCrudService
 
 
 def get_skill_crud_service(db: DatabaseDep) -> SkillCrudService:
-    """Get the skill CRUD service instance."""
+    """Build the skill CRUD service instance."""
 
     return SkillCrudService(db)
 

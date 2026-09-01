@@ -15,22 +15,15 @@ from app.models.race_model import Race
 class RaceFeatureService(
     BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, None],
 ):
-    """
-    Read-only service for a race's RACE-source features.
-
-    Write endpoints have been removed — features are managed centrally
-    through the features catalog. This service only provides the cached
-    ``list_features`` for the ``GET /races/features?race_id=...`` read
-    endpoint: the list is cached under the dedicated ``race_features``
-    namespace, which the central feature writes invalidate (only for this
-    race's list) via ``FeatureCrudService``.
-    """
+    """Read-only cached listing for a race's RACE-source features."""
 
     repository: RaceRepository
 
     cache_namespaces = ("race_features",)
 
     def __init__(self, db: AsyncSession):
+        """Initialize with a race repository and a composed feature CRUD service."""
+
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,

@@ -16,19 +16,13 @@ from app.models import Class, Race, Spell, Subclass, Subrace
 
 
 class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, None]):
-    """
-    Everything about a spell's class/subclass/race/subrace availability.
-
-    ``set_classes`` / ``set_subclasses`` / ``set_races`` / ``set_subraces``
-    are the public full-replace writes; the ``commit=False`` variants
-    (``set_*_for_spell``) are shared with ``create_spell`` so a spell's
-    availability seeds in the same transaction as the spell row. Any write
-    purges the ``spells`` namespace via :func:`invalidate_spell_cache`.
-    """
+    """Full-replace writes for a spell's class/subclass/race/subrace availability."""
 
     repository: SpellRepository
 
     def __init__(self, db: AsyncSession):
+        """Initialise with a spell repository and response schema."""
+
         super().__init__(
             repository=SpellRepository(db),
             response_schema=SpellResponse,
@@ -79,21 +73,21 @@ class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, Spel
         return await self._get_response(spell_id)
 
     async def set_classes_for_spell(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> None:
-        """Replace a spell's classes on an existing ``spell`` row (used by ``create_spell``)."""
+        """Replace a spell's classes on an existing row (used by ``create_spell``)."""
 
         await self.repository.set_classes(spell, classes, commit=commit)
 
     async def set_subclasses_for_spell(self, spell: Spell, subclasses: list[Subclass], *, commit: bool = True) -> None:
-        """Replace a spell's subclasses on an existing ``spell`` row (used by ``create_spell``)."""
+        """Replace a spell's subclasses on an existing row (used by ``create_spell``)."""
 
         await self.repository.set_subclasses(spell, subclasses, commit=commit)
 
     async def set_races_for_spell(self, spell: Spell, races: list[Race], *, commit: bool = True) -> None:
-        """Replace a spell's races on an existing ``spell`` row (used by ``create_spell``)."""
+        """Replace a spell's races on an existing row (used by ``create_spell``)."""
 
         await self.repository.set_races(spell, races, commit=commit)
 
     async def set_subraces_for_spell(self, spell: Spell, subraces: list[Subrace], *, commit: bool = True) -> None:
-        """Replace a spell's subraces on an existing ``spell`` row (used by ``create_spell``)."""
+        """Replace a spell's subraces on an existing row (used by ``create_spell``)."""
 
         await self.repository.set_subraces(spell, subraces, commit=commit)

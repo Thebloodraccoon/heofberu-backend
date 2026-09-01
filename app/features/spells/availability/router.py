@@ -1,8 +1,4 @@
-"""
-Spell availability endpoints: class/subclass/race/subrace availability
-management (query-style ID — the spell is identified by the required
-``spell_id`` query parameter).
-"""
+"""Spell availability endpoints: full-replace class/subclass/race/subrace availability."""
 
 from typing import Annotated
 
@@ -51,12 +47,8 @@ async def set_spell_classes(
     _: GmUserDep,
 ):
     """
-    Replace the set of classes a spell is available to. **GM only.**
-
-    Full replace, not merge: the list in the request body becomes the
-    complete set of classes for this spell — any class not included is
-    removed. Send an empty list to clear the restriction (spell becomes
-    available to every class).
+    Replace the set of classes a spell is available to; empty list clears the restriction.
+    **GM only.**
     """
 
     return await spell_availability.set_classes(spell_id, data)
@@ -92,12 +84,8 @@ async def set_spell_subclasses(
     _: GmUserDep,
 ):
     """
-    Replace the set of subclasses a spell is available to. **GM only.**
-
-    Full replace, not merge: the list in the request body becomes the
-    complete set of subclasses for this spell — any subclass not included
-    is removed. Send an empty list to clear the restriction (spell becomes
-    available to every subclass).
+    Replace the set of subclasses a spell is available to; empty list clears the restriction.
+    **GM only.**
     """
 
     return await spell_availability.set_subclasses(spell_id, data)
@@ -133,12 +121,8 @@ async def set_spell_races(
     _: GmUserDep,
 ):
     """
-    Replace the set of races a spell is available to. **GM only.**
-
-    Full replace, not merge: the list in the request body becomes the
-    complete set of races for this spell — any race not included is
-    removed. Send an empty list to clear the restriction (spell becomes
-    available to every race).
+    Replace the set of races a spell is available to; empty list clears the restriction.
+    **GM only.**
     """
 
     return await spell_availability.set_races(spell_id, data)
@@ -174,12 +158,8 @@ async def set_spell_subraces(
     _: GmUserDep,
 ):
     """
-    Replace the set of subraces a spell is available to. **GM only.**
-
-    Full replace, not merge: the list in the request body becomes the
-    complete set of subraces for this spell — any subrace not included is
-    removed. Send an empty list to clear the restriction (spell becomes
-    available to every subrace).
+    Replace the set of subraces a spell is available to; empty list clears the restriction.
+    **GM only.**
     """
 
     return await spell_availability.set_subraces(spell_id, data)

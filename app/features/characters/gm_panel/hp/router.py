@@ -1,10 +1,4 @@
-"""
-GM max-HP endpoint: PATCH under ``/gm-panel/max-hp`` (query-style ID).
-
-The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/gm-panel``. The character is identified by the
-required ``character_id`` query parameter.
-"""
+"""GM max-HP endpoint: PATCH under ``/gm-panel/max-hp`` (query-style ID)."""
 
 from typing import Annotated
 
@@ -44,10 +38,9 @@ async def set_character_max_hp(
     current_user: GmUserDep,
 ):
     """
-    Set a character's `max_hp` directly. `max_hp` is intentionally not
-    PATCHable through the plain character update — only a GM may change
-    it. When the new maximum is below the current HP pool, `current_hp`
-    is clamped down to it; temp HP is untouched. **GM only.**
+    Set a character's `max_hp` directly (only a GM may change it);
+    `current_hp` is clamped down when it exceeds the new maximum, temp HP
+    untouched. **GM only.**
     """
 
     return await hp_service.set_max_hp(character_id, data, current_user)

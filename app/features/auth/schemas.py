@@ -42,18 +42,7 @@ class RefreshResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    """
-    Public self-service registration payload.
-
-    Deliberately has no ``role`` field — unlike ``UserCreate`` (used by
-    the GM-only ``POST /users/`` endpoint), a self-registered account is
-    always created as ``UserRole.PLAYER`` by ``AuthService.register``,
-    never chosen by the caller. Validation mirrors ``UserBase``/
-    ``UserCreate`` in ``app.features.users.schemas`` (same username/email/
-    password rules) so a registered account satisfies the same
-    constraints as a GM-created one, without importing ``UserCreate``
-    itself and inheriting a ``role`` field this endpoint must not accept.
-    """
+    """Self-registration payload — always creates a ``PLAYER`` account."""
 
     username: str
     email: str
@@ -89,28 +78,13 @@ class RegisterRequest(BaseModel):
 
 
 class RegisterResponse(BaseModel):
-    """
-    Response for a successful self-registration.
-
-    Same shape as ``LoginResponse`` — registration logs the new user in
-    immediately (an ``access_token`` plus the refresh cookie set on the
-    response), rather than requiring a separate follow-up login call. A
-    distinct class (rather than reusing ``LoginResponse``) exists so the
-    two endpoints' response models can diverge later without one
-    surprising the other.
-    """
+    """Response for a successful self-registration — same shape as ``LoginResponse``."""
 
     access_token: str
 
 
 class ForgotPasswordRequest(BaseModel):
-    """
-    Payload for requesting a password-reset email.
-
-    Only the account ``email`` is needed; the reset link is built by the
-    backend from a hardcoded frontend reset-page URL (see the email
-    service's ``RESET_BASE_URL``).
-    """
+    """Payload for requesting a password-reset email."""
 
     email: str
 
@@ -124,23 +98,15 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ForgotPasswordResponse(BaseModel):
-    """
-    Neutral response for a password-reset request.
-
-    Deliberately identical whether or not the account exists, so a caller
-    cannot use this endpoint to enumerate registered emails.
-    """
+    """Neutral response, identical whether or not the account exists, to prevent email enumeration."""
 
     detail: str
 
 
 class ResetPasswordRequest(BaseModel):
     """
-    Payload for actually setting a new password.
-
-    Carries the short-lived ``token`` from the emailed link plus the new
-    password, which must be typed twice and match. ``extra="forbid"`` so a
-    stray field cannot sneak through.
+    Payload for setting a new password: emailed token plus a twice-typed
+    new password; ``extra="forbid"``.
     """
 
     token: str

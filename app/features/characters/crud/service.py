@@ -59,56 +59,17 @@ from app.models.source_item_choice_model import SourceItemChoiceOption
 
 class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, CharacterResponse]):
     """
-    Core character CRUD, HP management, and resting.
-
-    Built on :class:`BaseService`, mirroring ``RaceCrudService`` /
-    ``ClassCrudService`` / ``BackgroundCrudService`` / ``SpellCrudService``:
-    ``CharacterRepository`` provides the full generic CRUD (no signature
-    overrides), ``owner_id`` is injected into the create payload, and
-    ``_get_or_404`` / ``_atomic`` / ``resolve_ids`` come from the base.
-
-    Spell slots, known spells, attacks, and feats each live
-    in their own subdomain package; this service owns the character record
-    itself plus validating its FK references (class/subclass/race/
-    subrace/background) and the one-shot creation contract (level pinned
-    to 1, skill choices validated against the class + background grants,
-    starting HP resolved from the hit die + CON). Saving throws are not
-    stored on the character at all — they are read from the character's
-    class on every response. Character progression (race change, class
-    change, subclass/subrace change, leveling up) lives in
-    ``characters.progression`` and reuses this service for
-    serialization and spell-slot re-application.
-
-    Ability score cache policy is decided by
-    ``CharacterStatsService`` — this service only tells it *when* a
-    write might have touched ability scores. Reads never write:
-      - ``get_character`` reads the cache as-is — the cache is kept
-        fresh by the write paths themselves, so no read recomputes or
-        commits (a plain GET is now fully read-only).
-      - ``get_characters`` (listing) likewise returns the cache as-is to
-        avoid N recalculations per page.
-      - ``create_character`` always refreshes; ``update_character`` never
-        refreshes, because ``CharacterUpdate`` holds no ability-affecting
-        fields anymore (base scores only change via the level-up ASI, and
-        race_id/class_id are not editable here).
-
-    Derived combat stats (hit dice, speed) are computed by
-    ``CharacterStatsService`` on every read, for both the detail
-    and the listing path. They depend on the class and race, so no
-    write path here keeps them in sync — a GM editing a reference
-    table is reflected on the next fetch. Armor class is not derived:
-    ``armor_class``/``shield`` are plain editable columns (PATCH), set
-    directly by the player or GM.
-
-    Spell slot progression policy: applied on create for the starting
-    level, and re-applied by the progression service (via
-    :meth:`reapply_spell_slot_progression`) whenever a character levels
-    up or changes class — a plain PATCH can never touch spell slots.
+    Core character CRUD, HP management, and resting. Owns the character
+    record plus its FK/skill/HP creation contract and the ability-score
+    cache write policy (reads never recompute); spell slots are applied on
+    create and re-applied by the progression service on level-up/class change.
     """
 
     repository: CharacterRepository
 
     def __init__(self, db: AsyncSession):
+        """Set up the character service and its collaborators."""
+
         super().__init__(
             repository=CharacterRepository(db),
             response_schema=CharacterResponse,
@@ -137,13 +98,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
         Return every character for a GM, or only the caller's own for a
         player, as a paginated ``Page`` envelope. Ability scores reflect
-        the last-computed cache, not a fresh recalculation — see class
-        docstring.
-
-        ``search`` does a case-insensitive substring match against the
-        character's ``name`` (pinned via the repository's
-        ``search_fields``); ``class_id`` filters to characters of that
-        class. Both are optional and combine with the access scoping.
+        the cache; ``search``/``class_id`` optionally filter.
         """
 
         owner_id = None if current_user.role in (UserRole.GM, UserRole.FOUND_FATHER) else current_user.id
@@ -160,8 +115,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     ) -> Page[CharacterResponse]:
         """
         Return only the characters owned by the caller — for every role,
-        including GMs (unlike :meth:`get_characters`, which widens the
-        scope for GMs).
+        including GMs.
         """
 
         return await self._list_characters(
@@ -177,9 +131,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         page: int = 1,
         size: int = 100,
     ) -> Page[CharacterResponse]:
-        """
-        Return every user's characters. GM-only — anyone else gets a 403.
-        """
+        """Return every user's characters. GM-only — anyone else gets a 403."""
 
         if current_user.role not in (UserRole.GM, UserRole.FOUND_FATHER):
             raise GmAccessException()
@@ -232,26 +184,16 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     async def get_character(self, character_id: int, current_user: UserResponse) -> CharacterResponse:
         """
-        Return a single character, enforcing GM/owner access.
-
-        Access control is checked first (never cached). The response
-        assembly (ability-score cache read + derived stats + serialization)
-        is cached per character_id so repeated reads skip the DB round-trips
-        for the response build. The cache key is user-independent — both
-        GM and owner see the same CharacterResponse for a given character.
+        Return a single character, enforcing GM/owner access. The response
+        assembly is cached per character_id so repeated reads skip the DB
+        round-trips (access control is never cached).
         """
 
         await get_character_for_user(self.repository, character_id, current_user)
         return await self._get_character_response(character_id)
 
     async def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
-        """
-
-        List every feat granted to a character (GM/owner readable).
-
-        Grants come from every source — level-up ASI choices and GM-grant
-        writes (``gm_panel``) and the progression service.
-        """
+        """List every feat granted to a character (level-up choices and GM grants alike)."""
 
         await get_character_for_user(self.repository, character_id, current_user)
 
@@ -261,9 +203,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     async def get_stats(self, character_id: int, current_user: UserResponse) -> CharacterStatsResponse:
         """
         Return each ability's ORIGINAL base value next to its COMPUTED
-        effective total, each with the list of ``StatSourceContribution``
-        sources that produced that total ("what is calculated from what",
-        player/GM/owner readable).
+        effective total, with the source contributions that produced it.
         """
 
         character = await get_character_for_user(self.repository, character_id, current_user)
@@ -284,10 +224,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         )
 
     async def get_features(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatureResponse]:
-        """
-        List every feature recorded on a character (GM/owner readable) —
-        auto-granted progression features plus GM-panel records.
-        """
+        """List every feature recorded on a character (progression auto-grants plus GM records)."""
 
         await get_character_for_user(self.repository, character_id, current_user)
 
@@ -315,51 +252,12 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
         One-shot creation of a level-1 character owned by the caller.
 
-        Validates that ``class_id`` (required) and, if provided,
-        ``subclass_id`` (must belong to ``class_id``) /
-        ``race_id``/``subrace_id`` (must belong to ``race_id``) /
-        ``background_id`` reference existing records before writing
-        anything — a bad reference is rejected with a clear 404 rather
-        than surfacing as a raw FK IntegrityError.
-
-        Creation contract (everything is derived server-side; the payload
-        carries no ``level``/HP/skill rows):
-          - the character always starts at ``level=1`` with
-            ``temp_hp=0`` — leveling up happens only through the
-            progression endpoint;
-          - the character's GM-set level-up cap (``character_max_levels``)
-            is seeded at its starting level, so it cannot level up until
-            a GM raises its maximum via the GM panel;
-          - skill proficiencies come from ``skill_ids`` (validated against
-            the class's ``available_skills`` and ``skill_choice_count``)
-            plus the background's and the race's granted skills,
-            deduplicated;
-          - starting-equipment "pick N of M" choices come from
-            ``item_choice_ids`` (validated against the class's and
-            background's choice groups — exactly ``pick_count`` options per
-            group);
-          - saving throws are not written at all — they are read from the
-            class on every response;
-          - HP: the level-1 maximum is fixed server-side as the class's
-            hit die faces + effective CON modifier; ``current_hp`` starts
-            equal to it.
-          - when ``background_id`` is set, the personality card (``personality_traits``,
-            ``ideals``, ``bonds``, ``flaws``) is always taken from the
-            background's corresponding ``*_suggestions`` fields;
-          - when ``background_id`` is set, the character's backstory is
-            written from the background's ``description`` into the dedicated
-            ``character_backstories`` row (never on the cached character),
-            mirroring the ``GET/PUT /characters/{id}/backstory`` contract.
-
-        After creation, the class's spell slot progression for level 1 is
-        applied immediately, and the class/subclass/race/subrace/background
-        features the character is entitled to are granted, along with the
-        starting equipment granted by the character's class and background
-        plus the resolved item choices (aggregated into one stack per
-        item). The character row, its proficiency rows, initial slot rows,
-        feature grants, and starting items are written in one transaction
-        (``_atomic()`` with ``commit=False`` on all writes): either all
-        persist or none do.
+        Validates the FK references (class required, subclass/race/subrace/
+        background must belong and exist), the skill choices against the
+        class + background + race grants, and the starting-equipment "pick
+        N of M" choices. Character row, proficiencies, slot rows, feature
+        grants (via ``sync_progression_features``), backstory, and starting
+        items are written in one transaction.
         """
 
         await self._validate_references(
@@ -370,8 +268,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             background_id=character_data.background_id,
         )
 
-        # Fetched once here so the whole flow can rely on the eager-loaded
-        # available_skills / saving_throws / hit dice without refetching.
+        # Fetched once so the flow can rely on the eager-loaded
+        # available_skills / saving_throws / hit dice.
         character_class = await self.class_repository.get_by_id(character_data.class_id)
         if character_class is None:
             raise ClassNotFoundException(class_id=character_data.class_id)
@@ -419,7 +317,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         payload["owner_id"] = current_user.id
         payload["level"] = 1
         payload["temp_hp"] = 0
-        # Personality card comes from the background when one is chosen.
         if character_data.background_id is not None:
             payload.update(background_personality)
 
@@ -467,11 +364,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     @staticmethod
     def _validate_chosen_skills(skill_ids: list[int], character_class: Class) -> list[int]:
         """
-        Validate the player's class skill choices against the class rules:
-        every id must be one of the class's ``available_skills`` and the
-        total must not exceed ``skill_choice_count``. A non-existent skill
-        id can never be in ``available_skills``, so existence needs no
-        separate lookup.
+        Validate the player's class skill choices: every id must be one of
+        the class's ``available_skills`` and the total must not exceed
+        ``skill_choice_count``.
         """
 
         if not skill_ids:
@@ -496,14 +391,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     ) -> list[SourceItemChoiceOption]:
         """
         Resolve the player's starting-equipment "pick N of M" choices
-        against the choice groups defined by the character's class and
-        background.
-
-        Every submitted id must be an option of one of those groups, and
-        each group must be answered with exactly ``pick_count`` selected
-        options — a group left unanswered (or over-answered) is rejected,
-        so the player always receives exactly what they chose. A character
-        whose sources define no choice groups must send an empty list.
+        against the choice groups of the character's class/background: every
+        group must be answered with exactly ``pick_count`` options.
         """
 
         sources: list[tuple[FeatureSourceType, int]] = []
@@ -549,14 +438,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     async def _compute_starting_max_hp(self, character: Character, character_class: Class) -> int:
         """
-        Starting max HP for a level-1 character: the full hit die + CON
-        modifier. There is nothing to validate — the value is always
-        derived, never client-supplied.
-
-        CON modifier comes from the *effective* CON total (base + race +
-        feats), matching the level-up math in the progression service. A
-        pathological ceiling below 1 (tiny die + heavily negative CON) is
-        clamped to 1 so the row always satisfies the DB check constraint.
+        Starting max HP for a level-1 character: the full hit die + the
+        *effective* CON modifier, clamped to a minimum of 1.
         """
 
         die_faces = int(character_class.hit_dice.value[1:])
@@ -575,15 +458,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         commit: bool = True,
     ) -> None:
         """
-        Write the character's starting skill proficiencies: the validated
-        class choices plus the background's and the race's granted skills,
-        deduplicated across all three sources (a granted skill already
-        chosen counts as one row), all with ``is_expertise=False`` —
-        expertise is toggled afterwards via
-        ``PATCH /{id}/gm-panel/skills/{skill_id}``.
-
-        ``commit=False`` defers the commit so the caller can wrap this in
-        a transaction with other writes — see :meth:`create_character`.
+        Write the starting skill proficiencies: the validated class choices
+        plus the background's and race's granted skills, deduplicated, all
+        starting with ``is_expertise=False``.
         """
 
         merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
@@ -601,14 +478,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self, character_id: int, update_data: CharacterUpdate, current_user: UserResponse
     ) -> CharacterResponse:
         """
-        Partially update a character, enforcing GM/owner access.
-
-        Only fields present in ``CharacterUpdate`` are changeable —
-        ``class_id``, ``race_id``, and ``background_id`` are set at
-        creation and cannot be changed here (they aren't even fields of
-        the schema, so no reference re-validation is needed on PATCH),
-        and neither are ``level`` or the base ability scores (both only
-        change through the progression service).
+        Partially update a character, enforcing GM/owner access. Only fields
+        present in ``CharacterUpdate`` are changeable — class/background,
+        level, and base ability scores cannot be changed here.
         """
 
         character = await get_character_for_user(self.repository, character_id, current_user)
@@ -629,17 +501,12 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
         Update HP either via a relative delta, or by setting absolute values.
 
-        Deltas follow the 5e damage/healing rules: a negative delta
-        (damage) is absorbed by ``temp_hp`` first, with any overflow
-        applied to ``current_hp``; a positive delta (healing) restores
-        ``current_hp`` only — temp HP can't be healed. An absolute
-        ``temp_hp`` is a temp-HP *gain*: it applies only when it's higher
-        than the current pool (temp HP never stacks). To force-set or
-        lower temp HP, PATCH the character directly (``temp_hp`` on
-        ``CharacterUpdate``).
-
-        current_hp is clamped to [0, max_hp]; temp_hp to >= 0. Providing
-        both `delta` and absolute values is rejected.
+        Deltas follow 5e rules: damage drains ``temp_hp`` first (overflow
+        hits ``current_hp``); healing restores ``current_hp`` only. An
+        absolute ``temp_hp`` is a gain that applies only when higher than
+        the current pool (temp HP never stacks). ``current_hp`` is clamped
+        to ``[0, max_hp]``; ``temp_hp`` to ``>= 0``. Mixing delta and
+        absolute values is rejected.
         """
 
         character = await get_character_for_user(self.repository, character_id, current_user)
@@ -668,13 +535,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     @staticmethod
     def _apply_hp_delta(current_hp: int, temp_hp: int, delta: int) -> tuple[int, int]:
         """
-        Resolve a healing/damage delta per 5e rules.
-
-        Healing (``delta >= 0``) adds to ``current_hp`` only. Damage
-        (``delta < 0``) drains ``temp_hp`` first — every point absorbed
-        there spares ``current_hp`` — and the remainder hits ``current_hp``.
-        Returns ``(new_current_hp, new_temp_hp)`` unclamped; the caller
-        bounds them.
+        Resolve a healing/damage delta per 5e rules: healing adds to
+        ``current_hp`` only; damage drains ``temp_hp`` first with overflow
+        hitting ``current_hp``. Returns unclamped values for the caller.
         """
 
         if delta >= 0:
@@ -686,13 +549,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     async def rest(self, character_id: int, data: RestRequest, current_user: UserResponse) -> CharacterResponse:
         """
-        Apply a short or long rest.
-
-        Long rest: restore current_hp to max_hp and clear temp_hp. Known
-        spells and slot totals are unchanged (the legacy ``used`` column
-        is zeroed for DB-constraint hygiene, but nothing spends slots
-        anymore). Short rest: accepted as a no-op placeholder until hit
-        dice tracking is added.
+        Apply a short or long rest. Long rest restores HP to max and clears
+        temp HP; short rest is a no-op placeholder until hit dice are tracked.
         """
 
         character = await get_character_for_user(self.repository, character_id, current_user)
@@ -716,13 +574,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     ) -> None:
         """
         Raise the matching not-found exception if any given ID doesn't
-        exist. Called from :meth:`create_character` only — the old
-        ``"unset"`` sentinel for PATCH validation is gone, since
-        ``class_id``/``subclass_id``/``race_id``/``subrace_id``/
-        ``background_id`` are not fields of ``CharacterUpdate`` and
-        therefore can never appear in an update (the subclass/subrace are
-        changed through the progression endpoints, which re-validate
-        them).
+        exist. Called from :meth:`create_character` only.
         """
 
         if not await self.class_repository.exists_by_id(class_id):
@@ -746,15 +598,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
 
     async def _apply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
         """
-        Look up ``character``'s class's spell slot progression for its
-        current ``level`` and sync ``CharacterSpellSlot`` totals to match.
-
-        A class with no progression row for this level (or no ``class_id``
-        at all) resolves to an empty mapping, which zeroes out any
-        previously-held slots.
-
-        ``commit=False`` defers the commit so the caller can wrap this in
-        a transaction with other writes — see :meth:`create_character`.
+        Sync ``CharacterSpellSlot`` totals to the class's spell slot
+        progression for the character's current level.
         """
 
         slots_by_level = (
@@ -775,23 +620,8 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     ) -> None:
         """
         Grant the character the starting equipment of its class and
-        background.
-
-        All ``source_items`` rows owned by the character's sources are
-        collected in one query, and the resolved ``chosen_options`` (the
-        player's "pick N of M" selections) are added to the same
-        aggregation — one ``CharacterItem`` stack per item, quantities
-        summed across sources and choices (e.g. a class and a background
-        both granting a dagger, or a guaranteed dagger plus a chosen one,
-        produce a single stack, matching D&D's combined starting-
-        equipment feel).
-
-        ``chosen_options`` comes from :meth:`_resolve_item_choices`, which
-        has already validated that every group is answered with exactly
-        ``pick_count`` options.
-
-        ``commit=False`` defers the commit so the caller can wrap this in
-        a transaction with other writes — see :meth:`create_character`.
+        background: one ``CharacterItem`` stack per item with quantities
+        summed across sources and the resolved "pick N of M" choices.
         """
 
         sources: list[tuple[FeatureSourceType, int]] = []
@@ -820,14 +650,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             await self.repository.db.flush()
 
     async def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
-        """
-        Public wrapper around :meth:`_apply_spell_slot_progression` for
-        the progression service (level-up), which owns the character's
-        level writes.
-
-        ``commit=False`` defers the commit so the caller can wrap the
-        re-application in a transaction with the rest of the change.
-        """
+        """Public wrapper around :meth:`_apply_spell_slot_progression` for the progression service."""
 
         await self._apply_spell_slot_progression(character, commit=commit)
 
@@ -840,25 +663,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         derived: DerivedStats | None = None,
     ) -> CharacterResponse:
         """
-        Serialize a character to ``CharacterResponse``, attaching
-        ``ability_scores`` from a cache row, the derived combat stats, and
-        the class-derived saving throw proficiencies (there is no
-        per-character saving throw storage — the class owns them).
-
-        When ``cache_row`` is given it's used as-is (the batch listing
-        path — ``get_characters`` loads all rows in one query). Otherwise
-        ``CharacterStatsService.for_response`` decides: freshly
-        recalculated+persisted when ``refresh`` is ``True``, else the
-        existing row as-is (or ``None`` if never computed).
-
-        ``derived`` is the precomputed hit dice / speed pair
-        (``get_characters`` batch-computes it to avoid N queries per
-        page); when absent it is computed here. ``armor_class`` and
-        ``shield`` need no derivation — they are plain editable columns
-        serialized straight off the row.
-
-        The character's class must be eager-loaded with its
-        ``saving_throws`` (see ``CharacterRepository.default_load_options``).
+        Serialize a character to ``CharacterResponse``, attaching the
+        ability-score cache row (or a fresh one when ``refresh``), the
+        derived combat stats, and the class-derived saving throws (the
+        class owns them; there is no per-character storage).
         """
 
         if cache_row is None:

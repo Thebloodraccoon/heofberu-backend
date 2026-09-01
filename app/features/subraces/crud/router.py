@@ -1,16 +1,4 @@
-"""
-Subrace CRUD endpoints: listing, get, create, update, delete
-(query-style IDs).
-
-The router declares no prefix of its own; ``app.features.races.router``
-applies the ``/races`` prefix and ``app.features.races.subraces.router``
-the static ``/subraces`` prefix — combined, ``""`` resolves to
-``/races/subraces?race_id=...``. The owning race is identified by the
-required ``race_id`` query parameter. Mutations (PATCH/DELETE)
-additionally take the ``subrace_id`` query parameter; the detail read
-keeps the child in the path (``GET /{subrace_id}?race_id=...``) to
-avoid colliding with the listing.
-"""
+"""Subrace CRUD endpoints: listing, get, create, update, delete (query-style IDs)."""
 
 from typing import Annotated
 
@@ -81,14 +69,7 @@ async def create_subrace(
     race_service: SubraceCrudDep,
     _: GmUserDep,
 ):
-    """
-    Create a subrace under the given race. **GM only.**
-
-    `ability_bonuses` and `features` are optional. If provided, they're
-    saved together with the subrace in a single transaction. Subrace
-    features are created with ``source_type: SUBRACE`` and auto-grant to
-    every character of this subrace.
-    """
+    """Create a subrace under the given race. **GM only.**"""
 
     return await race_service.create_subrace(data)
 
@@ -136,14 +117,7 @@ async def update_subrace(
     race_service: SubraceCrudDep,
     _: GmUserDep,
 ):
-    """
-    Partially update a subrace's base fields. **GM only.**
-
-    Only fields included in the request body are changed; omitted fields
-    are left as-is. Does not touch ability bonuses or features — use
-    `PUT /races/subraces/ability-bonuses?race_id=...&subrace_id=...` and
-    the `.../features` endpoints for those.
-    """
+    """Partially update a subrace's base fields. **GM only.**"""
 
     return await race_service.update(subrace_id, data)
 
@@ -162,14 +136,7 @@ async def delete_subrace(
     race_service: SubraceCrudDep,
     _: FounderDep,
 ):
-    """
-    Delete a subrace. **Founder only.**
-
-    Also removes its ability bonuses and features (cascade). Characters
-    pointing at it have ``subrace_id`` set to NULL by the DB, so the
-    subrace can be deleted even when assigned — the affected characters
-    simply lose their subrace-specific bonuses/features.
-    """
+    """Delete a subrace. **Founder only.**"""
 
     await race_service.delete(subrace_id)
     return None

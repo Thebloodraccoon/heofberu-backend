@@ -1,15 +1,4 @@
-"""
-GM-panel inventory endpoints: manage a character's items (writes, GM-only;
-query-style IDs).
-
-The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/gm-panel`` — combined, ``"/items"`` resolves to
-``/characters/gm-panel/items?character_id=...``. The character is
-identified by the required ``character_id`` query parameter; stack
-edits/removals additionally take ``item_id`` (the character-item stack
-row ID). Reads are served by the player-facing
-``GET /characters/{character_id}/items`` (see ``crud/``).
-"""
+"""GM-panel inventory endpoints (writes, GM-only; query-style IDs); reads are served by character CRUD."""
 
 from typing import Annotated
 
@@ -54,10 +43,8 @@ async def add_character_item(
     current_user: GmUserDep,
 ):
     """
-    Add one item stack to a character's inventory. **GM only.**
-
-    Each POST creates its own stack row — a character may own several
-    stacks of the same item. `quantity` defaults to 1 (0 is allowed).
+    Add one item stack to a character's inventory (each POST creates its
+    own stack row). **GM only.**
     """
 
     return await item_service.add_item(character_id, data, current_user)
@@ -96,9 +83,8 @@ async def update_character_item(
     current_user: GmUserDep,
 ):
     """
-    Change an item stack's quantity, equip/attunement state, or notes.
-    **GM only.** Only provided fields are changed; the referenced item
-    itself is immutable — remove the stack and add a new one instead.
+    Change an item stack's quantity, equip/attunement state, or notes;
+    the referenced item is immutable. **GM only.**
     """
 
     return await item_service.update_item(character_id, item_id, data, current_user)

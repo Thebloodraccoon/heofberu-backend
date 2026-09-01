@@ -28,23 +28,8 @@ _EMPTY_AVAILABILITY = {
 
 class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellResponse, SpellGetAllResponse]):
     """
-    Spell-specific CRUD service built on :class:`CachedService`.
-
-    Adds behaviors the generic base class doesn't provide:
-      - the inherited paginated ``get_all`` (ordered by ``Spell.id``,
-        searchable on ``name``), served as a lightweight ``Page`` cached
-        transparently in Redis via ``@use_cache``;
-      - a uniqueness check on ``name`` before create/update;
-      - ``create_spell``, which can optionally set class/subclass/race/
-        subrace availability up front, in the same transaction as the
-        spell itself. An empty (or omitted) list on any side means the
-        spell is unrestricted for that dimension.
-
-    Class/subclass/race/subrace availability management (the
-    ``PUT /spells/{spell_id}/classes`` / ``subclasses`` / ``races`` /
-    ``subraces`` endpoints) lives in the dedicated ``availability/``
-    subpackage; ``create_spell`` delegates its seeding there via
-    :class:`SpellAvailabilityService`.
+    Spell-specific CRUD service. Adds availability seeding on create;
+    availability management lives in the ``availability/`` subpackage.
     """
 
     repository: SpellRepository
@@ -52,6 +37,8 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
     cache_namespaces = SPELL_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Wire up the spell repository, response schema, and availability service."""
+
         super().__init__(
             repository=SpellRepository(db),
             response_schema=SpellResponse,
@@ -67,16 +54,7 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
         filters: dict | None = None,
         search: str | None = None,
     ) -> Page[SpellGetAllResponse]:
-        """
-        Cached listing, built WITHOUT materializing full ``Spell`` rows.
-
-        The generic base path would fall back to the eager-loaded
-        ``repository.get_all`` because the listing schema embeds the four
-        availability relationships — pulling every spell's full ``description``
-        Text and component columns only to drop them at serialization. This
-        override instead column-selects the scalar fields and loads each
-        availability dimension with one join query per page.
-        """
+        """Cached lightweight listing that avoids materializing full Spell rows."""
 
         skip, limit = paginate(page, size)
         total = await self.repository.count(filters=filters, search=search)
@@ -123,27 +101,16 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
                 select(table.c.spell_id, child_model.id, child_model.name)
                 .join(child_model, child_model.id == getattr(table.c, child_fk))
                 .where(table.c.spell_id.in_(spell_ids))
-                .order_by(table.c.spell_id, child_model.id)
+                .order_by(table.c.spell_id, child_model.name, child_model.id)
             )
             rows = (await self.repository.db.execute(stmt)).all()
-            for spell_id, child_id, child_name in rows:
+            for spell_id, child_id, child_name in sorted(rows, key=lambda row: (row[0], row[2] or "")):
                 result.setdefault(spell_id, {}).setdefault(field, []).append({"id": child_id, "name": child_name})
 
         return result
 
     async def create_spell(self, spell_data: SpellCreate) -> SpellResponse:
-        """
-        Create a spell after checking its name isn't already taken.
-
-        ``spell_data.available_classes`` / ``available_subclasses`` /
-        ``available_races`` / ``available_subraces`` are optional. If
-        supplied, they're set in the *same transaction* as the spell
-        itself, mirroring ``RaceService.create_race``. Every write inside
-        the nested transaction below passes ``commit=False`` for the same
-        reason documented there: a plain ``session.commit()`` from any of
-        them would commit the entire outer transaction, not just the
-        ``begin_nested()`` SAVEPOINT.
-        """
+        """Create a spell after checking its name isn't already taken, seeding any availability set."""
 
         classes = (
             await self.resolve_ids(self.repository.get_classes_by_ids, spell_data.available_classes, "Classes")

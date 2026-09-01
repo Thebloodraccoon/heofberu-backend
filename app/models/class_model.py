@@ -58,7 +58,7 @@ class Class(settings.Base):  # type: ignore
         back_populates="character_class",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="Subclass.name",
+        order_by="Subclass.name, Subclass.id",
     )
     # CLASS-source features granted by this class across all levels.
     # Subclass features are excluded from this relationship — they are

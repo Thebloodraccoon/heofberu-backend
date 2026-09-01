@@ -8,12 +8,7 @@ CHARACTER_CACHE_NAMESPACE = "characters"
 
 async def invalidate_character_cache(character_id: int) -> None:
     """
-    Purge cached data for one character.
-
-    ``GET /characters/{id}`` is cached under the flat key
-    ``<prefix>:characters:<id>`` (custom ``key_builder``), which the
-    namespace-prefix pattern ``<prefix>:characters:<id>:*`` never
-    matches — so the exact key is deleted explicitly as well.
+    Purge cached data for one character, including the flat detail key.
     """
 
     await invalidate(f"{CHARACTER_CACHE_NAMESPACE}:{character_id}")

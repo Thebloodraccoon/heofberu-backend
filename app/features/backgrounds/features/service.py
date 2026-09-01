@@ -11,19 +11,14 @@ from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
 from app.models import Background
 
-
 class BackgroundFeatureService(
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
 ):
     """
     Read-only service for a background's BACKGROUND-source features.
 
-    Write endpoints have been removed — features are managed centrally
-    through the features catalog. This service only provides the cached
-    ``list_features`` for the ``GET /backgrounds/features?background_id=...``
-    read endpoint: the list is cached under the dedicated
-    ``background_features`` namespace, which the central feature writes
-    invalidate (only for this background's list) via ``FeatureCrudService``.
+    Features are managed centrally through the features catalog; this
+    service only provides the cached ``list_features`` read.
     """
 
     repository: BackgroundRepository
@@ -31,6 +26,8 @@ class BackgroundFeatureService(
     cache_namespaces = ("background_features",)
 
     def __init__(self, db: AsyncSession):
+        """Compose the central ``FeatureCrudService`` for the cached list."""
+
         super().__init__(
             repository=BackgroundRepository(db),
             response_schema=BackgroundResponse,

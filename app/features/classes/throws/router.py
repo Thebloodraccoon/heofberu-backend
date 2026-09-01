@@ -1,7 +1,4 @@
-"""
-Class saving-throws endpoint (query-style ID — the class is identified
-by the required ``class_id`` query parameter).
-"""
+"""Class saving-throws endpoint (query-style ``class_id``)."""
 
 from typing import Annotated
 
@@ -45,9 +42,7 @@ async def set_class_saving_throws(
     """
     Replace all saving throw proficiencies for a class. **GM only.**
 
-    Full replace, not merge: the list in the request body becomes the
-    complete set of saving throws for this class — any throw not included
-    is removed. Send an empty list to clear all saving throws.
+    Full replace: any throw not included is removed.
     """
 
     return await class_service.set_saving_throws(class_id, data)

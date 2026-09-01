@@ -40,12 +40,8 @@ from app.features.users.repository import UserRepository
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
-# A throwaway bcrypt hash used to equalize login timing: when no user
-# exists for a given email, we still run verify_password against this
-# dummy hash so a request for an unknown email takes roughly as long as
-# one for an existing account with a wrong password. Without this, an
-# attacker could distinguish "no such account" from "wrong password" by
-# timing alone, and use that to enumerate registered emails.
+# A dummy bcrypt hash used to equalize login timing so unknown emails
+# can't be distinguished from wrong passwords by timing.
 DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"  # nosec B105 -- not a credential: public constant hash used as a timing-equalizing dummy
 
 
@@ -53,6 +49,8 @@ class AuthService:
     """Orchestrates login, registration, token refresh, logout, and password reset."""
 
     def __init__(self, db: AsyncSession, email_service: EmailService | None = None):
+        """Wire up the user repository and optional email service."""
+
         self.user_repo = UserRepository(db)
         self.email_service = email_service or EmailService()
 
@@ -70,24 +68,8 @@ class AuthService:
 
     async def register(self, request: RegisterRequest, response: Response) -> RegisterResponse:
         """
-        Create a new self-registered account and immediately log it in.
-
-        Unlike the GM-only ``UserService.create_user``, the new account:
-          - is always created with ``UserRole.PLAYER``, regardless of
-            anything the caller sends (``RegisterRequest`` has no
-            ``role`` field at all, so there's nothing to trust here);
-          - is logged in on success, the same as ``login`` — the caller
-            gets back an ``access_token`` and has the refresh cookie set
-            on ``response``, instead of having to call ``/auth/login``
-            as a separate follow-up step.
-
-        Email/username uniqueness is checked up front so this fails with
-        a clear 400 before hitting the database's own unique constraint.
-        The duplicate-account error is deliberately generic — the raw
-        ``RecordAlreadyExistsError`` echoes the offending email in its
-        message, which would let anyone confirm whether an address is
-        already registered. Re-raising with a neutral detail keeps the
-        400 without leaking account existence.
+        Create a new self-registered PLAYER account and log it in immediately.
+        The duplicate-account error is kept generic to avoid leaking registered emails.
         """
 
         user_data = {
@@ -104,14 +86,10 @@ class AuthService:
         return RegisterResponse(access_token=self._issue_tokens(user.email, response))
 
     async def refresh_tokens(self, refresh_token: str) -> RefreshResponse:
-        """
-        Issue a new access token from a valid, non-revoked refresh token.
+        """Issue a new access token from a valid, non-revoked refresh token.
 
-        The refresh token itself is only *checked* against the blacklist
-        here, not consumed/rotated — logout is what blacklists it (see
-        ``logout``). A revoked refresh token (e.g. from a completed
-        logout) is rejected the same as an invalid or expired one, so a
-        stolen refresh token can't outlive an explicit logout.
+        The refresh token is checked against the blacklist, not consumed, so a
+        logged-out (revoked) refresh token can't mint new access tokens.
         """
 
         decoded = verify_refresh_token(refresh_token)
@@ -128,16 +106,8 @@ class AuthService:
 
     async def forgot_password(self, request: ForgotPasswordRequest) -> ForgotPasswordResponse:
         """
-        Issue a short-lived reset token for the account and email it.
-
-        Deliberately returns the same response whether or not the email
-        exists, so the endpoint cannot be used to enumerate registered
-        addresses (mirrors the timing-equalizing approach in ``login``).
-
-        The emailed link is built by the email service from its hardcoded
-        reset page URL plus the token (see ``RESET_BASE_URL``). Sending is
-        best-effort: a failed SMTP round-trip is logged by the email
-        service and never surfaces as an error here.
+        Email a short-lived reset token; returns the same response whether or
+        not the account exists to prevent email enumeration.
         """
 
         user = await self.user_repo.get_by_email(request.email)
@@ -152,12 +122,8 @@ class AuthService:
 
     async def reset_password(self, request: ResetPasswordRequest) -> ResetPasswordResponse:
         """
-        Set a new password using a valid, unused reset token.
-
-        The token is a short-lived ``reset`` JWT (15 min). After the
-        password is updated the token's ``jti`` is blacklisted, so the same
-        link cannot be replayed. Any invalid/expired/reused token raises
-        ``InvalidResetTokenException`` (400).
+        Set a new password using a valid reset token, then blacklist the
+        token's jti so the link cannot be replayed.
         """
 
         try:
@@ -186,17 +152,8 @@ class AuthService:
         refresh_token_str: str | None,
     ) -> LogoutResponse:
         """
-        Revoke the current access token and, if present, the refresh
-        token cookie — both immediately unusable rather than left to
-        expire naturally.
-
-        ``access_token`` is the raw bearer credentials behind the
-        request; it is verified here (signature, expiry, ``access``
-        type) before its ``jti``/TTL are used for blacklisting.
-        ``refresh_token_str`` is read directly from the request cookie; a
-        missing/invalid one is tolerated (nothing to revoke, and a user
-        who already lost their refresh cookie shouldn't be blocked from
-        logging out the access token they do have).
+        Revoke the access token and, if present, the refresh cookie so both
+        are immediately unusable. A missing/invalid refresh token is tolerated.
         """
 
         decoded_access_token = verify_token(access_token, "access")
@@ -214,13 +171,9 @@ class AuthService:
 
     @staticmethod
     def _issue_tokens(email: str, response: Response) -> str:
-        """
-        Create an access/refresh token pair for ``email``, set the refresh
-        cookie on ``response``, and return the access token.
+        """Create an access/refresh pair for ``email``, set the refresh cookie, return the access token.
 
-        Shared by ``login`` and ``register`` — both end with "issue a
-        fresh token pair and log the caller in", differing only in how
-        the underlying user was obtained/created.
+        Shared by ``login`` and ``register`` — both end by logging the caller in.
         """
 
         access_token = create_access_token(data={"sub": email})

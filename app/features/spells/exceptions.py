@@ -9,6 +9,8 @@ class SpellNotFoundException(AppError):
     status_code = 404
 
     def __init__(self, spell_id: int | None = None, name: str | None = None):
+        """Build the 404 message from the optional spell ID or name."""
+
         detail = "Spell is not found"
 
         if spell_id:

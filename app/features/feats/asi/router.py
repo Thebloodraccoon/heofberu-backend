@@ -1,7 +1,4 @@
-"""
-Feat ASI-choice endpoints (query-style ID — the feat is identified by
-the required ``feat_id`` query parameter).
-"""
+"""Feat ASI-choice endpoints (the feat is identified by the required ``feat_id``)."""
 
 from typing import Annotated
 
@@ -15,7 +12,6 @@ from app.features.feats.schemas import (
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
-
 
 @router.put(
     "/{feat_id:int}/ability-score-increases",
@@ -50,10 +46,8 @@ async def set_feat_ability_score_increases(
     """
     Replace all ability score increase choices for a feat. **GM only.**
 
-    Full replace, not merge: the list in the request body becomes the
-    complete set of ASI choices for this feat — any choice not included
-    is removed. Send an empty list to clear all choices (the feat then
-    grants no ability score increase of its own).
+    Full replace (not merge): the given list becomes the complete set;
+    send an empty list to clear all choices.
     """
 
     return await feat_service.set_ability_score_increases(feat_id, data)

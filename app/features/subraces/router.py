@@ -1,13 +1,4 @@
-"""
-Assembled ``/races/subraces`` router (query-style parent ID).
-
-Sub-routers declare no prefix of their own; the static ``/subraces``
-prefix is applied here, and the whole subdomain is mounted onto the
-``/races`` router by ``app.features.races.router`` — combined, a path
-here like ``"/features"`` resolves to
-``/races/subraces/features?race_id=...``. The owning race is identified
-by the required ``race_id`` query parameter on every endpoint.
-"""
+"""Assembled ``/races/subraces`` router (query-style parent ID)."""
 
 from fastapi import APIRouter
 

@@ -21,15 +21,11 @@ from app.models.class_model import Class
 
 class ClassProgressionService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None]):
     """
-    Everything about a class's progression: the per-level spell-slot table
-    and the full 1-20 progression table.
+    Everything about a class's progression.
 
-    ``set_spell_slots`` validates ``class_level`` (1-20) before touching
-    the DB and full-replaces that level's rows. ``get_progression`` builds
-    the whole 1-20 table straight from the eager-loaded
-    ``spell_slot_progression`` and ``ClassRepository.get_progression_features``.
-    Any write purges every namespace listed in :data:`CLASS_CACHE_NAMESPACES`
-    via ``cache_namespaces``.
+    ``set_spell_slots`` validates ``class_level`` (1-20) and full-replaces
+    that level's rows; ``get_progression`` builds the whole 1-20 table.
+    Writes purge ``CLASS_CACHE_NAMESPACES`` via ``cache_namespaces``.
     """
 
     repository: ClassRepository
@@ -37,6 +33,8 @@ class ClassProgressionService(BaseService[Class, ClassCreate, ClassUpdate, Class
     cache_namespaces = CLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with a repository over the session."""
+
         super().__init__(
             repository=ClassRepository(db),
             response_schema=ClassResponse,
@@ -44,8 +42,9 @@ class ClassProgressionService(BaseService[Class, ClassCreate, ClassUpdate, Class
 
     async def set_spell_slots(self, class_id: int, class_level: int, data: SpellSlotProgressionUpdate) -> ClassResponse:
         """
-        Replace spell slots for a single class_level.
-        class_level must be 1-20 — checked here before touching the DB.
+        Replace spell slots for a single class_level (1-20).
+
+        ``class_level`` is validated here before touching the DB.
         """
 
         character_class = await self._get_or_404(class_id)
@@ -59,17 +58,7 @@ class ClassProgressionService(BaseService[Class, ClassCreate, ClassUpdate, Class
         return await self._get_response(class_id)
 
     async def get_progression(self, class_id: int) -> ClassProgressionResponse:
-        """
-        Build the full 1-20 progression table for a class.
-
-        Each row contains:
-          - level + proficiency_bonus (computed via ceil(level/4)+1)
-          - spell_slots: {spell_level → slots} from ClassSpellSlotProgression
-          - class_features: CLASS-source features gained at this level
-          - subclass_features: SUBCLASS-source features gained at this level
-            (across all subclasses — useful for showing "at level N you gain
-             a subclass feature" without enumerating every subclass)
-        """
+        """Build the full 1-20 progression table for a class (slots + class/subclass features)."""
 
         character_class = await self._get_or_404(class_id)
 

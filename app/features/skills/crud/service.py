@@ -10,27 +10,15 @@ from app.models import Skill
 
 
 class SkillCrudService(CachedService[Skill, SkillCreate, SkillUpdate, SkillResponse, SkillGetAllResponse]):
-    """
-    Skill-specific CRUD service built on :class:`CachedService`.
-
-    Adds behaviors the generic base class doesn't provide:
-      - a uniqueness check on ``key`` before create/update;
-      - a delete guard that blocks removing a skill still referenced by any
-        race, class, background, or character skill proficiency, since the
-        FK on all four is ``ON DELETE RESTRICT``.
-
-    The listing and detail reads are cached via ``@use_cache``. Besides
-    the ``skills`` namespace, writes also purge ``classes``/``races``/
-    ``backgrounds``: their cached detail responses embed skills
-    (``SkillResponse``), so a skill rename must not leave stale names in
-    the class/race/background cache.
-    """
+    """Skill-specific CRUD service. Adds a key-uniqueness check and an in-use delete guard."""
 
     repository: SkillRepository
 
     cache_namespaces = SKILL_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Wire up the skill repository, response schema, and get-all schema."""
+
         super().__init__(
             repository=SkillRepository(db),
             response_schema=SkillResponse,

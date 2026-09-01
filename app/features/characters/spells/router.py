@@ -1,10 +1,7 @@
 """
 Character spell endpoints: known spells with class-derived slot totals
-(query-style IDs — the character is identified by the required
-``character_id`` query parameter).
-
-The router declares no prefix of its own; ``app.features.characters.router``
-applies the ``/characters`` prefix.
+(query-style IDs; ``app.features.characters.router`` applies the
+``/characters`` prefix).
 """
 
 from typing import Annotated
@@ -37,14 +34,12 @@ async def get_character_spells(
     current_user: CurrentUserDep,
 ):
     """
-    List the character's spellcasting picture in one payload: the slot
-    totals per level plus the known spells.
+    List the character's spellcasting picture in one payload: slot totals
+    per level plus the known spells.
 
-    Slot ``total`` is always derived from the character's class/level
-    spell-slot progression (applied on create and re-applied on level-up
-    and class change) — it is not client-settable and there is no
-    spend/restore endpoint: a level's total doubles as the cap on how
-    many spells of that level the character may know.
+    Slot ``total`` is always derived from the class/level progression and
+    is not client-settable; a level's total doubles as the cap on known
+    spells of that level.
     """
 
     return await spell_service.get_spells(character_id, current_user)
@@ -86,12 +81,9 @@ async def add_character_spell(
     """
     Add a spell to the character's known spells (e.g. `{"spell_id": 5}`).
 
-    There is no separate "prepared" state and no slot spending — knowing
-    a spell is having it ready to cast. Choosing a spell is capped by the
-    character's spell slot totals: a character may know at most as many
-    spells of a given level as they have slots of that level. To swap a
-    known spell for a different one, remove the old one first to free up
-    its slot.
+    Knowing a spell IS having it ready — no "prepared" state and no slot
+    spending. The character may know at most as many spells of a level as
+    they have slots of that level; to swap, remove the old one first.
     """
 
     return await spell_service.add_known_spell(character_id, data, current_user)

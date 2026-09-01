@@ -1,14 +1,4 @@
-"""
-Shared ability-bonus primitives for the race and subrace schemas.
-
-``AbilityBonusItem``/``_validate_unique_abilities`` are used by both the
-race and the subrace create/update payloads, and ``AbilityBonusResponse``
-is the serialized shape embedded in both responses. They live in this
-capability package (rather than ``races/schemas.py``) so
-``races/subraces/schemas.py`` can import them without creating an import
-cycle (``races/schemas.py`` embeds ``SubraceBriefResponse``, which is
-defined in the subrace subdomain).
-"""
+"""Shared ability-bonus primitives for the race and subrace schemas."""
 
 from pydantic import BaseModel, ConfigDict
 
@@ -32,6 +22,8 @@ class AbilityBonusResponse(BaseModel):
 
 
 def _validate_unique_abilities(ability_bonuses: list[AbilityBonusItem]) -> list[AbilityBonusItem]:
+    """Reject bonus lists containing duplicate ability scores."""
+
     abilities = [item.ability for item in ability_bonuses]
     if len(abilities) != len(set(abilities)):
         duplicates = {a for a in abilities if abilities.count(a) > 1}

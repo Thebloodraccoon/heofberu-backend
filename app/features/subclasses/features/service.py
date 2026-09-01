@@ -18,12 +18,9 @@ class SubclassFeatureService(
     """
     Read-only service for a subclass's SUBCLASS-source features.
 
-    Write endpoints have been removed — features are managed centrally
-    through the features catalog. This service only provides the cached
-    ``list_features`` for the ``GET /classes/subclasses/features`` read
-    endpoint: the list is cached under the dedicated ``subclass_features``
-    namespace, which the central feature writes invalidate (only for this
-    subclass's list) via ``FeatureCrudService``.
+    Features are managed centrally through the features catalog. The
+    cached ``list_features`` list lives under the ``subclass_features``
+    namespace, which central feature writes invalidate.
     """
 
     repository: SubclassRepository
@@ -31,6 +28,8 @@ class SubclassFeatureService(
     cache_namespaces = ("subclass_features",)
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with its repository and the central feature catalog."""
+
         super().__init__(
             repository=SubclassRepository(db),
             response_schema=SubclassResponse,

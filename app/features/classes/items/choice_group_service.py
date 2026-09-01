@@ -11,15 +11,16 @@ from app.features.shared.items.choice_group_service import ChoiceGroupService
 
 class ClassChoiceGroupService(ChoiceGroupService):
     """
-    Choice-group management for a class's starting equipment alternatives.
+    Choice-group management for a class's starting equipment.
 
-    Delegates to :class:`ChoiceGroupService` with CLASS source type and
-    the class cache namespaces.
+    Delegates to :class:`ChoiceGroupService` with CLASS source type.
     """
 
     cache_namespaces = CLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the choice-group service for the class source type."""
+
         super().__init__(
             db,
             repository=ClassRepository(db),

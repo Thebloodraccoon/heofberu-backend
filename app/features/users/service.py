@@ -19,21 +19,16 @@ from app.settings import settings
 
 class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
     """
-    User-specific CRUD service built on :class:`BaseService`.
-
-    Adds behaviors the generic base class doesn't provide:
-      - password hashing on create;
-      - protection of the seeded default admin user from update/delete;
-      - a self-deletion guard on delete;
-      - lookup by email, used by the auth feature.
-
-    (Email/username uniqueness is enforced by ``UserRepository`` via
-    ``BaseRepository._check_uniqueness`` on create/update.)
+    User CRUD built on :class:`BaseService`, adding password hashing on
+    create, protection of the seeded default admin, a self-deletion guard,
+    and lookup by email.
     """
 
     repository: UserRepository
 
     def __init__(self, db: AsyncSession):
+        """Wire up the user repository and response schema."""
+
         super().__init__(
             repository=UserRepository(db),
             response_schema=UserResponse,
@@ -50,14 +45,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
     async def create_user(self, data: UserCreate, current_role: UserRole) -> UserResponse:
         """
-        Create a user after checking email/username aren't already taken.
-
-        Assigning any non-player role requires the acting user to be the
-        found father (``FoundFatherAccessException`` otherwise).
-
-        The plaintext ``password`` is hashed and stored as
-        ``hashed_password`` instead of being passed straight to the
-        repository, so this bypasses the generic ``super().create(...)``.
+        Create a user, hashing the password before storing. Assigning a
+        non-player role requires the found father.
         """
 
         self._ensure_role_change_allowed(data.role != UserRole.PLAYER, current_role)
@@ -71,13 +60,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
     async def update_user(self, user_id: int, data: UserUpdate, current_role: UserRole) -> UserResponse:
         """
-        Update a user, re-checking email/username uniqueness if changing.
-
-        Any role edit requires the acting user to be the found father
-        (``FoundFatherAccessException`` otherwise).
-
-        Blocked for the seeded default admin user. Also stamps
-        ``updated_at``, which the generic ``update`` doesn't do on its own.
+        Update a user (stamping updated_at), re-checking uniqueness. Any
+        role edit requires the found father; blocked for the default admin.
         """
 
         self._ensure_role_change_allowed(data.role is not None, current_role)
@@ -92,12 +76,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
     async def update_profile(self, user_id: int, data: UserProfileUpdate) -> UserResponse:
         """
-        Update a user's own profile (username, email, bio, phone, discord, telegram).
-
-        Unlike :meth:`update_user` this never touches the ``role`` and does not
-        block the seeded default admin, so the admin can edit their personal
-        cabinet too. Username/email uniqueness is still enforced by the
-        repository.
+        Update a user's own profile (no role changes; not blocked for the
+        default admin), stamping updated_at.
         """
 
         user = await self._get_or_404(user_id)
@@ -109,11 +89,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
     async def delete_user(self, user_id: int, current_user_id: int) -> bool:
         """
-        Delete a user by ID.
-
-        Raises ``RecordNotFoundError`` (mapped to a 404) if ``user_id``
-        doesn't exist. Blocked for self-deletion and for the seeded default
-        admin user.
+        Delete a user (404 if missing). Blocked for self-deletion and for
+        the seeded default admin.
         """
 
         user = await self._get_or_404(user_id)

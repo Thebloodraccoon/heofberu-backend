@@ -13,20 +13,17 @@ from app.features.features.crud.repository import FeatureRepository
 from app.features.features.crud.schemas import FeatureResponse
 from app.models.feature_model import Feature
 
-
 class FeatureAbilityIncreaseService(BaseService[Feature, None, None, FeatureResponse, None]):
     """
     Everything about a feature's fixed ability-score increases.
 
     Effects are automatic: while the feature is granted to a character
-    (``character_features``), every row adds its ``amount`` to the
-    effective total and may raise the ability's cap (``new_cap``) — no
-    choice log involved. ``set_ability_increases`` is a full replace; any
-    write purges the ``features`` namespace AND refreshes the stat caches
-    of every character currently granted the feature (the same known
-    one-way import compromise as ``FeatureCrudService`` importing
-    ``characters/progression/feature_sync`` — one-directional, no import
-    cycle).
+    (``character_features``), every row adds its ``amount`` to the effective
+    total and may raise the ability's cap (``new_cap``). ``set_ability_increases``
+    is a full replace; any write purges the ``features`` namespace AND
+    refreshes the stat caches of every character currently granted the
+    feature (the same known one-way import compromise as ``FeatureCrudService``
+    importing ``characters/progression/feature_sync`` — no import cycle).
     """
 
     repository: FeatureRepository
@@ -34,6 +31,8 @@ class FeatureAbilityIncreaseService(BaseService[Feature, None, None, FeatureResp
     cache_namespaces = FEATURE_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Initialize the service with the feature repository."""
+
         super().__init__(
             repository=FeatureRepository(db),
             response_schema=FeatureResponse,

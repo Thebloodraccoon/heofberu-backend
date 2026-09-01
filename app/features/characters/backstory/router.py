@@ -1,13 +1,4 @@
-"""
-Character backstory endpoints: get/set a character's backstory via dedicated,
-uncached endpoints.
-
-The router declares no prefix of its own; ``app.features.characters.router``
-applies the ``/characters`` prefix — combined, ``"/{character_id:int}/backstory"``
-resolves to ``/characters/{character_id}/backstory``. The backstory is served
-separately (NOT in the cached ``CharacterResponse``) because it can be several
-pages of text, so these reads/writes hit the DB directly and are never cached.
-"""
+"""Character backstory endpoints: get/set a character's backstory via dedicated, uncached endpoints."""
 
 from typing import Annotated
 
@@ -38,12 +29,10 @@ async def get_character_backstory(
     current_user: CurrentUserDep,
 ):
     """
-    Return a character's backstory. GM can view any character's backstory;
-    players only their own.
+    Return a character's backstory, served from the DB uncached (separate
+    from the cached character sheet).
 
-    The backstory is never cached — it can be several pages of text, so it is
-    served from the DB on demand, separate from the cached character sheet.
-    A character with no backstory recorded returns an empty ``content``.
+    GM can view any character's backstory; players only their own.
     """
 
     return await character_backstory_service.get_backstory(character_id, current_user)
@@ -84,8 +73,7 @@ async def set_character_backstory(
 ):
     """
     Set or replace a character's backstory (upsert — the row is created on
-    first write). `content` is limited to 12000 characters (about four pages
-    of Word text); longer values are rejected with a 422.
+    first write). `content` is limited to 12000 characters.
     """
 
     return await character_backstory_service.set_backstory(character_id, data, current_user)

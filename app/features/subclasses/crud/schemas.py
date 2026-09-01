@@ -6,12 +6,7 @@ from app.features.features.crud.schemas import NestedFeatureResponse
 
 
 class SubclassCreate(BaseModel):
-    """
-    Create payload for a subclass.
-
-    ``features`` are created in the same transaction as the subclass itself
-    with ``source_type=SUBCLASS`` and ``subclass_id`` set automatically.
-    """
+    """Create payload for a subclass. ``features`` are created in the same transaction with ``source_type=SUBCLASS`` and ``subclass_id`` set automatically."""
 
     name: str
     class_id: int

@@ -13,16 +13,11 @@ from app.features.users.schemas import UserResponse
 
 
 class GmPanelLevelService(CharacterSubDomainService):
-    """
-    Raise a character's maximum allowed level (GM-only).
-
-    The cap lives in ``character_max_levels`` (one row per character,
-    seeded at 1 on creation). A write may only move it *up*: a value at
-    or below the stored maximum is rejected, and the new value can never
-    be below the character's current level.
-    """
+    """Raise a character's maximum allowed level (GM-only); the cap can only move up."""
 
     def __init__(self, db: AsyncSession):
+        """Wire up the max-level repository."""
+
         super().__init__(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
 
@@ -30,12 +25,8 @@ class GmPanelLevelService(CharacterSubDomainService):
         self, character_id: int, data: MaxLevelUpdate, current_user: UserResponse
     ) -> CharacterMaxLevelResponse:
         """
-        Raise a character's maximum allowed level; lowering is never allowed.
-
-        Characters always get a max-level row at creation (and via the
-        migration backfill); a missing row is treated defensively as
-        capped at the character's current level and seeded on the spot
-        rather than failing the request.
+        Raise a character's maximum allowed level; the cap can only move
+        up (a missing row is seeded at the current level).
         """
 
         character = await self.get_character_for_user(character_id, current_user)

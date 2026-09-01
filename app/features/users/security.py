@@ -1,11 +1,4 @@
-"""
-Authentication/authorization dependency providers.
-
-Lives in the ``users`` domain (not ``core``): resolving the current user
-requires the users service, so every dependency arrow points INTO
-``users`` and no layering inversion (core importing a feature) occurs.
-Everything cryptographic stays generic in ``app/core/security/token.py``.
-"""
+"""Auth/authz dependency providers, kept in ``users`` so dependency arrows point into it (no layering inversion)."""
 
 from typing import Annotated
 
@@ -31,10 +24,8 @@ async def get_current_user(
     token: TokenDep,
 ) -> UserResponse:
     """
-    Resolve the authenticated user from the bearer token.
-
-    Validates the token signature/expiry, rejects blacklisted tokens, and
-    returns the matching user, raising ``InvalidTokenException`` otherwise.
+    Resolve the user from the bearer token, validating signature/expiry
+    and rejecting blacklisted tokens.
     """
 
     decoded = verify_token(token, "access")

@@ -60,16 +60,7 @@ async def register(
     ],
     auth_service: AuthServiceDep,
 ):
-    """
-    Publicly self-register a new account. Open endpoint.
-
-    Unauthenticated — anyone can call this. The new account is always
-    created with the ``PLAYER`` role (see ``RegisterRequest``); creating
-    a user with an arbitrary role still requires a GM via
-    ``POST /users/``. On success, the caller is logged in immediately
-    (access token in the response body, refresh token set as an
-    httponly cookie), the same as ``/auth/login``.
-    """
+    """Self-register a new account and log it in immediately. Open endpoint."""
 
     return await auth_service.register(data, response)
 
@@ -109,13 +100,7 @@ async def login(
     ],
     auth_service: AuthServiceDep,
 ):
-    """
-    Log in with email and password. Open endpoint.
-
-    On success returns a new ``access_token`` and sets the refresh token
-    as an httponly cookie on the response. ``InvalidCredentialsException``
-    (401) on a bad email/password.
-    """
+    """Log in with email and password, setting the refresh cookie. Open endpoint."""
 
     return await auth_service.login(data, response)
 
@@ -135,16 +120,7 @@ async def logout(
     token: TokenDep,
     _: CurrentUserDep,
 ):
-    """
-    Log out the current user, revoking both the access token behind this
-    request and the refresh token cookie (if present) so neither can be
-    used again, then clears the refresh cookie client-side.
-
-    ``_: CurrentUserDep`` still gates this endpoint on a valid,
-    non-blacklisted access token (see ``get_current_user``) — ``token``
-    is verified and blacklisted inside ``AuthService.logout``, not
-    re-authenticated here.
-    """
+    """Log out, revoking the access token and refresh cookie. **Authenticated.**"""
 
     refresh_token_str = request.cookies.get(REFRESH_COOKIE_NAME)
 
@@ -163,12 +139,7 @@ async def logout(
     },
 )
 async def refresh_tokens(http_request: Request, auth_service: AuthServiceDep):
-    """
-    Exchange the refresh-token cookie for a fresh access token. Open endpoint.
-
-    Requires a valid, non-revoked refresh token in the ``refresh_token``
-    cookie; otherwise raises ``InvalidCredentialsException`` (401).
-    """
+    """Exchange the refresh-token cookie for a fresh access token. Open endpoint."""
 
     refresh_token = http_request.cookies.get(REFRESH_COOKIE_NAME, "")
     return await auth_service.refresh_tokens(refresh_token)
@@ -199,14 +170,7 @@ async def forgot_password(
     ],
     auth_service: AuthServiceDep,
 ):
-    """
-    Request a password-reset email. Open endpoint.
-
-    If an account exists for ``email``, a short-lived reset link is sent
-    to it. The response is identical whether or not the account exists, so
-    this cannot be used to enumerate registered emails. The emailed link
-    is built from the backend's hardcoded reset-page URL plus the token.
-    """
+    """Request a password-reset email; neutral response prevents enumeration. Open endpoint."""
 
     return await auth_service.forgot_password(data)
 
@@ -238,12 +202,6 @@ async def reset_password(
     ],
     auth_service: AuthServiceDep,
 ):
-    """
-    Set a new password using the reset token from the emailed link.
-
-    The frontend collects the new password twice, then submits this payload.
-    On success (200) the user can log in with the new password — the
-    frontend then redirects to the login page.
-    """
+    """Set a new password using the emailed reset token. Open endpoint."""
 
     return await auth_service.reset_password(data)

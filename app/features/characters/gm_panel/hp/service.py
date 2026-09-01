@@ -12,20 +12,14 @@ from app.models.character_model import Character
 
 
 class GmPanelHpService(CharacterSubDomainService):
-    """
-    Set a character's maximum HP directly (GM-only — ``max_hp`` is not a
-    field of the player-reachable ``CharacterUpdate``, so this endpoint
-    is the only write path).
+    """Set a character's maximum HP directly (GM-only — the only write path for ``max_hp``); ``current_hp`` is clamped down when it exceeds the new maximum."""
 
-    When the new maximum is below the current HP pool, ``current_hp`` is
-    clamped down to it; temp HP is untouched.
-    """
-
-    # Serializes a full ``CharacterResponse`` — needs the eagerly loaded
-    # collections (skill proficiencies, conditions), not the light fetch.
+    # Full CharacterResponse needs the eagerly loaded collections, not the light fetch.
     _light_character_fetch = False
 
     def __init__(self, db: AsyncSession):
+        """Wire up the stats service."""
+
         super().__init__(db)
         self.stats_service = CharacterStatsService(db)
 

@@ -1,12 +1,4 @@
-"""
-GM feat-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/feats``
-(query-style IDs).
-
-The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/gm-panel``. The character is identified by the
-required ``character_id`` query parameter; grant edits/removals
-additionally take ``feat_id`` (the character-feat grant row ID).
-"""
+"""GM feat-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/feats`` (query-style IDs)."""
 
 from typing import Annotated
 
@@ -64,11 +56,8 @@ async def add_character_feat(
     current_user: GmUserDep,
 ):
     """
-    Grant a feat to a character outside any level-up flow. If the feat
-    offers ability-score increase options, a matching
-    ``ability_score_increase_id`` MUST be chosen (422 otherwise); each
-    granted point is also recorded in the character's ASI-choice log.
-    **GM only.**
+    Grant a feat outside any level-up flow; a feat offering ASI options
+    requires an explicit ``ability_score_increase_id``. **GM only.**
     """
 
     return await feat_service.add_feat(character_id, data, current_user)

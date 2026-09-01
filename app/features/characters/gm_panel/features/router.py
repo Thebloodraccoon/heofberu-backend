@@ -1,12 +1,4 @@
-"""
-GM feature-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/features``
-(query-style IDs).
-
-The sub-router declares no prefix of its own; the panel's aggregating
-router applies ``/gm-panel``. The character is identified by the
-required ``character_id`` query parameter; grant edits/removals
-additionally take ``feature_id`` (the character-feature grant row ID).
-"""
+"""GM feature-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/features`` (query-style IDs)."""
 
 from typing import Annotated
 

@@ -36,15 +36,10 @@ async def get_classes(
     Return a paginated list of classes with `id`, `name`, `hit_dice`,
     and the `id`/`name` of each subclass, ordered by id.
 
-    Open endpoint, no authentication required.
-
     `search` is a case-insensitive partial match against the class name.
+    `total` is the count across every page.
 
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching classes across every page, not just this one.
-
-    Does not include saving throws, proficiencies, or available
-    skills — use `GET /classes/{class_id}` for the full record.
+    Open endpoint.
     """
 
     return await class_service.get_all(page=page, size=size, search=search)
@@ -60,16 +55,13 @@ async def get_classes(
 )
 async def get_class(class_id: int, class_service: ClassCrudDep):
     """
-    Return a single class by ID, with everything about it: base fields,
-    saving throws/armor proficiencies/available
-    skills/starting items/spell slots, CLASS-source `features`, and every
-    `subclass` together with its own SUBCLASS-source features.
+    Return a single class by ID with everything about it: base fields,
+    saving throws/armor proficiencies/available skills/starting items/spell
+    slots, CLASS-source `features`, and every `subclass`.
 
-    Cached as a single unit, so once warm this is one cache hit instead
-    of stitching together separate calls to `.../features`,
-    `.../subclasses`, `.../subclasses/{id}/features`, and `.../items`.
+    Cached as a single unit under the `classes` namespace.
 
-    Open endpoint, no authentication required.
+    Open endpoint.
     """
 
     return await class_service.get_by_id(class_id)
@@ -118,15 +110,10 @@ async def create_class(
     """
     Create a new class. **GM only.**
 
-    `spellcasting_ability` must always be supplied explicitly — pass
-    `null` for a non-caster class.
-
-    `saving_throws`, `armor_proficiencies`, `weapon_proficiencies`, and
-    `available_skills` are optional. If provided, they're saved together
-    with the class in a single transaction.
-
-    This endpoint is intentionally minimal: it does NOT accept `features`,
-    `subclasses`, `spell_slot_progression`, or `starting_items`.
+    `spellcasting_ability` must be supplied explicitly (pass `null` for
+    a non-caster). The optional child lists are saved in the same
+    transaction. Features, subclasses, spell slots, and starting items
+    are intentionally NOT accepted here.
     """
 
     return await class_service.create_class(data)
@@ -167,12 +154,8 @@ async def update_class(
     """
     Partially update a class. **GM only.**
 
-    Only fields included in the request body are changed; omitted fields
-    are left as-is. `saving_throws`, when included, is fully replaced (not
-    merged) — the same semantics as the dedicated
-    `PUT /classes/{class_id}/saving-throws` endpoint. Does not touch
-    available skills — use `PUT /classes/{class_id}/available-skills` for
-    that.
+    Only included fields change. `saving_throws`, when included, is fully
+    replaced (not merged). Available skills are untouched.
     """
 
     return await class_service.update_class(class_id, data)
@@ -191,9 +174,8 @@ async def delete_class(class_id: int, class_service: ClassCrudDep, _: FounderDep
     """
     Delete a class. **Founder only.**
 
-    Also removes its saving throws, proficiencies, and links to
-    available skills. Blocked if the class is still assigned to one or
-    more characters.
+    Also removes its child rows. Blocked if the class is still assigned
+    to a character.
     """
 
     await class_service.delete(class_id)

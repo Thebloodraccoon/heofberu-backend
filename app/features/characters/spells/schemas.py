@@ -7,13 +7,10 @@ from app.features.spells.crud.schemas import SpellResponse
 
 class SpellSlotResponse(BaseModel):
     """
-    A character's spell slot entry for one level.
-
-    Only ``total`` is exposed: it always comes from the character's
-    class/level spell-slot progression (applied on create and re-applied
-    on level-up/class change) and doubles as the cap on how many spells
-    of that level the character may know. There is no per-slot ``used``
-    tracking — slots are not spent, they are capacity for known spells.
+    A character's spell slot entry for one level. ``total`` always comes
+    from the class/level spell-slot progression and doubles as the cap on
+    how many spells of that level the character may know; slots are not
+    spent, they are capacity for known spells.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -39,9 +36,8 @@ class CharacterSpellResponse(BaseModel):
 
 class CharacterSpellsResponse(BaseModel):
     """
-    Combined read model behind ``GET /characters/{id}/spells``: the
-    class-derived slot totals per level together with the known spells,
-    so a client renders the whole spellcasting picture from one call.
+    Combined read model behind ``GET /characters/{id}/spells``: slot
+    totals plus known spells in one response.
     """
 
     spell_slots: list[SpellSlotResponse] = []

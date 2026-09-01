@@ -1,11 +1,15 @@
 """Class image service: upload/remove a class's catalog image."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import RecordNotFoundError
 from app.core.storage.service import ImageStorageService
 from app.features.classes.cache import invalidate_class_cache
 from app.features.classes.crud.repository import ClassRepository
+
+logger = logging.getLogger(__name__)
 
 ENTITY = "classes"
 
@@ -14,13 +18,14 @@ class ClassImageService:
     """
     Upload/remove a class's image.
 
-    The image is stored in Supabase under the ``classes`` folder (pinned to
-    ``classes/{class_id}.{ext}``) and its public URL is persisted on the
-    class's ``image_url`` column. DB writes flow through ``ClassRepository``
-    and the shared class cache is invalidated on every mutation.
+    The image is stored in Supabase under ``classes/{class_id}.{ext}`` and
+    the public URL is persisted on the class's ``image_url`` column. The
+    shared class cache is invalidated on every mutation.
     """
 
     def __init__(self, db: AsyncSession, storage: ImageStorageService):
+        """Initialize the service with a repository and the image storage backend."""
+
         self._repository = ClassRepository(db)
         self._storage = storage
 
@@ -38,7 +43,7 @@ class ClassImageService:
 
         url = await self._storage.upload_image(ENTITY, class_id, content, content_type)
         await self._repository.update(character_class, {"image_url": url})
-        await invalidate_class_cache()
+        await self._invalidate_cache(class_id)
 
         return url
 
@@ -51,4 +56,19 @@ class ClassImageService:
 
         await self._storage.delete_image(ENTITY, class_id)
         await self._repository.update(character_class, {"image_url": None})
-        await invalidate_class_cache()
+        await self._invalidate_cache(class_id)
+
+    async def _invalidate_cache(self, class_id: int) -> None:
+        """
+        Invalidate the shared class cache without letting a failure surface
+        as a request error (the DB write has already committed).
+        """
+
+        try:
+            await invalidate_class_cache()
+        except Exception as exc:  # noqa: BLE001 - cache failure must never fail the write path
+            logger.error(
+                "Failed to invalidate class cache after mutating class %s: %s",
+                class_id,
+                exc,
+            )

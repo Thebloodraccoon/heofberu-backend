@@ -12,19 +12,15 @@ class ChoiceGroupService(
     ChoiceGroupManagerMixin,
     BaseService,
 ):
-    """
-    Generic choice-group read/write for any source type.
-
-    ``list_choice_groups`` / ``set_choice_groups`` come from
-    :class:`ChoiceGroupManagerMixin`; the generic CRUD machinery
-    (``_get_or_404`` / ``_invalidate_cache``) comes from :class:`BaseService`.
-    """
+    """Generic choice-group read/write for any source type."""
 
     _source_item_source_type: FeatureSourceType
 
     cache_namespaces = ("nested_items",)
 
     def __init__(self, db: AsyncSession, *, repository, response_schema, source_type: FeatureSourceType):
+        """Initialise the choice-group service with the given repository and source type."""
+
         super().__init__(repository=repository, response_schema=response_schema)
         self._items = NestedSourceItemService(db)
         self._source_item_source_type = source_type

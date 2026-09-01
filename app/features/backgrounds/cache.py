@@ -7,20 +7,8 @@ from app.core.cache import invalidate
 # can now serve source-owned features).
 BACKGROUND_CACHE_NAMESPACES = ("backgrounds", "background_features", "features", "nested_items")
 
-
 async def invalidate_background_cache() -> None:
-    """
-    Purge every cache namespace a background read can hit.
-
-    ``GET /backgrounds/{id}`` (``backgrounds``), the background's own
-    feature listing (``background_features``), the central feature by-id
-    cache (``features``) and the per-source item listing
-    (``nested_items``) are all served from cache. Any write to a
-    background — base fields, granted skills, starting items, or its own
-    features — must call this after its transaction commits, so the four
-    capability services (crud/features/skills/items) share a single
-    invalidation point instead of each re-declaring the namespace tuple.
-    """
+    """Purge every cache namespace a background read can hit."""
 
     for namespace in BACKGROUND_CACHE_NAMESPACES:
         await invalidate(namespace)

@@ -11,16 +11,11 @@ from app.models.attack_model import Attack
 
 
 class CharacterAttackService(CharacterSubDomainService):
-    """
-    CRUD for a character's attacks/weapons.
-
-    Access control is enforced against the owning character via the
-    inherited ``CharacterSubDomainService`` wiring, but persistence goes
-    through :class:`CharacterAttackRepository` since attacks are their own
-    table.
-    """
+    """CRUD for a character's attacks/weapons, with access control via the inherited sub-domain base."""
 
     def __init__(self, db: AsyncSession):
+        """Create the attack repository."""
+
         super().__init__(db)
         self.attack_repository = CharacterAttackRepository(db)
 

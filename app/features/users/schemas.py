@@ -84,12 +84,7 @@ class UserUpdate(ProfileFields):
 
 
 class UserProfileUpdate(ProfileFields):
-    """
-    Self-service payload for the personal cabinet.
-
-    Same editable fields as :class:`UserUpdate` but never carries a ``role``:
-    users can change their own username/email/bio/phone/discord/telegram only.
-    """
+    """Self-service payload for the personal cabinet — no ``role`` field."""
 
     username: str | None = None
     email: str | None = None

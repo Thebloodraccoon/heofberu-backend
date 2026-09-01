@@ -30,21 +30,8 @@ async def get_items(
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
-    Return a paginated list of items with only `id`, `name`, `item_type`,
-    `rarity`, and `cost_gold`.
-
-    Open endpoint, no authentication required.
-
-    `item_type`/`rarity` are exact matches on
-    their enums (invalid values → `422`, and `/docs` shows them as dropdowns).
-    `search` is a case-insensitive partial match against the item name.
-    All can be combined.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching items across every page, not just this one.
-
-    Does not include weapon/armor detail fields or description — use
-    `GET /items/{item_id}` for the full record.
+    Return a paginated list of lightweight items, with filters and search.
+    Open endpoint.
     """
 
     filters = {"item_type": item_type, "rarity": rarity}
@@ -62,8 +49,7 @@ async def get_items(
 async def get_item(item_id: int, item_service: ItemCrudDep):
     """
     Return a single item by ID, with full detail.
-
-    Open endpoint, no authentication required.
+    Open endpoint.
     """
 
     return await item_service.get_by_id(item_id)
@@ -175,10 +161,8 @@ async def update_item(
     _: GmUserDep,
 ):
     """
-    Partially update an item. **GM only.**
-
-    Only fields included in the request body are changed; omitted fields
-    are left as-is.
+    Partially update an item only with the provided fields.
+    **GM only.**
     """
 
     return await item_service.update(item_id, data)
@@ -195,11 +179,8 @@ async def update_item(
 )
 async def delete_item(item_id: int, item_service: ItemCrudDep, _: FounderDep):
     """
-    Delete an item. **Founder only.**
-
-    Blocked if the item is still owned by one or more characters (the
-    service raises ``RecordInUseError``, mapped to a 409 by the global
-    exception handler).
+    Delete an item, unless still owned by a character.
+    **Founder only.**
     """
 
     await item_service.delete(item_id)

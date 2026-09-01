@@ -1,11 +1,4 @@
-"""
-Assembled ``/items`` router.
-
-The CRUD sub-router declares no prefix of its own; the ``/items`` prefix
-is applied here via ``include_router(..., prefix=...)`` so empty-path
-routes (``GET ""`` etc.) resolve to ``/items``. The mounted surface
-exposes the exact same paths as the previous monolithic endpoints package.
-"""
+"""Assembled ``/items`` router."""
 
 from fastapi import APIRouter
 

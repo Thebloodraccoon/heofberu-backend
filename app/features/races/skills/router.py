@@ -1,8 +1,4 @@
-"""
-Race skill endpoints: full replacement of a race's granted skills
-(query-style ID — the race is identified by the required ``race_id``
-query parameter).
-"""
+"""Race skill endpoints: full replacement of a race's granted skills."""
 
 from typing import Annotated
 
@@ -44,12 +40,6 @@ async def set_skills(
     race_service: RaceSkillsDep,
     _: GmUserDep,
 ):
-    """
-    Replace all granted skills for a race. **GM only.**
-
-    Full replace, not merge: the `skill_ids` in the request body become
-    the complete set of skills this race grants — any skill not included
-    is removed. Send an empty list to clear all granted skills.
-    """
+    """Replace all granted skills for a race. **GM only.**"""
 
     return await race_service.set_skills(race_id, data)

@@ -1,9 +1,4 @@
-"""
-Class feature read endpoint: list CLASS-source features for a class.
-
-Write endpoints (POST/PATCH/DELETE) have been removed — features are
-managed centrally through the features catalog.
-"""
+"""Class feature read endpoint: list CLASS-source features (writes go through the features catalog)."""
 
 from typing import Annotated
 

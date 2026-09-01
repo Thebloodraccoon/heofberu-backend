@@ -1,13 +1,4 @@
-"""
-Character attack endpoints: listing and CRUD (query-style IDs).
-
-The router declares no prefix of its own;
-``app.features.characters.router`` applies the ``/characters`` prefix —
-combined, ``"/attacks"`` resolves to
-``/characters/attacks?character_id=...``. The character is identified by
-the required ``character_id`` query parameter; per-attack operations
-additionally take the ``attack_id`` query parameter.
-"""
+"""Character attack endpoints: listing and CRUD (path-form IDs under /characters/{character_id}/attacks)."""
 
 from typing import Annotated
 

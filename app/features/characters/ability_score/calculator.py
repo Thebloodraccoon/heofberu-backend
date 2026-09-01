@@ -1,14 +1,4 @@
-"""
-Pure calculation of a character's effective ability scores and derived combat stats.
-
-Effective ability scores are the base values (what the player entered,
-never mutated after creation) plus race/subrace bonuses, feat-granted
-increases, and the counted ASI-choice log increases; the remaining
-derived combat stats (hit dice, speed) are read from the class and race.
-Armor class is NOT computed here (or anywhere else) — it's a plain
-editable ``Character.armor_class`` column. Both helpers are pure — no
-database access.
-"""
+"""Pure calculation of a character's effective ability scores and derived combat stats (no DB access)."""
 
 from dataclasses import dataclass
 
@@ -39,47 +29,10 @@ TOTAL_FIELD_BY_ABILITY = {
 
 class CharacterAbilityScoreCalculator:
     """
-    Computes a character's effective ability scores: base value
-    (``Character.strength`` etc, what the player entered) plus every
-    applicable bonus.
-
-    Bonus sources considered:
-      - ``race.ability_bonuses`` (RaceAbilityBonus rows for the
-        character's race, if any);
-      - ``subrace.ability_bonuses`` (SubraceAbilityBonus rows for the
-        character's subrace, if any);
-      - feat-granted ability score increases: for each row in
-        ``character_feats``, if ``ability_score_increase_id`` is set,
-        the corresponding ``FeatAbilityScoreIncrease.amount`` is added
-        for that ability;
-      - ASI-choice log increases (``CharacterASIChoiceIncrease`` rows of
-        choices with ``applied_to_base == False``): level-up Ability
-        Score Improvements and GM ±adjustments no longer touch the base
-        columns — their points live in the audit log and are counted
-        here. Legacy rows (``applied_to_base == True``) whose points
-        were folded into the base columns are excluded by the loader;
-      - feature ability increases (``FeatureAbilityIncrease`` rows of
-        features granted to the character via ``character_features``):
-        fixed, choice-free effects such as Primal Champion's +4 STR/CON.
-        Their optional ``new_cap`` raises that ability's maximum above
-        the standard 20 (see ``CharacterStatsService.resolve_ability_caps``).
-
-    Background bonuses are not modeled in the current schema (Background
-    has no ability-bonus association table), so they're intentionally
-    not included here — add a source here if/when that changes.
-
-    This is a PURE calculation helper — it does not touch the database
-    or the ``character_ability_scores`` cache table. The bonus rows
-    (``race_bonuses``/``subrace_bonuses``/``feat_increases``/
-    ``asi_increases``/``feature_increases``) are loaded by the caller and
-    passed in (see
-    ``CharacterStatsRepository.get_race_bonuses`` /
-    ``get_subrace_bonuses`` / ``get_feat_increases`` /
-    ``get_asi_increases`` / ``get_feature_increases``, or the
-    ``CharacterStatsService.compute``
-    convenience), which makes this class directly unit-testable with
-    zero DB setup — the old version took a ``Session`` and ran the
-    queries itself.
+    Computes a character's effective ability scores: the base value plus
+    race/subrace bonuses, feat-granted increases, counted ASI-log
+    increases, and feature increases. Pure — bonus rows are loaded by the
+    caller and passed in.
     """
 
     def compute(
@@ -92,12 +45,8 @@ class CharacterAbilityScoreCalculator:
         feature_increases: list | None = None,
     ) -> dict[str, int]:
         """
-        Return a dict of ``{"strength_total": int, ..., "charisma_total": int}``
-        for the given character, ready to pass to
-        ``CharacterStatsRepository.upsert``.
-
-        Every bonus argument is a list of objects exposing ``.ability``
-        and ``.amount``.
+        Return ``{"strength_total": int, ..., "charisma_total": int}``
+        for the character, ready for ``CharacterStatsRepository.upsert``.
         """
 
         totals = {ability: getattr(character, BASE_FIELD_BY_ABILITY[ability]) for ability in AbilityScore}
@@ -124,12 +73,8 @@ class CharacterAbilityScoreCalculator:
 
 def resolve_ability_caps(feature_increases: list) -> dict[AbilityScore, int]:
     """
-    Resolve each ability's maximum score: the standard
-    ``ABILITY_SCORE_CAP`` (20), raised to ``max(cap, new_cap)`` by every
-    granted feature effect that carries a ``new_cap`` (e.g. Primal
-    Champion lifts STR/CON to 24, or a GM-granted feature to 30), and
-    never exceeding ``MAX_ABILITY_SCORE_CAP`` (the hard ceiling). Pure —
-    no database access.
+    Resolve each ability's maximum: the standard 20, raised by any
+    granted feature's ``new_cap`` (never above the hard ceiling). Pure.
     """
 
     caps = dict.fromkeys(AbilityScore, ABILITY_SCORE_CAP)
@@ -157,13 +102,9 @@ class DerivedStats:
 @dataclass(frozen=True)
 class StatContribution:
     """
-    One source's contribution to an ability's effective total, e.g.
-    ``{source: "race", label: "Mountain Dwarf", amount: 2}``.
-
-    ``source`` is a stable machine-readable kind ("race", "subrace",
-    "feat", "asi", "feature"); ``label`` is a human-readable description
-    (the race/feat/feature name, or "Level 4 (ASI)"); ``amount`` is the
-    signed points this source added.
+    One source's contribution to an ability's effective total — the
+    machine-readable ``source`` kind, a human-readable ``label``, and the
+    signed ``amount`` it added.
     """
 
     source: str
@@ -173,11 +114,7 @@ class StatContribution:
 
 @dataclass(frozen=True)
 class AbilityBreakdown:
-    """
-    A single ability's score breakdown: the ORIGINAL base value
-    (never mutated) next to its COMPUTED total and the list of
-    ``StatContribution`` sources that produced that total.
-    """
+    """A single ability's score breakdown: the ORIGINAL base value, its COMPUTED total, and the contributions that produced it."""
 
     base: int
     total: int

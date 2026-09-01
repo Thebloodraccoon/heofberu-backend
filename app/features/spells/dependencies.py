@@ -10,7 +10,7 @@ from app.features.spells.crud.service import SpellCrudService
 
 
 def get_spell_crud_service(db: DatabaseDep) -> SpellCrudService:
-    """Get the spell CRUD service instance."""
+    """Build the spell CRUD service instance."""
 
     return SpellCrudService(db)
 
@@ -19,7 +19,7 @@ SpellCrudDep = Annotated[SpellCrudService, Depends(get_spell_crud_service)]
 
 
 def get_spell_availability_service(db: DatabaseDep) -> SpellAvailabilityService:
-    """Get the spell availability service instance."""
+    """Build the spell availability service instance."""
 
     return SpellAvailabilityService(db)
 

@@ -12,17 +12,13 @@ from app.models.character_association_models import CharacterFeat
 class CharacterFeatRepository(BaseRepository[CharacterFeat]):
     """
     Repository for a character's granted feats (``character_feats``).
-
-    Split out of ``CharacterRepository`` — feat grants are their own
-    association table, unrelated to the ``Character`` row's own columns.
-
-    Every read eager-loads ``CharacterFeat.feat`` and
-    ``CharacterFeat.ability_score_increase``: the grant rows are serialized
-    with an embedded feat brief and the resolved ability score increase, and
-    lazy-loading either relationship in the async session would fail.
+    Every read eager-loads the feat and its ASI choice so grants serialize
+    safely in the async session.
     """
 
     def __init__(self, db: AsyncSession):
+        """Create the feat-grant repository."""
+
         super().__init__(CharacterFeat, db)
 
     async def get_character_feats(self, character_id: int) -> list[CharacterFeat]:
@@ -75,13 +71,8 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
         commit: bool = True,
     ) -> CharacterFeat:
         """
-        Grant a feat to a character, with an optional ASI choice.
-
-        ``source_type`` records where the grant came from (default ``GM`` —
-        the manual feats endpoint; the level-up endpoint passes ``ASI``).
-        ``commit=False`` defers the commit so callers that wrap the grant in
-        a transaction (``CharacterProgressionService._atomic``) can commit
-        it together with the rest of the level-up.
+        Grant a feat to a character, with an optional ASI choice and a
+        recorded ``source_type`` (default ``GM``; level-up passes ``ASI``).
         """
 
         grant = CharacterFeat(

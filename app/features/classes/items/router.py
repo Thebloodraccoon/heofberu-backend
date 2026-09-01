@@ -1,7 +1,4 @@
-"""
-Class starting-items and choice-group endpoints (query-style ID — the class
-is identified by the required ``class_id`` query parameter).
-"""
+"""Class starting-items and choice-group endpoints (query-style ``class_id``)."""
 
 from typing import Annotated
 
@@ -64,9 +61,7 @@ async def set_class_items(
     """
     Replace all starting equipment for a class. **GM only.**
 
-    Full replace, not merge: the ``items`` in the request body become the
-    complete set of starting items this class grants — any item not
-    included is removed. Send an empty list to clear them all.
+    Full replace: any item not included is removed.
     """
 
     return await class_service.set_items(class_id, data)
@@ -83,12 +78,10 @@ async def list_class_choice_groups(
     class_service: ClassItemsDep,
 ):
     """
-    Return every choice group (with nested options) for the class.
-    Open endpoint.
+    Return every choice group (with nested options) for the class — the
+    "pick N from M alternatives" decisions made at character creation.
 
-    Choice groups represent "pick N from M alternatives" decisions the
-    player makes at character creation (e.g. choose between a rapier
-    or a longsword as the class's starting weapon).
+    Open endpoint.
     """
 
     return await class_service.list_choice_groups(class_id)
@@ -137,9 +130,7 @@ async def set_class_choice_groups(
     """
     Replace all choice groups for a class. **GM only.**
 
-    Full replace, not merge: the ``choice_groups`` in the request body
-    become the complete set of choice groups — any group not included is
-    removed. Send an empty list to clear them all.
+    Full replace: any group not included is removed.
     """
 
     return await class_service.set_choice_groups(class_id, data)

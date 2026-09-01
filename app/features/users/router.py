@@ -29,15 +29,7 @@ async def get_all_users(
     role: UserRole | None = Query(None, description="Filter by exact role"),
     search: str | None = Query(None, description="Case-insensitive partial match against username/email"),
 ):
-    """
-    Get all users with pagination. **GM only.**
-
-    `role` is an exact match. `search` is a case-insensitive partial
-    match against username or email, and can be combined with `role`.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching users across every page, not just this one.
-    """
+    """Get all users with pagination. **GM only.**"""
 
     return await user_service.get_all(page=page, size=size, filters={"role": role}, search=search)
 
@@ -52,12 +44,7 @@ async def get_all_users(
     },
 )
 async def get_current_user(user_service: UserServiceDep, user: CurrentUserDep):
-    """
-    Return the authenticated user's own profile.
-
-    Any authenticated user — resolves the caller from the bearer token
-    and returns their full ``UserResponse``.
-    """
+    """Return the authenticated user's own profile. **Authenticated.**"""
 
     return await user_service.get_by_id(user.id)
 
@@ -74,13 +61,7 @@ async def get_current_user(user_service: UserServiceDep, user: CurrentUserDep):
     },
 )
 async def update_current_user(data: UserProfileUpdate, user_service: UserServiceDep, user: CurrentUserDep):
-    """
-    Update the current user's own profile (personal cabinet).
-
-    Allows editing ``username``, ``email``, ``bio``, ``phone``, ``discord``
-    and ``telegram``. The ``role`` is never editable here — assign it through the
-    GM endpoints instead.
-    """
+    """Update the current user's own profile; role is not editable here. **Authenticated.**"""
 
     return await user_service.update_profile(user.id, data)
 
@@ -95,11 +76,7 @@ async def update_current_user(data: UserProfileUpdate, user_service: UserService
     },
 )
 async def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDep):
-    """
-    Get user by ID. **GM only.**
-
-    Returns the full ``UserResponse`` for any account, regardless of role.
-    """
+    """Get user by ID. **GM only.**"""
 
     return await user_service.get_by_id(user_id)
 
@@ -145,12 +122,7 @@ async def create_user(
     user_service: UserServiceDep,
     current_user: GmUserDep,
 ):
-    """
-    Create a new user. **GM only.**
-
-    Assigning a non-player role (``gm`` / ``found_father``) requires the
-    current user to be the found father.
-    """
+    """Create a new user; non-player roles require the found father. **GM only.**"""
 
     return await user_service.create_user(data, current_role=current_user.role)
 
@@ -191,12 +163,7 @@ async def update_user(
     user_service: UserServiceDep,
     current_user: GmUserDep,
 ):
-    """
-    Update user by ID. **GM only.**
-
-    Changing the ``role`` (promoting to GM or found father, or any other
-    role edit) requires the current user to be the found father.
-    """
+    """Update user by ID; role changes require the found father. **GM only.**"""
 
     return await user_service.update_user(user_id, data, current_role=current_user.role)
 
@@ -211,13 +178,7 @@ async def update_user(
     },
 )
 async def delete_user(user_id: int, user_service: UserServiceDep, current_user: FounderDep):
-    """
-    Delete user by ID. Founder only.
-
-    Cannot delete yourself or the seeded default admin user — both raise
-    a 403 via ``SelfDeletionException`` /
-    ``DefaultUserProtectedException``.
-    """
+    """Delete user by ID; cannot delete yourself or the default admin. **Founder only.**"""
 
     await user_service.delete_user(user_id, current_user_id=current_user.id)
     return None

@@ -1,12 +1,4 @@
-"""
-Assembled ``/spells`` router.
-
-Each capability sub-router declares no prefix of its own; the ``/spells``
-prefix is applied here via ``include_router(..., prefix=...)`` so
-empty-path routes (``GET ""`` etc.) resolve to ``/spells``. The mounted
-surface exposes the exact same paths as the previous monolithic endpoints
-package.
-"""
+"""Assembled ``/spells`` router."""
 
 from fastapi import APIRouter
 

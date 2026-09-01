@@ -4,14 +4,13 @@ from app.core.exceptions import AppError
 
 
 class InvalidHpUpdateException(AppError):
-    """
-    Raised when an HP update request is malformed (e.g. mixes delta with
-    absolute values, or provides neither).
-    """
+    """Raised when an HP update mixes delta with absolute values (or provides neither)."""
 
     status_code = 400
 
     def __init__(self, message: str = "Provide either 'delta' or an absolute HP value, not both."):
+        """Initialize with the given message."""
+
         super().__init__(message)
 
 
@@ -21,6 +20,8 @@ class SkillNotAvailableForClassException(AppError):
     status_code = 400
 
     def __init__(self, class_id: int, skill_id: int):
+        """Initialize with the class and skill ids."""
+
         self.class_id = class_id
         self.skill_id = skill_id
         super().__init__(f"Skill {skill_id} is not available for class {class_id}.")
@@ -32,6 +33,8 @@ class TooManySkillChoicesException(AppError):
     status_code = 400
 
     def __init__(self, class_id: int, allowed: int, requested: int):
+        """Initialize with the class id and the allowed/requested counts."""
+
         self.class_id = class_id
         self.allowed = allowed
         self.requested = requested
@@ -44,6 +47,8 @@ class ItemChoicesWithoutGroupsException(AppError):
     status_code = 400
 
     def __init__(self):
+        """Initialize with the default message."""
+
         super().__init__("Item choice options were provided, but no choice groups exist for this character's sources.")
 
 
@@ -53,19 +58,20 @@ class ItemChoiceNotAvailableException(AppError):
     status_code = 400
 
     def __init__(self, option_id: int):
+        """Initialize with the option id."""
+
         self.option_id = option_id
         super().__init__(f"Item choice option {option_id} is not available for this character's sources.")
 
 
 class TooFewItemChoicesException(AppError):
-    """
-    Raised when fewer (or more) options than the group's ``pick_count``
-    were chosen from a starting-equipment choice group.
-    """
+    """Raised when fewer (or more) options than ``pick_count`` are chosen from a choice group."""
 
     status_code = 400
 
     def __init__(self, group_id: int, pick_count: int, chosen: int):
+        """Initialize with the group id and the pick/chosen counts."""
+
         self.group_id = group_id
         self.pick_count = pick_count
         self.chosen = chosen

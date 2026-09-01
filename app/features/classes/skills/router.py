@@ -1,7 +1,4 @@
-"""
-Class available-skills endpoint (query-style ID — the class is
-identified by the required ``class_id`` query parameter).
-"""
+"""Class available-skills endpoint (query-style ``class_id``)."""
 
 from typing import Annotated
 
@@ -46,9 +43,7 @@ async def set_class_available_skills(
     """
     Replace all skills a class may choose proficiencies from. **GM only.**
 
-    Full replace, not merge: the `skill_ids` in the request body become
-    the complete set of skills this class offers — any skill not included
-    is removed. Send an empty list to clear all available skills.
+    Full replace: any skill not included is removed.
     """
 
     return await class_service.set_available_skills(class_id, data)

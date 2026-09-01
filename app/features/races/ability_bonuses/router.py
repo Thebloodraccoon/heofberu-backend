@@ -1,8 +1,4 @@
-"""
-Race ability-bonus endpoints: full replacement of a race's bonuses
-(query-style ID — the race is identified by the required ``race_id``
-query parameter).
-"""
+"""Race ability-bonus endpoints: full replacement of a race's bonuses."""
 
 from typing import Annotated
 
@@ -43,12 +39,6 @@ async def set_ability_bonuses(
     race_service: RaceAbilityBonusesDep,
     _: GmUserDep,
 ):
-    """
-    Replace all ability score bonuses for a race. **GM only.**
-
-    Full replace, not merge: the list in the request body becomes the
-    complete set of bonuses for this race — any bonus not included is
-    removed. Send an empty list to clear all bonuses.
-    """
+    """Replace all ability score bonuses for a race. **GM only.**"""
 
     return await race_service.set_ability_bonuses(race_id, data)

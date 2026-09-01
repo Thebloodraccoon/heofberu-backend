@@ -17,7 +17,6 @@ from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
-
 @router.get(
     "",
     response_model=Page[FeatureGetAllResponse],
@@ -34,21 +33,9 @@ async def get_features(
 ):
     """
     Return a paginated list of standalone (``source_type: OTHER``) features
-    with only `id`, `name`, `source_type`, `level`.
-
-    Open endpoint, no authentication required.
-
-    Features owned by a class/race/background/subclass/subrace are NOT
-    included — they are listed through the parent record
-    (`GET /races/{id}/features`, `GET /classes/{id}/features`, ...).
-
-    `search` is a case-insensitive partial match against the feature name.
-
-    Response is `{items, total, page, size}` — `total` is the count of
-    matching features across every page, not just this one.
-
-    Does not include the description — use `GET /features/{feature_id}`
-    for the full record.
+    with only `id`, `name`, `source_type`, `level`. Source-owned features
+    are listed through their parent record.
+    Open endpoint.
     """
 
     return await feature_service.get_all(
@@ -57,7 +44,6 @@ async def get_features(
         filters={"source_type": FeatureSourceType.OTHER},
         search=search,
     )
-
 
 @router.get(
     "/{feature_id:int}",
@@ -69,16 +55,12 @@ async def get_features(
 )
 async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
     """
-    Return a single feature, with full detail.
-
-    Open endpoint, no authentication required.
-
-    Serves features of every source type — standalone ``OTHER`` features and
-    features owned by a class/subclass/race/subrace/background alike.
+    Return a single feature, with full detail, of every source type —
+    standalone ``OTHER`` features and source-owned features alike.
+    Open endpoint.
     """
 
     return await feature_service.get_by_id(feature_id)
-
 
 @router.post(
     "",
@@ -116,20 +98,13 @@ async def create_feature(
     """
     Create a feature of any source type. **GM only.**
 
-    Features are managed centrally through this catalog: pass
-    ``source_type`` plus the matching parent FK (``class_id``,
-    ``subclass_id``, ``race_id``, ``subrace_id``, ``background_id``) to
-    create a feature owned by that record, or ``source_type: OTHER`` with no
-    FK for a standalone feature the GM can grant to any character.
-
-    ``level`` is mandatory for CLASS/SUBCLASS features (1-20) and optional
-    for every other source type. The source_type/FK/level combination is
-    validated — mismatches (e.g. ``source_type: CLASS`` without
-    ``class_id``) are rejected with a 422.
+    Pass ``source_type`` plus the matching parent FK to create a source-owned
+    feature, or ``source_type: OTHER`` with no FK for a standalone feature.
+    `level` is mandatory for CLASS/SUBCLASS features; mismatched
+    source_type/FK/level combinations are rejected with a 422.
     """
 
     return await feature_service.create(data)
-
 
 @router.patch(
     "/{feature_id:int}",
@@ -167,17 +142,11 @@ async def update_feature(
     """
     Partially update a feature of any source type. **GM only.**
 
-    Only fields included in the request body are changed; omitted fields
-    are left as-is.
-
-    `source_type` and its FK are immutable — ownership never moves. Only
-    `name`, `level`, `description` are editable. A CLASS/SUBCLASS feature's
-    `level` is mandatory (1-20): it may be changed but never cleared; for
-    other source types `level` is optional.
+    Only provided fields are changed; `source_type` and its FK are immutable.
+    A CLASS/SUBCLASS feature's `level` may be changed but never cleared.
     """
 
     return await feature_service.update_feature(feature_id, data)
-
 
 @router.delete(
     "/{feature_id:int}",

@@ -14,23 +14,15 @@ from app.features.feats.schemas import (
 )
 from app.models.feat_model import Feat
 
-
 class FeatCrudService(CachedService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGetAllResponse]):
     """
     Feat catalog CRUD built on :class:`CachedService`.
 
-    The capability services are composed explicitly in ``__init__`` (no
-    mixin MRO): ``create_feat`` seeds ``ability_score_increases`` through
-    :class:`FeatAsiService` in the same ``_atomic()`` transaction.
-
-    Feats own no features — a feat is de facto its own feature, the
-    content lives in its description. ``get_by_id`` therefore needs no
-    override: the base ``CachedService`` read returns ``FeatResponse``
-    directly.
-
-    ``cache_namespaces`` covers the one namespace any feat read hits; the
-    ASI capability uses :func:`invalidate_feat_cache` explicitly for its
-    own writes.
+    Capability services are composed explicitly in ``__init__`` (no mixin
+    MRO): ``create_feat`` seeds ``ability_score_increases`` through
+    :class:`FeatAsiService` in the same ``_atomic()`` transaction. Feats
+    own no features (a feat is de facto its own feature) so ``get_by_id``
+    needs no override.
     """
 
     repository: FeatRepository
@@ -38,6 +30,8 @@ class FeatCrudService(CachedService[Feat, FeatCreate, FeatUpdate, FeatResponse, 
     cache_namespaces = FEAT_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
+        """Compose the feat ASI capability service."""
+
         super().__init__(
             repository=FeatRepository(db),
             response_schema=FeatResponse,
@@ -46,15 +40,7 @@ class FeatCrudService(CachedService[Feat, FeatCreate, FeatUpdate, FeatResponse, 
         self._asi = FeatAsiService(db)
 
     async def create_feat(self, feat_data: FeatCreate) -> FeatResponse:
-        """
-        Create a feat after checking its name isn't already taken.
-
-        Kept minimal on purpose: only the feat's own scalar fields plus
-        ``ability_score_increases`` (a simple child table, not a nested
-        dependency) are set here, atomically, alongside the ``Feat`` row
-        itself — via :class:`FeatAsiService` so the ASI write path stays in
-        one place.
-        """
+        """Create a feat after checking its name isn't already taken."""
 
         payload = feat_data.model_dump(exclude={"ability_score_increases"})
 
@@ -70,10 +56,8 @@ class FeatCrudService(CachedService[Feat, FeatCreate, FeatUpdate, FeatResponse, 
         await invalidate_feat_cache()
         response = await self._get_response(item.id)
 
-        # Warm the cache immediately: the write already paid for the
-        # transaction, so pre-populating it here means the very next GET
-        # (which is likely right after a create) hits cache instead of
-        # racing the invalidation into a cold read.
+        # Warm the cache immediately: the write already paid for the transaction,
+        # so the next GET hits cache instead of racing the invalidation.
         await self.get_by_id(item.id)
 
         return response

@@ -1,14 +1,4 @@
-"""
-Class progression endpoints: spell-slot table and full 1-20 progression
-(query-style IDs).
-
-The router declares no prefix of its own;
-``app.features.classes.router`` applies the ``/classes`` prefix —
-combined, ``"/spell-slots"`` resolves to
-``/classes/spell-slots?class_id=...&class_level=...``. The class is
-identified by the required ``class_id`` query parameter; spell-slot
-replacement additionally takes the ``class_level`` query parameter.
-"""
+"""Class progression endpoints: spell-slot table and full 1-20 progression (query-style IDs)."""
 
 from typing import Annotated
 
@@ -65,15 +55,8 @@ async def set_class_spell_slots(
     Replace the spell slots a class grants at a single `class_level`.
     **GM only.**
 
-    Full replace, not merge, scoped to this `class_level`: the
-    `spell_level`/`slots` pairs in the request body become the complete
-    set of slots granted at this level — any `spell_level` not included
-    is reset to 0. Other class levels are untouched; call this endpoint
-    once per level to build up the full progression table.
-
-    No check is made that the class has a `spellcasting_ability` —
-    progressions can be set on any class, including to support
-    multiclass-style slot tables.
+    Full replace scoped to this `class_level`: any `spell_level` not
+    included is reset to 0. Other levels are untouched.
     """
 
     return await class_service.set_spell_slots(class_id, class_level, data)
@@ -87,14 +70,8 @@ async def set_class_spell_slots(
 )
 async def get_class_progression(class_id: int, class_service: ClassProgressionDep):
     """
-    Return the full level 1-20 progression table for a class.
-
-    Each row contains:
-    - ``level`` and ``proficiency_bonus``
-    - ``spell_slots``: ``{spell_level: slots}`` (only non-zero entries)
-    - ``class_features``: CLASS-source features gained at this level
-    - ``subclass_features``: SUBCLASS-source features gained at this level
-      (from all subclasses — useful for showing "subclass feature here")
+    Return the full 1-20 progression table for a class, with spell slots
+    and class/subclass features per level.
 
     Open endpoint.
     """

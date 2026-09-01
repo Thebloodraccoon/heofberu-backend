@@ -6,17 +6,17 @@ from sqlalchemy.orm import selectinload
 from app.core.base.repository import BaseRepository
 from app.models.feature_model import Feature, FeatureAbilityIncrease
 
-
 class FeatureRepository(BaseRepository[Feature]):
     """
     Feature-specific repository built on :class:`BaseRepository`.
 
     ``ability_increases`` (the feature's fixed ability-score effects) are
-    always loaded alongside the row via ``default_load_options`` — they are
-    small child rows and several reads serialize them.
+    always loaded alongside the row via ``default_load_options``.
     """
 
     def __init__(self, db: AsyncSession):
+        """Configure the repository with its model, eager loads, and search fields."""
+
         super().__init__(
             Feature,
             db,
@@ -27,13 +27,7 @@ class FeatureRepository(BaseRepository[Feature]):
         )
 
     async def set_ability_increases(self, feature: Feature, increases: list[dict], *, commit: bool = True) -> Feature:
-        """
-        Replace all fixed ability-score increases for a feature with the
-        given list.
-
-        ``commit`` lets callers that need atomicity across multiple writes
-        defer the commit and flush instead, without duplicating this method.
-        """
+        """Replace all fixed ability-score increases for a feature with the given list."""
 
         await self.replace_child_rows(
             FeatureAbilityIncrease,
