@@ -15,6 +15,7 @@ class ItemCrudService(CachedService[Item, ItemCreate, ItemUpdate, ItemResponse, 
     repository: ItemRepository
 
     cache_namespaces = ITEM_CACHE_NAMESPACES
+    get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
         """Wire up the item repository, response schema, and get-all schema."""

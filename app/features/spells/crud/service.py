@@ -64,7 +64,7 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
             Spell.name,
             Spell.school,
             Spell.level,
-            order_by=Spell.id,
+            order_by=Spell.name,
             skip=skip,
             limit=limit,
             filters=filters,
