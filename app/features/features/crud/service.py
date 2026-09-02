@@ -80,6 +80,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
     repository: FeatureRepository
 
     cache_namespaces = FEATURE_CACHE_NAMESPACES
+    get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
         """Initialize the service with the feature repository."""

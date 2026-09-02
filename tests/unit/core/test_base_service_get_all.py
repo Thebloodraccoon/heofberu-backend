@@ -113,7 +113,7 @@ class TestGetAllColumnSelect:
         assert [item.id for item in page.items] == [1, 2]
         assert [item.name for item in page.items] == ["Sword", "Shield"]
         assert repo.get_brief_calls[0][0] == (ItemModel.id, ItemModel.name)
-        assert repo.get_brief_calls[0][1] is ItemModel.id
+        assert repo.get_brief_calls[0][1] is None
         assert repo.get_all_calls == []
 
     async def test_get_brief_respects_pagination(self):

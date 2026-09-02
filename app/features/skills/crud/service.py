@@ -15,6 +15,7 @@ class SkillCrudService(CachedService[Skill, SkillCreate, SkillUpdate, SkillRespo
     repository: SkillRepository
 
     cache_namespaces = SKILL_CACHE_NAMESPACES
+    get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
         """Wire up the skill repository, response schema, and get-all schema."""

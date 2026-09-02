@@ -28,6 +28,7 @@ class FeatCrudService(CachedService[Feat, FeatCreate, FeatUpdate, FeatResponse, 
     repository: FeatRepository
 
     cache_namespaces = FEAT_CACHE_NAMESPACES
+    get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
         """Compose the feat ASI capability service."""
