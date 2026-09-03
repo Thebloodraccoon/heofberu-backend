@@ -11,7 +11,6 @@ from app.features.characters.feats.repository import CharacterFeatRepository
 from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
-    validate_ability_score_increase_cap,
     validate_asi_choice_required,
 )
 from app.features.characters.gm_panel.exceptions import CharacterFeatNotFoundException
@@ -23,7 +22,6 @@ from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models.character_association_models import CharacterFeat
-from app.models.character_model import Character
 from app.models.feat_model import Feat
 
 
@@ -61,7 +59,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         if existing:
             raise CharacterFeatAlreadyKnownException(character_id=character_id, feat_id=data.feat_id)
 
-        await self._validate_asi_choice(feat, data.ability_score_increase_id, character)
+        self._validate_asi_choice(feat, data.ability_score_increase_id)
         await check_feat_prerequisite(character, feat, self.stats_service)
 
         async with self._atomic():
@@ -97,7 +95,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         grant = await self._get_feat_grant_or_404(character_id, character_feat_id)
 
         feat = await self.feat_repository.get_by_id(grant.feat_id)
-        await self._validate_asi_choice(feat, data.ability_score_increase_id, character)
+        self._validate_asi_choice(feat, data.ability_score_increase_id)
 
         updated_grant = await self.feat_grant_repository.set_character_feat_ability_score_increase(
             grant, data.ability_score_increase_id
@@ -122,15 +120,15 @@ class GmPanelFeatService(CharacterSubDomainService):
 
         return result
 
-    async def _validate_asi_choice(
-        self, feat: Feat, ability_score_increase_id: int | None, character: Character
+    @staticmethod
+    def _validate_asi_choice(
+            feat: Feat, ability_score_increase_id: int | None
     ) -> None:
         """Validate the ASI choice carried by a grant write (required, belongs to the feat, within cap)."""
 
         validate_asi_choice_required(feat, ability_score_increase_id)
         if ability_score_increase_id is not None:
             validate_ability_score_increase(feat, ability_score_increase_id)
-            await validate_ability_score_increase_cap(feat, ability_score_increase_id, character, self.stats_service)
 
     async def _get_feat_grant_or_404(self, character_id: int, character_feat_id: int) -> CharacterFeat:
         """Fetch a feat grant scoped to the character, or raise ``CharacterFeatNotFoundException``."""

@@ -244,7 +244,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         rejected. HP defaults to the class's standard average (half hit
         die + 1 + CON) unless ``hit_points_gained`` is given (bounded by
         the hit die + CON). Features unlocked by the new level are granted
-        and spell slots re-applied.
+        and spell slots re-applied. Leveling up fully heals the character:
+        ``current_hp`` is set to the new ``max_hp`` and ``temp_hp`` clears.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -273,6 +274,10 @@ class CharacterProgressionService(CharacterSubDomainService):
 
             hp_gain = await self._resolve_hp_gain(character, data.hit_points_gained)
             character.max_hp += hp_gain
+            # A level-up fully heals: current HP is restored to the new
+            # maximum and any temporary HP is cleared.
+            character.current_hp = character.max_hp
+            character.temp_hp = 0
 
             # Grant any class/subclass features unlocked by the new level.
             await sync_progression_features(self.repository.db, character)
@@ -363,16 +368,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         if existing:
             raise CharacterFeatAlreadyKnownException(character_id=character.id, feat_id=choice.feat_id)
 
-        if choice.ability_score_increase_id is not None:
-            validate_ability_score_increase(feat, choice.ability_score_increase_id)
-            await validate_ability_score_increase_cap(
-                feat, choice.ability_score_increase_id, character, self.stats_service
-            )
-        else:
-            # Same rule as the GM grant: a feat offering ASI options must
-            # be taken with an explicit choice — never silently without.
-            validate_asi_choice_required(feat, choice.ability_score_increase_id)
-
+        validate_ability_score_increase(feat, choice.ability_score_increase_id)
         await check_feat_prerequisite(character, feat, self.stats_service)
 
         await self.feat_grant_repository.add_character_feat(

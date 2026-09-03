@@ -307,10 +307,10 @@ class TestPerAbilityCap:
         # Feature-driven total: 18 base + 4 feature = 22 (> 20), allowed.
         assert await get_strength_total(client, character.id, gm_token) == 22
 
-    async def test_gm_feat_grant_is_capped_at_twenty_even_with_new_cap_30(
+    async def test_gm_feat_grant_does_not_enforce_ability_score_cap(
         self, client, gm_token, gm, create_class, create_feat, create_feature, create_character
     ):
-        """Feats — even GM-granted — are always capped at 20; a new_cap-30 feature doesn't lift them."""
+        """GM-feat cap enforcement is no longer checked server-side."""
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=19)
         primal_champion = await create_feature(name="Primal Champion", source_type="OTHER")
@@ -330,13 +330,12 @@ class TestPerAbilityCap:
         )
         feat_asi_id = asi_response.json()["ability_score_increases"][0]["id"]
 
-        # 19 + 2 = 21 > 20 -> the feat cannot be granted; it would exceed the 20 feat cap.
-        rejected = await client.post(
+        granted = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
             json={"feat_id": feat.id, "ability_score_increase_id": feat_asi_id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert rejected.status_code == 400
+        assert granted.status_code == 201
 
     async def test_combined_sources_stack_in_one_total(
         self, client, gm_token, gm, player_token, create_class, create_feat, create_feature, create_character

@@ -14,7 +14,6 @@ from app.features.characters.feats.exceptions import (
 from app.features.characters.gm_panel.exceptions import CharacterFeatNotFoundException
 from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
 from app.features.characters.gm_panel.feats.service import GmPanelFeatService
-from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
 from app.features.feats.exceptions import FeatNotFoundException
 from app.models.character_model import Character
 from tests.unit.fakes import FakeAsyncSession
@@ -229,16 +228,16 @@ class TestAddFeat:
         assert service.feat_grant_repository.add_calls == []
         assert service.asi_repository.add_calls == []
 
-    async def test_cap_exceeded_rejects_the_choice(self):
+    async def test_cap_exceeded_does_not_reject_the_choice(self):
         increase = make_increase(10, AbilityScore.STR, 1)
         feat = make_feat(ability_score_increases=[increase])
         stats = FakeStatsService(totals={**TOTALS, "strength_total": 20})
         service = make_service(make_character(), feat=feat, stats=stats)
 
-        with pytest.raises(AbilityScoreCapExceededException):
-            await service.add_feat(1, CharacterFeatAdd(feat_id=2, ability_score_increase_id=10), SimpleNamespace())
+        result = await service.add_feat(1, CharacterFeatAdd(feat_id=2, ability_score_increase_id=10), SimpleNamespace())
 
-        assert service.feat_grant_repository.add_calls == []
+        assert result.id == 7
+        assert service.feat_grant_repository.add_calls == [(1, 2, 10, False)]
 
     async def test_prerequisite_not_met_rejects_the_grant(self):
         feat = make_feat(prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=15)

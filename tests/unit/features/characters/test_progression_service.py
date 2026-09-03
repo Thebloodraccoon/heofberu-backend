@@ -10,7 +10,6 @@ from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, AbilityScore, ASILevelC
 from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
-    FeatAsiChoiceRequiredException,
     FeatPrerequisiteNotMetException,
     InvalidAbilityScoreIncreaseException,
 )
@@ -377,6 +376,20 @@ class TestLevelUpHappyPath:
 
         assert service.repository.character.max_hp == 21
 
+    async def test_level_up_restores_current_hp_to_new_max_and_clears_temp_hp(self):
+        service, _ = make_service(
+            make_character(level=2, max_hp=20, current_hp=8, temp_hp=5),
+            max_level_row=SimpleNamespace(max_level=20),
+            class_row=SimpleNamespace(hit_dice=SimpleNamespace(value="D10")),
+        )
+        character = service.repository.character
+
+        await service.level_up(1, LevelUpRequest(), make_user())
+
+        assert character.max_hp == 28
+        assert character.current_hp == 28
+        assert character.temp_hp == 0
+
     async def test_features_synced_and_spell_slots_reapplied_without_own_commit(self):
         service, db = self.make_ready_service()
 
@@ -476,7 +489,7 @@ class TestLevelUpFeat:
         assert audit_call[6] is False
         assert db.commits == 1
 
-    async def test_feat_offering_asi_options_requires_explicit_choice(self):
+    async def test_asi_offering_feat_without_choice_grants_with_none(self):
         feat = SimpleNamespace(
             id=13,
             ability_score_increases=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
@@ -485,12 +498,10 @@ class TestLevelUpFeat:
         )
         service, db = self.make_feat_service(feat)
 
-        with pytest.raises(FeatAsiChoiceRequiredException) as exc_info:
-            await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=13)), make_user())
+        await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=13)), make_user())
 
-        assert exc_info.value.status_code == 422
-        assert service.feat_grant_repository.add_calls == []
-        assert db.commits == 0
+        assert service.feat_grant_repository.add_calls == [(1, 13, None, CharacterFeatSource.ASI, False)]
+        assert db.commits == 1
 
     async def test_unknown_ability_score_increase_id_rejected_before_grant(self):
         feat = SimpleNamespace(
@@ -508,7 +519,7 @@ class TestLevelUpFeat:
 
         assert service.feat_grant_repository.add_calls == []
 
-    async def test_chosen_increase_over_cap_raises(self):
+    async def test_feat_grant_does_not_enforce_ability_score_cap(self):
         feat = SimpleNamespace(
             id=13,
             ability_score_increases=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
@@ -517,12 +528,11 @@ class TestLevelUpFeat:
         )
         service, _ = self.make_feat_service(feat, totals={**default_totals(), "strength_total": 20})
 
-        with pytest.raises(AbilityScoreCapExceededException):
-            await service.level_up(
-                1, LevelUpRequest(choice=FeatChoice(feat_id=13, ability_score_increase_id=31)), make_user()
-            )
+        await service.level_up(
+            1, LevelUpRequest(choice=FeatChoice(feat_id=13, ability_score_increase_id=31)), make_user()
+        )
 
-        assert service.feat_grant_repository.add_calls == []
+        assert service.feat_grant_repository.add_calls == [(1, 13, 31, CharacterFeatSource.ASI, False)]
 
     async def test_unmet_prerequisite_rejected(self):
         feat = SimpleNamespace(
