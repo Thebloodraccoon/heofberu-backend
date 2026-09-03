@@ -30,6 +30,6 @@ class UserRepository(BaseRepository[User]):
         """Stamp ``user.last_login`` with the current UTC time, commit, and return the refreshed user."""
 
         user.last_login = utcnow()  # type: ignore
-        await self.db.commit()
+        await self.commit_or_flush()
         await self.db.refresh(user)
         return user

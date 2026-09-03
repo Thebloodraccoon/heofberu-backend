@@ -64,7 +64,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
 
         self.db.add(row)
         if commit:
-            await self.db.commit()
+            await self.commit_or_flush()
             await self.db.refresh(row)
         else:
             await self.db.flush()
@@ -92,5 +92,5 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         """
 
         await self.db.delete(choice)
-        await self.db.commit()
+        await self.commit_or_flush()
         return True

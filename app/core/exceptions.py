@@ -9,52 +9,43 @@ maps any ``AppError`` to the standardized JSON envelope; framework-level
 HTTP/Starlette exceptions keep their own handlers.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
+from pydantic import BaseModel
 from starlette import status
 
 
 def get_timestamp() -> str:
-    """Get current timestamp in ISO format."""
-    return datetime.now().isoformat() + "Z"
+    """Get current UTC timestamp in ISO format."""
+    return datetime.now(timezone.utc).isoformat()
 
 
-class ErrorResponse:
-    """Standardized error response format."""
+class ErrorResponse(BaseModel):
+    """Standardized error response format.
 
-    def __init__(
-        self,
-        error_type: str,
-        message: str,
-        status_code: int,
-        details: Any = None,
-        request_id: str | None = None,
-    ):
-        self.error_type = error_type
-        self.message = message
-        self.status_code = status_code
-        self.details = details
-        self.request_id = request_id
+    Serialized via ``model_dump()`` (or the legacy ``to_dict()`` alias)
+    and wrapped in ``JSONResponse`` by the exception handlers.
+    """
+
+    error_type: str
+    message: str
+    status_code: int
+    details: Any = None
+    request_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert error response to dictionary format."""
-        response = {
+        """Legacy alias — returns the full ``{"error": {...}}`` envelope with timestamp."""
+        return {
             "error": {
                 "type": self.error_type,
                 "message": self.message,
                 "status_code": self.status_code,
                 "timestamp": get_timestamp(),
+                **({"details": self.details} if self.details else {}),
+                **({"request_id": self.request_id} if self.request_id else {}),
             }
         }
-
-        if self.details:
-            response["error"]["details"] = self.details
-
-        if self.request_id:
-            response["error"]["request_id"] = self.request_id
-
-        return response
 
 
 class AppError(Exception):

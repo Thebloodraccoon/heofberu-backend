@@ -180,3 +180,21 @@ class TestSpellCrud:
 
         assert response.status_code == 204
         assert (await client.get(f"/spells/{spell.id}")).status_code == 404
+
+    async def test_delete_spell_known_by_character_returns_409(
+        self, client, founder_token, db_session, create_spell, create_class, create_user, create_character
+    ):
+        from app.models.character_spell_model import CharacterSpell
+
+        spell = await create_spell(name="Cure Wounds")
+        player = await create_user()
+        char_class = await create_class(name="Druid")
+        character = await create_character(owner_id=player.id, class_id=char_class.id)
+
+        db_session.add(CharacterSpell(character_id=character.id, spell_id=spell.id))
+        await db_session.commit()
+
+        response = await client.delete(f"/spells/{spell.id}", headers={"Authorization": f"Bearer {founder_token}"})
+
+        assert response.status_code == 409
+        assert (await client.get(f"/spells/{spell.id}")).status_code == 200

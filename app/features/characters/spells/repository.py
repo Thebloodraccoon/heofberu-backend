@@ -72,7 +72,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
                 slot.used = 0
 
         if commit:
-            await self.db.commit()
+            await self.commit_or_flush()
         else:
             await self.db.flush()
 
@@ -86,7 +86,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
             .where(CharacterSpellSlot.character_id == character_id)
             .values({CharacterSpellSlot.used: 0})
         )
-        await self.db.commit()
+        await self.commit_or_flush()
 
 
 class CharacterSpellRepository(BaseRepository[CharacterSpell]):
@@ -141,7 +141,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
 
         character_spell = CharacterSpell(character_id=character_id, spell_id=spell_id)
         self.db.add(character_spell)
-        await self.db.commit()
+        await self.commit_or_flush()
 
         result = await self.db.execute(
             select(CharacterSpell)
@@ -157,7 +157,7 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
         """Remove a spell from the character's known spells."""
 
         await self.db.delete(character_spell)
-        await self.db.commit()
+        await self.commit_or_flush()
         return True
 
     async def count_known_spells_at_level(self, character_id: int, level: str) -> int:

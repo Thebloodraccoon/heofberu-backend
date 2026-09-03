@@ -1,3 +1,4 @@
+from .body_limit import RequestBodyLimitMiddleware
 from .config import MiddlewareConfig
 from .error_handler import setup_error_handlers
 from .logging import LoggingMiddleware
@@ -13,6 +14,7 @@ __all__ = [
     # Middleware classes
     "LoggingMiddleware",
     "RateLimitMiddleware",
+    "RequestBodyLimitMiddleware",
     "RequestIDMiddleware",
     "TimingMiddleware",
 ]

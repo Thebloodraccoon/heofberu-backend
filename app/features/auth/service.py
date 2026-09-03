@@ -185,6 +185,7 @@ class AuthService:
             httponly=True,
             samesite="none",
             secure=True,
+            path="/api/auth",
             max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
         )
 

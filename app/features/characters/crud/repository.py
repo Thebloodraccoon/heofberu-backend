@@ -35,7 +35,7 @@ class CharacterRepository(BaseRepository[Character]):
 
         character.current_hp = current_hp
         character.temp_hp = temp_hp
-        await self.db.commit()
+        await self.commit_or_flush()
 
         return character
 

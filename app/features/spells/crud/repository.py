@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.models import Class, Race, Spell, Subclass, Subrace
+from app.models.character_spell_model import CharacterSpell
 from app.models.spell_association_models import (
     spell_classes,
     spell_races,
@@ -30,7 +31,13 @@ class SpellRepository(BaseRepository[Spell]):
             ],
             search_fields=["name"],
             unique_fields=["name"],
+            check_in_use_on_delete=True,
         )
+
+    async def is_in_use(self, spell_id: int) -> bool:
+        """Check whether any character knows this spell (blocks deletion)."""
+
+        return await self.exists_referencing(CharacterSpell, "spell_id", spell_id)
 
     async def get_classes_by_ids(self, class_ids: list[int]) -> list[Class]:
         """Fetch the classes matching ``class_ids`` (order not guaranteed)."""

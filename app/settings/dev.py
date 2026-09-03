@@ -16,6 +16,12 @@ from app.settings._common import (
 STAGE = "dev"
 ALLOWED_HOSTS = ["*"]
 
+# Payload & throughput limits — dev is permissive for local exploration.
+REQUEST_BODY_MAX_BYTES = 10 * 1024 * 1024
+IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+REQUEST_TIMEOUT_SECONDS = 30
+MAX_CONCURRENT_CONNECTIONS_PER_IP = 50
+
 engine = create_async_engine(
     as_async_database_url(DATABASE_URL),
     poolclass=pool.AsyncAdaptedQueuePool,
