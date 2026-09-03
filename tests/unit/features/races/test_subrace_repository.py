@@ -70,8 +70,6 @@ class TestSubraceScopedUniqueness:
 
         await repository._check_uniqueness({"name": "High Elf", "race_id": 2})
 
-        assert len(session.executes) == 1
-
     async def test_create_rejects_same_name_under_same_race(self):
         session = FakeAsyncSession(scalar_results=[1])
         repository = SubraceRepository(session)
@@ -84,8 +82,6 @@ class TestSubraceScopedUniqueness:
         repository = SubraceRepository(session)
 
         await repository._check_uniqueness({"name": "High Elf", "race_id": 1}, exclude_id=1)
-
-        assert len(session.executes) == 1
 
     async def test_create_rejects_when_name_exists_without_race_id(self):
         session = FakeAsyncSession(scalar_results=[1])

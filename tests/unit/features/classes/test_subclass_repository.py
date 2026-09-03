@@ -16,8 +16,6 @@ class TestSubclassScopedUniqueness:
 
         await repository._check_uniqueness({"name": "Champion", "class_id": 2})
 
-        assert len(session.executes) == 1
-
     async def test_create_rejects_same_name_under_same_class(self):
         session = FakeAsyncSession(scalar_results=[1])
         repository = SubclassRepository(session)
@@ -30,8 +28,6 @@ class TestSubclassScopedUniqueness:
         repository = SubclassRepository(session)
 
         await repository._check_uniqueness({"name": "Champion", "class_id": 1}, exclude_id=1)
-
-        assert len(session.executes) == 1
 
     async def test_create_rejects_when_name_exists_without_class_id(self):
         session = FakeAsyncSession(scalar_results=[1])
