@@ -347,7 +347,7 @@ class TestLevelUp:
             "contributions": [{"source": "asi", "label": "Level 4 (ASI)", "amount": 2}],
         }
 
-    async def test_feat_choice_with_asi_options_without_choice_returns_422(
+    async def test_feat_choice_with_asi_options_without_choice_grants(
         self,
         client,
         player,
@@ -373,7 +373,7 @@ class TestLevelUp:
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 200
 
     async def test_asi_above_score_cap_returns_400(self, client, player, player_token, create_class, create_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")

@@ -53,6 +53,16 @@ class AppSettings(BaseSettings):
     CACHE_TTL_DEFAULT: int = Field(default=86400, alias="CACHE_TTL_DEFAULT")
     CACHE_PREFIX: str = Field(default="cache", alias="CACHE_PREFIX")
 
+    # Request & payload limits (bytes / seconds / connections).
+    # Favors more permissive defaults; individual stages override tighter ones.
+    REQUEST_BODY_MAX_BYTES: int = Field(default=5 * 1024 * 1024, alias="REQUEST_BODY_MAX_BYTES")
+    IMAGE_UPLOAD_MAX_BYTES: int = Field(default=5 * 1024 * 1024, alias="IMAGE_UPLOAD_MAX_BYTES")
+    REQUEST_TIMEOUT_SECONDS: int = Field(default=30, alias="REQUEST_TIMEOUT_SECONDS")
+
+    # Enforced at the reverse proxy/server level (nginx/uvicorn), documented
+    # here so each stage can tune the cap independently.
+    MAX_CONCURRENT_CONNECTIONS_PER_IP: int = Field(default=50, alias="MAX_CONCURRENT_CONNECTIONS_PER_IP")
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def reject_default_secret_outside_dev(cls, value: str, info) -> str:

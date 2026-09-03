@@ -117,9 +117,7 @@ class TestFeatureResponsesEmbedAbilityIncreases:
         body = response.json()
         assert body["ability_increases"] == [{"ability": "STR", "amount": 4, "new_cap": 30}]
 
-    async def test_race_feature_list_embeds_ability_increases(
-        self, client, gm_token, create_race, create_feature
-    ):
+    async def test_race_feature_list_embeds_ability_increases(self, client, gm_token, create_race, create_feature):
         race = await create_race(name="Half-Orc")
         feature = await create_feature(name="Savage Attacks", source_type="RACE", race_id=race.id)
         await set_increases(

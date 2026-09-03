@@ -49,6 +49,12 @@ CACHE_ENABLED = _settings.CACHE_ENABLED
 CACHE_TTL_DEFAULT = _settings.CACHE_TTL_DEFAULT
 CACHE_PREFIX = _settings.CACHE_PREFIX
 
+# Request & payload limits (defaults; stages override tighter/looser values).
+REQUEST_BODY_MAX_BYTES = _settings.REQUEST_BODY_MAX_BYTES
+IMAGE_UPLOAD_MAX_BYTES = _settings.IMAGE_UPLOAD_MAX_BYTES
+REQUEST_TIMEOUT_SECONDS = _settings.REQUEST_TIMEOUT_SECONDS
+MAX_CONCURRENT_CONNECTIONS_PER_IP = _settings.MAX_CONCURRENT_CONNECTIONS_PER_IP
+
 
 def utcnow() -> datetime:
     """Naive UTC "now", matching the DB's ``TIMESTAMP WITHOUT TIME ZONE`` columns."""

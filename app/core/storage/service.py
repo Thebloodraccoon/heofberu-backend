@@ -23,9 +23,6 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
-#: Max accepted image body size (bytes) — 5 MB.
-IMAGE_MAX_BYTES = 5 * 1024 * 1024
-
 #: Timeout (seconds) applied to every Supabase Storage network call.
 STORAGE_CALL_TIMEOUT = 15.0
 
@@ -38,6 +35,9 @@ STORAGE_RETRY_BACKOFF = 0.5
 SUPABASE_URL = settings.SUPABASE_URL
 SUPABASE_KEY = settings.SUPABASE_KEY
 STORAGE_BUCKET = settings.STORAGE_BUCKET
+
+#: Max accepted image body size (bytes), stage-tuned (5 MB dev / 2 MB prod).
+IMAGE_MAX_BYTES = settings.IMAGE_UPLOAD_MAX_BYTES
 
 #: Allowed content types for catalog images.
 ALLOWED_IMAGE_CONTENT_TYPES = {
@@ -120,9 +120,7 @@ def _ensure_valid(content_type: str, content: bytes) -> str:
     if len(content) > IMAGE_MAX_BYTES:
         raise ImageUploadError(f"Image is too large: max {IMAGE_MAX_BYTES // (1024 * 1024)} MB.")
     if not _matches_magic_bytes(content_type, content):
-        raise ImageUploadError(
-            f"File content does not match the declared type {content_type!r}."
-        )
+        raise ImageUploadError(f"File content does not match the declared type {content_type!r}.")
 
     return ext
 

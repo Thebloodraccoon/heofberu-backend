@@ -84,7 +84,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
 
         self.db.add(grant)
         if commit:
-            await self.db.commit()
+            await self.commit_or_flush()
         else:
             await self.db.flush()
 
@@ -96,7 +96,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
         """Set (or clear, if ``None``) the ASI choice on an existing feat grant."""
 
         grant.ability_score_increase_id = ability_score_increase_id
-        await self.db.commit()
+        await self.commit_or_flush()
 
         return await self._reload_with_feat(grant.id)
 
@@ -117,5 +117,5 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
         """Revoke a feat grant."""
 
         await self.db.delete(grant)
-        await self.db.commit()
+        await self.commit_or_flush()
         return True

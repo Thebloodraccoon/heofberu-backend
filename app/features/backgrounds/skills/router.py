@@ -11,6 +11,7 @@ from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
+
 @router.put(
     "/skills",
     response_model=BackgroundResponse,

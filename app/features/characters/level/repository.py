@@ -36,7 +36,7 @@ class CharacterMaxLevelRepository(BaseRepository[CharacterMaxLevel]):
 
         self.db.add(row)
         if commit:
-            await self.db.commit()
+            await self.commit_or_flush()
             await self.db.refresh(row)
         else:
             await self.db.flush()

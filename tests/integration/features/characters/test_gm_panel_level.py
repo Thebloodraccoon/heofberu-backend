@@ -152,9 +152,7 @@ class TestLevelUpCap:
         )
         assert raise_response.status_code == 200
 
-        can_response = await client.get(
-            f"/characters/{character['id']}/progression/can-level-up", headers=headers
-        )
+        can_response = await client.get(f"/characters/{character['id']}/progression/can-level-up", headers=headers)
         assert can_response.json() == {"can_level_up": True, "current_level": 1, "max_level": 2}
 
         level_up_response = await client.post(

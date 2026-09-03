@@ -543,7 +543,9 @@ class TestClassCrud:
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Doomed")
 
-        response = await client.delete(f"/subclasses/{subclass.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        response = await client.delete(
+            f"/subclasses/{subclass.id}", headers={"Authorization": f"Bearer {founder_token}"}
+        )
 
         assert response.status_code == 204
         assert (await client.get(f"/subclasses/{subclass.id}")).status_code == 404

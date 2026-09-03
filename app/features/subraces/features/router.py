@@ -1,8 +1,6 @@
 """Subrace feature read endpoint: list SUBRACE-source features."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.subraces.dependencies import SubraceFeaturesDep

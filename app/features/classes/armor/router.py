@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.classes.dependencies import ClassArmorDep
 from app.features.classes.schemas import ArmorProficienciesUpdate, ClassResponse

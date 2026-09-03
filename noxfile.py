@@ -49,7 +49,7 @@ def test_session(session):
         "--cache-clear",
         "--cov=app/",
         "--cov-report=term-missing",
-        "--cov-fail-under=0",
+        "--cov-fail-under=50",
         "--cov-config=pyproject.toml",
         *session.posargs if session.posargs else [],
         external=True
@@ -73,7 +73,7 @@ def all_session(session):
         "--cache-clear",
         "--cov=app/",
         "--cov-report=term-missing",
-        "--cov-fail-under=0",
+        "--cov-fail-under=50",
         "--cov-config=pyproject.toml",
         *session.posargs if session.posargs else ["tests/"],
         external=True

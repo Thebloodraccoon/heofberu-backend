@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.base.repository import _commit_or_rollback
 from app.models.character_association_models import CharacterSkillProficiency
 
 
@@ -33,7 +34,7 @@ class CharacterSkillProficiencyRepository:
         proficiency.is_expertise = is_expertise
 
         if commit:
-            await self.db.commit()
+            await _commit_or_rollback(self.db)
             await self.db.refresh(proficiency)
         else:
             await self.db.flush()

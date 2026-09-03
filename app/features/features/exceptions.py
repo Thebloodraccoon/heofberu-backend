@@ -2,6 +2,7 @@
 
 from app.core.exceptions import AppError
 
+
 class FeatureNotFoundException(AppError):
     """Raised when a feature with the given ID does not exist."""
 
@@ -12,6 +13,7 @@ class FeatureNotFoundException(AppError):
 
         self.feature_id = feature_id
         super().__init__(f"Feature with id {feature_id} not found.")
+
 
 class InvalidFeatureSourceException(AppError):
     """

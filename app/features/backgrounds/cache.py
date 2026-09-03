@@ -7,6 +7,7 @@ from app.core.cache import invalidate
 # can now serve source-owned features).
 BACKGROUND_CACHE_NAMESPACES = ("backgrounds", "background_features", "features", "nested_items")
 
+
 async def invalidate_background_cache() -> None:
     """Purge every cache namespace a background read can hit."""
 

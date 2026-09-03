@@ -1,8 +1,6 @@
 """Class feature read endpoint: list CLASS-source features (writes go through the features catalog)."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from app.features.classes.dependencies import ClassFeaturesDep
 from app.features.features.crud.schemas import NestedFeatureResponse

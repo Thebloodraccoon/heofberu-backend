@@ -4,6 +4,7 @@ from app.core.cache import invalidate
 
 FEATURE_CACHE_NAMESPACES = ("features",)
 
+
 async def invalidate_feature_cache() -> None:
     """
     Purge every cache namespace a central feature read can hit.

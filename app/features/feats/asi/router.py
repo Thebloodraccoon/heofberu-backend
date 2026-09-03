@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.feats.dependencies import FeatAsiDep
 from app.features.feats.schemas import (
@@ -12,6 +12,7 @@ from app.features.feats.schemas import (
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
+
 
 @router.put(
     "/{feat_id:int}/ability-score-increases",

@@ -66,7 +66,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         )
 
         self.db.add(grant)
-        await self.db.commit()
+        await self.commit_or_flush()
 
         result = await self.db.execute(
             select(CharacterFeature)
@@ -79,7 +79,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         """Replace the notes on an existing feature grant."""
 
         grant.notes = notes
-        await self.db.commit()
+        await self.commit_or_flush()
 
         return grant
 
@@ -87,5 +87,5 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         """Remove a feature grant from a character."""
 
         await self.db.delete(grant)
-        await self.db.commit()
+        await self.commit_or_flush()
         return True

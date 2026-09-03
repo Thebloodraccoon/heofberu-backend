@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import ABILITY_SCORE_CAP, MAX_ABILITY_SCORE_CAP, AbilityScore
 
+
 def _validate_unique_abilities(items: list["AbilityIncreaseItem"]) -> list["AbilityIncreaseItem"]:
     """Reject lists containing duplicate abilities."""
 
@@ -11,6 +12,7 @@ def _validate_unique_abilities(items: list["AbilityIncreaseItem"]) -> list["Abil
     if len(abilities) != len(set(abilities)):
         raise ValueError("Duplicate ability in a feature's ability increases is not allowed.")
     return items
+
 
 class AbilityIncreaseItem(BaseModel):
     """
@@ -32,10 +34,9 @@ class AbilityIncreaseItem(BaseModel):
         """Reject ``new_cap`` values outside the allowed range."""
 
         if value is not None and not (ABILITY_SCORE_CAP <= value <= MAX_ABILITY_SCORE_CAP):
-            raise ValueError(
-                f"'new_cap' must be between {ABILITY_SCORE_CAP} and {MAX_ABILITY_SCORE_CAP}."
-            )
+            raise ValueError(f"'new_cap' must be between {ABILITY_SCORE_CAP} and {MAX_ABILITY_SCORE_CAP}.")
         return value
+
 
 class AbilityIncreasesUpdate(BaseModel):
     """Full replacement list of a feature's ability-score increases."""
@@ -47,6 +48,7 @@ class AbilityIncreasesUpdate(BaseModel):
         """Reject lists containing duplicate abilities."""
 
         return _validate_unique_abilities(value)
+
 
 class FeatureAbilityIncreasesResponse(BaseModel):
     """A feature's fixed ability-score increases, as returned by the API."""

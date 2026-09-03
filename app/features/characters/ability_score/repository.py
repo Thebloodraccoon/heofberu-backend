@@ -131,7 +131,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
                 setattr(cache, field, value)
 
         if commit:
-            await self.db.commit()
+            await self.commit_or_flush()
             await self.db.refresh(cache)
         else:
             await self.db.flush()

@@ -9,7 +9,6 @@ from app.features.classes.image.router import router as image_router
 from app.features.classes.items.router import router as items_router
 from app.features.classes.progression.router import router as progression_router
 from app.features.classes.skills.router import router as skills_router
-from app.features.subclasses.router import router as subclasses_router
 from app.features.classes.throws.router import router as throws_router
 from app.features.classes.weapons.router import router as weapons_router
 

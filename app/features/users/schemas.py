@@ -29,9 +29,7 @@ class ProfileFields(BaseModel):
             if len(username) < 3 or len(username) > 32:
                 raise ValueError("Username must be between 3 and 32 characters long")
             if not re.match(r"^[A-Za-z0-9А-Яа-яЁёІіЇїЄєҐґ_-]+$", username):
-                raise ValueError(
-                    "Username can only contain letters, numbers, underscores, and hyphens"
-                )
+                raise ValueError("Username can only contain letters, numbers, underscores, and hyphens")
         return username
 
 

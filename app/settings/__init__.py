@@ -8,6 +8,7 @@ load_dotenv()
 VALID_STAGES = {
     "dev": "app.settings.dev",
     "test": "app.settings.test",
+    "staging": "app.settings.staging",
     "prod": "app.settings.prod",
 }
 

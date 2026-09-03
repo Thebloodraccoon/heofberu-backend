@@ -6,6 +6,7 @@ from app.features.backgrounds.skills.schemas import SkillResponse, _validate_uni
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.shared.items.schemas import ChoiceGroupResponse, SourceItemResponse
 
+
 class BackgroundBase(BaseModel):
     """Base background fields shared by create, update, and response schemas."""
 
@@ -17,6 +18,7 @@ class BackgroundBase(BaseModel):
     flaws_suggestions: str = ""
 
     description: str = ""
+
 
 class BackgroundCreate(BackgroundBase):
     """Create payload for a background."""
@@ -31,6 +33,7 @@ class BackgroundCreate(BackgroundBase):
             return value
 
         return _validate_unique_skill_ids(value)
+
 
 class BackgroundUpdate(BaseModel):
     """
@@ -47,6 +50,7 @@ class BackgroundUpdate(BaseModel):
     flaws_suggestions: str | None = None
     description: str | None = None
 
+
 class BackgroundResponse(BackgroundBase):
     """Full background representation returned by the API."""
 
@@ -57,6 +61,7 @@ class BackgroundResponse(BackgroundBase):
     starting_items: list[SourceItemResponse] = []
     starting_choice_groups: list[ChoiceGroupResponse] = []
 
+
 class BackgroundGetAllResponse(BaseModel):
     """Lightweight listing row: no suggestion text/description, but includes granted_skills."""
 
@@ -65,6 +70,7 @@ class BackgroundGetAllResponse(BaseModel):
     id: int
     name: str
     granted_skills: list[SkillResponse] = []
+
 
 class BackgroundFullResponse(BackgroundResponse):
     """

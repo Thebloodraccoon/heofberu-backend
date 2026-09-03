@@ -125,7 +125,7 @@ async def logout(
     refresh_token_str = request.cookies.get(REFRESH_COOKIE_NAME)
 
     logout_response = await auth_service.logout(token, refresh_token_str)
-    response.delete_cookie(key=REFRESH_COOKIE_NAME, httponly=True, samesite="none", secure=True)
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, httponly=True, samesite="none", secure=True, path="/api/auth")
 
     return logout_response
 

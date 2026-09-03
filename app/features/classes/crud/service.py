@@ -16,9 +16,9 @@ from app.features.classes.schemas import (
     ClassUpdate,
 )
 from app.features.classes.skills.service import ClassSkillService
-from app.features.subclasses.crud.service import SubclassCrudService
 from app.features.classes.throws.service import ClassThrowsService
 from app.features.classes.weapons.service import ClassWeaponService
+from app.features.subclasses.crud.service import SubclassCrudService
 from app.models.class_model import Class
 
 

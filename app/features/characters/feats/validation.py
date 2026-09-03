@@ -13,12 +13,15 @@ from app.models.character_model import Character
 from app.models.feat_model import Feat
 
 
-def validate_ability_score_increase(feat: Feat, ability_score_increase_id: int) -> None:
+def validate_ability_score_increase(feat: Feat, ability_score_increase_id: int | None) -> None:
     """
     Raise ``InvalidAbilityScoreIncreaseException`` unless the id is one of
-    ``feat``'s own ``ability_score_increases`` rows.
+    ``feat``'s own ``ability_score_increases`` rows.  A ``None`` value is
+    silently accepted (the caller is responsible for requiring a choice).
     """
 
+    if ability_score_increase_id is None:
+        return
     valid_ids = {increase.id for increase in feat.ability_score_increases}
     if ability_score_increase_id not in valid_ids:
         raise InvalidAbilityScoreIncreaseException(feat_id=feat.id, ability_score_increase_id=ability_score_increase_id)

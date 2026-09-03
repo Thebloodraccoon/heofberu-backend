@@ -142,11 +142,9 @@ class ClassRepository(BaseRepository[Class]):
 
         subclass = Subclass(**payload, class_id=character_class.id)
         self.db.add(subclass)
+        await self.commit_or_flush(commit=commit)
         if commit:
-            await self.db.commit()
             await self.db.refresh(subclass)
-        else:
-            await self.db.flush()
         return subclass
 
     async def get_subclass(self, class_id: int, subclass_id: int) -> Subclass | None:
@@ -178,7 +176,7 @@ class ClassRepository(BaseRepository[Class]):
                 setattr(subclass, field, value)
 
         if commit:
-            await self.db.commit()
+            await self.commit_or_flush()
             await self.db.refresh(subclass)
         else:
             await self.db.flush()
@@ -189,7 +187,7 @@ class ClassRepository(BaseRepository[Class]):
         """Delete a subclass (cascades to its features via ON DELETE CASCADE)."""
 
         await self.db.delete(subclass)
-        await self.db.commit()
+        await self.commit_or_flush()
 
     async def get_progression_features(self, class_id: int) -> list[Feature]:
         """Return all CLASS and SUBCLASS features for ``class_id``, ordered by level."""

@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.base.repository import BaseRepository
 from app.models.feature_model import Feature, FeatureAbilityIncrease
 
+
 class FeatureRepository(BaseRepository[Feature]):
     """
     Feature-specific repository built on :class:`BaseRepository`.

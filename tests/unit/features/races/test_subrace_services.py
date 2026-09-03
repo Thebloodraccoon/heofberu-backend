@@ -125,9 +125,7 @@ def no_subrace_invalidate(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_reconcile(monkeypatch):
-    monkeypatch.setattr(
-        "app.features.subraces.ability_bonuses.service.reconcile_characters_for_source", AsyncMock()
-    )
+    monkeypatch.setattr("app.features.subraces.ability_bonuses.service.reconcile_characters_for_source", AsyncMock())
 
 
 def make_crud_service(existing_by_id=None, race_exists=True):

@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.core.base.nested_service import NestedCollectionService
+from app.core.base.repository import _commit_or_rollback
 from app.core.base.service import BaseService
 from app.features.items.crud.repository import SOURCE_ITEM_FK_BY_SOURCE_TYPE, ItemRepository
 from app.features.shared.items.schemas import (
@@ -64,7 +65,7 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
             )
 
         if commit:
-            await self.db.commit()
+            await _commit_or_rollback(self.db)
         else:
             await self.db.flush()
 
@@ -94,7 +95,7 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
             )
 
         if commit:
-            await self.db.commit()
+            await _commit_or_rollback(self.db)
         else:
             await self.db.flush()
 
@@ -173,7 +174,7 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
                 self.db.add(option)
 
         if commit:
-            await self.db.commit()
+            await _commit_or_rollback(self.db)
         else:
             await self.db.flush()
 

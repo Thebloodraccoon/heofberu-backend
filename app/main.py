@@ -19,6 +19,7 @@ from app.middleware import (
     LoggingMiddleware,
     MiddlewareConfig,
     RateLimitMiddleware,
+    RequestBodyLimitMiddleware,
     RequestIDMiddleware,
     TimingMiddleware,
 )
@@ -45,9 +46,17 @@ async def lifespan(app: FastAPI):
 
 
 def setup_middleware(app: FastAPI) -> None:
-    """Setup application middleware in the correct order."""
-    cors_config = MiddlewareConfig.get_cors_config()
-    app.add_middleware(CORSMiddleware, **cors_config)
+    """
+    Setup application middleware in the correct order.
+
+    Middleware is executed last-added-first (Starlette inverts the order), so
+    CORSMiddleware must be added *last* to wrap every other middleware —
+    including ``RequestBodyLimitMiddleware`` — and guarantee that error
+    responses (e.g. 413) carry the proper ``Access-Control-*`` headers.
+    """
+    if MiddlewareConfig.should_enable_middleware("body_limit"):
+        body_limit_config = MiddlewareConfig.get_body_limit_config()
+        app.add_middleware(RequestBodyLimitMiddleware, **body_limit_config)
 
     if MiddlewareConfig.should_enable_middleware("trusted_host"):
         trusted_host_config = MiddlewareConfig.get_trusted_host_config()
@@ -72,15 +81,18 @@ def setup_middleware(app: FastAPI) -> None:
         timing_config = MiddlewareConfig.get_timing_config()
         app.add_middleware(TimingMiddleware, **timing_config)
 
+    cors_config = MiddlewareConfig.get_cors_config()
+    app.add_middleware(CORSMiddleware, **cors_config)
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Heofberu Backend API - A D&D world management system",
     lifespan=lifespan,
-    docs_url="/docs" if settings.STAGE != "prod" else None,
-    redoc_url="/redoc" if settings.STAGE != "prod" else None,
-    openapi_url="/openapi.json" if settings.STAGE != "prod" else None,
+    docs_url="/docs" if settings.STAGE not in ("prod", "staging") else None,
+    redoc_url="/redoc" if settings.STAGE not in ("prod", "staging") else None,
+    openapi_url="/openapi.json" if settings.STAGE not in ("prod", "staging") else None,
     separate_input_output_schemas=True,
 )
 

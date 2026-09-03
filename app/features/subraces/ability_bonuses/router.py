@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceResponse
 from app.features.subraces.dependencies import SubraceAbilityBonusesDep

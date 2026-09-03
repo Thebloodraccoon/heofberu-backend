@@ -9,6 +9,7 @@ from app.features.backgrounds.skills.repository import BackgroundSkillsRepositor
 from app.features.shared.skills.mixins import SkillsManagerMixin
 from app.models import Background, Skill
 
+
 class BackgroundSkillsService(
     SkillsManagerMixin,
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],

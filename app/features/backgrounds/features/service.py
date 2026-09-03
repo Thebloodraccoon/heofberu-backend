@@ -11,6 +11,7 @@ from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
 from app.models import Background
 
+
 class BackgroundFeatureService(
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
 ):

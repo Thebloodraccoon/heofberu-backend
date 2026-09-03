@@ -17,6 +17,7 @@ from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
+
 @router.get(
     "",
     response_model=Page[FeatureGetAllResponse],
@@ -45,6 +46,7 @@ async def get_features(
         search=search,
     )
 
+
 @router.get(
     "/{feature_id:int}",
     response_model=FeatureResponse,
@@ -61,6 +63,7 @@ async def get_feature(feature_id: int, feature_service: FeatureCrudDep):
     """
 
     return await feature_service.get_by_id(feature_id)
+
 
 @router.post(
     "",
@@ -106,6 +109,7 @@ async def create_feature(
 
     return await feature_service.create(data)
 
+
 @router.patch(
     "/{feature_id:int}",
     response_model=FeatureResponse,
@@ -147,6 +151,7 @@ async def update_feature(
     """
 
     return await feature_service.update_feature(feature_id, data)
+
 
 @router.delete(
     "/{feature_id:int}",

@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ASILevelChoice, MAX_ABILITY_SCORE_CAP
+from app.constants import MAX_ABILITY_SCORE_CAP, ASILevelChoice
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService

@@ -67,7 +67,7 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         )
 
         self.db.add(stack)
-        await self.db.commit()
+        await self.commit_or_flush()
 
         return await self._fetch_with_item(stack.id)
 
@@ -77,7 +77,7 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         for field, value in fields.items():
             setattr(stack, field, value)
 
-        await self.db.commit()
+        await self.commit_or_flush()
 
         return await self._fetch_with_item(stack.id)
 
@@ -85,7 +85,7 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         """Remove an item stack from a character."""
 
         await self.db.delete(stack)
-        await self.db.commit()
+        await self.commit_or_flush()
         return True
 
     async def _fetch_with_item(self, stack_id: int) -> CharacterItem:

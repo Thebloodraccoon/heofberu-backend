@@ -7,6 +7,7 @@ from app.features.features.crud.schemas import NestedFeatureResponse
 
 router = APIRouter()
 
+
 @router.get(
     "/features",
     response_model=list[NestedFeatureResponse],

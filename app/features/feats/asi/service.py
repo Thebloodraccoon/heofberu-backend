@@ -8,6 +8,7 @@ from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.schemas import AbilityScoreIncreasesUpdate, FeatCreate, FeatResponse, FeatUpdate
 from app.models.feat_model import Feat
 
+
 class FeatAsiService(BaseService[Feat, FeatCreate, FeatUpdate, FeatResponse, None]):
     """
     Feat ASI service: full replacement of a feat's ability score increases.

@@ -195,9 +195,7 @@ class TestFullCharacterLifecycle:
         assert eighth.json()["level"] == 8
         assert eighth.json()["max_hp"] == 61
 
-        feats_response = await client.get(
-            f"/characters/{character_id}/feats", headers=player_headers
-        )
+        feats_response = await client.get(f"/characters/{character_id}/feats", headers=player_headers)
         assert feats_response.status_code == 200
         assert sorted(entry["feat"]["name"] for entry in feats_response.json()) == ["Slasher"]
 
@@ -327,9 +325,7 @@ class TestFullCharacterLifecycle:
         proficiencies = {item["skill_id"]: item for item in final["skill_proficiencies"]}
         assert proficiencies[skill.id]["is_expertise"] is True
 
-        stats_response = await client.get(
-            f"/characters/{character_id}/stats", headers=gm_headers
-        )
+        stats_response = await client.get(f"/characters/{character_id}/stats", headers=gm_headers)
         assert stats_response.status_code == 200
         stats = stats_response.json()
         assert set(stats["strength"]) == {"base", "total", "contributions"}
@@ -339,9 +335,7 @@ class TestFullCharacterLifecycle:
         assert stats["wisdom"]["base"] == 10
         assert stats["wisdom"]["total"] == 9
 
-        spells_response = await client.get(
-            f"/characters/{character_id}/spells", headers=player_headers
-        )
+        spells_response = await client.get(f"/characters/{character_id}/spells", headers=player_headers)
         assert spells_response.status_code == 200
         spell_body = spells_response.json()
         assert {slot["spell_level"]: slot["total"] for slot in spell_body["spell_slots"]} == {
@@ -350,9 +344,7 @@ class TestFullCharacterLifecycle:
         }
         assert sorted(entry["spell"]["name"] for entry in spell_body["spells"]) == ["Fire Bolt", "Light", "Shield"]
 
-        items_response = await client.get(
-            f"/characters/{character_id}/items", headers=gm_headers
-        )
+        items_response = await client.get(f"/characters/{character_id}/items", headers=gm_headers)
         assert items_response.status_code == 200
         stacks = {entry["item_id"]: entry for entry in items_response.json()}
         assert stacks[longsword.id]["is_equipped"] is True

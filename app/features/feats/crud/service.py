@@ -14,6 +14,7 @@ from app.features.feats.schemas import (
 )
 from app.models.feat_model import Feat
 
+
 class FeatCrudService(CachedService[Feat, FeatCreate, FeatUpdate, FeatResponse, FeatGetAllResponse]):
     """
     Feat catalog CRUD built on :class:`CachedService`.

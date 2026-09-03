@@ -26,6 +26,7 @@ _LEVEL_REQUIRED_SOURCE_TYPES = (FeatureSourceType.CLASS, FeatureSourceType.SUBCL
 _FEATURE_LEVEL_MIN = 1
 _FEATURE_LEVEL_MAX = 20
 
+
 def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict) -> None:
     """Enforce that exactly the FK matching ``source_type`` is set (and the others empty), plus the level rules."""
 
@@ -55,6 +56,7 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
                 f"'level' for CLASS/SUBCLASS features must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}."
             )
 
+
 class FeatureBase(BaseModel):
     """Base feature fields, including the source_type/FK/level consistency rules."""
 
@@ -75,6 +77,7 @@ class FeatureBase(BaseModel):
 
     description: str = ""
 
+
 class FeatureCreate(FeatureBase):
     """
     Payload for ``POST /features`` — create a feature of ANY source type.
@@ -90,6 +93,7 @@ class FeatureCreate(FeatureBase):
         _validate_source_fk_consistency(self.source_type, self.__dict__)
         return self
 
+
 class FeatureResponse(FeatureBase):
     """Full feature representation returned by the API."""
 
@@ -97,6 +101,7 @@ class FeatureResponse(FeatureBase):
 
     id: int
     ability_increases: list[AbilityIncreaseItem] = []
+
 
 class FeatureGetAllResponse(BaseModel):
     """Lightweight listing row: no description."""
@@ -114,6 +119,7 @@ class FeatureGetAllResponse(BaseModel):
     level: int | None = None
     ability_increases: list[AbilityIncreaseItem] = []
 
+
 class NestedFeatureCreate(BaseModel):
     """
     A feature embedded in a parent create payload (race, subrace, class,
@@ -127,6 +133,7 @@ class NestedFeatureCreate(BaseModel):
     description: str = ""
     level: int | None = None
 
+
 class NestedFeatureResponse(BaseModel):
     """Compact feature row for embedding inside a parent entity response."""
 
@@ -137,6 +144,7 @@ class NestedFeatureResponse(BaseModel):
     description: str
     level: int | None = None
     ability_increases: list[AbilityIncreaseItem] = []
+
 
 class FeatureUpdate(BaseModel):
     """

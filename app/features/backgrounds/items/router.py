@@ -11,6 +11,7 @@ from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
+
 @router.get(
     "/items",
     response_model=list[SourceItemResponse],
@@ -21,6 +22,7 @@ async def list_background_items(background_id: int, background_service: Backgrou
     """Return every starting-equipment entry owned by the background. Open endpoint."""
 
     return await background_service.list_items(background_id)
+
 
 @router.put(
     "/items",

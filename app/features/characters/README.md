@@ -77,6 +77,9 @@ creates a character. Everything is derived server-side:
   (expertise is a GM-panel edit afterwards).
 - **Starting HP fully server-derived**: hit-die faces + effective CON
   modifier, clamped to ≥1; `current_hp` starts equal to it.
+- **Level-up fully heals** (`progression/level_up`): HP gain is added to
+  `max_hp` (die + CON), then `current_hp` is restored to the new maximum
+  and `temp_hp` is cleared.
 - **Saving throws are never stored** on the character — they are derived
   from the class on every response (the table was dropped by migration).
 - **Backstory is not part of creation** — it is written afterwards via the

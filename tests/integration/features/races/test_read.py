@@ -64,9 +64,7 @@ class TestRaceOpenRead:
             "Sunlight Sensitivity",
         ]
 
-    async def test_get_race_by_id_reflects_feature_edits(
-        self, client, gm_token, create_race
-    ):
+    async def test_get_race_by_id_reflects_feature_edits(self, client, gm_token, create_race):
         race = await create_race(name="Elf")
 
         added = await client.post(

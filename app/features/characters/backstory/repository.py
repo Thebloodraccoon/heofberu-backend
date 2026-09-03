@@ -33,6 +33,6 @@ class CharacterBackstoryRepository(BaseRepository[CharacterBackstory]):
         else:
             row.content = content
 
-        await self.db.commit()
+        await self.commit_or_flush()
         await self.db.refresh(row)
         return row
