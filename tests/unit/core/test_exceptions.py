@@ -1,10 +1,6 @@
 """Unit tests for ErrorResponse (Pydantic model) and get_timestamp."""
 
-import re
 from datetime import datetime, timezone
-
-import pytest
-from pydantic import ValidationError
 
 from app.core.exceptions import AppError, ErrorResponse, get_timestamp
 

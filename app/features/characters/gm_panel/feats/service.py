@@ -121,9 +121,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         return result
 
     @staticmethod
-    def _validate_asi_choice(
-            feat: Feat, ability_score_increase_id: int | None
-    ) -> None:
+    def _validate_asi_choice(feat: Feat, ability_score_increase_id: int | None) -> None:
         """Validate the ASI choice carried by a grant write (required, belongs to the feat, within cap)."""
 
         validate_asi_choice_required(feat, ability_score_increase_id)

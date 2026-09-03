@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query, status
+from fastapi import APIRouter, Body, status
 
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.dependencies import CharacterAttackServiceDep

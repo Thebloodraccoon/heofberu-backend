@@ -453,9 +453,7 @@ class TestResolveItemChoices:
             await service._resolve_item_choices(1, 3, [100])
 
     async def test_foreign_option_raises(self):
-        group = make_choice_group(
-            options=[make_choice_option(option_id=100), make_choice_option(option_id=101)]
-        )
+        group = make_choice_group(options=[make_choice_option(option_id=100), make_choice_option(option_id=101)])
         service, _ = make_service(None, [], choice_groups=[group])
 
         with pytest.raises(ItemChoiceNotAvailableException) as exc_info:

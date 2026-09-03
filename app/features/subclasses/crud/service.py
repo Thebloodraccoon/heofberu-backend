@@ -8,6 +8,7 @@ from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
 from app.core.exceptions import RecordNotFoundError
 from app.features.classes.crud.repository import ClassRepository
+from app.features.features.crud.service import FeatureCrudService
 from app.features.subclasses.cache import SUBCLASS_CACHE_NAMESPACES, invalidate_subclass_cache
 from app.features.subclasses.crud.repository import SubclassRepository
 from app.features.subclasses.crud.schemas import (
@@ -17,7 +18,6 @@ from app.features.subclasses.crud.schemas import (
     SubclassResponse,
     SubclassUpdate,
 )
-from app.features.features.crud.service import FeatureCrudService
 from app.models.subclass_model import Subclass
 
 

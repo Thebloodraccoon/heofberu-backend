@@ -19,7 +19,8 @@ from app.models.subrace_model import Subrace
 class SubraceAbilityBonusService(
     BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
 ):
-    """Full replacement of a subrace's ability score bonuses.
+    """
+    Full replacement of a subrace's ability score bonuses.
 
     Bonus changes reconcile affected characters via the one-way
     ``characters.progression.feature_sync`` import.

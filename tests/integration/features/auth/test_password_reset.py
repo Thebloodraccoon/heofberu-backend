@@ -2,12 +2,12 @@
 
 import pytest
 
+from app.core.security.password import verify_password_async
 from app.core.security.token import (
     create_reset_token,
     is_token_blacklisted,
     verify_reset_token,
 )
-from app.core.security.password import verify_password_async
 from app.features.users.repository import UserRepository
 
 
@@ -37,9 +37,7 @@ class TestForgotPassword:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestResetPassword:
-    async def test_reset_password_success_and_blacklists_token(
-        self, client, db_session, redis_client, create_user
-    ):
+    async def test_reset_password_success_and_blacklists_token(self, client, db_session, redis_client, create_user):
         user = await create_user(email="reset2@example.com", password="old-password-123")
         reset_token = create_reset_token(data={"sub": user.email})
         decoded = verify_reset_token(reset_token)

@@ -13,6 +13,7 @@ from app.features.features.crud.repository import FeatureRepository
 from app.features.features.crud.schemas import FeatureResponse
 from app.models.feature_model import Feature
 
+
 class FeatureAbilityIncreaseService(BaseService[Feature, None, None, FeatureResponse, None]):
     """
     Everything about a feature's fixed ability-score increases.

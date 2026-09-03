@@ -16,8 +16,6 @@ from app.features.characters.feats.repository import CharacterFeatRepository
 from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
-    validate_ability_score_increase_cap,
-    validate_asi_choice_required,
 )
 from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.exceptions import (

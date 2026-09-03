@@ -43,7 +43,7 @@ class TestEnsureValid:
             _ensure_valid("image/png", b"this is not a png at all")
 
     def test_all_content_types_have_extension(self):
-        for content_type, ext in ALLOWED_IMAGE_CONTENT_TYPES.items():
+        for _, ext in ALLOWED_IMAGE_CONTENT_TYPES.items():
             assert isinstance(ext, str) and len(ext) >= 3
 
 

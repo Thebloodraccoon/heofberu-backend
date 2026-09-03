@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.characters.gm_panel.dependencies import GmPanelHpDep
 from app.features.characters.gm_panel.hp.schemas import MaxHpUpdate

@@ -8,6 +8,7 @@ from app.core.base.repository import BaseRepository
 from app.models import Background, CharacterFeature, Feature, SourceItem
 from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 
+
 class BackgroundRepository(BaseRepository[Background]):
     """Background-specific repository built on :class:`BaseRepository`."""
 

@@ -125,7 +125,9 @@ class TestSubclassCrud:
         assert response.status_code == 204
         assert (await client.get(f"/subclasses/{subclass.id}")).status_code == 404
 
-    async def test_delete_subclass_in_use_returns_409(self, client, founder_token, create_class, create_subclass, create_user, create_character):
+    async def test_delete_subclass_in_use_returns_409(
+        self, client, founder_token, create_class, create_subclass, create_user, create_character
+    ):
         player = await create_user()
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="In Use")

@@ -17,6 +17,7 @@ from app.features.backgrounds.features.service import BackgroundFeatureService
 from app.features.backgrounds.skills.service import BackgroundSkillsService
 from app.models import Background
 
+
 class BackgroundCrudService(
     CachedService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, BackgroundGetAllResponse]
 ):

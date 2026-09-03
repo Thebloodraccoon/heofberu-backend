@@ -9,9 +9,8 @@ through its host ``ClassItemsService`` (shared/items/mixins.py).
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
-
 from pydantic import ValidationError
+import pytest
 
 from app.constants import DiceType, FeatureSourceType
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
@@ -213,8 +212,6 @@ class TestChoiceGroupEntryValidation:
             )
 
     async def test_pick_count_equal_to_options_is_valid(self):
-        group = ChoiceGroupEntry(
-            pick_count=2, options=[ChoiceOptionEntry(item_id=1), ChoiceOptionEntry(item_id=2)]
-        )
+        group = ChoiceGroupEntry(pick_count=2, options=[ChoiceOptionEntry(item_id=1), ChoiceOptionEntry(item_id=2)])
 
         assert group.pick_count == 2

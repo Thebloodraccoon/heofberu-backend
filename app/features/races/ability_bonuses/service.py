@@ -12,7 +12,8 @@ from app.models.race_model import Race
 
 
 class RaceAbilityBonusService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, None]):
-    """Full replacement of a race's ability score bonuses.
+    """
+    Full replacement of a race's ability score bonuses.
 
     Bonus changes reconcile affected characters via the one-way
     ``characters.progression.feature_sync`` import.

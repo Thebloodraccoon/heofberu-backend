@@ -4,7 +4,8 @@ from fastapi import Request
 
 
 def get_client_ip(request: Request) -> str:
-    """Get the real client IP address.
+    """
+    Get the real client IP address.
 
     Under a trusted reverse proxy (nginx, Cloudflare, etc.) the ASGI
     server already resolves ``request.client.host`` to the actual

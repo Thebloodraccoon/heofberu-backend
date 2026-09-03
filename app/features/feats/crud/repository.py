@@ -8,6 +8,7 @@ from app.core.base.repository import BaseRepository
 from app.models.character_association_models import CharacterFeat
 from app.models.feat_model import Feat, FeatAbilityScoreIncrease
 
+
 class FeatRepository(BaseRepository[Feat]):
     """
     Feat-specific repository built on :class:`BaseRepository`.

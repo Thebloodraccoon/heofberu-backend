@@ -120,9 +120,7 @@ def _ensure_valid(content_type: str, content: bytes) -> str:
     if len(content) > IMAGE_MAX_BYTES:
         raise ImageUploadError(f"Image is too large: max {IMAGE_MAX_BYTES // (1024 * 1024)} MB.")
     if not _matches_magic_bytes(content_type, content):
-        raise ImageUploadError(
-            f"File content does not match the declared type {content_type!r}."
-        )
+        raise ImageUploadError(f"File content does not match the declared type {content_type!r}.")
 
     return ext
 

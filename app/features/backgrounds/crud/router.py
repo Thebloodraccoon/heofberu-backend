@@ -17,6 +17,7 @@ from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
+
 @router.get(
     "",
     response_model=Page[BackgroundGetAllResponse],
@@ -39,6 +40,7 @@ async def get_backgrounds(
 
     return await background_service.get_all(page=page, size=size, search=search)
 
+
 @router.get(
     "/{background_id:int}",
     response_model=BackgroundFullResponse,
@@ -55,6 +57,7 @@ async def get_background(background_id: int, background_service: BackgroundCrudD
     """
 
     return await background_service.get_by_id(background_id)
+
 
 @router.post(
     "",
@@ -102,6 +105,7 @@ async def create_background(
 
     return await background_service.create_background(data)
 
+
 @router.patch(
     "/{background_id:int}",
     response_model=BackgroundResponse,
@@ -138,6 +142,7 @@ async def update_background(
     """
 
     return await background_service.update(background_id, data)
+
 
 @router.delete(
     "/{background_id:int}",

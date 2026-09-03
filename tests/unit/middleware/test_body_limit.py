@@ -2,8 +2,8 @@
 
 from types import SimpleNamespace
 
+from fastapi import Response
 import pytest
-from fastapi import Request, Response
 from starlette import status
 from starlette.datastructures import Headers
 

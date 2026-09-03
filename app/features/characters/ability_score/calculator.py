@@ -80,9 +80,7 @@ def resolve_ability_caps(feature_increases: list) -> dict[AbilityScore, int]:
     caps = dict.fromkeys(AbilityScore, ABILITY_SCORE_CAP)
     for increase in feature_increases:
         if increase.new_cap is not None:
-            caps[increase.ability] = min(
-                MAX_ABILITY_SCORE_CAP, max(caps[increase.ability], increase.new_cap)
-            )
+            caps[increase.ability] = min(MAX_ABILITY_SCORE_CAP, max(caps[increase.ability], increase.new_cap))
     return caps
 
 

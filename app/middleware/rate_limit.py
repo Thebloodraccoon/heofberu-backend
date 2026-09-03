@@ -35,7 +35,8 @@ _DEFAULT_BUCKET = "default"
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Redis-backed per-IP rate limiting with a bounded in-memory fallback.
+    """
+    Redis-backed per-IP rate limiting with a bounded in-memory fallback.
 
     Args:
         app: The ASGI application.
@@ -70,7 +71,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.clients: dict[str, deque[float]] = {}
 
     def _resolve_rule(self, request: Request) -> tuple[int, str]:
-        """Resolve ``(calls, bucket)`` for a request from the route rules.
+        """
+        Resolve ``(calls, bucket)`` for a request from the route rules.
 
         The first matching rule wins; rules are ordered most-specific-first
         in ``MiddlewareConfig.get_route_rules``. Unmatched requests fall
@@ -91,7 +93,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             elif not path.startswith(rule["path"]):
                 continue
 
-            if rule.get("search") and "search" not in query:
+            if rule.get("search") and not query.get("search"):
                 continue
 
             calls = rule.get(self.stage)
@@ -142,9 +144,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return response
 
-    async def _count_and_check(
-        self, client_ip: str, bucket: str, calls: int, current_time: float
-    ) -> tuple[int, bool]:
+    async def _count_and_check(self, client_ip: str, bucket: str, calls: int, current_time: float) -> tuple[int, bool]:
         """
         Increment the client's window counter for ``bucket`` and report
         whether it is still under the (possibly rule-specific) limit.
@@ -161,7 +161,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return self._local_incr_and_check(client_ip, calls, current_time)
 
     async def _redis_incr(self, client_ip: str, bucket: str, current_time: float) -> int:
-        """Fixed-window INCR in Redis, with the key expiry set *atomically*.
+        """
+        Fixed-window INCR in Redis, with the key expiry set *atomically*.
 
         ``INCR`` and ``EXPIRE`` are sent together in one pipeline so the
         expiry is attached in the same round-trip that first creates the
@@ -207,4 +208,3 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         while len(self.clients) > _MAX_TRACKED_CLIENTS:
             self.clients.pop(next(iter(self.clients)))
-

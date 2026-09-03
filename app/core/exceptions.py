@@ -22,7 +22,8 @@ def get_timestamp() -> str:
 
 
 class ErrorResponse(BaseModel):
-    """Standardized error response format.
+    """
+    Standardized error response format.
 
     Serialized via ``model_dump()`` (or the legacy ``to_dict()`` alias)
     and wrapped in ``JSONResponse`` by the exception handlers.

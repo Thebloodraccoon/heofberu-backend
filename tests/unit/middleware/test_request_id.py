@@ -1,15 +1,13 @@
 """Unit tests for RequestIDMiddleware UUID validation."""
 
-import uuid
-from collections.abc import Callable
 from types import SimpleNamespace
+import uuid
 
+from fastapi import Response
 import pytest
-from fastapi import Request, Response
-from starlette import status
 from starlette.datastructures import Headers
 
-from app.middleware.request_id import RequestIDMiddleware, _UUID_RE
+from app.middleware.request_id import _UUID_RE, RequestIDMiddleware
 
 
 def _make_request(headers=None):
@@ -82,7 +80,7 @@ class TestRequestIDMiddleware:
     async def test_rejects_injection_attempt(self):
         middleware = RequestIDMiddleware(app=SimpleNamespace())
         request = _make_request(headers={"X-Request-ID": "'; DROP TABLE users; --"})
-        response = await middleware.dispatch(request, _call_next)
+        await middleware.dispatch(request, _call_next)
 
         assert _UUID_RE.match(request.state.request_id)
 

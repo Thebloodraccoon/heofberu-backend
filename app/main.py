@@ -46,7 +46,8 @@ async def lifespan(app: FastAPI):
 
 
 def setup_middleware(app: FastAPI) -> None:
-    """Setup application middleware in the correct order.
+    """
+    Setup application middleware in the correct order.
 
     Middleware is executed last-added-first (Starlette inverts the order), so
     CORSMiddleware must be added *last* to wrap every other middleware —

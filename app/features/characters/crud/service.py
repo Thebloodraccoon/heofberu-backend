@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import AbilityScore, FeatureSourceType, UserRole
+from app.constants import FeatureSourceType, UserRole
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
@@ -215,8 +215,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
                     base=breakdown.base,
                     total=breakdown.total,
                     contributions=[
-                        {"source": c.source, "label": c.label, "amount": c.amount}
-                        for c in breakdown.contributions
+                        {"source": c.source, "label": c.label, "amount": c.amount} for c in breakdown.contributions
                     ],
                 )
                 for ability, breakdown in breakdown_by_ability.items()
@@ -328,9 +327,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             # written from the background's description when a background is
             # chosen at creation.
             if background_description:
-                self.repository.db.add(
-                    CharacterBackstory(character_id=character.id, content=background_description)
-                )
+                self.repository.db.add(CharacterBackstory(character_id=character.id, content=background_description))
 
             # The GM-set level-up cap starts at the character's starting
             # level: it cannot level up until a GM raises its maximum.

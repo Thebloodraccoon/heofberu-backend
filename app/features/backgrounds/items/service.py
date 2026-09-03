@@ -11,6 +11,7 @@ from app.features.shared.items.mixins import SourceItemManagerMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
 from app.models import Background
 
+
 class BackgroundItemsService(
     SourceItemManagerMixin,
     BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],

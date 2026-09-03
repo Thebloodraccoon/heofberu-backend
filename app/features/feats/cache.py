@@ -4,6 +4,7 @@ from app.core.cache import invalidate
 
 FEAT_CACHE_NAMESPACES = ("feats",)
 
+
 async def invalidate_feat_cache() -> None:
     """
     Purge every cache namespace a feat read can hit.

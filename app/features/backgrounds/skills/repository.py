@@ -4,6 +4,7 @@ from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.shared.skills.mixins import SkillLookupMixin
 from app.models import Background, Skill, background_skills
 
+
 class BackgroundSkillsRepository(SkillLookupMixin, BackgroundRepository):
     """
     Granted-skill persistence for backgrounds.

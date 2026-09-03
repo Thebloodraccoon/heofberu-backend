@@ -2,6 +2,7 @@
 
 from app.core.exceptions import AppError
 
+
 class FeatNotFoundException(AppError):
     """Raised when a feat with the given ID does not exist."""
 

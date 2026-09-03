@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body
 
 from app.features.features.ability_increases.schemas import (
     AbilityIncreasesUpdate,
@@ -12,6 +12,7 @@ from app.features.features.dependencies import FeatureAbilityIncreasesDep
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
+
 
 @router.get(
     "/{feature_id:int}/ability-increases",
@@ -28,6 +29,7 @@ async def get_feature_ability_increases(
     """List the fixed ability-score effects granted while this feature is on a character. Open endpoint."""
 
     return await service.get_ability_increases(feature_id)
+
 
 @router.put(
     "/{feature_id:int}/ability-increases",

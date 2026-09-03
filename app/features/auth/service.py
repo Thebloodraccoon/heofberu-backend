@@ -86,7 +86,8 @@ class AuthService:
         return RegisterResponse(access_token=self._issue_tokens(user.email, response))
 
     async def refresh_tokens(self, refresh_token: str) -> RefreshResponse:
-        """Issue a new access token from a valid, non-revoked refresh token.
+        """
+        Issue a new access token from a valid, non-revoked refresh token.
 
         The refresh token is checked against the blacklist, not consumed, so a
         logged-out (revoked) refresh token can't mint new access tokens.
@@ -171,7 +172,8 @@ class AuthService:
 
     @staticmethod
     def _issue_tokens(email: str, response: Response) -> str:
-        """Create an access/refresh pair for ``email``, set the refresh cookie, return the access token.
+        """
+        Create an access/refresh pair for ``email``, set the refresh cookie, return the access token.
 
         Shared by ``login`` and ``register`` — both end by logging the caller in.
         """

@@ -49,6 +49,7 @@ SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.OTHER: None,
 }
 
+
 def _get_fk_name(source_type: FeatureSourceType) -> str:
     """The source-FK column for ``source_type`` (raises for OTHER)."""
 
@@ -59,6 +60,7 @@ def _get_fk_name(source_type: FeatureSourceType) -> str:
         )
 
     return fk_name
+
 
 class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureGetAllResponse]):
     """

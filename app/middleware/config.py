@@ -27,7 +27,8 @@ class MiddlewareConfig:
 
     @staticmethod
     def get_rate_limit_config() -> dict[str, Any]:
-        """Get configuration for RateLimitMiddleware.
+        """
+        Get configuration for RateLimitMiddleware.
 
         The static per-stage call budget is the *default* limit every
         request falls under. Endpoint-specific rules (``get_route_rules``)
@@ -49,7 +50,8 @@ class MiddlewareConfig:
 
     @staticmethod
     def get_route_rules() -> list[dict[str, Any]]:
-        """Endpoint-specific rate limit rules, most-specific-first.
+        """
+        Endpoint-specific rate limit rules, most-specific-first.
 
         Each rule carries stage-specific ``calls`` budgets and a distinct
         ``bucket`` so its traffic does not consume the caller's general
@@ -67,21 +69,74 @@ class MiddlewareConfig:
         return [
             # Auth — brute-force / anti-spam / anti-abuse budgets.
             {"path": "/api/auth/login", "method": "POST", "bucket": "auth-login", "prod": 10, "staging": 10, "dev": 30},
-            {"path": "/api/auth/register", "method": "POST", "bucket": "auth-register", "prod": 5, "staging": 5, "dev": 20},
-            {"path": "/api/auth/forgot-password", "method": "POST", "bucket": "auth-forgot", "prod": 3, "staging": 3, "dev": 10},
-            {"path": "/api/auth/reset-password", "method": "POST", "bucket": "auth-reset", "prod": 5, "staging": 5, "dev": 10},
-            {"path": "/api/auth/refresh", "method": "POST", "bucket": "auth-refresh", "prod": 20, "staging": 20, "dev": 60},
+            {
+                "path": "/api/auth/register",
+                "method": "POST",
+                "bucket": "auth-register",
+                "prod": 5,
+                "staging": 5,
+                "dev": 20,
+            },
+            {
+                "path": "/api/auth/forgot-password",
+                "method": "POST",
+                "bucket": "auth-forgot",
+                "prod": 3,
+                "staging": 3,
+                "dev": 10,
+            },
+            {
+                "path": "/api/auth/reset-password",
+                "method": "POST",
+                "bucket": "auth-reset",
+                "prod": 5,
+                "staging": 5,
+                "dev": 10,
+            },
+            {
+                "path": "/api/auth/refresh",
+                "method": "POST",
+                "bucket": "auth-refresh",
+                "prod": 20,
+                "staging": 20,
+                "dev": 60,
+            },
             # Catalog image uploads — long-running, heavy body.
             {"path": "/image", "method": "PUT", "suffix": True, "bucket": "image", "prod": 5, "staging": 5, "dev": 20},
             # Debounced catalog search lists.
-            {"path": "/api/spells", "method": "GET", "search": True, "bucket": "search-spells", "prod": 20, "staging": 20, "dev": 60},
-            {"path": "/api/feats", "method": "GET", "search": True, "bucket": "search-feats", "prod": 20, "staging": 20, "dev": 60},
-            {"path": "/api/features", "method": "GET", "search": True, "bucket": "search-features", "prod": 20, "staging": 20, "dev": 60},
+            {
+                "path": "/api/spells",
+                "method": "GET",
+                "search": True,
+                "bucket": "search-spells",
+                "prod": 20,
+                "staging": 20,
+                "dev": 60,
+            },
+            {
+                "path": "/api/feats",
+                "method": "GET",
+                "search": True,
+                "bucket": "search-feats",
+                "prod": 20,
+                "staging": 20,
+                "dev": 60,
+            },
+            {
+                "path": "/api/features",
+                "method": "GET",
+                "search": True,
+                "bucket": "search-features",
+                "prod": 20,
+                "staging": 20,
+                "dev": 60,
+            },
         ]
 
     @staticmethod
     def get_cors_config() -> dict[str, Any]:
-        """Get configuration for CORS middleware.
+        """
+        Get configuration for CORS middleware.
 
         ``allow_credentials`` is disabled when the origin list contains a
         wildcard (``*``) because Starlette / the ASGI spec reject the

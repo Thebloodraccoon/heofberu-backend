@@ -71,9 +71,7 @@ class TestClassItemChoicesAtCreation:
         )
         sword_option = next(option for option in groups[0]["options"] if option["item_id"] == sword.id)
 
-        response = await create_character_with_choices(
-            client, player_token, character_class.id, [sword_option["id"]]
-        )
+        response = await create_character_with_choices(client, player_token, character_class.id, [sword_option["id"]])
 
         assert response.status_code == 201, response.text
         items = await get_character_items(client, player_token, response.json()["id"])
@@ -148,9 +146,7 @@ class TestClassItemChoicesAtCreation:
         duplicate = await create_character_with_choices(client, player_token, character_class.id, [1, 1])
         assert duplicate.status_code == 422, duplicate.text
 
-    async def test_choice_without_any_choice_group_is_rejected(
-        self, client, player_token, create_class
-    ):
+    async def test_choice_without_any_choice_group_is_rejected(self, client, player_token, create_class):
         character_class = await create_class(name="Fighter")
 
         response = await create_character_with_choices(client, player_token, character_class.id, [12345])
@@ -234,7 +230,16 @@ class TestBackgroundItemChoices:
         assert items == {vest.id: 1}
 
     async def test_setting_background_with_choice_groups_after_creation_returns_400(
-        self, client, player, player_token, gm_token, db_session, create_class, create_character, create_background, create_item
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        db_session,
+        create_class,
+        create_character,
+        create_background,
+        create_item,
     ):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)

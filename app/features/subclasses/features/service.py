@@ -5,10 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
 from app.core.cache import use_cache
-from app.features.subclasses.crud.repository import SubclassRepository
-from app.features.subclasses.crud.schemas import SubclassCreate, SubclassResponse, SubclassUpdate
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
+from app.features.subclasses.crud.repository import SubclassRepository
+from app.features.subclasses.crud.schemas import SubclassCreate, SubclassResponse, SubclassUpdate
 from app.models.subclass_model import Subclass
 
 

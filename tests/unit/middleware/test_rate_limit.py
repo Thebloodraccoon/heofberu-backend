@@ -82,7 +82,8 @@ def make_request(path="/api/things", method="GET", headers=None, query=None, cli
     request = SimpleNamespace()
     request.method = method
     request.url = SimpleNamespace(path=path)
-    request.query_params = SimpleNamespace(__contains__=lambda self, k: k in (query or {}))
+    _q = query or {}
+    request.query_params = SimpleNamespace(get=lambda k, *a: _q.get(k, *a))
     request.headers = Headers(headers or {})
     request.client = SimpleNamespace(host=client_host) if client_host else None
     return request
@@ -243,11 +244,11 @@ class TestRouteRules:
         rules = [{"path": "/image", "method": "PUT", "suffix": True, "bucket": "image", "prod": 5, "dev": 20}]
         store = FakeRedis(incr_result=1)
         make_redis(monkeypatch, store)
-        middleware = make_middleware(calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=rules, stage="prod")
-
-        response, _ = await run_dispatch(
-            middleware, make_request(path="/api/races/3/image", method="PUT")
+        middleware = make_middleware(
+            calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=rules, stage="prod"
         )
+
+        response, _ = await run_dispatch(middleware, make_request(path="/api/races/3/image", method="PUT"))
 
         assert response.headers["X-RateLimit-Limit"] == "5"
         assert store.pipelines[0].commands[0] == ("incr", "rate_limit:10.0.0.1:image:16")
@@ -256,7 +257,9 @@ class TestRouteRules:
         rules = [{"path": "/api/spells", "method": "GET", "search": True, "bucket": "search", "prod": 20, "dev": 60}]
         store = FakeRedis(incr_result=1)
         make_redis(monkeypatch, store)
-        middleware = make_middleware(calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=rules, stage="prod")
+        middleware = make_middleware(
+            calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=rules, stage="prod"
+        )
 
         # No ?search= -> default budget/bucket.
         await run_dispatch(middleware, make_request(path="/api/spells", method="GET"))
@@ -384,8 +387,10 @@ class TestLocalIncrAndCheck:
         assert list(middleware.clients["ip"]) == [10.0]
 
     def test_blocked_empty_history_entry_keeps_entry(self):
-        """With a ``0`` budget every request is blocked; the empty deque stays
-        until evicted by ``_evict_stale`` (it is harmless and cheap)."""
+        """
+        With a ``0`` budget every request is blocked; the empty deque stays
+        until evicted by ``_evict_stale`` (it is harmless and cheap).
+        """
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=0, period=60)
 
         count, allowed = middleware._local_incr_and_check("ip", 0, 10.0)

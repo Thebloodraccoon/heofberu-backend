@@ -1,11 +1,9 @@
 """Subclass feature read endpoint: list SUBCLASS-source features (writes go through the features catalog)."""
 
-from typing import Annotated
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Query
-
-from app.features.subclasses.dependencies import SubclassFeaturesDep
 from app.features.features.crud.schemas import NestedFeatureResponse
+from app.features.subclasses.dependencies import SubclassFeaturesDep
 
 router = APIRouter()
 

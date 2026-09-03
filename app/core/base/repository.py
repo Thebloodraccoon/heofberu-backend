@@ -21,7 +21,8 @@ from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
 
 
 async def _commit_or_rollback(db: AsyncSession) -> None:
-    """Commit pending changes, rolling back and re-raising on a ``SQLAlchemyError``.
+    """
+    Commit pending changes, rolling back and re-raising on a ``SQLAlchemyError``.
 
     Standalone helper for code that does not extend :class:`BaseRepository`
     (e.g. ``NestedSourceItemService``, ``CharacterSkillProficiencyRepository``).
@@ -131,7 +132,8 @@ class BaseRepository(Generic[ModelType]):
         return stmt
 
     def _apply_search(self, stmt: Any, search: str | None) -> Any:
-        """Apply a case-insensitive ``ILIKE`` substring match, OR'd across ``self._search_fields``.
+        """
+        Apply a case-insensitive ``ILIKE`` substring match, OR'd across ``self._search_fields``.
 
         Wildcard characters (``%``, ``_``) in *search* are escaped so they
         are matched literally rather than acting as LIKE wildcards.
@@ -523,5 +525,5 @@ class BaseRepository(Generic[ModelType]):
         guards (``is_in_use``) so the FK-existence pattern is defined once.
         """
 
-        stmt = select(referencing_model.id).where(getattr(referencing_model, fk_name) == value).limit(1)
+        stmt = select(1).where(getattr(referencing_model, fk_name) == value).limit(1)
         return await self.db.scalar(stmt) is not None

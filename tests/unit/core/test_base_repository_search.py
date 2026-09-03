@@ -1,8 +1,8 @@
 """Unit tests for BaseRepository._apply_search wildcard escaping."""
 
 import pytest
-from sqlalchemy import create_engine, String, select
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
+from sqlalchemy import String, create_engine, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from app.core.base.repository import BaseRepository
 
@@ -39,11 +39,13 @@ class TestApplySearchWildcardEscaping:
         return session.execute(stmt).scalars().all()
 
     def test_percent_literal_match(self, sync_session):
-        sync_session.add_all([
-            Item(name="100% Completion"),
-            Item(name="Complete"),
-            Item(name="Partially"),
-        ])
+        sync_session.add_all(
+            [
+                Item(name="100% Completion"),
+                Item(name="Complete"),
+                Item(name="Partially"),
+            ]
+        )
         sync_session.commit()
 
         results = self._search(sync_session, "100%")
@@ -51,11 +53,13 @@ class TestApplySearchWildcardEscaping:
         assert results[0].name == "100% Completion"
 
     def test_underscore_literal_match(self, sync_session):
-        sync_session.add_all([
-            Item(name="test_item"),
-            Item(name="test-item"),
-            Item(name="testitem"),
-        ])
+        sync_session.add_all(
+            [
+                Item(name="test_item"),
+                Item(name="test-item"),
+                Item(name="testitem"),
+            ]
+        )
         sync_session.commit()
 
         results = self._search(sync_session, "test_item")
@@ -63,11 +67,13 @@ class TestApplySearchWildcardEscaping:
         assert results[0].name == "test_item"
 
     def test_combined_wildcards(self, sync_session):
-        sync_session.add_all([
-            Item(name="100%_done"),
-            Item(name="100Xdone"),
-            Item(name="100% done"),
-        ])
+        sync_session.add_all(
+            [
+                Item(name="100%_done"),
+                Item(name="100Xdone"),
+                Item(name="100% done"),
+            ]
+        )
         sync_session.commit()
 
         results = self._search(sync_session, "100%_done")
@@ -75,10 +81,12 @@ class TestApplySearchWildcardEscaping:
         assert results[0].name == "100%_done"
 
     def test_backslash_escape(self, sync_session):
-        sync_session.add_all([
-            Item(name="path\\to\\file"),
-            Item(name="path to file"),
-        ])
+        sync_session.add_all(
+            [
+                Item(name="path\\to\\file"),
+                Item(name="path to file"),
+            ]
+        )
         sync_session.commit()
 
         results = self._search(sync_session, "path\\to")
@@ -86,11 +94,13 @@ class TestApplySearchWildcardEscaping:
         assert results[0].name == "path\\to\\file"
 
     def test_normal_search_still_works(self, sync_session):
-        sync_session.add_all([
-            Item(name="Longsword"),
-            Item(name="Longbow"),
-            Item(name="Dagger"),
-        ])
+        sync_session.add_all(
+            [
+                Item(name="Longsword"),
+                Item(name="Longbow"),
+                Item(name="Dagger"),
+            ]
+        )
         sync_session.commit()
 
         results = self._search(sync_session, "Long")

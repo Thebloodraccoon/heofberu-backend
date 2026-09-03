@@ -267,9 +267,7 @@ class TestPerAbilityCap:
             primal_champion.id,
             [{"ability": "STR", "amount": 4, "new_cap": 30}],
         )
-        character, token = await create_api_character(
-            class_id=character_class.id, owner=player, strength=18
-        )
+        character, token = await create_api_character(class_id=character_class.id, owner=player, strength=18)
         await grant_feature(client, gm_token, character["id"], primal_champion.id)
         # Effective STR is already 22 (feature-driven, above 20). cap is 30.
 

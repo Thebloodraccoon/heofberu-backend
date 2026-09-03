@@ -5,9 +5,9 @@ import math
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore, ArmorProficiency, DiceType, SpellLevel, WeaponProficiency
-from app.features.subclasses.crud.schemas import SubclassBriefResponse
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.shared.items.schemas import ChoiceGroupResponse, SourceItemResponse
+from app.features.subclasses.crud.schemas import SubclassBriefResponse
 
 
 def _proficiency_bonus(class_level: int) -> int:

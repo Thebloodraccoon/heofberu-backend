@@ -65,7 +65,9 @@ class CharacterStatsService:
         contributions: dict[AbilityScore, list[StatContribution]] = {ability: [] for ability in AbilityScore}
 
         race_rows = await self.repository.get_races([character.race_id]) if character.race_id is not None else {}
-        subrace_rows = await self.repository.get_subraces([character.subrace_id]) if character.subrace_id is not None else {}
+        subrace_rows = (
+            await self.repository.get_subraces([character.subrace_id]) if character.subrace_id is not None else {}
+        )
         race_name = getattr(race_rows.get(character.race_id), "name", None)
         subrace_name = getattr(subrace_rows.get(character.subrace_id), "name", None)
 
@@ -92,9 +94,7 @@ class CharacterStatsService:
                 label = f"Level {choice.class_level} ({choice_kind})"
             else:
                 label = "GM adjustment"
-            contributions[increase.ability].append(
-                StatContribution(source="asi", label=label, amount=increase.amount)
-            )
+            contributions[increase.ability].append(StatContribution(source="asi", label=label, amount=increase.amount))
         for increase in feature_increases:
             contributions[increase.ability].append(
                 StatContribution(

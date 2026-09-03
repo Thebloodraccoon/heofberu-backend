@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
 
+
 class FeatBase(BaseModel):
     """Base feat fields shared by create, update, and response schemas."""
 
@@ -27,11 +28,13 @@ class FeatBase(BaseModel):
 
         return value
 
+
 class AbilityScoreIncreaseItem(BaseModel):
     """A single ASI choice granted by a feat, e.g. {"ability": "STR", "amount": 1}."""
 
     ability: AbilityScore
     amount: int = 1
+
 
 def _validate_unique_asi_abilities(
     ability_score_increases: list[AbilityScoreIncreaseItem],
@@ -45,6 +48,7 @@ def _validate_unique_asi_abilities(
         raise ValueError(f"Duplicate ability score(s): {sorted(duplicates)}")
 
     return ability_score_increases
+
 
 class FeatCreate(FeatBase):
     """
@@ -64,6 +68,7 @@ class FeatCreate(FeatBase):
             return value
 
         return _validate_unique_asi_abilities(value)
+
 
 class FeatUpdate(BaseModel):
     """
@@ -90,6 +95,7 @@ class FeatUpdate(BaseModel):
 
         return value
 
+
 class AbilityScoreIncreasesUpdate(BaseModel):
     """Full replacement list of ASI choices for a feat."""
 
@@ -101,6 +107,7 @@ class AbilityScoreIncreasesUpdate(BaseModel):
 
         return _validate_unique_asi_abilities(ability_score_increases)
 
+
 class AbilityScoreIncreaseResponse(BaseModel):
     """A feat's ASI choice as returned in responses."""
 
@@ -110,6 +117,7 @@ class AbilityScoreIncreaseResponse(BaseModel):
     ability: AbilityScore
     amount: int
 
+
 class FeatResponse(FeatBase):
     """Full feat representation returned by the API."""
 
@@ -117,6 +125,7 @@ class FeatResponse(FeatBase):
 
     id: int
     ability_score_increases: list[AbilityScoreIncreaseResponse] = []
+
 
 class FeatGetAllResponse(BaseModel):
     """Lightweight listing row: no description."""

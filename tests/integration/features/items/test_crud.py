@@ -73,9 +73,7 @@ class TestItemCrud:
         item = await create_item(name="Choice Option Item")
         character_class = await create_class(name="Fighter")
 
-        group = SourceItemChoiceGroup(
-            source_type=FeatureSourceType.CLASS, class_id=character_class.id, pick_count=1
-        )
+        group = SourceItemChoiceGroup(source_type=FeatureSourceType.CLASS, class_id=character_class.id, pick_count=1)
         db_session.add(group)
         await db_session.flush()
         db_session.add(SourceItemChoiceOption(group_id=group.id, item_id=item.id, quantity=1))

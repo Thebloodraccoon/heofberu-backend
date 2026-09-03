@@ -1,7 +1,7 @@
 """Async email-sending service (SMTP via aiosmtplib)."""
 
-import logging
 from email.message import EmailMessage
+import logging
 
 import aiosmtplib
 

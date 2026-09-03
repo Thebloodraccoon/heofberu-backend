@@ -1,4 +1,5 @@
-"""Integration tests for catalog image upload/delete with a mocked storage service.
+"""
+Integration tests for catalog image upload/delete with a mocked storage service.
 
 The real ``ImageStorageService`` talks to Supabase Storage, which is not
 available in the test environment. We override the ``get_image_storage_service``

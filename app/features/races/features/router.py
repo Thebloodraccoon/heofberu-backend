@@ -1,8 +1,6 @@
 """Race feature read endpoint: list RACE-source features for a race."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.races.dependencies import RaceFeaturesDep
