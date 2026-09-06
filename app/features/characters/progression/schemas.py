@@ -4,7 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import AbilityScore, ASILevelChoice
+from app.constants import ASI_LEVELS, AbilityScore, ASILevelChoice
+from app.features.characters.schemas import ABILITY_SCORE_MAX, ABILITY_SCORE_MIN
 
 # A single ASI at a level grants up to +2 total across the six abilities
 # (e.g. +2 to one ability, or +1/+1 to two). Individual increments are
@@ -102,6 +103,97 @@ class FeatChoice(BaseModel):
 
 
 LevelUpChoice = Annotated[ASIChoice | FeatChoice, Field(discriminator="type")]
+
+
+class RebuildASIChoice(BaseModel):
+    """
+    One resolved Ability Score Improvement choice supplied with a
+    rebuild, for an ASI level (see ``ASI_LEVELS``) the character has
+    already reached. A rebuild must supply exactly one of these per
+    reached ASI level — see ``CharacterRebuildRequest``.
+    """
+
+    class_level: int
+    choice: LevelUpChoice
+
+    @field_validator("class_level")
+    def validate_class_level(cls, class_level):
+        """Reject a class_level that isn't one of the ASI levels."""
+
+        if class_level not in ASI_LEVELS:
+            raise ValueError(f"class_level must be one of {sorted(ASI_LEVELS)}.")
+
+        return class_level
+
+
+class CharacterRebuildRequest(BaseModel):
+    """
+    Full point-rebuild payload: the same "build" fields taken at character
+    creation (class/subclass/race/subrace/background, base ability
+    scores, class skill choices) applied to an existing character, plus
+    the two values a rebuild cannot derive on its own:
+
+    - ``max_hp``: the player's rolled (or averaged) HP total for the new
+      build. The service validates it falls within the range the new
+      class's hit die and current level allow (level 1's die + CON is
+      fixed; each level above it contributes between 1 and die + CON) —
+      see ``CharacterProgressionService._max_hp_bounds``.
+    - ``asi_choices``: one entry for every ASI level (see ``ASI_LEVELS``)
+      the character has already reached, replacing its prior ASI/feat
+      choices at those levels — the new build's ability scores/class can
+      make the old ones invalid (e.g. no longer a legal ability-cap
+      increase, or a feat prerequisite no longer met), so they are never
+      carried over automatically.
+
+    Everything else derived from these choices is recomputed by the
+    service — skill proficiencies, source-owned features, spell slots,
+    and the ability-score cache — and known spells are cleared.
+    ``level``, notes, personality, backstory, inventory, and GM-granted
+    feats are untouched (see
+    ``CharacterProgressionService.rebuild_character``). ``extra="forbid"``
+    rejects stale/unknown fields.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    class_id: int
+    subclass_id: int | None = None
+
+    race_id: int
+    subrace_id: int | None = None
+
+    background_id: int | None = None
+
+    strength: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
+    dexterity: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
+    constitution: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
+    intelligence: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
+    wisdom: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
+    charisma: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
+
+    max_hp: int = Field(ge=1)
+
+    skill_ids: list[int] = Field(default_factory=list)
+    asi_choices: list[RebuildASIChoice] = Field(default_factory=list)
+
+    @field_validator("skill_ids")
+    def validate_unique_skill_ids(cls, skill_ids):
+        """Reject lists containing duplicate skill IDs."""
+
+        if len(skill_ids) != len(set(skill_ids)):
+            raise ValueError("Duplicate skill IDs are not allowed.")
+
+        return skill_ids
+
+    @field_validator("asi_choices")
+    def validate_unique_asi_levels(cls, asi_choices):
+        """Reject more than one supplied choice for the same ASI level."""
+
+        levels = [item.class_level for item in asi_choices]
+        if len(levels) != len(set(levels)):
+            raise ValueError("Duplicate class_level in asi_choices is not allowed.")
+
+        return asi_choices
 
 
 class LevelUpRequest(BaseModel):

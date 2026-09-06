@@ -18,6 +18,7 @@ from app.features.characters.progression.schemas import (
     BackgroundChange,
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
+    CharacterRebuildRequest,
     LevelUpRequest,
     SubclassChange,
     SubraceChange,
@@ -149,25 +150,67 @@ async def change_subrace(
 @router.post(
     "/{character_id:int}/rebuild",
     response_model=CharacterResponse,
-    summary="Point-rebuild a character (not implemented yet)",
+    summary="Point-rebuild a character's class/race/background/ability scores",
     responses={
+        400: {
+            "description": (
+                "A chosen skill isn't available for the class or too many were chosen, "
+                "asi_choices doesn't exactly cover every ASI level already reached, or "
+                "max_hp is outside the range the new class/level allow."
+            )
+        },
         403: {"description": "You do not have access to this character."},
-        404: {"description": "Character not found."},
-        501: {"description": "Rebuild is planned but not implemented yet."},
+        404: {"description": "Character, class, subclass, race, subrace, or background not found."},
     },
 )
 async def rebuild_character(
     character_id: int,
+    data: Annotated[
+        CharacterRebuildRequest,
+        Body(
+            openapi_examples={
+                "rebuild": {
+                    "summary": "Swap class/race at level 5, re-picking skills and the level-4 ASI",
+                    "value": {
+                        "class_id": 2,
+                        "race_id": 3,
+                        "strength": 10,
+                        "dexterity": 14,
+                        "constitution": 14,
+                        "intelligence": 12,
+                        "wisdom": 10,
+                        "charisma": 8,
+                        "max_hp": 32,
+                        "skill_ids": [1, 4],
+                        "asi_choices": [
+                            {
+                                "class_level": 4,
+                                "choice": {"type": "ASI", "increases": [{"ability": "DEX", "amount": 2}]},
+                            }
+                        ],
+                    },
+                },
+            }
+        ),
+    ],
     progression_service: CharacterProgressionServiceDep,
+    character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
     """
-    Placeholder for the future point-rebuild: a full class/race swap that
-    resets every derived choice while keeping the character row. Currently
-    always responds with **501 Not Implemented**.
+    Full class/race swap that resets every derived choice while keeping
+    the character row: class/subclass/race(required)/subrace/background
+    and base ability scores are replaced, then skill proficiencies and
+    source-owned features are recomputed, every already-reached ASI level
+    is re-resolved from ``asi_choices`` (required, one per level),
+    ``max_hp`` is validated against the new class/level's range and set,
+    spell slots are recomputed, and known spells are cleared. Level,
+    notes, personality, backstory, inventory, and GM-granted feats are
+    untouched.
     """
 
-    await progression_service.request_rebuild(character_id, current_user)
+    await progression_service.rebuild_character(character_id, data, current_user)
+    return await character_service.get_character(character_id, current_user)
 
 
 @router.post(

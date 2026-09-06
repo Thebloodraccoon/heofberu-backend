@@ -1,6 +1,6 @@
 """Repository for the character ASI-level choices audit table."""
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -94,3 +94,16 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         await self.db.delete(choice)
         await self.commit_or_flush()
         return True
+
+    async def clear_character_choices(self, character_id: int, *, commit: bool = True) -> None:
+        """
+        Delete every resolved ASI-level choice for a character (child
+        increases cascade at the DB level) — a point-rebuild replaces them
+        all with freshly resolved choices for the new build.
+        """
+
+        await self.db.execute(delete(CharacterASIChoice).where(CharacterASIChoice.character_id == character_id))
+        if commit:
+            await self.commit_or_flush()
+        else:
+            await self.db.flush()

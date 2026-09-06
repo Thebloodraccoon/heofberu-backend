@@ -43,7 +43,15 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   spend/restore endpoints).
 - `progression/` — level-up, subclass/subrace/background setup,
   progression-feature sync, the ASI-choice log repositories, and the
-  501-stubbed rebuild endpoint.
+  point-rebuild endpoint (`POST /characters/{id}/rebuild`): a full
+  class/subclass/race(required)/subrace/background + base-ability-score
+  swap that recomputes skill proficiencies and source-owned features,
+  requires one `asi_choices` entry per ASI level already reached
+  (replacing the character's prior ASI/feat history at those levels),
+  validates and sets the caller-supplied `max_hp` against the new
+  class/level's allowed range, recomputes spell slots, and clears known
+  spells — while leaving level, notes, personality, backstory, inventory,
+  and GM-granted feats untouched.
 - `gm_panel/` — GM-only panel under `/characters/gm-panel`: feat grants
   (with mandatory ASI choice when offered), feature grants, inventory
   (items), free-form ±ASI adjustments, max-HP edit, the per-character

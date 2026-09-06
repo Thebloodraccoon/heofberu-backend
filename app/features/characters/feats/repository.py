@@ -1,6 +1,6 @@
 """Repository for the feat grants recorded on a character (``character_feats``)."""
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -119,3 +119,23 @@ class CharacterFeatRepository(BaseRepository[CharacterFeat]):
         await self.db.delete(grant)
         await self.commit_or_flush()
         return True
+
+    async def remove_feats_by_source(
+        self, character_id: int, source_type: CharacterFeatSource, *, commit: bool = True
+    ) -> None:
+        """
+        Revoke every feat grant of a given ``source_type`` for a character
+        — a point-rebuild uses this to clear the feats granted by prior
+        ASI-level choices before replacing them.
+        """
+
+        await self.db.execute(
+            delete(CharacterFeat).where(
+                CharacterFeat.character_id == character_id,
+                CharacterFeat.source_type == source_type,
+            )
+        )
+        if commit:
+            await self.commit_or_flush()
+        else:
+            await self.db.flush()

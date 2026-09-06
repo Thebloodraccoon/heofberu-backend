@@ -1,6 +1,6 @@
 """Character spell repositories: spell slots and known spells."""
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -159,6 +159,19 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
         await self.db.delete(character_spell)
         await self.commit_or_flush()
         return True
+
+    async def clear_known_spells(self, character_id: int, *, commit: bool = True) -> None:
+        """
+        Delete every known-spell row for a character (e.g. a point-rebuild:
+        the old class's spells no longer apply and the new class may not
+        even cast).
+        """
+
+        await self.db.execute(delete(CharacterSpell).where(CharacterSpell.character_id == character_id))
+        if commit:
+            await self.commit_or_flush()
+        else:
+            await self.db.flush()
 
     async def count_known_spells_at_level(self, character_id: int, level: str) -> int:
         """

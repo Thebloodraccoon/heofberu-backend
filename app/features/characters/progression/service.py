@@ -1,6 +1,6 @@
-"""Service for character progression: subclass/subrace/background setup, leveling up, rebuild stub."""
+"""Service for character progression: subclass/subrace/background setup, leveling up, point-rebuild."""
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource, FeatureSourceType
@@ -23,10 +23,11 @@ from app.features.characters.progression.exceptions import (
     BackgroundAlreadySetException,
     BackgroundItemChoicesNotSupportedException,
     CharacterAlreadyAtMaxLevelException,
-    CharacterRebuildNotImplementedException,
     InvalidHitPointGainException,
+    InvalidRebuildMaxHpException,
     LevelUpChoiceNotAllowedException,
     LevelUpChoiceRequiredException,
+    RebuildAsiChoicesMismatchException,
 )
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
@@ -35,19 +36,23 @@ from app.features.characters.progression.schemas import (
     BackgroundChange,
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
+    CharacterRebuildRequest,
     FeatChoice,
     LevelUpRequest,
+    RebuildASIChoice,
     SubclassChange,
     SubraceChange,
 )
+from app.features.characters.spells.repository import CharacterSpellRepository
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.exceptions import SubclassNotFoundException
+from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
 from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.items.crud.repository import ItemRepository
 from app.features.races.crud.repository import RaceRepository
-from app.features.races.exceptions import SubraceNotFoundException
+from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
+from app.models import Class
 from app.models.character_association_models import CharacterSkillProficiency
 from app.models.character_item_model import CharacterItem
 from app.models.character_model import Character
@@ -56,9 +61,9 @@ from app.models.character_model import Character
 class CharacterProgressionService(CharacterSubDomainService):
     """
     Character progression: subclass/subrace change, late background setup,
-    leveling up, and the (stubbed) full rebuild. Class and race are fixed
-    once chosen; empty subclass/subrace/background slots can still be
-    filled later.
+    leveling up, and the full point-rebuild. Outside of a rebuild, class
+    and race are fixed once chosen; empty subclass/subrace/background slots
+    can still be filled later.
 
     Leveling up is the entry point for ability improvements: an ASI level
     (see ``ASI_LEVELS``) *requires* the request's ``choice``; the resolved
@@ -84,6 +89,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.stats_service = CharacterStatsService(db)
+        self.character_spell_repository = CharacterSpellRepository(db)
 
     async def set_subclass(self, character_id: int, data: SubclassChange, current_user: UserResponse) -> None:
         """
@@ -139,7 +145,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         proficiencies), and its starting equipment (merged into stacks). A
         background whose equipment is built on "pick N of M" choice groups
         is rejected up front (no late-choice surface). Re-choosing is only
-        possible through the future rebuild endpoint.
+        possible through :meth:`rebuild_character`.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -170,15 +176,201 @@ class CharacterProgressionService(CharacterSubDomainService):
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
 
-    async def request_rebuild(self, character_id: int, current_user: UserResponse) -> None:
+    async def rebuild_character(
+        self, character_id: int, data: CharacterRebuildRequest, current_user: UserResponse
+    ) -> None:
         """
-        Point-rebuild placeholder: a full class/race swap is planned as a
-        single rebuild operation that resets derived choices while keeping
-        the character row; until implemented this raises 501.
+        Point-rebuild: replace the character's class/subclass/race/subrace/
+        background and base ability scores, re-validate and re-apply the
+        class skill choices, then recompute everything that derives from
+        them in one transaction:
+
+        - Skill proficiencies are wiped and rebuilt from scratch (the
+          validated new class choices plus the new background's/race's
+          granted skills) — there is no per-row "source" to reconcile
+          against, so expertise flags reset, same as a fresh character.
+        - Source-owned features are reconciled to the new
+          class/subclass/race/subrace/background via
+          ``sync_progression_features``.
+        - Every ASI level (see ``ASI_LEVELS``) at or below the character's
+          current level is re-resolved from ``data.asi_choices`` (required,
+          one per reached level): prior ASI-sourced feat grants and the
+          entire ``character_asi_choices`` log are cleared first, then the
+          new choices are applied in level order (so ability-cap checks
+          see each choice's own predecessors, same as leveling up
+          normally).
+        - ``max_hp`` is the caller-supplied value, validated against the
+          range the new class's hit die, its new effective CON modifier,
+          and the character's level allow (see ``_max_hp_bounds``) — a
+          rebuild has no remembered per-level roll history to recompute
+          it from. ``current_hp``/``temp_hp`` follow a level-up-style
+          full heal.
+        - Spell slot totals are re-applied for the new class/level and
+          every known spell is cleared (the old class's spells no longer
+          apply, and the new class may not even cast).
+        - The ability-score cache is refreshed.
+
+        ``level``, notes, personality, backstory, inventory, and
+        GM-granted feats are left untouched.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
-        raise CharacterRebuildNotImplementedException(character_id=character.id)
+
+        character_class = await self._validate_rebuild_references(data)
+        chosen_skill_ids = CharacterService._validate_chosen_skills(data.skill_ids, character_class)
+        self._validate_rebuild_asi_choices(character.level, data.asi_choices)
+
+        background_skill_ids: list[int] = []
+        if data.background_id is not None:
+            background = await self.background_repository.get_by_id(data.background_id)
+            if background is not None:
+                background_skill_ids = [skill.id for skill in background.granted_skills]
+
+        race = await self.race_repository.get_by_id(data.race_id)
+        race_skill_ids = [skill.id for skill in race.granted_skills] if race is not None else []
+
+        async with self._atomic():
+            character.class_id = data.class_id
+            character.subclass_id = data.subclass_id
+            character.race_id = data.race_id
+            character.subrace_id = data.subrace_id
+            character.background_id = data.background_id
+            character.strength = data.strength
+            character.dexterity = data.dexterity
+            character.constitution = data.constitution
+            character.intelligence = data.intelligence
+            character.wisdom = data.wisdom
+            character.charisma = data.charisma
+
+            # Features are reconciled BEFORE the ASI/HP math so fixed
+            # ability effects (e.g. +4 CON) from newly granted features
+            # are included in the effective CON modifier, mirroring
+            # character creation.
+            await sync_progression_features(self.repository.db, character)
+            await self.repository.db.flush()
+
+            await self._rebuild_skill_proficiencies(character, chosen_skill_ids, background_skill_ids, race_skill_ids)
+            await self.character_service.reapply_spell_slot_progression(character, commit=False)
+            await self.character_spell_repository.clear_known_spells(character.id, commit=False)
+
+            # Replaces the ASI-level history: the old choices were resolved
+            # against a build (class/ability scores) that no longer exists,
+            # so they are cleared and re-applied fresh, in level order, so
+            # each choice's ability-cap check sees its own predecessors.
+            await self.feat_grant_repository.remove_feats_by_source(character.id, CharacterFeatSource.ASI, commit=False)
+            await self.asi_repository.clear_character_choices(character.id, commit=False)
+            for asi_choice in sorted(data.asi_choices, key=lambda item: item.class_level):
+                if asi_choice.choice.type == ASILevelChoice.ASI:
+                    await self._apply_asi(character, asi_choice.choice.increases, asi_choice.class_level)
+                else:
+                    await self._apply_feat(character, asi_choice.choice, asi_choice.class_level)
+
+            minimum_hp, maximum_hp = await self._max_hp_bounds(character, character_class)
+            if not (minimum_hp <= data.max_hp <= maximum_hp):
+                raise InvalidRebuildMaxHpException(minimum=minimum_hp, maximum=maximum_hp)
+
+            character.max_hp = data.max_hp
+            character.current_hp = data.max_hp
+            character.temp_hp = 0
+
+        await self.stats_service.refresh(character)
+        await invalidate_character_cache(character_id)
+
+    async def _validate_rebuild_references(self, data: CharacterRebuildRequest) -> Class:
+        """
+        Validate every FK on a rebuild payload (mirrors
+        ``CharacterService._validate_references``, except ``race_id`` is
+        required here, not optional) and return the resolved class row
+        (eager-loaded ``available_skills``/``hit_dice``).
+        """
+
+        character_class = await self.class_repository.get_by_id(data.class_id)
+        if character_class is None:
+            raise ClassNotFoundException(class_id=data.class_id)
+
+        if (
+            data.subclass_id is not None
+            and await self.class_repository.get_subclass(data.class_id, data.subclass_id) is None
+        ):
+            raise SubclassNotFoundException(class_id=data.class_id, subclass_id=data.subclass_id)
+
+        if not await self.race_repository.exists_by_id(data.race_id):
+            raise RaceNotFoundException(race_id=data.race_id)
+
+        if (
+            data.subrace_id is not None
+            and await self.race_repository.get_subrace(data.race_id, data.subrace_id) is None
+        ):
+            raise SubraceNotFoundException(race_id=data.race_id, subrace_id=data.subrace_id)
+
+        if data.background_id is not None and not await self.background_repository.exists_by_id(data.background_id):
+            raise BackgroundNotFoundException(background_id=data.background_id)
+
+        return character_class
+
+    @staticmethod
+    def _validate_rebuild_asi_choices(character_level: int, asi_choices: list[RebuildASIChoice]) -> None:
+        """
+        Require exactly one ``asi_choices`` entry per ASI level (see
+        ``ASI_LEVELS``) at or below ``character_level`` — no fewer (an
+        unresolved level), no more (a level the character hasn't reached).
+        """
+
+        required_levels = {level for level in ASI_LEVELS if level <= character_level}
+        provided_levels = {item.class_level for item in asi_choices}
+
+        if provided_levels != required_levels:
+            raise RebuildAsiChoicesMismatchException(
+                required_levels=sorted(required_levels), provided_levels=sorted(provided_levels)
+            )
+
+    async def _rebuild_skill_proficiencies(
+        self,
+        character: Character,
+        chosen_skill_ids: list[int],
+        background_skill_ids: list[int],
+        race_skill_ids: list[int],
+    ) -> None:
+        """
+        Wipe the character's skill proficiencies and rebuild them from the
+        new choices/sources (merged and deduplicated, same as character
+        creation), all starting with ``is_expertise=False``.
+        """
+
+        await self.repository.db.execute(
+            delete(CharacterSkillProficiency).where(CharacterSkillProficiency.character_id == character.id)
+        )
+
+        merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
+        for skill_id in merged_skill_ids:
+            self.repository.db.add(
+                CharacterSkillProficiency(character_id=character.id, skill_id=skill_id, is_expertise=False)
+            )
+
+        await self.repository.db.flush()
+
+    async def _max_hp_bounds(self, character: Character, character_class: Class) -> tuple[int, int]:
+        """
+        The valid ``max_hp`` range for a rebuild, given the new class's
+        hit die and the character's (post-rebuild) effective CON modifier
+        across its current level: level 1 always grants the full hit die
+        + CON modifier (never a range, per 5e's level-1 rule, floored at
+        1); each level above it contributes between 1 and hit die + CON
+        modifier (floored at 1) — the same bounds ``level_up`` enforces
+        per level, applied here across every level at once since a
+        rebuild has no per-level roll history to validate individually.
+        """
+
+        die_sides = int(character_class.hit_dice.value[1:])
+        con_mod = await self._constitution_modifier(character)
+
+        level_1_hp = max(die_sides + con_mod, 1)
+        if character.level <= 1:
+            return level_1_hp, level_1_hp
+
+        max_gain = max(die_sides + con_mod, 1)
+        levels_above_one = character.level - 1
+        return level_1_hp + levels_above_one, level_1_hp + levels_above_one * max_gain
 
     async def _grant_background_skills(self, character: Character, granted_skills) -> None:
         """Add the background's granted skills as proficiency rows, skipping skills the character already has."""
