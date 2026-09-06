@@ -43,7 +43,15 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   spend/restore endpoints).
 - `progression/` — level-up, subclass/subrace/background setup,
   progression-feature sync, the ASI-choice log repositories, and the
-  501-stubbed rebuild endpoint.
+  point-rebuild endpoint (`POST /characters/{id}/rebuild`): a full
+  class/subclass/race(required)/subrace/background + base-ability-score
+  swap that recomputes skill proficiencies and source-owned features,
+  requires one `asi_choices` entry per ASI level already reached
+  (replacing the character's prior ASI/feat history at those levels),
+  validates and sets the caller-supplied `max_hp` against the new
+  class/level's allowed range, recomputes spell slots, and clears known
+  spells — while leaving level, notes, personality, backstory, inventory,
+  and GM-granted feats untouched.
 - `gm_panel/` — GM-only panel under `/characters/gm-panel`: feat grants
   (with mandatory ASI choice when offered), feature grants, inventory
   (items), free-form ±ASI adjustments, max-HP edit, the per-character
@@ -86,8 +94,8 @@ creates a character. Everything is derived server-side:
   dedicated `PUT /characters/{id}/backstory` endpoint (and read via
   `GET /characters/{id}/backstory`), isolated in `character_backstories` and
   never cached.
-- **`inspiration`** (5e's per-session boolean) defaults to `False` and is
-  editable via the plain character PATCH.
+- **`inspiration`** is a 0-13 point stockpile (not 5e's plain boolean),
+  defaults to `0` and is editable via the plain character PATCH.
 - Spell slots for level 1 are applied immediately; features and starting
   equipment (class + background, aggregated into one stack per item) are
   granted in the same `_atomic()` transaction.

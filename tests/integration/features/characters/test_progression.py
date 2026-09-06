@@ -1,4 +1,4 @@
-"""Tests for character progression endpoints: late background setup, subclass/subrace setup, leveling up, rebuild stub."""
+"""Tests for character progression endpoints: late background setup, subclass/subrace setup, leveling up, rebuild."""
 
 import pytest
 
@@ -100,29 +100,230 @@ class TestBackgroundSetup:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestRebuildStub:
-    async def test_rebuild_returns_501_until_implemented(
-        self, client, player, player_token, create_class, create_api_character
+class TestRebuild:
+    async def test_owner_can_rebuild_recomputing_derived_state_and_preserving_untouched_fields(
+        self,
+        client,
+        player,
+        player_token,
+        gm_token,
+        create_class,
+        create_race,
+        create_skill,
+        create_spell,
+        create_item,
+        create_api_character,
     ):
-        character_class = await create_class(name="Fighter")
-        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        wizard = await create_class(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
+        await set_class_spell_slots(client, gm_token, wizard, 1, [{"spell_level": "LEVEL_1", "slots": 2}])
+        fighter = await create_class(name="Fighter", hit_dice="D10")
+        fighter_skill = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skills_response = await client.put(
+            f"/classes/{fighter.id}/available-skills",
+            json={"skill_ids": [fighter_skill.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert skills_response.status_code == 200, skills_response.text
 
+        human = await create_race(name="Human")
+        elf = await create_race(name="Elf")
+
+        character, _ = await create_api_character(
+            class_id=wizard.id,
+            owner=player,
+            race_id=human.id,
+            strength=8,
+            dexterity=10,
+            constitution=12,
+            intelligence=16,
+            wisdom=10,
+            charisma=8,
+        )
+
+        spell = await create_spell(name="Magic Missile", level="LEVEL_1")
+        spell_response = await client.post(
+            f"/characters/{character['id']}/spells",
+            json={"spell_id": spell.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert spell_response.status_code == 201, spell_response.text
+
+        notes_response = await client.patch(
+            f"/characters/{character['id']}",
+            json={"notes": "Keep me"},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert notes_response.status_code == 200, notes_response.text
+
+        backstory_response = await client.put(
+            f"/characters/{character['id']}/backstory",
+            json={"content": "A long tale."},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert backstory_response.status_code == 200, backstory_response.text
+
+        item = await create_item(name="Rope")
+        item_response = await client.post(
+            f"/characters/{character['id']}/gm-panel/items",
+            json={"item_id": item.id, "quantity": 1},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert item_response.status_code == 201, item_response.text
+
+        # Fighter D10 + CON 14 (mod +2) at level 1 fixes max_hp at exactly 12.
         response = await client.post(
             f"/characters/{character['id']}/rebuild",
+            json={
+                "class_id": fighter.id,
+                "race_id": elf.id,
+                "strength": 16,
+                "dexterity": 12,
+                "constitution": 14,
+                "intelligence": 8,
+                "wisdom": 10,
+                "charisma": 10,
+                "max_hp": 12,
+                "skill_ids": [fighter_skill.id],
+                "asi_choices": [],
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        assert response.status_code == 501
+        assert response.status_code == 200, response.text
+        rebuilt = response.json()
+        assert rebuilt["class_id"] == fighter.id
+        assert rebuilt["race_id"] == elf.id
+        assert rebuilt["max_hp"] == 12
+        assert rebuilt["current_hp"] == 12
+        assert rebuilt["temp_hp"] == 0
+        assert [row["skill_id"] for row in rebuilt["skill_proficiencies"]] == [fighter_skill.id]
+        # Untouched by the rebuild:
+        assert rebuilt["notes"] == "Keep me"
+
+        spells_response = await client.get(
+            f"/characters/{character['id']}/spells",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert spells_response.status_code == 200, spells_response.text
+        assert spells_response.json()["spells"] == []
+
+        backstory_check = await client.get(
+            f"/characters/{character['id']}/backstory",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert backstory_check.json()["content"] == "A long tale."
+
+        items_check = await client.get(
+            f"/characters/{character['id']}/items",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert any(row["item"]["name"] == "Rope" for row in items_check.json())
+
+    async def test_rebuild_rejects_max_hp_outside_the_new_range(
+        self, client, player, player_token, create_class, create_race, create_api_character
+    ):
+        fighter = await create_class(name="Fighter", hit_dice="D10")
+        elf = await create_race(name="Elf")
+        character, _ = await create_api_character(class_id=fighter.id, owner=player, race_id=elf.id)
+
+        response = await client.post(
+            f"/characters/{character['id']}/rebuild",
+            json={
+                "class_id": fighter.id,
+                "race_id": elf.id,
+                "strength": 10,
+                "dexterity": 10,
+                "constitution": 10,
+                "intelligence": 10,
+                "wisdom": 10,
+                "charisma": 10,
+                "max_hp": 999,
+                "asi_choices": [],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_rebuild_requires_asi_choices_for_reached_levels(
+        self, client, player, player_token, create_class, create_race, create_api_character
+    ):
+        fighter = await create_class(name="Fighter", hit_dice="D10")
+        elf = await create_race(name="Elf")
+        character, token = await create_api_character(class_id=fighter.id, owner=player, race_id=elf.id)
+        await level_up_to(client, token, character["id"], 3)
+        level_up_response = await client.post(
+            f"/characters/{character['id']}/progression/level-up",
+            json={"choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert level_up_response.status_code == 200, level_up_response.text
+
+        response = await client.post(
+            f"/characters/{character['id']}/rebuild",
+            json={
+                "class_id": fighter.id,
+                "race_id": elf.id,
+                "strength": 10,
+                "dexterity": 10,
+                "constitution": 10,
+                "intelligence": 10,
+                "wisdom": 10,
+                "charisma": 10,
+                "max_hp": 40,
+                "asi_choices": [],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_rebuild_without_race_id_is_rejected(
+        self, client, player, player_token, create_class, create_api_character
+    ):
+        fighter = await create_class(name="Fighter", hit_dice="D10")
+        character, _ = await create_api_character(class_id=fighter.id, owner=player)
+
+        response = await client.post(
+            f"/characters/{character['id']}/rebuild",
+            json={
+                "class_id": fighter.id,
+                "strength": 10,
+                "dexterity": 10,
+                "constitution": 10,
+                "intelligence": 10,
+                "wisdom": 10,
+                "charisma": 10,
+                "max_hp": 10,
+                "asi_choices": [],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
 
     async def test_player_cannot_rebuild_other_players_character(
-        self, client, player_token, create_user, create_class, create_character
+        self, client, player_token, create_user, create_class, create_race, create_character
     ):
         character_class = await create_class(name="Fighter")
+        race = await create_race(name="Human")
         other = await create_user(username="other", email="other@example.com")
-        character = await create_character(owner_id=other.id, class_id=character_class.id)
+        character = await create_character(owner_id=other.id, class_id=character_class.id, race_id=race.id)
 
         response = await client.post(
             f"/characters/{character.id}/rebuild",
+            json={
+                "class_id": character_class.id,
+                "race_id": race.id,
+                "strength": 10,
+                "dexterity": 10,
+                "constitution": 10,
+                "intelligence": 10,
+                "wisdom": 10,
+                "charisma": 10,
+                "max_hp": 10,
+                "asi_choices": [],
+            },
             headers={"Authorization": f"Bearer {player_token}"},
         )
 

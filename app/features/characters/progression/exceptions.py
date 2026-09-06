@@ -3,22 +3,6 @@
 from app.core.exceptions import AppError
 
 
-class CharacterRebuildNotImplementedException(AppError):
-    """Raised when the point-rebuild endpoint is hit before it is implemented."""
-
-    status_code = 501
-
-    def __init__(self, character_id: int):
-        """Initialize with the character id."""
-
-        self.character_id = character_id
-        super().__init__(
-            f"Character rebuild is not implemented yet. A full class/race change will be "
-            f"available as a rebuild of character {character_id}; for now only a subclass, "
-            "subrace, or background can be added while it is still unset."
-        )
-
-
 class BackgroundAlreadySetException(AppError):
     """Raised when trying to set a background on a character that already has one."""
 
@@ -31,8 +15,8 @@ class BackgroundAlreadySetException(AppError):
         self.background_id = background_id
         super().__init__(
             f"Character {character_id} already has background {background_id}. A background "
-            "is fixed once chosen — full re-choosing will be possible through the (future) "
-            "rebuild endpoint."
+            "is fixed once chosen — full re-choosing is only possible through "
+            f"POST /characters/{character_id}/rebuild."
         )
 
 
@@ -133,4 +117,39 @@ class InvalidHitPointGainException(AppError):
 
         super().__init__(
             f"hit_points_gained must be between {minimum} and {maximum} for this class's hit die and CON modifier."
+        )
+
+
+class InvalidRebuildMaxHpException(AppError):
+    """Raised when a rebuild's ``max_hp`` is outside the range the new class/level allow."""
+
+    status_code = 400
+
+    def __init__(self, minimum: int, maximum: int):
+        """Initialize with the allowed min/max."""
+
+        self.minimum = minimum
+        self.maximum = maximum
+        super().__init__(
+            f"max_hp must be between {minimum} and {maximum} for this class's hit die, its "
+            "effective CON modifier, and the character's current level."
+        )
+
+
+class RebuildAsiChoicesMismatchException(AppError):
+    """
+    Raised when a rebuild's ``asi_choices`` do not exactly cover every
+    ASI level (see ``ASI_LEVELS``) the character has already reached.
+    """
+
+    status_code = 400
+
+    def __init__(self, required_levels: list[int], provided_levels: list[int]):
+        """Initialize with the required and provided ASI class levels."""
+
+        self.required_levels = required_levels
+        self.provided_levels = provided_levels
+        super().__init__(
+            f"asi_choices must resolve exactly the ASI levels reached at the character's current "
+            f"level {sorted(required_levels)}; got {sorted(provided_levels)}."
         )

@@ -121,7 +121,7 @@ def make_owned_character(owner_id=7, character_id=5):
         speed=30,
         armor_class=10,
         shield=0,
-        inspiration=False,
+        inspiration=0,
         notes="",
         personality_traits="",
         ideals="",

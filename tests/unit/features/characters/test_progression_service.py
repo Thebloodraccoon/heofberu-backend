@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, AbilityScore, ASILevelChoice, CharacterFeatSource, UserRole
+from app.features.characters.crud.exceptions import SkillNotAvailableForClassException, TooManySkillChoicesException
 from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
@@ -17,25 +18,27 @@ from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     BackgroundAlreadySetException,
     CharacterAlreadyAtMaxLevelException,
-    CharacterRebuildNotImplementedException,
     InvalidHitPointGainException,
+    InvalidRebuildMaxHpException,
     LevelUpChoiceNotAllowedException,
     LevelUpChoiceRequiredException,
+    RebuildAsiChoicesMismatchException,
 )
 from app.features.characters.progression.schemas import (
     ASIChoice,
     ASIIncreaseItem,
     BackgroundChange,
     CanLevelUpResponse,
+    CharacterRebuildRequest,
     FeatChoice,
     LevelUpRequest,
     SubclassChange,
     SubraceChange,
 )
 from app.features.characters.progression.service import CharacterProgressionService
-from app.features.classes.exceptions import SubclassNotFoundException
+from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
 from app.features.feats.exceptions import FeatNotFoundException
-from app.features.races.exceptions import SubraceNotFoundException
+from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models.character_association_models import CharacterSkillProficiency
 from app.models.character_model import Character
@@ -137,19 +140,39 @@ class FakeClassRepository:
 
 
 class FakeRaceRepository:
-    def __init__(self, subrace_row=None):
+    def __init__(self, race=None, subrace_row=None, exists=True):
+        self.race = race
         self.subrace_row = subrace_row
+        self.exists = exists
 
     async def get_subrace(self, race_id, subrace_id):
         return self.subrace_row
 
+    async def get_by_id(self, race_id):
+        return self.race
+
+    async def exists_by_id(self, race_id):
+        return self.exists
+
 
 class FakeBackgroundRepository:
-    def __init__(self, background=None):
+    def __init__(self, background=None, exists=None):
         self.background = background
+        self.exists = (background is not None) if exists is None else exists
 
     async def get_by_id(self, background_id):
         return self.background
+
+    async def exists_by_id(self, background_id):
+        return self.exists
+
+
+class FakeCharacterSpellRepository:
+    def __init__(self):
+        self.clear_calls = []
+
+    async def clear_known_spells(self, character_id, *, commit=True):
+        self.clear_calls.append((character_id, commit))
 
 
 class FakeItemRepository:
@@ -176,6 +199,7 @@ class FakeFeatGrantRepository:
     def __init__(self, known_feat_ids=()):
         self.known_feat_ids = set(known_feat_ids)
         self.add_calls = []
+        self.remove_by_source_calls = []
 
     async def get_character_feat_by_feat_id(self, character_id, feat_id):
         return SimpleNamespace() if feat_id in self.known_feat_ids else None
@@ -185,11 +209,15 @@ class FakeFeatGrantRepository:
     ):
         self.add_calls.append((character_id, feat_id, ability_score_increase_id, source_type, commit))
 
+    async def remove_feats_by_source(self, character_id, source_type, *, commit=True):
+        self.remove_by_source_calls.append((character_id, source_type, commit))
+
 
 class FakeASIRepository:
     def __init__(self, choices=None):
         self.choices = choices or []
         self.add_calls = []
+        self.clear_calls = []
 
     async def get_character_choices(self, character_id):
         return list(self.choices)
@@ -210,6 +238,9 @@ class FakeASIRepository:
         )
         return SimpleNamespace(id=len(self.add_calls))
 
+    async def clear_character_choices(self, character_id, *, commit=True):
+        self.clear_calls.append((character_id, commit))
+
 
 class FakeMaxLevelRepository:
     def __init__(self, row=None):
@@ -227,8 +258,11 @@ def make_service(
     max_level_row=None,
     class_row=None,
     subclass_row=None,
+    race=None,
     subrace_row=None,
+    race_exists=True,
     background=None,
+    background_exists=None,
     feat=None,
     known_feat_ids=(),
     asi_choices=None,
@@ -242,14 +276,15 @@ def make_service(
     service.repository = FakeCharacterRepository(db, character)
     service.character_service = FakeCharacterService()
     service.class_repository = FakeClassRepository(class_row=class_row, subclass_row=subclass_row)
-    service.race_repository = FakeRaceRepository(subrace_row=subrace_row)
-    service.background_repository = FakeBackgroundRepository(background=background)
+    service.race_repository = FakeRaceRepository(race=race, subrace_row=subrace_row, exists=race_exists)
+    service.background_repository = FakeBackgroundRepository(background=background, exists=background_exists)
     service.item_repository = FakeItemRepository(entries=item_entries)
     service.feat_repository = FakeFeatRepository(feat=feat)
     service.feat_grant_repository = FakeFeatGrantRepository(known_feat_ids=known_feat_ids)
     service.asi_repository = FakeASIRepository(choices=asi_choices)
     service.max_level_repository = FakeMaxLevelRepository(row=max_level_row)
     service.stats_service = FakeStatsService(totals=totals, caps=caps)
+    service.character_spell_repository = FakeCharacterSpellRepository()
     return service, db
 
 
@@ -708,16 +743,211 @@ class TestSetBackground:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestRebuildAndAudit:
-    async def test_request_rebuild_responds_501(self):
-        service, db = make_service()
+class TestRebuildCharacter:
+    @staticmethod
+    def make_rebuild_class_row(**overrides):
+        base = {
+            "id": 2,
+            "hit_dice": SimpleNamespace(value="D6"),
+            "available_skills": [SimpleNamespace(id=10), SimpleNamespace(id=11)],
+            "skill_choice_count": 2,
+        }
+        base.update(overrides)
+        return SimpleNamespace(**base)
 
-        with pytest.raises(CharacterRebuildNotImplementedException) as exc_info:
-            await service.request_rebuild(1, make_user())
+    @staticmethod
+    def make_data(**overrides):
+        base = {
+            "class_id": 2,
+            "subclass_id": None,
+            "race_id": 7,
+            "subrace_id": None,
+            "background_id": None,
+            "strength": 10,
+            "dexterity": 10,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 10,
+            "charisma": 10,
+            "max_hp": 6,
+            "skill_ids": [],
+            "asi_choices": [],
+        }
+        base.update(overrides)
+        return CharacterRebuildRequest(**base)
 
-        assert exc_info.value.status_code == 501
+    def make_ready_service(self, **kwargs):
+        character = kwargs.pop("character", None) or make_character(level=1, max_hp=10)
+        class_row = kwargs.pop("class_row", self.make_rebuild_class_row())
+        race = kwargs.pop("race", SimpleNamespace(id=7, granted_skills=[]))
+        return make_service(character, class_row=class_row, race=race, **kwargs)
+
+    async def test_rebuild_replaces_build_fields_and_recomputes_derived_state(self):
+        race = SimpleNamespace(id=7, granted_skills=[SimpleNamespace(id=20)])
+        background = SimpleNamespace(id=9, granted_skills=[SimpleNamespace(id=21)])
+        service, db = self.make_ready_service(
+            character=make_character(level=1, max_hp=99),
+            race=race,
+            background=background,
+            totals={**default_totals(), "constitution_total": 14},
+        )
+        character = service.repository.character
+        data = self.make_data(background_id=9, constitution=14, max_hp=8, skill_ids=[10])
+
+        await service.rebuild_character(1, data, make_user())
+
+        assert (character.class_id, character.race_id, character.background_id) == (2, 7, 9)
+        assert character.subclass_id is None
+        assert character.subrace_id is None
+        assert character.constitution == 14
+
+        added_proficiencies = [row for row in db.added if isinstance(row, CharacterSkillProficiency)]
+        assert {row.skill_id for row in added_proficiencies} == {10, 20, 21}
+        assert all(row.is_expertise is False for row in added_proficiencies)
+
+        # level 1 is fixed at die(6) + con mod(2) = 8 — the only legal value.
+        assert character.max_hp == 8
+        assert character.current_hp == 8
+        assert character.temp_hp == 0
+
+        assert service.character_spell_repository.clear_calls == [(1, False)]
+        assert service.character_service.reapply_calls == [(1, False)]
+        assert service.feat_grant_repository.remove_by_source_calls == [(1, CharacterFeatSource.ASI, False)]
+        assert service.asi_repository.clear_calls == [(1, False)]
+        assert service.stats_service.refresh_calls == [character]
+        assert db.commits == 1
+        assert db.rollbacks == 0
+
+    async def test_reached_asi_choices_are_replaced_and_applied_in_level_order(self):
+        service, db = self.make_ready_service(
+            character=make_character(level=5, max_hp=99),
+            totals={**default_totals(), "constitution_total": 10},
+        )
+        data = self.make_data(
+            max_hp=14,
+            asi_choices=[
+                {"class_level": 4, "choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
+            ],
+        )
+
+        await service.rebuild_character(1, data, make_user())
+
+        assert len(service.asi_repository.add_calls) == 1
+        call = service.asi_repository.add_calls[0]
+        assert call[1] == 4
+        assert call[5] == [{"ability": "STR", "amount": 2}]
+        assert service.feat_grant_repository.remove_by_source_calls == [(1, CharacterFeatSource.ASI, False)]
+        assert service.asi_repository.clear_calls == [(1, False)]
+        assert db.commits == 1
+
+    async def test_missing_reached_asi_choice_rejected(self):
+        service, db = self.make_ready_service(character=make_character(level=5, max_hp=99))
+        data = self.make_data(max_hp=14, asi_choices=[])
+
+        with pytest.raises(RebuildAsiChoicesMismatchException):
+            await service.rebuild_character(1, data, make_user())
+
         assert db.commits == 0
 
+    async def test_asi_choice_for_unreached_level_rejected(self):
+        service, db = self.make_ready_service(character=make_character(level=3, max_hp=99))
+        data = self.make_data(
+            max_hp=8,
+            asi_choices=[
+                {"class_level": 4, "choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
+            ],
+        )
+
+        with pytest.raises(RebuildAsiChoicesMismatchException):
+            await service.rebuild_character(1, data, make_user())
+
+        assert db.commits == 0
+
+    async def test_max_hp_below_minimum_rejected(self):
+        service, db = self.make_ready_service(
+            character=make_character(level=1, max_hp=99),
+            totals={**default_totals(), "constitution_total": 10},
+        )
+        data = self.make_data(max_hp=1)  # level 1 is fixed at die(6) + con(0) = 6
+
+        with pytest.raises(InvalidRebuildMaxHpException):
+            await service.rebuild_character(1, data, make_user())
+
+        assert db.commits == 0
+        assert db.rollbacks == 1
+
+    async def test_max_hp_above_maximum_rejected(self):
+        service, db = self.make_ready_service(
+            character=make_character(level=1, max_hp=99),
+            totals={**default_totals(), "constitution_total": 10},
+        )
+        data = self.make_data(max_hp=100)
+
+        with pytest.raises(InvalidRebuildMaxHpException):
+            await service.rebuild_character(1, data, make_user())
+
+        assert db.commits == 0
+
+    async def test_unknown_class_raises_without_writes(self):
+        service, db = self.make_ready_service(class_row=None)
+
+        with pytest.raises(ClassNotFoundException):
+            await service.rebuild_character(1, self.make_data(class_id=99), make_user())
+
+        assert db.commits == 0
+
+    async def test_unknown_subclass_raises(self):
+        service, db = self.make_ready_service(subclass_row=None)
+
+        with pytest.raises(SubclassNotFoundException):
+            await service.rebuild_character(1, self.make_data(subclass_id=77), make_user())
+
+        assert db.commits == 0
+
+    async def test_unknown_race_raises(self):
+        service, db = self.make_ready_service(race_exists=False)
+
+        with pytest.raises(RaceNotFoundException):
+            await service.rebuild_character(1, self.make_data(race_id=55), make_user())
+
+        assert db.commits == 0
+
+    async def test_subrace_of_other_race_raises(self):
+        service, db = self.make_ready_service(subrace_row=None)
+
+        with pytest.raises(SubraceNotFoundException):
+            await service.rebuild_character(1, self.make_data(subrace_id=2), make_user())
+
+        assert db.commits == 0
+
+    async def test_unknown_background_raises(self):
+        service, db = self.make_ready_service(background_exists=False)
+
+        with pytest.raises(BackgroundNotFoundException):
+            await service.rebuild_character(1, self.make_data(background_id=42), make_user())
+
+        assert db.commits == 0
+
+    async def test_too_many_skill_choices_rejected(self):
+        service, db = self.make_ready_service()
+
+        with pytest.raises(TooManySkillChoicesException):
+            await service.rebuild_character(1, self.make_data(skill_ids=[10, 11, 12]), make_user())
+
+        assert db.commits == 0
+
+    async def test_skill_not_available_for_class_rejected(self):
+        service, db = self.make_ready_service()
+
+        with pytest.raises(SkillNotAvailableForClassException):
+            await service.rebuild_character(1, self.make_data(skill_ids=[999]), make_user())
+
+        assert db.commits == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestAsiChoicesAudit:
     async def test_get_asi_choices_returns_audit_rows(self):
         choice_row = SimpleNamespace(
             id=1,

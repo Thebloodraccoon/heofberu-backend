@@ -111,8 +111,8 @@ class CharacterUpdate(BaseModel):
     armor_class: int | None = Field(default=None, ge=0)
     shield: int | None = Field(default=None, ge=0)
 
-    # 5e inspiration — a boolean the GM grants (advantage on a roll).
-    inspiration: bool | None = None
+    # Inspiration points (0-13) the GM grants.
+    inspiration: int | None = Field(default=None, ge=0, le=13)
 
     notes: str | None = None
 
@@ -210,7 +210,7 @@ class CharacterResponse(CharacterBase):
     current_hp: int
     max_hp: int
     temp_hp: int
-    inspiration: bool = False
+    inspiration: int = 0
 
     # Raw base ability scores — accepted on input and read from the row,
     # but excluded from serialized output (clients use ``ability_scores``;
