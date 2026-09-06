@@ -1,7 +1,6 @@
 """ORM model for the D&D 5e character sheet."""
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -54,8 +53,9 @@ class Character(settings.Base):  # type: ignore
     # Free text sections
     notes = Column(Text, nullable=False, default="")
 
-    # 5e inspiration: a per-session boolean the GM grants (advantage on a roll).
-    inspiration = Column(Boolean, nullable=False, default=False)
+    # Inspiration points (0-13) the GM grants; unlike 5e's plain boolean,
+    # this table tracks a stockpile the player can spend down over time.
+    inspiration = Column(Integer, nullable=False, default=0)
 
     # Personality card free-text fields (5e "Personality" section).
     personality_traits = Column(Text, nullable=False, default="")
@@ -160,6 +160,7 @@ class Character(settings.Base):  # type: ignore
         CheckConstraint("current_hp >= 0", name="check_current_hp_nonnegative"),
         CheckConstraint("max_hp >= 0", name="check_max_hp_nonnegative"),
         CheckConstraint("temp_hp >= 0", name="check_temp_hp_nonnegative"),
+        CheckConstraint("inspiration >= 0 AND inspiration <= 13", name="check_inspiration_range"),
     )
 
     def __repr__(self):

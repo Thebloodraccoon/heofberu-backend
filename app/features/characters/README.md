@@ -94,8 +94,8 @@ creates a character. Everything is derived server-side:
   dedicated `PUT /characters/{id}/backstory` endpoint (and read via
   `GET /characters/{id}/backstory`), isolated in `character_backstories` and
   never cached.
-- **`inspiration`** (5e's per-session boolean) defaults to `False` and is
-  editable via the plain character PATCH.
+- **`inspiration`** is a 0-13 point stockpile (not 5e's plain boolean),
+  defaults to `0` and is editable via the plain character PATCH.
 - Spell slots for level 1 are applied immediately; features and starting
   equipment (class + background, aggregated into one stack per item) are
   granted in the same `_atomic()` transaction.
