@@ -17,7 +17,7 @@ Reference catalog for the `Feat` entity — origin/general feats with base field
 | GET | `/feats/{feat_id}` | open | Full `FeatResponse` including ASI choices; cached as a single unit. |
 | POST | `/feats` | GM | Optional nested `ability_score_increases` seeded atomically with the row; duplicate `name` → 409. |
 | PATCH | `/feats/{feat_id}` | GM | Base fields only — ASI choices have their own PUT endpoint; duplicate `name` → 409. |
-| DELETE | `/feats/{feat_id}` | Founder | Cascades ASI choices away; blocked with 409 while granted to any character (`character_feats`). |
+| DELETE | `/feats/{feat_id}` | Founder | Cascades ASI choices away; blocked with 409 while granted to any character (`character_features`). |
 | PUT | `/feats/ability-score-increases?feat_id=` | GM | Full replace of the ASI choice list (empty list clears); duplicate abilities → 422. |
 
 ## Notable rule: feats own NO features
@@ -29,7 +29,7 @@ Since migration `a9d4f2e8b1c7` feats are not a feature source: the FEAT `Feature
 The crud service composes the asi capability explicitly in `__init__` (`self._asi = FeatAsiService(db)`) — no mixin MRO:
 
 - `create_feat` wraps the `Feat` insert and the optional ASI seeding in one `_atomic()` transaction, delegating the child-row write to `FeatAsiService.set_ability_score_increases_for_feat(commit=False)`.
-- `FeatAsiService.set_ability_score_increases` is the public full-replace write behind `PUT /feats/ability-score-increases`; the repository does the actual replace via `replace_child_rows(FeatAbilityScoreIncrease, ...)` with a deferrable commit.
+- `FeatAsiService.set_ability_score_increases` is the public full-replace write behind `PUT /feats/ability-score-increases`; the repository deletes the feat's choice group (cascading options) and rebuilds it from the payload, one `FeatureAbilityScoreEffect` row per ASI option, with a deferrable commit.
 - Reads and delete come straight from `CachedService`; uniqueness on `name` → 409 via `unique_fields`.
 
 ## Cache

@@ -256,7 +256,7 @@ class TestRaceBackgroundFeatAutoGrant:
         create_feature,
         create_api_character,
     ):
-        """Feats grant no features (a feat is de facto its own feature): the FEAT source type is gone."""
+        """Feats auto-grant no features: `sync_progression_features` covers only CLASS/SUBCLASS/RACE/SUBRACE/BACKGROUND, never FEAT. A granting a feat surfaces it via feats, not features."""
         character_class = await create_class(name="Fighter")
         feat = await create_feat(name="Alert")
         character, _ = await create_api_character(class_id=character_class.id, owner=gm)

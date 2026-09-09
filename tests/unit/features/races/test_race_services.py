@@ -14,7 +14,7 @@ import pytest
 
 from app.constants import AbilityScore, FeatureSourceType, RaceSize
 from app.core.exceptions import RecordNotFoundError
-from app.features.features.crud.schemas import NestedFeatureCreate
+from app.features.features.crud.schemas import NestedFeatureCreate, NestedFeatureResponse
 from app.features.races.ability_bonuses import service as race_ability_bonus_service
 from app.features.races.ability_bonuses.schemas import AbilityBonusItem
 from app.features.races.ability_bonuses.service import RaceAbilityBonusService
@@ -426,3 +426,68 @@ class TestRaceSkillsRepository:
 
         assert result == [skill]
         assert len(session.executes) == 1
+
+
+@pytest.mark.unit
+class TestRaceFeatureAbilityEffectsSerialization:
+    """Regression: RaceRepository eager-loads Feature.ability_effects without crashing."""
+
+    def test_race_with_feature_ability_effects_serializes_correctly(self):
+        """A race whose feature carries fixed ability_effects must serialize them in the response."""
+        from app.features.races.schemas import RaceResponse
+
+        feature_with_effects = SimpleNamespace(
+            id=10,
+            name="Darkvision",
+            description="Superior vision in dim light.",
+            level=None,
+            ability_effects=[
+                SimpleNamespace(ability=AbilityScore.STR, amount=2, new_cap=None),
+            ],
+        )
+        race = SimpleNamespace(
+            id=1,
+            name="Elf",
+            size=RaceSize.MEDIUM,
+            speed=30,
+            description="An elf.",
+            image_url=None,
+            ability_bonuses=[],
+            granted_skills=[],
+            features=[feature_with_effects],
+            subraces=[],
+        )
+
+        response = RaceResponse.model_validate(race)
+
+        assert len(response.features) == 1
+        assert response.features[0].ability_effects[0].ability == AbilityScore.STR
+        assert response.features[0].ability_effects[0].amount == 2
+
+    def test_race_with_empty_feature_effects_serializes_empty_list(self):
+        """A race whose features have no ability_effects serializes empty lists."""
+        from app.features.races.schemas import RaceResponse
+
+        feature_no_effects = SimpleNamespace(
+            id=11,
+            name="Keen Senses",
+            description="Proficiency in Perception.",
+            level=None,
+            ability_effects=[],
+        )
+        race = SimpleNamespace(
+            id=2,
+            name="Human",
+            size=RaceSize.MEDIUM,
+            speed=30,
+            description="A human.",
+            image_url=None,
+            ability_bonuses=[],
+            granted_skills=[],
+            features=[feature_no_effects],
+            subraces=[],
+        )
+
+        response = RaceResponse.model_validate(race)
+
+        assert response.features[0].ability_effects == []

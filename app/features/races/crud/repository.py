@@ -24,7 +24,7 @@ class RaceRepository(BaseRepository[Race]):
             default_load_options=[
                 selectinload(Race.ability_bonuses),
                 selectinload(Race.granted_skills),
-                selectinload(Race.features).selectinload(Feature.ability_increases),
+                selectinload(Race.features).selectinload(Feature.ability_effects),
                 selectinload(Race.subraces).selectinload(Subrace.ability_bonuses),
             ],
             search_fields=["name"],

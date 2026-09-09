@@ -89,6 +89,26 @@ class Character(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    saving_throw_proficiencies = relationship(
+        "CharacterSavingThrowProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    armor_proficiencies = relationship(
+        "CharacterArmorProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    weapon_proficiencies = relationship(
+        "CharacterWeaponProficiency",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    granted_spells = relationship(
+        "CharacterGrantedSpell",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     spell_slots = relationship(
         "CharacterSpellSlot",
         cascade="all, delete-orphan",
@@ -116,14 +136,6 @@ class Character(settings.Base):  # type: ignore
         passive_deletes=True,
     )
     items = relationship("Item", secondary="character_items", viewonly=True)
-
-    character_feats = relationship(
-        "CharacterFeat",
-        back_populates="character",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-    feats = relationship("Feat", secondary="character_feats", viewonly=True)
 
     conditions = relationship(
         "CharacterCondition",

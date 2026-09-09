@@ -27,12 +27,14 @@ from app.models.feature_model import Feature
 # The per-catalog cache namespace holding that catalog's own feature list.
 # A central feature write purges the owning catalog's list namespace (and
 # only that one) so its cached ``GET /{source}/features`` goes stale.
+# FEAT/OTHER features are standalone — no catalog owns them.
 SOURCE_FEATURE_LIST_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.CLASS: "class_features",
     FeatureSourceType.SUBCLASS: "subclass_features",
     FeatureSourceType.RACE: "race_features",
     FeatureSourceType.SUBRACE: "subrace_features",
     FeatureSourceType.BACKGROUND: "background_features",
+    FeatureSourceType.FEAT: None,
     FeatureSourceType.OTHER: None,
 }
 
@@ -46,12 +48,13 @@ SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.RACE: "races",
     FeatureSourceType.SUBRACE: "races",
     FeatureSourceType.BACKGROUND: "backgrounds",
+    FeatureSourceType.FEAT: None,
     FeatureSourceType.OTHER: None,
 }
 
 
 def _get_fk_name(source_type: FeatureSourceType) -> str:
-    """The source-FK column for ``source_type`` (raises for OTHER)."""
+    """The source-FK column for ``source_type`` (raises for FEAT/OTHER)."""
 
     fk_name = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
     if fk_name is None:
@@ -64,9 +67,9 @@ def _get_fk_name(source_type: FeatureSourceType) -> str:
 
 class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, FeatureResponse, FeatureGetAllResponse]):
     """
-    The single feature service: every feature — standalone (OTHER) or owned by
-    a class/subclass/race/subrace/background — is created, read, updated and
-    deleted through this one class.
+    The single feature service: every feature — standalone (FEAT/OTHER) or
+    owned by a class/subclass/race/subrace/background — is created, read,
+    updated and deleted through this one class.
 
     ``list_for_source`` is an uncached read; the parent catalogs cache their
     own feature lists and a feature write here invalidates the owning
@@ -117,23 +120,24 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
 
         Uncached on purpose: parent catalogs cache their own feature lists
         under dedicated namespaces, so caching here would double-cache.
-        Raises ``ValueError`` when ``source_type`` is OTHER (no source FK).
+        Raises ``ValueError`` when ``source_type`` is FEAT or OTHER (no
+        source FK).
         """
 
         fk_name = _get_fk_name(source_type)
         result = await self.repository.db.execute(
             select(Feature)
             .where(getattr(Feature, fk_name) == source_id)
-            .options(selectinload(Feature.ability_increases))
+            .options(selectinload(Feature.ability_effects))
             .order_by(Feature.id)
         )
         rows = result.scalars().all()
         return [NestedFeatureResponse.model_validate(row) for row in rows]
 
     def _source_fk_value(self, source_type: FeatureSourceType, item: FeatureCreate | Feature) -> int | None:
-        """The owning source's id for a feature (``None`` for OTHER-only features)."""
+        """The owning source's id for a feature (``None`` for FEAT/OTHER features)."""
 
-        if source_type is FeatureSourceType.OTHER:
+        if source_type in (FeatureSourceType.FEAT, FeatureSourceType.OTHER):
             return None
 
         return getattr(item, _get_fk_name(source_type))
@@ -142,8 +146,8 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Reconcile auto-granted character features after a source-owned feature write.
 
-        Runs in the caller's open transaction (never commits here); OTHER
-        features are never auto-granted, so they need no reconciliation.
+        Runs in the caller's open transaction (never commits here); FEAT and
+        OTHER features are never auto-granted, so they need no reconciliation.
         """
 
         if source_id is None:
@@ -166,7 +170,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         )
         await self.repository.commit_or_flush()
         # The commit expires the row; refetch with eager loads so serialization
-        # never trips an async lazy load on the empty ``ability_increases`` collection.
+        # never trips an async lazy load on the empty ``ability_effects`` collection.
         item = await self.repository.get_by_id(item.id)
         await self._purge_feature_cache(create_data.source_type)
 
@@ -223,26 +227,39 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         return await self.repository.create(feature.model_dump(), commit=commit)
 
     def _validate_level_update(self, feature: Feature, fields: dict) -> None:
-        """Reject ``level`` patches that would break the level rules."""
+        """Reject ``level``/``min_level`` patches that would break the level rules."""
 
-        if "level" not in fields:
-            return
+        if "level" in fields:
+            level = fields["level"]
 
-        level = fields["level"]
+            if level is None and feature.source_type in (
+                FeatureSourceType.CLASS,
+                FeatureSourceType.SUBCLASS,
+            ):
+                raise InvalidFeatureSourceException(
+                    "CLASS/SUBCLASS features require 'level' — it can only be changed, not cleared."
+                )
 
-        if level is None and feature.source_type in (
-            FeatureSourceType.CLASS,
-            FeatureSourceType.SUBCLASS,
-        ):
+            if feature.source_type in (FeatureSourceType.CLASS, FeatureSourceType.SUBCLASS) and not (
+                _FEATURE_LEVEL_MIN <= level <= _FEATURE_LEVEL_MAX
+            ):
+                raise InvalidFeatureSourceException(
+                    f"'level' for CLASS/SUBCLASS features must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}."
+                )
+
+            if feature.source_type == FeatureSourceType.FEAT and level is not None:
+                raise InvalidFeatureSourceException("FEAT features do not use 'level' — set 'min_level' instead.")
+
+        if "min_level" in fields and feature.source_type != FeatureSourceType.FEAT:
+            raise InvalidFeatureSourceException("'min_level' is only valid for FEAT-source features.")
+
+        if "is_repeatable" in fields and feature.source_type != FeatureSourceType.FEAT:
+            raise InvalidFeatureSourceException("'is_repeatable' is only valid for FEAT-source features.")
+
+        min_level = fields.get("min_level")
+        if min_level is not None and not (_FEATURE_LEVEL_MIN <= min_level <= _FEATURE_LEVEL_MAX):
             raise InvalidFeatureSourceException(
-                "CLASS/SUBCLASS features require 'level' — it can only be changed, not cleared."
-            )
-
-        if feature.source_type in (FeatureSourceType.CLASS, FeatureSourceType.SUBCLASS) and not (
-            _FEATURE_LEVEL_MIN <= level <= _FEATURE_LEVEL_MAX
-        ):
-            raise InvalidFeatureSourceException(
-                f"'level' for CLASS/SUBCLASS features must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}."
+                f"'min_level' must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}."
             )
 
     async def update_feature(self, feature_id: int, update_data: FeatureUpdate) -> FeatureResponse:
@@ -251,8 +268,9 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
 
         ``source_type`` and its FK can't change — ownership is permanent.
         A CLASS/SUBCLASS feature's ``level`` is mandatory (1-20) and may be
-        changed but never cleared. Any edit re-reconciles the owning record's
-        characters in the same transaction.
+        changed but never cleared. FEAT rows may edit ``min_level`` /
+        ``prerequisite_*`` / ``is_repeatable`` instead. Any edit re-reconciles
+        the owning record's characters in the same transaction.
         """
 
         feature = await self._get_or_404(feature_id)
@@ -270,7 +288,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         await self.repository.commit_or_flush()
         await self._purge_feature_cache(source_type)
 
-        # Re-fetch after the commit so the expired row's ``ability_increases``
+        # Re-fetch after the commit so the expired row's ``ability_effects``
         # are eagerly loaded before serialization (async-safe).
         feature = await self.repository.get_by_id(feature_id)
         return self.response_schema.model_validate(feature)

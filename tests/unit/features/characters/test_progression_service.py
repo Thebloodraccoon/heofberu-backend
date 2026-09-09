@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, AbilityScore, ASILevelChoice, CharacterFeatSource, UserRole
+from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, AbilityScore, ASILevelChoice, CharacterFeatSource, GrantSource, UserRole
 from app.features.characters.crud.exceptions import SkillNotAvailableForClassException, TooManySkillChoicesException
 from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.feats.exceptions import (
@@ -22,6 +22,7 @@ from app.features.characters.progression.exceptions import (
     InvalidRebuildMaxHpException,
     LevelUpChoiceNotAllowedException,
     LevelUpChoiceRequiredException,
+    LevelUpFeatureChoiceRequiredException,
     RebuildAsiChoicesMismatchException,
 )
 from app.features.characters.progression.schemas import (
@@ -31,11 +32,13 @@ from app.features.characters.progression.schemas import (
     CanLevelUpResponse,
     CharacterRebuildRequest,
     FeatChoice,
+    LevelUpFeatureChoiceAnswer,
     LevelUpRequest,
     SubclassChange,
     SubraceChange,
 )
 from app.features.characters.progression.service import CharacterProgressionService
+from app.features.characters.grants.schemas import PendingChoiceGroup, PendingChoiceGroupsResponse
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
@@ -205,9 +208,9 @@ class FakeFeatGrantRepository:
         return SimpleNamespace() if feat_id in self.known_feat_ids else None
 
     async def add_character_feat(
-        self, character_id, feat_id, ability_score_increase_id=None, *, source_type=None, commit=True
+        self, character, feat_id, ability_score_increase_id=None, *, source_type=GrantSource.ASI, commit=True
     ):
-        self.add_calls.append((character_id, feat_id, ability_score_increase_id, source_type, commit))
+        self.add_calls.append((character, feat_id, ability_score_increase_id, source_type, commit))
 
     async def remove_feats_by_source(self, character_id, source_type, *, commit=True):
         self.remove_by_source_calls.append((character_id, source_type, commit))
@@ -506,18 +509,19 @@ class TestLevelUpFeat:
     @staticmethod
     def plain_feat():
         return SimpleNamespace(
-            id=12, ability_score_increases=[], prerequisite_ability=None, prerequisite_minimum_score=None
+            id=12, choice_groups=[], prerequisite_ability=None, prerequisite_minimum_score=None
         )
 
     async def test_valid_feat_grants_grant_and_audit_row_as_asi_source(self):
         feat = self.plain_feat()
         service, db = self.make_feat_service(feat)
         request = LevelUpRequest(choice=FeatChoice(feat_id=12))
+        character = service.repository.character
 
         await service.level_up(1, request, make_user())
 
         assert service.repository.character.level == 4
-        assert service.feat_grant_repository.add_calls == [(1, 12, None, CharacterFeatSource.ASI, False)]
+        assert service.feat_grant_repository.add_calls == [(character, 12, None, GrantSource.ASI, False)]
         audit_call = service.asi_repository.add_calls[0]
         assert audit_call[2] == ASILevelChoice.FEAT
         assert audit_call[3] == 12
@@ -527,21 +531,36 @@ class TestLevelUpFeat:
     async def test_asi_offering_feat_without_choice_grants_with_none(self):
         feat = SimpleNamespace(
             id=13,
-            ability_score_increases=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
+            choice_groups=[SimpleNamespace(
+                id=1,
+                pick_count=1,
+                options=[SimpleNamespace(
+                    id=31, sort_order=0,
+                    ability_effects=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
+                )],
+            )],
             prerequisite_ability=None,
             prerequisite_minimum_score=None,
         )
         service, db = self.make_feat_service(feat)
+        character = service.repository.character
 
         await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=13)), make_user())
 
-        assert service.feat_grant_repository.add_calls == [(1, 13, None, CharacterFeatSource.ASI, False)]
+        assert service.feat_grant_repository.add_calls == [(character, 13, None, GrantSource.ASI, False)]
         assert db.commits == 1
 
     async def test_unknown_ability_score_increase_id_rejected_before_grant(self):
         feat = SimpleNamespace(
             id=13,
-            ability_score_increases=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
+            choice_groups=[SimpleNamespace(
+                id=1,
+                pick_count=1,
+                options=[SimpleNamespace(
+                    id=31, sort_order=0,
+                    ability_effects=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
+                )],
+            )],
             prerequisite_ability=None,
             prerequisite_minimum_score=None,
         )
@@ -557,22 +576,30 @@ class TestLevelUpFeat:
     async def test_feat_grant_does_not_enforce_ability_score_cap(self):
         feat = SimpleNamespace(
             id=13,
-            ability_score_increases=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
+            choice_groups=[SimpleNamespace(
+                id=1,
+                pick_count=1,
+                options=[SimpleNamespace(
+                    id=31, sort_order=0,
+                    ability_effects=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
+                )],
+            )],
             prerequisite_ability=None,
             prerequisite_minimum_score=None,
         )
         service, _ = self.make_feat_service(feat, totals={**default_totals(), "strength_total": 20})
+        character = service.repository.character
 
         await service.level_up(
             1, LevelUpRequest(choice=FeatChoice(feat_id=13, ability_score_increase_id=31)), make_user()
         )
 
-        assert service.feat_grant_repository.add_calls == [(1, 13, 31, CharacterFeatSource.ASI, False)]
+        assert service.feat_grant_repository.add_calls == [(character, 13, 31, GrantSource.ASI, False)]
 
     async def test_unmet_prerequisite_rejected(self):
         feat = SimpleNamespace(
             id=14,
-            ability_score_increases=[],
+            choice_groups=[],
             prerequisite_ability=AbilityScore.STR,
             prerequisite_minimum_score=18,
         )
@@ -586,7 +613,7 @@ class TestLevelUpFeat:
     async def test_met_prerequisite_allows_grant(self):
         feat = SimpleNamespace(
             id=14,
-            ability_score_increases=[],
+            choice_groups=[],
             prerequisite_ability=AbilityScore.STR,
             prerequisite_minimum_score=13,
         )
@@ -594,7 +621,7 @@ class TestLevelUpFeat:
 
         await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=14)), make_user())
 
-        assert service.feat_grant_repository.add_calls[0][:2] == (1, 14)
+        assert service.feat_grant_repository.add_calls[0][:2] == (service.repository.character, 14)
 
     async def test_already_known_feat_conflicts(self):
         service, _ = self.make_feat_service(self.plain_feat(), known_feat_ids={12})
@@ -966,3 +993,129 @@ class TestAsiChoicesAudit:
         assert choices[0].class_level == 4
         assert choices[0].choice_type == ASILevelChoice.ASI
         assert choices[0].increases[0].ability == AbilityScore.STR
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestLevelUpFeatureChoices:
+    """Unit tests for _resolve_new_feature_choices: newly-granted features with choice groups."""
+
+    def _make_service_with_grants(self, new_grants, *, feature=None, pending_groups=None, answer_result=None):
+        """Build a progression service where sync_progression_features returns *new_grants*."""
+        service, db = make_service(
+            make_character(level=2),
+            max_level_row=SimpleNamespace(max_level=20),
+            class_row=SimpleNamespace(hit_dice=SimpleNamespace(value="D10")),
+        )
+        # Override the autouse no_feature_sync fixture to return the desired grants
+        import app.features.characters.progression.service as svc_mod
+        svc_mod.sync_progression_features = AsyncMock(return_value=new_grants)
+        return service, db
+
+    async def test_unanswered_choice_group_raises(self, monkeypatch):
+        """A newly-granted feature with a choice group and NO matching feature_choices -> raises."""
+        feature_with_group = SimpleNamespace(
+            id=10,
+            name="Choose a Skill",
+            choice_groups=[SimpleNamespace(id=50, pick_count=1, options=[SimpleNamespace(id=100)])],
+        )
+        grant = SimpleNamespace(id=1000, feature_id=10)
+        service, db = self._make_service_with_grants([grant])
+
+        monkeypatch.setattr(
+            "app.features.characters.progression.service.load_feature_effect_tree",
+            AsyncMock(return_value=feature_with_group),
+        )
+        monkeypatch.setattr(
+            "app.features.characters.progression.service.FeatureGrantService",
+            lambda db: SimpleNamespace(
+                answer_choices=AsyncMock(return_value=PendingChoiceGroupsResponse(
+                    character_feature_id=1000, feature_id=10, feature_name="Choose a Skill",
+                    groups=[PendingChoiceGroup(id=50, pick_count=1)],
+                ))
+            ),
+        )
+
+        with pytest.raises(LevelUpFeatureChoiceRequiredException) as exc_info:
+            await service.level_up(1, LevelUpRequest(), make_user())
+
+        assert exc_info.value.feature_id == 10
+        assert exc_info.value.pending_group_ids == [50]
+        assert db.commits == 0
+
+    async def test_correct_answers_succeeds(self, monkeypatch):
+        """feature_choices that answer all groups -> succeeds, level increases."""
+        feature_with_group = SimpleNamespace(
+            id=10,
+            name="Choose a Skill",
+            choice_groups=[SimpleNamespace(id=50, pick_count=1, options=[SimpleNamespace(id=100)])],
+        )
+        grant = SimpleNamespace(id=1000, feature_id=10)
+        service, db = self._make_service_with_grants([grant])
+
+        monkeypatch.setattr(
+            "app.features.characters.progression.service.load_feature_effect_tree",
+            AsyncMock(return_value=feature_with_group),
+        )
+        monkeypatch.setattr(
+            "app.features.characters.progression.service.FeatureGrantService",
+            lambda db: SimpleNamespace(
+                answer_choices=AsyncMock(return_value=PendingChoiceGroupsResponse(
+                    character_feature_id=1000, feature_id=10, feature_name="Choose a Skill",
+                    groups=[],
+                ))
+            ),
+        )
+
+        answer = LevelUpFeatureChoiceAnswer(
+            feature_id=10, choice_group_id=50, choice_option_id=100
+        )
+        await service.level_up(1, LevelUpRequest(feature_choices=[answer]), make_user())
+
+        assert service.repository.character.level == 3
+
+    async def test_extra_answer_for_nonexistent_grant_is_ignored(self, monkeypatch):
+        """A feature_choices entry whose feature_id matches NO new grant is silently ignored."""
+        feature_without_groups = SimpleNamespace(
+            id=20, name="Extra Attack", choice_groups=[],
+        )
+        grant = SimpleNamespace(id=1001, feature_id=20)
+        service, db = self._make_service_with_grants([grant])
+
+        monkeypatch.setattr(
+            "app.features.characters.progression.service.load_feature_effect_tree",
+            AsyncMock(return_value=feature_without_groups),
+        )
+
+        # Provide an answer for a different feature_id -- should be ignored
+        answer = LevelUpFeatureChoiceAnswer(
+            feature_id=999, choice_group_id=50, choice_option_id=100
+        )
+        await service.level_up(1, LevelUpRequest(feature_choices=[answer]), make_user())
+
+        assert service.repository.character.level == 3
+
+    async def test_feature_without_choice_groups_needs_no_entry(self, monkeypatch):
+        """A feature without choice groups passes without any feature_choices entry."""
+        feature_no_groups = SimpleNamespace(
+            id=30, name="Extra Attack", choice_groups=[],
+        )
+        grant = SimpleNamespace(id=1002, feature_id=30)
+        service, db = self._make_service_with_grants([grant])
+
+        monkeypatch.setattr(
+            "app.features.characters.progression.service.load_feature_effect_tree",
+            AsyncMock(return_value=feature_no_groups),
+        )
+
+        await service.level_up(1, LevelUpRequest(), make_user())
+
+        assert service.repository.character.level == 3
+
+    async def test_no_new_grants_passes_without_answers(self, monkeypatch):
+        """No new grants at all -> no feature_choices needed, level up succeeds."""
+        service, db = self._make_service_with_grants([])
+
+        await service.level_up(1, LevelUpRequest(), make_user())
+
+        assert service.repository.character.level == 3

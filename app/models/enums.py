@@ -12,12 +12,12 @@ from app.constants import (
     ArmorProficiency,
     ASILevelChoice,
     AttackType,
-    CharacterFeatSource,
     Component,
     ConditionType,
     DamageType,
     DiceType,
     FeatureSourceType,
+    GrantSource,
     HealingTarget,
     ItemRarity,
     ItemType,
@@ -54,6 +54,6 @@ FeatureSourceTypeType = SAEnum(FeatureSourceType, name="feature_source_type", cr
 ArmorProficiencyType = SAEnum(ArmorProficiency, name="armor_proficiency", create_type=False)
 WeaponProficiencyType = SAEnum(WeaponProficiency, name="weapon_proficiency", create_type=False)
 ASILevelChoiceType = SAEnum(ASILevelChoice, name="asi_choice", create_type=False)
-CharacterFeatSourceType = SAEnum(CharacterFeatSource, name="character_feat_source", create_type=False)
+GrantSourceType = SAEnum(GrantSource, name="feature_grant_source", create_type=False)
 ConditionTypeType = SAEnum(ConditionType, name="condition_type", create_type=False)
 ComponentType = SAEnum(Component, name="spell_component", create_type=False)

@@ -94,7 +94,7 @@ class TestFeatCrud:
         assert (await client.get(f"/feats/{feat.id}")).status_code == 200
 
     async def test_feats_have_no_feature_endpoints(self, client, gm_token, create_feat):
-        """Feats own no features (a feat is de facto its own feature) — the nested endpoints are gone."""
+        """Feats own no nested feature collection — a feat IS a feature, so the nested endpoints are gone."""
 
         feat = await create_feat(name="Alert")
 
@@ -105,15 +105,19 @@ class TestFeatCrud:
             )
         ).status_code == 404
 
-    async def test_creating_feat_source_feature_is_rejected(self, client, gm_token, create_feat):
-        """The FEAT feature source type no longer exists."""
-
-        feat = await create_feat(name="Alert")
+    async def test_creating_a_feat_source_feature_via_features_succeeds(self, client, gm_token):
+        """FEAT is a valid ``FeatureSourceType``: creating one through ``/features`` is the same catalog as a feat."""
 
         response = await client.post(
             "/features",
-            json={"name": "Alert Initiative", "source_type": "FEAT", "feat_id": feat.id},
+            json={"name": "Alert Initiative", "source_type": "FEAT", "is_repeatable": True},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        assert response.json()["source_type"] == "FEAT"
+
+        # The new FEAT-source feature is listed among feats (same catalog).
+        feats = await client.get("/feats")
+        assert feats.status_code == 200
+        assert "Alert Initiative" in {item["name"] for item in feats.json()["items"]}

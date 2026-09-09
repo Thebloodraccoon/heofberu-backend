@@ -91,6 +91,21 @@ class CharacterFeatureNotFoundException(AppError):
         super().__init__(f"Character {character_id} has no feature grant with id {character_feature_id}.")
 
 
+class FeatureIsAFeatException(AppError):
+    """Raised when the generic feature-grant endpoint is pointed at a FEAT-source feature."""
+
+    status_code = 422
+
+    def __init__(self, feature_id: int):
+        """Record the offending feature id."""
+
+        self.feature_id = feature_id
+        super().__init__(
+            f"Feature {feature_id} is a feat (source_type=FEAT) — grant it via "
+            "POST /characters/gm-panel/{character_id}/feats instead, which also handles its ASI pick."
+        )
+
+
 class CharacterFeatureAlreadyKnownException(AppError):
     """Raised when attempting to add a feature the character already has."""
 

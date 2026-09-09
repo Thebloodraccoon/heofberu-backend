@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import AbilityScore, ASILevelChoice
+from app.constants import AbilityScore, ASILevelChoice, GrantSource
 from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
     FeatAsiChoiceRequiredException,
@@ -16,6 +16,7 @@ from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, Cha
 from app.features.characters.gm_panel.feats.service import GmPanelFeatService
 from app.features.feats.exceptions import FeatNotFoundException
 from app.models.character_model import Character
+from tests.unit.features.characters.conftest import make_feat_with_choice_groups as make_feat
 from tests.unit.fakes import FakeAsyncSession
 
 
@@ -38,31 +39,15 @@ def make_character(**overrides) -> Character:
     return Character(**base)
 
 
-def make_feat(**overrides) -> SimpleNamespace:
-    base = {
-        "id": 2,
-        "name": "Tough",
-        "description": "More hit points.",
-        "ability_score_increases": [],
-        "prerequisite_ability": None,
-        "prerequisite_minimum_score": None,
-    }
-    base.update(overrides)
-    return SimpleNamespace(**base)
-
-
-def make_increase(increase_id: int, ability: AbilityScore, amount: int) -> SimpleNamespace:
-    return SimpleNamespace(id=increase_id, feat_id=2, ability=ability, amount=amount)
-
-
 def make_grant(grant_id: int, feat_id: int, ability_score_increase_id: int | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         id=grant_id,
         character_id=1,
-        feat_id=feat_id,
+        feature_id=feat_id,
         ability_score_increase_id=ability_score_increase_id,
-        source_type="GM",
-        feat=SimpleNamespace(id=feat_id, name="Tough", description=""),
+        grant_source=GrantSource.GM,
+        choices=None,
+        feature=SimpleNamespace(id=feat_id, name="Tough", description=""),
     )
 
 
@@ -110,13 +95,25 @@ class FakeFeatGrantRepository:
     async def get_character_feat_by_id(self, character_id, character_feat_id):
         return self._by_id.get(character_feat_id)
 
-    async def add_character_feat(self, character_id, feat_id, ability_score_increase_id, *, commit=True):
-        self.add_calls.append((character_id, feat_id, ability_score_increase_id, commit))
+    async def add_character_feat(self, character, feat_id, ability_score_increase_id, *, source_type=GrantSource.GM, commit=True):
+        self.add_calls.append((character, feat_id, ability_score_increase_id, source_type, commit))
         return make_grant(7, feat_id, ability_score_increase_id)
 
-    async def set_character_feat_ability_score_increase(self, grant, ability_score_increase_id):
+    async def set_character_feat_ability_score_increase(self, character, grant, ability_score_increase_id):
         self.set_calls.append((grant, ability_score_increase_id))
         grant.ability_score_increase_id = ability_score_increase_id
+        if ability_score_increase_id is not None:
+            grant.choices = [
+                SimpleNamespace(
+                    choice_option=SimpleNamespace(
+                        ability_effects=[
+                            SimpleNamespace(id=ability_score_increase_id, ability=AbilityScore.STR, amount=1)
+                        ]
+                    )
+                )
+            ]
+        else:
+            grant.choices = []
         return grant
 
     async def remove_character_feat(self, grant):
@@ -189,8 +186,7 @@ class TestAddFeat:
         result = await service.add_feat(character.id, CharacterFeatAdd(feat_id=2), SimpleNamespace())
 
         assert result.id == 7
-        assert result.feat_id == 2
-        assert service.feat_grant_repository.add_calls == [(1, 2, None, False)]
+        assert service.feat_grant_repository.add_calls == [(character, 2, None, GrantSource.GM, False)]
         assert len(service.asi_repository.add_calls) == 1
         audit = service.asi_repository.add_calls[0]
         assert audit["character_id"] == 1
@@ -205,20 +201,19 @@ class TestAddFeat:
 
     async def test_add_feat_with_choice_writes_audit_and_refreshes_stats(self):
         character = make_character()
-        increase = make_increase(10, AbilityScore.STR, 1)
         stats = FakeStatsService()
-        service = make_service(character, feat=make_feat(ability_score_increases=[increase]), stats=stats)
+        service = make_service(character, feat=make_feat(ability_effects=[(AbilityScore.STR, 1)]), stats=stats)
 
         await service.add_feat(
-            character.id, CharacterFeatAdd(feat_id=2, ability_score_increase_id=10), SimpleNamespace()
+            character.id, CharacterFeatAdd(feat_id=2, ability_score_increase_id=200), SimpleNamespace()
         )
 
-        assert service.feat_grant_repository.add_calls == [(1, 2, 10, False)]
-        assert service.asi_repository.add_calls[0]["ability_score_increase_id"] == 10
+        assert service.feat_grant_repository.add_calls == [(character, 2, 200, GrantSource.GM, False)]
+        assert service.asi_repository.add_calls[0]["ability_score_increase_id"] == 200
         assert stats.refresh_calls == [character]
 
     async def test_asi_offering_feat_requires_explicit_choice(self):
-        feat = make_feat(ability_score_increases=[make_increase(10, AbilityScore.STR, 1)])
+        feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])
         service = make_service(make_character(), feat=feat)
 
         with pytest.raises(FeatAsiChoiceRequiredException) as exc_info:
@@ -229,15 +224,16 @@ class TestAddFeat:
         assert service.asi_repository.add_calls == []
 
     async def test_cap_exceeded_does_not_reject_the_choice(self):
-        increase = make_increase(10, AbilityScore.STR, 1)
-        feat = make_feat(ability_score_increases=[increase])
+        feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])
         stats = FakeStatsService(totals={**TOTALS, "strength_total": 20})
         service = make_service(make_character(), feat=feat, stats=stats)
 
-        result = await service.add_feat(1, CharacterFeatAdd(feat_id=2, ability_score_increase_id=10), SimpleNamespace())
+        result = await service.add_feat(1, CharacterFeatAdd(feat_id=2, ability_score_increase_id=200), SimpleNamespace())
 
         assert result.id == 7
-        assert service.feat_grant_repository.add_calls == [(1, 2, 10, False)]
+        add_call = service.feat_grant_repository.add_calls[0]
+        assert add_call[0].id == 1  # the resolved Character object
+        assert add_call[1:] == (2, 200, GrantSource.GM, False)
 
     async def test_prerequisite_not_met_rejects_the_grant(self):
         feat = make_feat(prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=15)
@@ -267,21 +263,21 @@ class TestAddFeat:
 class TestUpdateFeat:
     async def test_updates_choice_and_refreshes_cache(self):
         character = make_character()
-        grant = make_grant(3, 2, 10)
+        grant = make_grant(3, 2, 200)
         feat = make_feat(
-            ability_score_increases=[make_increase(10, AbilityScore.STR, 1), make_increase(11, AbilityScore.DEX, 1)]
+            ability_effects=[(AbilityScore.STR, 1), (AbilityScore.DEX, 1)]
         )
         service = make_service(character, feat=feat, grants_by_id={3: grant})
 
-        result = await service.update_feat(1, 3, CharacterFeatUpdate(ability_score_increase_id=11), SimpleNamespace())
+        result = await service.update_feat(1, 3, CharacterFeatUpdate(ability_score_increase_id=201), SimpleNamespace())
 
-        assert result.ability_score_increase_id == 11
-        assert service.feat_grant_repository.set_calls == [(grant, 11)]
+        assert result.ability_score_increase_id == 201
+        assert service.feat_grant_repository.set_calls == [(grant, 201)]
         assert service.stats_service.refresh_calls == [character]
 
     async def test_clearing_choice_on_asi_offering_feat_is_rejected(self):
-        feat = make_feat(ability_score_increases=[make_increase(10, AbilityScore.STR, 1)])
-        grant = make_grant(3, 2, 10)
+        feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])
+        grant = make_grant(3, 2, 200)
         service = make_service(make_character(), feat=feat, grants_by_id={3: grant})
 
         with pytest.raises(FeatAsiChoiceRequiredException):

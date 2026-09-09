@@ -4,8 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
 from app.models.character_feature_model import CharacterFeature
+from app.models.feature_model import Feature
 
 
 class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
@@ -21,12 +23,20 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         )
 
     async def get_character_features(self, character_id: int) -> list[CharacterFeature]:
-        """Get every feature grant for a character."""
+        """
+        Get every feature grant for a character, EXCLUDING feats.
+
+        A feat is a ``character_features`` row whose ``feature.source_type
+        == FEAT`` too (a feat IS a Feature), but it is surfaced through
+        ``GET /characters/{id}/feats`` — excluding it here keeps the same
+        grant from appearing twice in the character sheet.
+        """
 
         result = await self.db.execute(
             select(CharacterFeature)
+            .join(Feature, Feature.id == CharacterFeature.feature_id)
             .options(selectinload(CharacterFeature.feature))
-            .where(CharacterFeature.character_id == character_id)
+            .where(CharacterFeature.character_id == character_id, Feature.source_type != FeatureSourceType.FEAT)
         )
         return list(result.scalars().unique().all())
 
@@ -56,12 +66,28 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         )
         return result.scalar_one_or_none()
 
-    async def add_character_feature(self, character_id: int, feature_id: int, notes: str) -> CharacterFeature:
-        """Record a reference feature on a character, with per-character notes."""
+    async def add_character_feature(
+        self,
+        character_id: int,
+        feature_id: int,
+        notes: str,
+        *,
+        grant_source: GrantSource = GrantSource.GM,
+    ) -> CharacterFeature:
+        """
+        Record a reference feature on a character, with per-character notes.
+
+        ``grant_source`` defaults to ``GM`` (this is the manual-grant path —
+        auto-synced grants are written by
+        ``progression.feature_sync.sync_progression_features`` with
+        ``AUTO``) so a subsequent sync never mistakes a GM's manual grant
+        for a stale auto-grant and revokes it.
+        """
 
         grant = CharacterFeature(
             character_id=character_id,
             feature_id=feature_id,
+            grant_source=grant_source,
             notes=notes,
         )
 

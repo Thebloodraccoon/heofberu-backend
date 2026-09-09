@@ -167,6 +167,13 @@ class FakeCharacterRepository(FakeRepository):
         self.last_create_payload = dict(payload)
         row = await super().create(payload, commit=commit)
         row.character_class = self.character_class_on_create
+        # _to_response reads these feature-engine-materialized collections;
+        # the fake row is a bare SimpleNamespace, so default them to empty
+        # like a freshly-created (never-granted-anything) character has.
+        row.saving_throw_proficiencies = []
+        row.armor_proficiencies = []
+        row.weapon_proficiencies = []
+        row.granted_spells = []
         return row
 
     async def update(self, db_obj, update_data, *, refresh=False):
@@ -349,6 +356,7 @@ def make_service(
 
         async def fake_sync(db_arg, character):
             events.append("sync_features")
+            return []
 
         async def fake_invalidate(character_id):
             events.append("invalidate")
@@ -705,6 +713,10 @@ class TestToResponseSavingThrows:
             current_hp=12,
             max_hp=12,
             temp_hp=0,
+            saving_throw_proficiencies=[],
+            armor_proficiencies=[],
+            weapon_proficiencies=[],
+            granted_spells=[],
             character_class=make_class(saving_throws=[SimpleNamespace(ability=AbilityScore.WIS)]),
         )
         cache_row = SimpleNamespace(
@@ -723,7 +735,6 @@ class TestToResponseSavingThrows:
         )
 
         assert [st.ability for st in result.saving_throw_proficiencies] == [AbilityScore.WIS]
-        assert not hasattr(character, "saving_throw_proficiencies")
         assert result.hit_dice == "D8"
         assert result.speed == 25
         assert result.ability_scores.wisdom_total == 11

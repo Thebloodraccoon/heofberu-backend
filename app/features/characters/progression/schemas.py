@@ -93,8 +93,8 @@ class FeatChoice(BaseModel):
 
     ``ability_score_increase_id`` is required when the chosen feat offers
     ASI options of its own (e.g. Resilient) — pass the id of the specific
-    ``FeatAbilityScoreIncrease`` row to apply; the service rejects a feat
-    with options taken without one.
+    ASI option (a ``feature_ability_score_effects`` row) to apply; the
+    service rejects a feat with options taken without one.
     """
 
     type: Literal["FEAT"] = "FEAT"
@@ -196,6 +196,24 @@ class CharacterRebuildRequest(BaseModel):
         return asi_choices
 
 
+class LevelUpFeatureChoiceAnswer(BaseModel):
+    """
+    One picked option, for one choice group, on one feature newly unlocked
+    by this level-up (e.g. a class feature at level 3 that grants "choose a
+    tool proficiency"). ``feature_id`` identifies the catalog feature — not
+    the per-character grant, whose id doesn't exist until the level-up
+    creates it — since ``choice_group_id``/``choice_option_id`` are reference
+    data, fetchable ahead of time from ``GET /classes/{id}/features`` (or the
+    equivalent for the granting source) before submitting the level-up.
+    """
+
+    feature_id: int
+    choice_group_id: int
+    choice_option_id: int
+    # Required iff the option carries an open ("any skill") skill effect.
+    skill_id: int | None = None
+
+
 class LevelUpRequest(BaseModel):
     """
     Level a character up exactly one level.
@@ -206,10 +224,21 @@ class LevelUpRequest(BaseModel):
 
     ``choice`` is required when the new level is an Ability Score
     Improvement level and rejected otherwise. See ``ASI_LEVELS``.
+
+    ``feature_choices`` resolves the "pick N of M" choice group(s) of any
+    OTHER feature this level unlocks (a class feature granting a skill/tool/
+    armor/weapon proficiency or a bonus spell, a subclass trait, ...) —
+    unrelated to the ASI-vs-feat ``choice`` above. A newly unlocked feature
+    with a still-unanswered group after applying these aborts the whole
+    level-up with ``LevelUpFeatureChoiceRequiredException`` naming what's
+    missing, exactly like a missing ASI ``choice`` does — the grant is never
+    left silently half-resolved. A feature with no choice groups needs no
+    entry here; its fixed effects apply automatically.
     """
 
     hit_points_gained: int | None = Field(default=None, ge=1)
     choice: LevelUpChoice | None = None
+    feature_choices: list[LevelUpFeatureChoiceAnswer] = Field(default_factory=list)
 
 
 class CanLevelUpResponse(BaseModel):

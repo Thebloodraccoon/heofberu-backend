@@ -6,7 +6,6 @@ from app.models.background_model import Background  # noqa: F401
 from app.models.character_ability_score_model import CharacterAbilityScore  # noqa: F401
 from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease  # noqa: F401
 from app.models.character_association_models import (  # noqa: F401
-    CharacterFeat,
     CharacterSkillProficiency,
     CharacterSpellSlot,
 )
@@ -15,6 +14,17 @@ from app.models.character_association_models import (  # noqa: F401
 # ordering constraint — grouped here with the other character association models.
 from app.models.character_backstory_model import CharacterBackstory  # noqa: F401
 from app.models.character_condition_model import CharacterCondition  # noqa: F401
+
+# Feature engine (Phase 2): character-side effect tables + grant choices.
+# Must come after CharacterFeature (FK target) but the import itself is safe
+# here since all targets resolve by name/string at mapper configuration time.
+from app.models.character_engine_models import (  # noqa: F401
+    CharacterArmorProficiency,
+    CharacterFeatureChoice,
+    CharacterGrantedSpell,
+    CharacterSavingThrowProficiency,
+    CharacterWeaponProficiency,
+)
 from app.models.character_feature_model import CharacterFeature  # noqa: F401
 from app.models.character_item_model import CharacterItem  # noqa: F401
 
@@ -33,8 +43,19 @@ from app.models.class_association_models import (  # noqa: F401
 from app.models.class_model import Class  # noqa: F401
 from app.models.class_spell_slot_progression_model import ClassSpellSlotProgression  # noqa: F401
 
-# Feat.
-from app.models.feat_model import Feat, FeatAbilityScoreIncrease  # noqa: F401
+# Feature engine (Phase 1): reference-side choice groups/options + effect tables.
+# Must come after Feature (FK target) and after Skill/Item/Spell (FK targets);
+# those are imported below — mapper configuration tolerates the ordering.
+from app.models.feature_engine_models import (  # noqa: F401
+    FeatureAbilityScoreEffect,
+    FeatureArmorProficiencyEffect,
+    FeatureChoiceGroup,
+    FeatureChoiceOption,
+    FeatureSavingThrowEffect,
+    FeatureSkillProficiencyEffect,
+    FeatureSpellGrantEffect,
+    FeatureWeaponProficiencyEffect,
+)
 
 # Feature (class/subclass/race/subrace/background features and feats).
 # Must come after Subclass/Subrace so the subclass_id/subrace_id FKs resolve correctly.
@@ -58,9 +79,10 @@ from app.models.spell_model import Spell  # noqa: F401
 # Subclass must be imported after Class (FK dependency) and before Feature (FK target).
 from app.models.subclass_model import Subclass  # noqa: F401
 
-# Subrace and its associations.
+# Subrace and its associations (incl. subrace_tags).
 # Must come after Class/Race (FK targets) and before Feature (FK target).
-from app.models.subrace_association_models import SubraceAbilityBonus  # noqa: F401
+from app.models.subrace_association_models import SubraceAbilityBonus, subrace_tag_links  # noqa: F401
 from app.models.subrace_model import Subrace  # noqa: F401
+from app.models.subrace_tag_model import SubraceTag  # noqa: F401
 from app.models.user_model import User  # noqa: F401
 from app.settings import settings  # noqa: F401

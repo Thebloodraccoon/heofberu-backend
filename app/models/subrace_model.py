@@ -38,6 +38,12 @@ class Subrace(settings.Base):  # type: ignore
         passive_deletes=True,
         order_by="Feature.id",
     )
+    tags = relationship(
+        "SubraceTag",
+        secondary="subrace_tag_links",
+        back_populates="subraces",
+        order_by="SubraceTag.name",
+    )
 
     def __repr__(self):
         return f"<Subrace(id={self.id}, name='{self.name}', race_id={self.race_id})>"

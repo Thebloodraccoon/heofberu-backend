@@ -9,6 +9,7 @@ from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.backstory.service import CharacterBackstoryService
 from app.features.characters.conditions.service import CharacterConditionService
 from app.features.characters.crud.service import CharacterService
+from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.progression.service import CharacterProgressionService
 from app.features.characters.spells.service import CharacterSpellService
 
@@ -65,3 +66,12 @@ def get_character_progression_service(db: DatabaseDep) -> CharacterProgressionSe
 
 
 CharacterProgressionServiceDep = Annotated[CharacterProgressionService, Depends(get_character_progression_service)]
+
+
+def get_feature_grant_service(db: DatabaseDep) -> FeatureGrantService:
+    """Get the feature grant service instance."""
+
+    return FeatureGrantService(db)
+
+
+FeatureGrantServiceDep = Annotated[FeatureGrantService, Depends(get_feature_grant_service)]

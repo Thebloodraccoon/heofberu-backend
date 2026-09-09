@@ -12,8 +12,9 @@ from app.models.class_model import Class
 class CharacterRepository(BaseRepository[Character]):
     """
     Repository for the ``Character`` model: inherits the full base CRUD,
-    eager-loads the relationships ``CharacterResponse`` serializes, and
-    pins ``search`` to ``name`` only.
+    eager-loads the relationships ``CharacterResponse`` serializes (the
+    legacy collections plus the feature engine's materialized effect rows),
+    and pins ``search`` to ``name`` only.
     """
 
     def __init__(self, db: AsyncSession):
@@ -26,6 +27,10 @@ class CharacterRepository(BaseRepository[Character]):
                 selectinload(Character.skill_proficiencies),
                 selectinload(Character.character_class).selectinload(Class.saving_throws),
                 selectinload(Character.conditions),
+                selectinload(Character.saving_throw_proficiencies),
+                selectinload(Character.armor_proficiencies),
+                selectinload(Character.weapon_proficiencies),
+                selectinload(Character.granted_spells),
             ],
             search_fields=["name"],
         )

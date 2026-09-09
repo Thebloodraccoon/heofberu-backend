@@ -1,25 +1,43 @@
-"""ORM models for character sub-resources: skills, saving throws, spell slots, feats."""
+"""ORM models for character sub-resources: skills, saving throws, spell slots."""
 
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
-from app.models.enums import CharacterFeatSourceType, SpellLevelType
+from app.models.enums import SpellLevelType
 from app.settings import settings
 
 
 class CharacterSkillProficiency(settings.Base):  # type: ignore
-    """A character's proficiency (and optional expertise) in a given skill."""
+    """
+    A character's proficiency (and optional expertise) in a given skill.
+
+    ``source_character_feature_id`` records which feature grant produced this
+    row (Phase 2 of the feature engine). NULL = a raw free-form row (e.g. a
+    GM toggling expertise, or a player-chosen class skill before the engine
+    migration). Rebuilds only touch rows whose source is set — they no longer
+    wipe the whole table.
+    """
 
     __tablename__ = "character_skill_proficiencies"
 
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
     skill_id = Column(Integer, ForeignKey("skills.id", ondelete="RESTRICT"), primary_key=True)
     is_expertise = Column(Boolean, nullable=False, default=False)
+    source_character_feature_id = Column(
+        Integer,
+        ForeignKey("character_features.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
 
     skill = relationship("Skill")
+    source_grant = relationship("CharacterFeature")
 
     def __repr__(self):
-        return f"<CharacterSkillProficiency(character_id={self.character_id}, skill_id={self.skill_id})>"
+        return (
+            f"<CharacterSkillProficiency(character_id={self.character_id}, skill_id={self.skill_id}, "
+            f"source={self.source_character_feature_id})>"
+        )
 
 
 class CharacterSpellSlot(settings.Base):  # type: ignore
@@ -42,43 +60,3 @@ class CharacterSpellSlot(settings.Base):  # type: ignore
             f"<CharacterSpellSlot(character_id={self.character_id}, "
             f"level='{self.spell_level}', used={self.used}/{self.total})>"
         )
-
-
-class CharacterFeat(settings.Base):  # type: ignore
-    """
-    A feat granted to a character. Uses a surrogate key rather than a
-    composite (character_id, feat_id) PK so the association stays open
-    for future per-grant fields. A character may hold each feat at most
-    once — enforced by the unique constraint on (character_id, feat_id).
-
-    `ability_score_increase_id` records which of the feat's ASI choices
-    (see FeatAbilityScoreIncrease) the player selected, if any; NULL if
-    the feat grants no ability score increase or none was applicable.
-
-    `source_type` records where the grant came from — a plain GM grant
-    (the default, and what the manual feats endpoint writes), or an Ability
-    Score Improvement level choice (ASI, written by the progression level-up
-    endpoint).
-    """
-
-    __tablename__ = "character_feats"
-
-    id = Column(Integer, primary_key=True)
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
-    feat_id = Column(Integer, ForeignKey("feats.id", ondelete="RESTRICT"), nullable=False, index=True)
-    ability_score_increase_id = Column(
-        Integer,
-        ForeignKey("feat_ability_score_increases.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    source_type = Column(CharacterFeatSourceType, nullable=False, default="GM")
-
-    __table_args__ = (UniqueConstraint("character_id", "feat_id", name="uq_character_feat"),)
-
-    character = relationship("Character", back_populates="character_feats")
-    feat = relationship("Feat")
-    ability_score_increase = relationship("FeatAbilityScoreIncrease")
-
-    def __repr__(self):
-        return f"<CharacterFeat(character_id={self.character_id}, feat_id={self.feat_id})>"

@@ -7,6 +7,7 @@ from app.features.characters.backstory.router import router as backstory_router
 from app.features.characters.conditions.router import router as conditions_router
 from app.features.characters.crud.router import router as core_router
 from app.features.characters.gm_panel.router import router as gm_panel_router
+from app.features.characters.grants.router import router as grants_router
 from app.features.characters.progression.router import router as progression_router
 from app.features.characters.spells.router import router as spells_router
 
@@ -19,3 +20,4 @@ router.include_router(gm_panel_router, prefix="/characters", tags=["Characters G
 router.include_router(conditions_router, prefix="/characters", tags=["Characters Conditions"])
 router.include_router(progression_router, prefix="/characters", tags=["Characters Progression"])
 router.include_router(backstory_router, prefix="/characters", tags=["Characters Backstory"])
+router.include_router(grants_router, prefix="/characters", tags=["Characters Feature Grants"])

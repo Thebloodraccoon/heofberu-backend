@@ -818,3 +818,248 @@ class TestASIChoices:
         )
 
         assert response.status_code == 403
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestLevelUpFeatureChoices:
+    """Level-up must resolve the choice groups of newly granted features via `feature_choices`."""
+
+    async def _feature_with_skill_choice(self, client, gm_token, create_feature, create_skill, class_id):
+        """Create a CLASS feature at level 3 carrying a "pick one skill" choice group; return ids."""
+        skill = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        feature = await create_feature(
+            name="Skill Reader", source_type="CLASS", class_id=class_id, level=3
+        )
+        choice_response = await client.put(
+            f"/features/{feature.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "label": "Pick a skill",
+                        "options": [{"label": "Athletics", "skill_effects": [{"skill_id": skill.id}]}],
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert choice_response.status_code == 200, choice_response.text
+        effects = (await client.get(f"/features/{feature.id}/effects")).json()
+        group_id = effects["choice_groups"][0]["id"]
+        option_id = effects["choice_groups"][0]["options"][0]["id"]
+        return feature, skill, group_id, option_id
+
+    async def test_level_up_2_to_3_without_feature_choices_returns_422_and_rolls_back(
+        self, client, player, player_token, gm_token, create_class, create_api_character, create_feature, create_skill
+    ):
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+        _, _, _, _ = await self._feature_with_skill_choice(
+            client, gm_token, create_feature, create_skill, character_class.id
+        )
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        character_id = character["id"]
+
+        await level_up_to(client, player_token, character_id, target_level=2)
+
+        response = await client.post(
+            f"/characters/{character_id}/progression/level-up",
+            json={},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
+        refreshed = await client.get(
+            f"/characters/{character_id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert refreshed.status_code == 200
+        assert refreshed.json()["level"] == 2
+
+    async def test_level_up_with_feature_choices_materializes_the_pick(
+        self, client, player, player_token, gm_token, create_class, create_api_character, create_feature, create_skill
+    ):
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+        feature, skill, group_id, option_id = await self._feature_with_skill_choice(
+            client, gm_token, create_feature, create_skill, character_class.id
+        )
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        character_id = character["id"]
+
+        await level_up_to(client, player_token, character_id, target_level=2)
+
+        response = await client.post(
+            f"/characters/{character_id}/progression/level-up",
+            json={
+                "feature_choices": [
+                    {
+                        "feature_id": feature.id,
+                        "choice_group_id": group_id,
+                        "choice_option_id": option_id,
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["level"] == 3
+
+        refreshed = await client.get(
+            f"/characters/{character_id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert refreshed.json()["level"] == 3
+        assert skill.id in [item["skill_id"] for item in refreshed.json()["skill_proficiencies"]]
+
+    async def test_feature_choices_for_unrelated_feature_are_ignored(
+        self, client, player, player_token, gm_token, create_class, create_api_character, create_feature, create_skill
+    ):
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+        _, _, group_id, option_id = await self._feature_with_skill_choice(
+            client, gm_token, create_feature, create_skill, character_class.id
+        )
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        character_id = character["id"]
+
+        # Level 1 -> 2 unlocks nothing at level 2; a feature_choices entry
+        # naming the level-3 feature (not granted yet) must be ignored.
+        response = await client.post(
+            f"/characters/{character_id}/progression/level-up",
+            json={
+                "feature_choices": [
+                    {
+                        "feature_id": 999999,
+                        "choice_group_id": group_id,
+                        "choice_option_id": option_id,
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["level"] == 2
+
+    async def test_two_granted_features_both_need_answers(
+        self, client, player, player_token, gm_token, create_class, create_api_character, create_feature, create_skill
+    ):
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+        skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skill_b = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill_a_id = skill_a.id
+        skill_b_id = skill_b.id
+        feat_a = await create_feature(name="Feature A", source_type="CLASS", class_id=character_class.id, level=3)
+        feat_b = await create_feature(name="Feature B", source_type="CLASS", class_id=character_class.id, level=3)
+        feat_a_id = feat_a.id
+        feat_b_id = feat_b.id
+
+        def _configure_feature(feature_id, skill_id):
+            response = client.put(
+                f"/features/{feature_id}/choice-groups",
+                json={
+                    "choice_groups": [
+                        {
+                            "pick_count": 1,
+                            "options": [{"label": "Pick", "skill_effects": [{"skill_id": skill_id}]}],
+                        }
+                    ]
+                },
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            return response
+
+        resp_a = await _configure_feature(feat_a_id, skill_a_id)
+        assert resp_a.status_code == 200, resp_a.text
+        resp_b = await _configure_feature(feat_b_id, skill_b_id)
+        assert resp_b.status_code == 200, resp_b.text
+        effects_a = (await client.get(f"/features/{feat_a_id}/effects")).json()
+        effects_b = (await client.get(f"/features/{feat_b_id}/effects")).json()
+        group_a = effects_a["choice_groups"][0]["id"]
+        option_a = effects_a["choice_groups"][0]["options"][0]["id"]
+        group_b = effects_b["choice_groups"][0]["id"]
+        option_b = effects_b["choice_groups"][0]["options"][0]["id"]
+
+        character, _ = await create_api_character(class_id=character_class.id, owner=player)
+        character_id = character["id"]
+        await level_up_to(client, player_token, character_id, target_level=2)
+
+        # Only covering the first feature leaves the second unanswered -> 422 + rollback.
+        partial = await client.post(
+            f"/characters/{character_id}/progression/level-up",
+            json={
+                "feature_choices": [
+                    {
+                        "feature_id": feat_a_id,
+                        "choice_group_id": group_a,
+                        "choice_option_id": option_a,
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert partial.status_code == 422
+        refreshed = await client.get(
+            f"/characters/{character_id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert refreshed.json()["level"] == 2
+
+        # Covering both succeeds and materializes both picks.
+        full = await client.post(
+            f"/characters/{character_id}/progression/level-up",
+            json={
+                "feature_choices": [
+                    {
+                        "feature_id": feat_a_id,
+                        "choice_group_id": group_a,
+                        "choice_option_id": option_a,
+                    },
+                    {
+                        "feature_id": feat_b_id,
+                        "choice_group_id": group_b,
+                        "choice_option_id": option_b,
+                    },
+                ]
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert full.status_code == 200, full.text
+        refreshed = await client.get(
+            f"/characters/{character_id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        skill_ids = {item["skill_id"] for item in refreshed.json()["skill_proficiencies"]}
+        assert skill_a_id in skill_ids
+        assert skill_b_id in skill_ids
+
+    async def test_feature_without_choice_groups_needs_no_feature_choices(
+        self, client, player, player_token, gm_token, create_class, create_api_character, create_feature
+    ):
+        character_class = await create_class(name="Fighter", hit_dice="D10")
+        feature = await create_feature(
+            name="Fixed Boon", source_type="CLASS", class_id=character_class.id, level=3
+        )
+        await client.put(
+            f"/features/{feature.id}/effects",
+            json={"ability_effects": [{"ability": "STR", "amount": 2}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        character, _ = await create_api_character(class_id=character_class.id, owner=player, strength=10)
+        character_id = character["id"]
+        await level_up_to(client, player_token, character_id, target_level=2)
+
+        response = await client.post(
+            f"/characters/{character_id}/progression/level-up",
+            json={},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["level"] == 3
+        stats = await client.get(
+            f"/characters/{character_id}/stats",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+        assert stats.status_code == 200
+        assert stats.json()["strength"]["total"] == 12

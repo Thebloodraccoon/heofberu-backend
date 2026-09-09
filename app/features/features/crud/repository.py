@@ -1,18 +1,23 @@
-"""Feature repository: base CRUD plus fixed ability-increase effect management."""
+"""Feature repository: base CRUD plus engine-effect management."""
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.feature_model import Feature, FeatureAbilityIncrease
+from app.models.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.feature_model import Feature
 
 
 class FeatureRepository(BaseRepository[Feature]):
     """
     Feature-specific repository built on :class:`BaseRepository`.
 
-    ``ability_increases`` (the feature's fixed ability-score effects) are
-    always loaded alongside the row via ``default_load_options``.
+    ``ability_effects`` (the feature's FIXED ability-score effects — no
+    player choice involved) are always loaded alongside the row via
+    ``default_load_options``. The full engine effect tree (every
+    ``feature_*_effects`` table and its choice groups) is loaded on demand
+    by :meth:`get_with_effects`.
     """
 
     def __init__(self, db: AsyncSession):
@@ -22,20 +27,52 @@ class FeatureRepository(BaseRepository[Feature]):
             Feature,
             db,
             default_load_options=[
-                selectinload(Feature.ability_increases),
+                selectinload(Feature.ability_effects),
             ],
             search_fields=["name"],
         )
 
-    async def set_ability_increases(self, feature: Feature, increases: list[dict], *, commit: bool = True) -> Feature:
-        """Replace all fixed ability-score increases for a feature with the given list."""
+    async def get_with_effects(self, feature_id: int, *, fallback: Feature | None = None) -> Feature:
+        """
+        Fetch a feature with its full engine effect tree loaded.
 
-        await self.replace_child_rows(
-            FeatureAbilityIncrease,
-            feature,
-            "feature_id",
-            increases,
-            commit=commit,
+        ``fallback`` is the already-fetched row (used so callers that got a
+        404 signal can re-raise); when the eager query returns nothing the
+        fallback row is returned as-is.
+        """
+
+        result = await self.db.execute(
+            select(Feature)
+            .where(Feature.id == feature_id)
+            .options(*_engine_effect_loads())
         )
+        feature = result.scalars().first()
+        return feature if feature is not None else fallback
 
-        return feature
+
+def _engine_effect_loads() -> list:
+    """Eager loads for the whole feature-engine effect tree (choice groups + fixed effects)."""
+
+    option_effect_attrs = (
+        "ability_effects",
+        "skill_effects",
+        "saving_throw_effects",
+        "armor_effects",
+        "weapon_effects",
+        "spell_effects",
+    )
+
+    return [
+        selectinload(Feature.ability_effects),
+        selectinload(Feature.skill_effects),
+        selectinload(Feature.saving_throw_effects),
+        selectinload(Feature.armor_effects),
+        selectinload(Feature.weapon_effects),
+        selectinload(Feature.spell_effects),
+        *(
+            selectinload(Feature.choice_groups)
+            .selectinload(FeatureChoiceGroup.options)
+            .selectinload(getattr(FeatureChoiceOption, attr))
+            for attr in option_effect_attrs
+        ),
+    ]

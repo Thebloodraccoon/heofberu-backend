@@ -8,10 +8,10 @@ import pytest
 from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 
 
-async def set_feature_effects(client, gm_token, feature_id, increases):
+async def set_feature_effects(client, gm_token, feature_id, ability_effects):
     response = await client.put(
-        f"/features/{feature_id}/ability-increases",
-        json={"ability_increases": increases},
+        f"/features/{feature_id}/effects",
+        json={"ability_effects": ability_effects},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
     assert response.status_code == 200, response.text
@@ -237,8 +237,8 @@ class TestPerAbilityCap:
         feature = await create_feature(name="Over 9000", source_type="OTHER")
 
         response = await client.put(
-            f"/features/{feature.id}/ability-increases",
-            json={"ability_increases": [{"ability": "STR", "amount": 4, "new_cap": 31}]},
+            f"/features/{feature.id}/effects",
+            json={"ability_effects": [{"ability": "STR", "amount": 4, "new_cap": 31}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -248,8 +248,8 @@ class TestPerAbilityCap:
         feature = await create_feature(name="Under Twenty", source_type="OTHER")
 
         response = await client.put(
-            f"/features/{feature.id}/ability-increases",
-            json={"ability_increases": [{"ability": "STR", "amount": 1, "new_cap": 19}]},
+            f"/features/{feature.id}/effects",
+            json={"ability_effects": [{"ability": "STR", "amount": 1, "new_cap": 19}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 

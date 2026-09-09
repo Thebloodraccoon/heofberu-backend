@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import FeatureSourceType
+from app.constants import AbilityScore, FeatureSourceType
 from app.core.exceptions import RecordNotFoundError
-from app.features.features.crud.schemas import FeatureCreate, FeatureUpdate
+from app.features.features.crud.schemas import FeatureCreate, FeatureResponse, FeatureUpdate
 from app.features.features.crud.service import SOURCE_FEATURE_LIST_NAMESPACE, FeatureCrudService
 from app.features.features.exceptions import InvalidFeatureSourceException
 from app.models.feature_model import Feature
@@ -231,3 +231,52 @@ class TestFeatureCrudDelete:
 
         with pytest.raises(RecordNotFoundError):
             await service.delete(99)
+
+
+@pytest.mark.unit
+class TestFeatureAbilityEffectsSerialization:
+    """Verify that FeatureResponse serializes ability_effects (renamed from ability_increases)."""
+
+    def test_feature_response_serializes_ability_effects(self):
+        feature = SimpleNamespace(
+            id=1,
+            name="Primal Champion",
+            source_type=FeatureSourceType.CLASS,
+            class_id=1,
+            subclass_id=None,
+            race_id=None,
+            subrace_id=None,
+            background_id=None,
+            level=20,
+            description="You embrace the primal power.",
+            ability_effects=[
+                SimpleNamespace(ability=AbilityScore.STR, amount=4, new_cap=None),
+                SimpleNamespace(ability=AbilityScore.CON, amount=4, new_cap=None),
+            ],
+        )
+
+        response = FeatureResponse.model_validate(feature)
+
+        assert len(response.ability_effects) == 2
+        assert response.ability_effects[0].ability == AbilityScore.STR
+        assert response.ability_effects[0].amount == 4
+        assert response.ability_effects[1].ability == AbilityScore.CON
+        assert response.ability_effects[1].amount == 4
+
+    def test_feature_response_empty_ability_effects_by_default(self):
+        feature = SimpleNamespace(
+            id=2,
+            name="Extra Attack",
+            source_type=FeatureSourceType.CLASS,
+            class_id=1,
+            subclass_id=None,
+            race_id=None,
+            subrace_id=None,
+            background_id=None,
+            level=5,
+            description="",
+        )
+
+        response = FeatureResponse.model_validate(feature)
+
+        assert response.ability_effects == []

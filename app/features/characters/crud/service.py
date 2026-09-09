@@ -25,8 +25,13 @@ from app.features.characters.crud.exceptions import (
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.feats.repository import CharacterFeatRepository
+from app.features.characters.feats.repository import CharacterFeatRepository, to_character_feat_response
 from app.features.characters.features.repository import CharacterFeatureRepository
+from app.features.characters.grants.schemas import (
+    CharacterArmorProficiencyResponse,
+    CharacterGrantedSpellResponse,
+    CharacterWeaponProficiencyResponse,
+)
 from app.features.characters.items.repository import CharacterItemRepository
 from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.feature_sync import sync_progression_features
@@ -198,7 +203,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         await get_character_for_user(self.repository, character_id, current_user)
 
         grants = await self.feat_grant_repository.get_character_feats(character_id)
-        return [CharacterFeatResponse.model_validate(grant) for grant in grants]
+        return [to_character_feat_response(grant) for grant in grants]
 
     async def get_stats(self, character_id: int, current_user: UserResponse) -> CharacterStatsResponse:
         """
@@ -255,8 +260,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         background must belong and exist), the skill choices against the
         class + background + race grants, and the starting-equipment "pick
         N of M" choices. Character row, proficiencies, slot rows, feature
-        grants (via ``sync_progression_features``), backstory, and starting
-        items are written in one transaction.
+        grants (via ``sync_progression_features`` — which also materializes
+        the engine effect rows and the ability bonuses), backstory, and
+        starting items are written in one transaction.
         """
 
         await self._validate_references(
@@ -338,12 +344,14 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             )
             await self._apply_spell_slot_progression(character, commit=False)
 
-            # Features are granted BEFORE the starting-HP math so their
-            # fixed ability effects (e.g. +4 CON) are included in the
-            # effective CON modifier from the very first hit point.
+            # Features are granted (and their engine effect rows materialized)
+            # BEFORE the starting-HP math so their fixed ability effects (e.g.
+            # +4 CON) are included in the effective CON modifier from the very
+            # first hit point.
             await sync_progression_features(self.repository.db, character)
             # The session runs with autoflush=False — flush the pending
-            # grant rows so the stats computation below can read them.
+            # grant/materialized rows so the stats computation below can read
+            # them.
             await self.repository.db.flush()
 
             max_hp = await self._compute_starting_max_hp(character, character_class)
@@ -458,6 +466,11 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         Write the starting skill proficiencies: the validated class choices
         plus the background's and race's granted skills, deduplicated, all
         starting with ``is_expertise=False``.
+
+        These are legacy free-form rows (``source_character_feature_id`` is
+        NULL). Once the Phase 4 data scripts move class/background/race
+        skills into the feature engine, the engine's grant materializer
+        owns them and this method's lists become empty.
         """
 
         merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
@@ -662,8 +675,10 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         """
         Serialize a character to ``CharacterResponse``, attaching the
         ability-score cache row (or a fresh one when ``refresh``), the
-        derived combat stats, and the class-derived saving throws (the
-        class owns them; there is no per-character storage).
+        derived combat stats, and the effective proficiency/spell surfaces:
+        class-derived saving throws (legacy) merged with the feature-engine
+        materialized rows for saving throws, armor, weapons, and granted
+        spells.
         """
 
         if cache_row is None:
@@ -676,9 +691,30 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
         response.hit_dice = derived.hit_dice
         response.speed = derived.speed
+
+        # Saving throws: the class-derived (legacy) set merged with the
+        # materialized grant rows, deduplicated by ability.
+        class_saves = (
+            [save.ability for save in character.character_class.saving_throws]
+            if character.character_class is not None
+            else []
+        )
+        materialized_saves = [row.ability for row in character.saving_throw_proficiencies]
         response.saving_throw_proficiencies = [
-            SavingThrowProficiencyResponse.model_validate(saving_throw)
-            for saving_throw in (character.character_class.saving_throws if character.character_class else [])
+            SavingThrowProficiencyResponse(ability=ability)
+            for ability in dict.fromkeys([*class_saves, *materialized_saves])
+        ]
+
+        response.armor_proficiencies = [
+            CharacterArmorProficiencyResponse.model_validate(row)
+            for row in character.armor_proficiencies or []
+        ]
+        response.weapon_proficiencies = [
+            CharacterWeaponProficiencyResponse.model_validate(row)
+            for row in character.weapon_proficiencies or []
+        ]
+        response.granted_spells = [
+            CharacterGrantedSpellResponse.model_validate(row) for row in character.granted_spells or []
         ]
 
         return response

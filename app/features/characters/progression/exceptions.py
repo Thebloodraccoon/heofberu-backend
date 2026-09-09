@@ -65,6 +65,27 @@ class LevelUpChoiceRequiredException(AppError):
         )
 
 
+class LevelUpFeatureChoiceRequiredException(AppError):
+    """
+    Raised when a feature newly unlocked by this level-up (a class feature
+    gaining proficiencies, a subclass trait, ...) has a "pick N of M" choice
+    group that ``feature_choices`` didn't resolve.
+    """
+
+    status_code = 422
+
+    def __init__(self, feature_id: int, feature_name: str, pending_group_ids: list[int]):
+        """Initialize with the unresolved feature/groups."""
+
+        self.feature_id = feature_id
+        self.feature_name = feature_name
+        self.pending_group_ids = pending_group_ids
+        super().__init__(
+            f"Feature '{feature_name}' (id {feature_id}), unlocked by this level-up, still has unanswered "
+            f"choice group(s) {pending_group_ids} — include matching entries in `feature_choices`."
+        )
+
+
 class LevelUpChoiceNotAllowedException(AppError):
     """Raised when an ASI/feat choice is given for a level that doesn't grant one."""
 

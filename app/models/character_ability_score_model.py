@@ -11,8 +11,7 @@ class CharacterAbilityScore(settings.Base):  # type: ignore
     """
     Cached, precomputed "effective" ability scores for a character —
     base score (Character.strength etc.) plus every applicable bonus
-    (race.ability_bonuses, feat ability_score_increases via
-    character_feats).
+    (race.ability_bonuses, counters, granted-feature ASI effects).
 
     This is a cache, not a source of truth: the base values on
     ``Character`` remain authoritative. Rows here are recomputed and

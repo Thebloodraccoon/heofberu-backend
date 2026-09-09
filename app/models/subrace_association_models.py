@@ -1,9 +1,17 @@
-"""ORM models/tables for subrace sub-resources: ability bonuses."""
+"""ORM models/tables for subrace sub-resources: ability bonuses and tags."""
 
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from app.models.enums import AbilityScoreType
 from app.settings import settings
+
+# subraces <-> subrace_tags (cultural/regional tags, e.g. "Sutrice", "Nordavingar")
+subrace_tag_links = Table(
+    "subrace_tag_links",
+    settings.Base.metadata,
+    Column("subrace_id", Integer, ForeignKey("subraces.id", ondelete="CASCADE"), primary_key=True),
+    Column("subrace_tag_id", Integer, ForeignKey("subrace_tags.id", ondelete="RESTRICT"), primary_key=True),
+)
 
 
 class SubraceAbilityBonus(settings.Base):  # type: ignore

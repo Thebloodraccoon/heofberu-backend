@@ -50,10 +50,11 @@ rejected. Every grant/update/remove refreshes the ability-score cache
 (`CharacterStatsService`) and re-syncs auto-granted features
 (`sync_progression_features`). A grant carrying an ASI choice also writes an
 audit row into `character_asi_choices` (`class_level IS NULL`, choice type
-FEAT) so the log shows where each stat point came from; counting still flows
-through the `character_feats` row, which stays the source of truth. The
-level-up endpoint (`CharacterProgressionService._apply_feat`) writes the same
-table through this repository with `source_type=ASI`.
+FEAT) so the log shows where each stat point came from; the feat's stat
+effect reaches the ability-score cache through the granted feature's ASI
+effect (`feature_ability_score_effects`), materialized alongside the grant.
+The level-up endpoint (`CharacterProgressionService._apply_feat`) writes the
+same table through this repository with `source_type=ASI`.
 
 ### `features` — feature grants
 

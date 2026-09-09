@@ -32,7 +32,6 @@ from app.models import (  # noqa: E402
     Character,
     CharacterMaxLevel,
     Class,
-    Feat,
     Feature,
     Item,
     Race,
@@ -218,13 +217,19 @@ async def create_feat(db_session):
         prerequisite_ability=None,
         prerequisite_minimum_score=None,
         prerequisite_description="",
+        min_level=None,
+        is_repeatable=False,
     ):
-        feat = Feat(
+        # Feats live in the unified ``features`` table as ``source_type=FEAT`` rows.
+        feat = Feature(
             name=name,
+            source_type="FEAT",
             description=description,
             prerequisite_ability=prerequisite_ability,
             prerequisite_minimum_score=prerequisite_minimum_score,
             prerequisite_description=prerequisite_description,
+            min_level=min_level,
+            is_repeatable=is_repeatable,
         )
         db_session.add(feat)
         await db_session.commit()

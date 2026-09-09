@@ -2,12 +2,13 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import (
-    AbilityScore,
-    CharacterFeatSource,
-    FeatureSourceType,
-)
+from app.constants import AbilityScore, CharacterFeatSource, FeatureSourceType, GrantSource
 from app.features.characters.conditions.schemas import CharacterConditionResponse
+from app.features.characters.grants.schemas import (
+    CharacterArmorProficiencyResponse,
+    CharacterGrantedSpellResponse,
+    CharacterWeaponProficiencyResponse,
+)
 from app.features.items.crud.schemas import ItemResponse
 
 # Standard D&D 5e ability-score range for values entered directly by a
@@ -187,7 +188,7 @@ class SkillProficiencyResponse(BaseModel):
 
 
 class SavingThrowProficiencyResponse(BaseModel):
-    """A saving throw proficiency — derived from the character's class."""
+    """A saving throw proficiency — class-derived (legacy) or materialized by a feature grant."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -198,7 +199,9 @@ class CharacterResponse(CharacterBase):
     """
     Aggregates response schemas from every sub-domain into one payload.
     Base ability scores are excluded from output; ``hit_dice``/``speed``
-    are derived from class/race on every read.
+    are derived from class/race on every read; saving-throw/armor/weapon
+    proficiencies and granted spells are merged from the feature engine's
+    materialized rows by ``CharacterService._to_response``.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -230,6 +233,9 @@ class CharacterResponse(CharacterBase):
     ability_scores: AbilityScoresResponse | None = None
     skill_proficiencies: list[SkillProficiencyResponse] = []
     saving_throw_proficiencies: list[SavingThrowProficiencyResponse] = []
+    armor_proficiencies: list[CharacterArmorProficiencyResponse] = []
+    weapon_proficiencies: list[CharacterWeaponProficiencyResponse] = []
+    granted_spells: list[CharacterGrantedSpellResponse] = []
     conditions: list[CharacterConditionResponse] = []
 
 
@@ -246,7 +252,7 @@ class FeatBriefResponse(BaseModel):
 class FeatAbilityScoreIncreaseResponse(BaseModel):
     """
     The ability score a granted feat improved (its chosen ASI option),
-    backed by the ``FeatAbilityScoreIncrease`` row.
+    backed by a ``feature_ability_score_effects`` row.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -293,6 +299,7 @@ class CharacterFeatureResponse(BaseModel):
     id: int
     character_id: int
     feature_id: int
+    grant_source: GrantSource = GrantSource.AUTO
     notes: str = ""
     feature: CharacterFeatureBriefResponse
 

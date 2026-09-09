@@ -18,8 +18,9 @@ class CharacterASIChoice(settings.Base):  # type: ignore
       - ASI: ``increases`` holds the chosen increments as child
         ``CharacterASIChoiceIncrease`` rows (e.g. STR +2).
       - FEAT: ``feat_id`` (+ optional ``ability_score_increase_id``) points
-        at the chosen feat, which is also granted as a
-        ``character_feats`` row with ``source_type`` ``"ASI"``.
+        at the chosen feat — a ``features`` row with ``source_type``
+        ``"FEAT"`` — which is also granted as a ``character_features`` row
+        with ``grant_source`` ``"ASI"``.
 
     ...or by a GM adjustment from the GM panel (``class_level`` NULL):
     a free-form ±increase bound to no class level. PostgreSQL treats
@@ -48,8 +49,12 @@ class CharacterASIChoice(settings.Base):  # type: ignore
     class_level = Column(Integer, nullable=True)
     choice_type = Column(ASILevelChoiceType, nullable=False)
 
-    feat_id = Column(Integer, ForeignKey("feats.id", ondelete="RESTRICT"), nullable=True, index=True)
-    ability_score_increase_id = Column(Integer, ForeignKey("feat_ability_score_increases.id", ondelete="SET NULL"))
+    feat_id = Column(Integer, ForeignKey("features.id", ondelete="RESTRICT"), nullable=True, index=True)
+    ability_score_increase_id = Column(
+        Integer,
+        ForeignKey("feature_ability_score_effects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # True for pre-rework rows whose points were already folded into the
     # base columns — excluded from the calculator to avoid double counting.
@@ -60,10 +65,9 @@ class CharacterASIChoice(settings.Base):  # type: ignore
     __table_args__ = (UniqueConstraint("character_id", "class_level", name="uq_character_asi_choice_level"),)
 
     character = relationship("Character", back_populates="asi_choices")
-    feat = relationship("Feat")
 
     # The counted increments of this choice (empty for FEAT-type rows,
-    # whose stat effect flows through the granted ``character_feats`` row).
+    # whose stat effect flows through the granted feat's effect engine).
     increases = relationship(
         "CharacterASIChoiceIncrease",
         cascade="all, delete-orphan",
@@ -82,7 +86,7 @@ class CharacterASIChoiceIncrease(settings.Base):  # type: ignore
     """
     A single counted increment of a ``CharacterASIChoice``, e.g.
     {choice: level-4 ASI, ability: STR, amount: 2}. Mirrors the
-    ``FeatAbilityScoreIncrease`` child-row pattern: typed ability +
+    ``FeatureAbilityScoreEffect`` child-row pattern: typed ability +
     amount columns instead of an untyped JSONB blob, queryable by the
     ability-score calculator with a plain join.
     """

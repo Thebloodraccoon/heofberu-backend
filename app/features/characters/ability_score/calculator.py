@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from app.constants import ABILITY_SCORE_CAP, MAX_ABILITY_SCORE_CAP, AbilityScore
 from app.models.character_model import Character
-from app.models.feat_model import FeatAbilityScoreIncrease
 from app.models.race_association_models import RaceAbilityBonus
 from app.models.subrace_association_models import SubraceAbilityBonus
 
@@ -30,9 +29,8 @@ TOTAL_FIELD_BY_ABILITY = {
 class CharacterAbilityScoreCalculator:
     """
     Computes a character's effective ability scores: the base value plus
-    race/subrace bonuses, feat-granted increases, counted ASI-log
-    increases, and feature increases. Pure — bonus rows are loaded by the
-    caller and passed in.
+    race/subrace bonuses, counted ASI-log increases, and feature
+    increases. Pure — bonus rows are loaded by the caller and passed in.
     """
 
     def compute(
@@ -40,7 +38,6 @@ class CharacterAbilityScoreCalculator:
         character: Character,
         race_bonuses: list[RaceAbilityBonus],
         subrace_bonuses: list[SubraceAbilityBonus],
-        feat_increases: list[FeatAbilityScoreIncrease],
         asi_increases: list | None = None,
         feature_increases: list | None = None,
     ) -> dict[str, int]:
@@ -56,9 +53,6 @@ class CharacterAbilityScoreCalculator:
 
         for bonus in subrace_bonuses:
             totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
-
-        for increase in feat_increases:
-            totals[increase.ability] = totals.get(increase.ability, 0) + increase.amount
 
         for increase in asi_increases or []:
             totals[increase.ability] = totals.get(increase.ability, 0) + increase.amount

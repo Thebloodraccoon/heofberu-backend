@@ -4,6 +4,11 @@ Shared enums and helper constants used across the application.
 Contains the canonical domain enumerations (roles, dice, spell and item
 metadata, conditions, ...) together with backward-compatible string lists
 and helpers that build raw SQL check constraints.
+
+This is the Feature/Feat engine revision: ``FeatureSourceType`` regains the
+``FEAT`` value (it was always reserved in the Postgres ENUM), a new
+``GrantSource`` enum models where a character's feature grant came from, and
+the plain string lists are kept in sync.
 """
 
 from enum import Enum
@@ -188,12 +193,15 @@ class ItemRarity(str, Enum):
 
 class FeatureSourceType(str, Enum):
     """
-    Origin of a feature: class, subclass, race, subrace, background, other.
+    Origin of a feature: class, subclass, race, subrace, background, feat, other.
 
-    FEAT was removed as a feature source — a feat is de facto its own
-    feature (the content lives in the feat's description), so features can
-    no longer be attached to feats. The value remains in the Postgres ENUM
-    type (Postgres cannot drop enum values); it is simply never written.
+    ``FEAT`` was briefly removed as a feature source (a feat used to be "de
+    facto its own feature" living in a parallel ``feats`` table). Under the
+    unified Feature/Feat engine it is a real source again: a row with
+    ``source_type=FEAT`` carries no source FK, instead holding the
+    feat-specific ``min_level`` / ``prerequisite_*`` / ``is_repeatable``
+    columns. The value has always remained in the Postgres ENUM type
+    (Postgres cannot drop enum values), so no DB enum surgery is needed.
     """
 
     CLASS = "CLASS"
@@ -201,7 +209,27 @@ class FeatureSourceType(str, Enum):
     RACE = "RACE"
     SUBRACE = "SUBRACE"
     BACKGROUND = "BACKGROUND"
+    FEAT = "FEAT"
     OTHER = "OTHER"
+
+
+class GrantSource(str, Enum):
+    """
+    Where a character's feature grant came from.
+
+    Replaces ``CharacterFeatSource`` and the old implicit
+    "``source_type`` in ``_AUTO_SOURCE_TYPES``" derivation with one explicit
+    axis on ``character_features``:
+
+    - ``AUTO`` — synchronized automatically from ownership of a
+      class/subclass/race/subrace/background (progression sync).
+    - ``GM`` — manual grant from the GM panel.
+    - ``ASI`` — taken instead of an Ability Score Improvement at level-up.
+    """
+
+    AUTO = "AUTO"
+    GM = "GM"
+    ASI = "ASI"
 
 
 class ArmorProficiency(str, Enum):
@@ -228,7 +256,12 @@ class ASILevelChoice(str, Enum):
 
 
 class CharacterFeatSource(str, Enum):
-    """Where a character's feat grant came from: a GM panel grant or an ASI-level choice."""
+    """
+    Where a character's feat grant came from: a GM panel grant or an ASI-level choice.
+
+    Retained for the response shape (``CharacterFeatResponse.source_type``);
+    new code uses :class:`GrantSource`.
+    """
 
     GM = "GM"
     ORIGIN = "ORIGIN"
@@ -269,6 +302,7 @@ HEALING_TARGETS = [target.value for target in HealingTarget]
 ITEM_TYPES = [item_type.value for item_type in ItemType]
 ITEM_RARITIES = [rarity.value for rarity in ItemRarity]
 FEATURE_SOURCE_TYPES = [source_type.value for source_type in FeatureSourceType]
+GRANT_SOURCES = [source.value for source in GrantSource]
 ASI_LEVEL_CHOICES = [choice.value for choice in ASILevelChoice]
 CHARACTER_FEAT_SOURCES = [source.value for source in CharacterFeatSource]
 CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
@@ -297,6 +331,15 @@ CHARACTER_MAX_LEVEL = 20
 # Word text. Enforced by both the backstory schema (422) and a DB check
 # constraint on ``character_backstories.content``.
 BACKSTORY_MAX_LENGTH = 12000
+
+# Minimum character level for a FEAT-source feature to be selectable. Mirror
+# of the old ``Feat.min_level`` (NULL = no level requirement).
+FEAT_MIN_LEVEL_MIN = 1
+FEAT_MIN_LEVEL_MAX = 20
+
+# ``new_cap`` validation range on a feature's ability-score effects.
+FEATURE_NEW_CAP_MIN = ABILITY_SCORE_CAP
+FEATURE_NEW_CAP_MAX = MAX_ABILITY_SCORE_CAP
 
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"

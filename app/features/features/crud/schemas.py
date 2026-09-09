@@ -2,19 +2,20 @@
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.constants import FeatureSourceType
-from app.features.features.ability_increases.schemas import AbilityIncreaseItem
+from app.constants import AbilityScore, FeatureSourceType
+from app.features.features.effects.schemas import AbilityEffectItem, ChoiceGroupPayload, SkillEffectItem
 
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS keys off subclass_id (not class_id — the old denorm approach).
-# OTHER requires none of the FKs; FEAT is no longer a valid source
-# (a feat is de facto its own feature).
+# FEAT and OTHER require none of the FKs; a FEAT row carries the feat
+# columns (min_level / prerequisite_* / is_repeatable) instead.
 _REQUIRED_FK_BY_SOURCE_TYPE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.CLASS: "class_id",
     FeatureSourceType.SUBCLASS: "subclass_id",
     FeatureSourceType.RACE: "race_id",
     FeatureSourceType.SUBRACE: "subrace_id",
     FeatureSourceType.BACKGROUND: "background_id",
+    FeatureSourceType.FEAT: None,
     FeatureSourceType.OTHER: None,
 }
 _ALL_SOURCE_FKS = ("class_id", "subclass_id", "race_id", "subrace_id", "background_id")
@@ -60,8 +61,6 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
 class FeatureBase(BaseModel):
     """Base feature fields, including the source_type/FK/level consistency rules."""
 
-    # Stale/unknown keys (e.g. the removed FEAT source's feat_id) are rejected with 422,
-    # never silently dropped.
     model_config = ConfigDict(extra="forbid")
 
     name: str
@@ -77,13 +76,25 @@ class FeatureBase(BaseModel):
 
     description: str = ""
 
+    # Feat columns (only meaningful when source_type == FEAT). A standalone
+    # feat-like row also carries no choice/effects data in this schema — the
+    # effect engine (choice groups + fixed effects) is managed through the
+    # ``/features/{id}/effects`` endpoints.
+    min_level: int | None = None
+    prerequisite_ability: AbilityScore | None = None
+    prerequisite_minimum_score: int | None = None
+    prerequisite_description: str = ""
+    is_repeatable: bool = False
+
 
 class FeatureCreate(FeatureBase):
     """
-    Payload for ``POST /features`` — create a feature of ANY source type.
+    Payload for ``POST /features`` — create a feature of ANY source type,
+    including FEAT now.
 
     The parent FK is set directly for source-owned features; a standalone
-    ``OTHER`` feature needs no FK.
+    ``FEAT`` or ``OTHER`` feature needs no FK. Feat rows additionally carry
+    ``min_level`` / ``prerequisite_*`` / ``is_repeatable``.
     """
 
     @model_validator(mode="after")
@@ -100,7 +111,7 @@ class FeatureResponse(FeatureBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    ability_increases: list[AbilityIncreaseItem] = []
+    ability_effects: list[AbilityEffectItem] = []
 
 
 class FeatureGetAllResponse(BaseModel):
@@ -117,7 +128,7 @@ class FeatureGetAllResponse(BaseModel):
     subrace_id: int | None = None
     background_id: int | None = None
     level: int | None = None
-    ability_increases: list[AbilityIncreaseItem] = []
+    ability_effects: list[AbilityEffectItem] = []
 
 
 class NestedFeatureCreate(BaseModel):
@@ -143,7 +154,7 @@ class NestedFeatureResponse(BaseModel):
     name: str
     description: str
     level: int | None = None
-    ability_increases: list[AbilityIncreaseItem] = []
+    ability_effects: list[AbilityEffectItem] = []
 
 
 class FeatureUpdate(BaseModel):
@@ -151,9 +162,11 @@ class FeatureUpdate(BaseModel):
     All fields optional — PATCH semantics.
 
     ``source_type`` and its FK are immutable once a feature exists; only
-    ``name``, ``level`` and ``description`` are editable. A CLASS/SUBCLASS
-    feature's ``level`` can be changed but never cleared — the service
-    enforces this against the existing ``source_type``.
+    ``name``, ``level``, ``description`` are editable for source-owned
+    features, plus the feat columns (``min_level``, ``prerequisite_*``,
+    ``is_repeatable``) for FEAT rows. A CLASS/SUBCLASS feature's ``level``
+    can be changed but never cleared — the service enforces this against the
+    existing ``source_type``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -161,3 +174,20 @@ class FeatureUpdate(BaseModel):
     name: str | None = None
     level: int | None = None
     description: str | None = None
+    min_level: int | None = None
+    prerequisite_ability: AbilityScore | None = None
+    prerequisite_minimum_score: int | None = None
+    prerequisite_description: str | None = None
+    is_repeatable: bool | None = None
+
+
+class FeatureWithEffectsResponse(FeatureResponse):
+    """
+    ``/features/{id}`` detail with the full effect tree attached.
+
+    Used by the character-facing reads where a feature's effects must render
+    without a second round-trip; the reference list endpoints stay light.
+    """
+
+    choice_groups: list[ChoiceGroupPayload] = []
+    skill_effects: list[SkillEffectItem] = []

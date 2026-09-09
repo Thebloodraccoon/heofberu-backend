@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import FeatureSourceType, GrantSource
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
@@ -9,8 +10,10 @@ from app.features.characters.features.repository import CharacterFeatureReposito
 from app.features.characters.gm_panel.exceptions import (
     CharacterFeatureAlreadyKnownException,
     CharacterFeatureNotFoundException,
+    FeatureIsAFeatException,
 )
 from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
+from app.features.characters.progression.feature_sync import materialize_grant
 from app.features.characters.schemas import CharacterFeatureResponse
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
@@ -21,8 +24,9 @@ from app.models.character_feature_model import CharacterFeature
 class GmPanelFeatureService(CharacterSubDomainService):
     """
     Grant management for reference features (``character_features``);
-    adds/removals refresh the ability-score cache (grants can carry fixed
-    ability-score effects), notes updates don't.
+    adds/removals refresh the ability-score cache and materialize the
+    grant's other effects (skills, saves, armor/weapons, granted spells —
+    grants can carry any of them), notes updates don't.
     """
 
     def __init__(self, db: AsyncSession):
@@ -40,8 +44,12 @@ class GmPanelFeatureService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        if not await self.feature_repository.exists_by_id(data.feature_id):
+        feature = await self.feature_repository.get_by_id(data.feature_id)
+        if feature is None:
             raise FeatureNotFoundException(feature_id=data.feature_id)
+
+        if feature.source_type == FeatureSourceType.FEAT:
+            raise FeatureIsAFeatException(feature_id=data.feature_id)
 
         existing = await self.feature_grant_repository.get_character_feature_by_feature_id(
             character_id, data.feature_id
@@ -49,7 +57,11 @@ class GmPanelFeatureService(CharacterSubDomainService):
         if existing:
             raise CharacterFeatureAlreadyKnownException(character_id=character_id, feature_id=data.feature_id)
 
-        grant = await self.feature_grant_repository.add_character_feature(character_id, data.feature_id, data.notes)
+        grant = await self.feature_grant_repository.add_character_feature(
+            character_id, data.feature_id, data.notes, grant_source=GrantSource.GM
+        )
+        await materialize_grant(self.repository.db, character, grant)
+        await self.repository.db.commit()
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)

@@ -75,13 +75,13 @@ class BaseRepository(Generic[ModelType]):
             def __init__(self, db: AsyncSession):
                 super().__init__(Spell, db)
 
-        class FeatRepository(BaseRepository[Feat]):
+        class FeatureRepository(BaseRepository[Feature]):
             def __init__(self, db: AsyncSession):
-                super().__init__(Feat, db, unique_fields=["name"], check_in_use_on_delete=True)
+                super().__init__(Feature, db, unique_fields=["name"], check_in_use_on_delete=True)
 
             async def is_in_use(self, model_id: int) -> bool:
                 return await self.db.scalar(
-                    select(CharacterFeat.feat_id).where(CharacterFeat.feat_id == model_id)
+                    select(CharacterFeature.feature_id).where(CharacterFeature.feature_id == model_id)
                 ) is not None
     """
 

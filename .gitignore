@@ -236,3 +236,4 @@ yarn-error.log*
 AGENTS.md
 
 poetry.toml
+/backups/
