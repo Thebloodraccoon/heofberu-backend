@@ -15,12 +15,13 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import CharacterFeatSource, FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
-from app.features.characters.progression.feature_sync import materialize_grant
-from app.features.characters.schemas import (
+from app.features.characters.feats.schemas import (
     CharacterFeatResponse,
     FeatAbilityScoreIncreaseResponse,
     FeatBriefResponse,
 )
+from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
+from app.features.characters.progression.feature_sync import materialize_grant
 from app.models.character_engine_models import CharacterFeatureChoice
 from app.models.character_feature_model import CharacterFeature
 from app.models.character_model import Character
@@ -41,8 +42,18 @@ _LOAD_OPTIONS = [
 ]
 
 
-def to_character_feat_response(grant: CharacterFeature) -> CharacterFeatResponse:
-    """Build the stable ``CharacterFeatResponse`` shape from a FEAT-source ``CharacterFeature`` grant."""
+def to_character_feat_response(
+    grant: CharacterFeature,
+    effects: GrantEffectsResponse | None = None,
+    choices: list[ChosenOptionResponse] | None = None,
+) -> CharacterFeatResponse:
+    """
+    Build the stable ``CharacterFeatResponse`` shape from a FEAT-source
+    ``CharacterFeature`` grant. ``effects``/``choices`` default to empty —
+    callers that want the full materialized picture (the player-facing
+    listing) fetch them via ``app.features.characters.grants.effects``
+    and pass them in; a bare post-write response (GM add/update) doesn't.
+    """
 
     ability_score_increase_id: int | None = None
     ability_score_increase: FeatAbilityScoreIncreaseResponse | None = None
@@ -68,6 +79,8 @@ def to_character_feat_response(grant: CharacterFeature) -> CharacterFeatResponse
         source_type=_GRANT_SOURCE_TO_FEAT_SOURCE.get(grant.grant_source, CharacterFeatSource.GM),
         feat=feat_brief,
         ability_score_increase=ability_score_increase,
+        effects=effects if effects is not None else GrantEffectsResponse(),
+        choices=choices if choices is not None else [],
     )
 
 

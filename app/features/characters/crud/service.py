@@ -25,14 +25,6 @@ from app.features.characters.crud.exceptions import (
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.feats.repository import CharacterFeatRepository, to_character_feat_response
-from app.features.characters.features.repository import CharacterFeatureRepository
-from app.features.characters.grants.schemas import (
-    CharacterArmorProficiencyResponse,
-    CharacterGrantedSpellResponse,
-    CharacterWeaponProficiencyResponse,
-)
-from app.features.characters.items.repository import CharacterItemRepository
 from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
@@ -40,13 +32,9 @@ from app.features.characters.schemas import (
     AbilityScoresResponse,
     AbilityStatsView,
     CharacterCreate,
-    CharacterFeatResponse,
-    CharacterFeatureResponse,
-    CharacterItemResponse,
     CharacterResponse,
     CharacterStatsResponse,
     CharacterUpdate,
-    SavingThrowProficiencyResponse,
 )
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
 from app.features.classes.crud.repository import ClassRepository
@@ -56,6 +44,7 @@ from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models import CharacterAbilityScore, CharacterSkillProficiency, Class
+from app.models.character_engine_models import CharacterSavingThrowProficiency
 from app.models.character_backstory_model import CharacterBackstory
 from app.models.character_item_model import CharacterItem
 from app.models.character_model import Character
@@ -84,9 +73,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.race_repository = RaceRepository(db)
         self.background_repository = BackgroundRepository(db)
         self.item_repository = ItemRepository(db)
-        self.feat_grant_repository = CharacterFeatRepository(db)
-        self.feature_grant_repository = CharacterFeatureRepository(db)
-        self.character_item_repository = CharacterItemRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.stats_service = CharacterStatsService(db)
@@ -197,14 +183,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         await get_character_for_user(self.repository, character_id, current_user)
         return await self._get_character_response(character_id)
 
-    async def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
-        """List every feat granted to a character (level-up choices and GM grants alike)."""
-
-        await get_character_for_user(self.repository, character_id, current_user)
-
-        grants = await self.feat_grant_repository.get_character_feats(character_id)
-        return [to_character_feat_response(grant) for grant in grants]
-
     async def get_stats(self, character_id: int, current_user: UserResponse) -> CharacterStatsResponse:
         """
         Return each ability's ORIGINAL base value next to its COMPUTED
@@ -226,22 +204,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
                 for ability, breakdown in breakdown_by_ability.items()
             }
         )
-
-    async def get_features(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatureResponse]:
-        """List every feature recorded on a character (progression auto-grants plus GM records)."""
-
-        await get_character_for_user(self.repository, character_id, current_user)
-
-        grants = await self.feature_grant_repository.get_character_features(character_id)
-        return [CharacterFeatureResponse.model_validate(grant) for grant in grants]
-
-    async def get_items(self, character_id: int, current_user: UserResponse) -> list[CharacterItemResponse]:
-        """List every item stack a character owns (GM/owner readable)."""
-
-        await get_character_for_user(self.repository, character_id, current_user)
-
-        stacks = await self.character_item_repository.get_character_items(character_id)
-        return [CharacterItemResponse.model_validate(stack) for stack in stacks]
 
     @use_cache(
         key_builder=lambda self, character_id, **_: f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}",
@@ -342,6 +304,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             await self._apply_skill_proficiencies(
                 character, chosen_skill_ids, background_skill_ids, race_skill_ids, commit=False
             )
+            await self._apply_class_saving_throws(character, character_class, commit=False)
             await self._apply_spell_slot_progression(character, commit=False)
 
             # Features are granted (and their engine effect rows materialized)
@@ -477,6 +440,27 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         for skill_id in merged_skill_ids:
             self.repository.db.add(
                 CharacterSkillProficiency(character_id=character.id, skill_id=skill_id, is_expertise=False)
+            )
+
+        if commit:
+            await self.repository.db.commit()
+        else:
+            await self.repository.db.flush()
+
+    async def _apply_class_saving_throws(self, character: Character, character_class: Class, *, commit: bool = True) -> None:
+        """
+        Write the character's starting saving-throw proficiencies from the
+        class's default saves (e.g. Fighter -> STR, CON).
+
+        Legacy free-form rows (``source_character_feature_id`` is NULL),
+        same as ``_apply_skill_proficiencies`` — the class's saves table
+        (``class_saving_throws``) isn't itself part of the feature engine,
+        so nothing else would ever materialize these onto the character.
+        """
+
+        for throw in character_class.saving_throws:
+            self.repository.db.add(
+                CharacterSavingThrowProficiency(character_id=character.id, ability=throw.ability)
             )
 
         if commit:
@@ -674,11 +658,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     ) -> CharacterResponse:
         """
         Serialize a character to ``CharacterResponse``, attaching the
-        ability-score cache row (or a fresh one when ``refresh``), the
-        derived combat stats, and the effective proficiency/spell surfaces:
-        class-derived saving throws (legacy) merged with the feature-engine
-        materialized rows for saving throws, armor, weapons, and granted
-        spells.
+        ability-score cache row (or a fresh one when ``refresh``) and the
+        derived combat stats. Proficiencies and granted spells are served
+        by their own sub-domain endpoints, not assembled here.
         """
 
         if cache_row is None:
@@ -691,30 +673,5 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
         response.hit_dice = derived.hit_dice
         response.speed = derived.speed
-
-        # Saving throws: the class-derived (legacy) set merged with the
-        # materialized grant rows, deduplicated by ability.
-        class_saves = (
-            [save.ability for save in character.character_class.saving_throws]
-            if character.character_class is not None
-            else []
-        )
-        materialized_saves = [row.ability for row in character.saving_throw_proficiencies]
-        response.saving_throw_proficiencies = [
-            SavingThrowProficiencyResponse(ability=ability)
-            for ability in dict.fromkeys([*class_saves, *materialized_saves])
-        ]
-
-        response.armor_proficiencies = [
-            CharacterArmorProficiencyResponse.model_validate(row)
-            for row in character.armor_proficiencies or []
-        ]
-        response.weapon_proficiencies = [
-            CharacterWeaponProficiencyResponse.model_validate(row)
-            for row in character.weapon_proficiencies or []
-        ]
-        response.granted_spells = [
-            CharacterGrantedSpellResponse.model_validate(row) for row in character.granted_spells or []
-        ]
 
         return response

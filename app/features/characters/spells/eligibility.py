@@ -5,6 +5,7 @@ from app.features.characters.spells.exceptions import (
     SpellNotAvailableToCharacterException,
 )
 from app.features.characters.spells.repository import (
+    CharacterGrantedSpellRepository,
     CharacterSpellRepository,
     CharacterSpellSlotRepository,
 )
@@ -16,19 +17,22 @@ class CharacterSpellEligibilityChecker:
     Pure(ish) rule-checker for whether a character may learn a spell:
     the class/race restriction check and the spell-slot capacity check,
     extracted out of ``CharacterSpellService`` for testability. Takes the
-    two spell sub-repositories since capacity needs both slots and known
-    spells, but has no access-control or persistence responsibility.
+    three spell sub-repositories since capacity needs slots, known spells,
+    and known-limit granted spells, but has no access-control or
+    persistence responsibility.
     """
 
     def __init__(
         self,
         slot_repository: CharacterSpellSlotRepository,
         known_spell_repository: CharacterSpellRepository,
+        granted_spell_repository: CharacterGrantedSpellRepository,
     ):
-        """Create the eligibility checker with its two repositories."""
+        """Create the eligibility checker with its three repositories."""
 
         self.slot_repository = slot_repository
         self.known_spell_repository = known_spell_repository
+        self.granted_spell_repository = granted_spell_repository
 
     async def check(self, character: Character, spell: Spell) -> None:
         """
@@ -67,13 +71,17 @@ class CharacterSpellEligibilityChecker:
         """
         Raise ``NoSpellSlotAvailableException`` if the character already
         knows as many spells of ``spell.level`` as slots of that level
-        (``total`` minus known-at-level; a missing slot entry = 0).
+        (``total`` minus known-at-level minus granted spells flagged
+        ``counts_against_known_limit``; a missing slot entry = 0).
         """
 
         slot = await self.slot_repository.get_spell_slot(character_id, spell.level)
         total_slots = slot.total if slot is not None else 0
 
         known_at_level = await self.known_spell_repository.count_known_spells_at_level(character_id, spell.level)
+        granted_at_level = await self.granted_spell_repository.count_against_known_limit_at_level(
+            character_id, spell.level
+        )
 
-        if known_at_level >= total_slots:
+        if known_at_level + granted_at_level >= total_slots:
             raise NoSpellSlotAvailableException(character_id=character_id, level=spell.level)

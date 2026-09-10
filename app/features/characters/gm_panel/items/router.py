@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.gm_panel.dependencies import GmPanelItemsDep
 from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
-from app.features.characters.schemas import CharacterItemResponse
+from app.features.characters.items.schemas import CharacterItemResponse
 from app.features.users.security import GmUserDep
 
 router = APIRouter()

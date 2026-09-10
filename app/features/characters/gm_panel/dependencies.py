@@ -11,7 +11,8 @@ from app.features.characters.gm_panel.features.service import GmPanelFeatureServ
 from app.features.characters.gm_panel.hp.service import GmPanelHpService
 from app.features.characters.gm_panel.items.service import GmPanelItemService
 from app.features.characters.gm_panel.level.service import GmPanelLevelService
-from app.features.characters.gm_panel.skills.service import GmPanelSkillsService
+from app.features.characters.gm_panel.proficiencies.service import GmPanelProficiencyService
+from app.features.characters.gm_panel.spells.service import GmPanelSpellService
 
 
 def get_gm_panel_feat_service(db: DatabaseDep) -> GmPanelFeatService:
@@ -59,13 +60,13 @@ def get_gm_panel_hp_service(db: DatabaseDep) -> GmPanelHpService:
 GmPanelHpDep = Annotated[GmPanelHpService, Depends(get_gm_panel_hp_service)]
 
 
-def get_gm_panel_skills_service(db: DatabaseDep) -> GmPanelSkillsService:
-    """Get the GM skill-expertise service."""
+def get_gm_panel_proficiency_service(db: DatabaseDep) -> GmPanelProficiencyService:
+    """Get the GM proficiency service."""
 
-    return GmPanelSkillsService(db)
+    return GmPanelProficiencyService(db)
 
 
-GmPanelSkillsDep = Annotated[GmPanelSkillsService, Depends(get_gm_panel_skills_service)]
+GmPanelProficienciesDep = Annotated[GmPanelProficiencyService, Depends(get_gm_panel_proficiency_service)]
 
 
 def get_gm_panel_level_service(db: DatabaseDep) -> GmPanelLevelService:
@@ -75,3 +76,12 @@ def get_gm_panel_level_service(db: DatabaseDep) -> GmPanelLevelService:
 
 
 GmPanelLevelDep = Annotated[GmPanelLevelService, Depends(get_gm_panel_level_service)]
+
+
+def get_gm_panel_spell_service(db: DatabaseDep) -> GmPanelSpellService:
+    """Get the GM-panel free-form spell service."""
+
+    return GmPanelSpellService(db)
+
+
+GmPanelSpellsDep = Annotated[GmPanelSpellService, Depends(get_gm_panel_spell_service)]

@@ -2,15 +2,6 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import AbilityScore, CharacterFeatSource, FeatureSourceType, GrantSource
-from app.features.characters.conditions.schemas import CharacterConditionResponse
-from app.features.characters.grants.schemas import (
-    CharacterArmorProficiencyResponse,
-    CharacterGrantedSpellResponse,
-    CharacterWeaponProficiencyResponse,
-)
-from app.features.items.crud.schemas import ItemResponse
-
 # Standard D&D 5e ability-score range for values entered directly by a
 # player (before racial/feat bonuses are applied) — matches the typical
 # point-buy/standard-array range. Bonuses on top of this (race, feats)
@@ -26,10 +17,8 @@ class CharacterBase(BaseModel):
 
     class_id: int
     subclass_id: int | None = None
-
     race_id: int | None = None
     subrace_id: int | None = None
-
     background_id: int | None = None
 
     # Combat stats entered/set directly on the sheet — there is no
@@ -179,7 +168,7 @@ class CharacterStatsResponse(BaseModel):
 
 
 class SkillProficiencyResponse(BaseModel):
-    """A skill proficiency row returned on the character."""
+    """A skill proficiency row (used by the GM-panel skills endpoints)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -187,21 +176,14 @@ class SkillProficiencyResponse(BaseModel):
     is_expertise: bool
 
 
-class SavingThrowProficiencyResponse(BaseModel):
-    """A saving throw proficiency — class-derived (legacy) or materialized by a feature grant."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    ability: AbilityScore
-
-
 class CharacterResponse(CharacterBase):
     """
     Aggregates response schemas from every sub-domain into one payload.
     Base ability scores are excluded from output; ``hit_dice``/``speed``
-    are derived from class/race on every read; saving-throw/armor/weapon
-    proficiencies and granted spells are merged from the feature engine's
-    materialized rows by ``CharacterService._to_response``.
+    are derived from class/race on every read. Proficiencies (skills,
+    saving throws, armor, weapons) and granted spells are NOT included
+    here — see ``GET /characters/{id}/proficiencies`` and
+    ``GET /characters/{id}/spells``.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -231,92 +213,3 @@ class CharacterResponse(CharacterBase):
     speed: int = 30
 
     ability_scores: AbilityScoresResponse | None = None
-    skill_proficiencies: list[SkillProficiencyResponse] = []
-    saving_throw_proficiencies: list[SavingThrowProficiencyResponse] = []
-    armor_proficiencies: list[CharacterArmorProficiencyResponse] = []
-    weapon_proficiencies: list[CharacterWeaponProficiencyResponse] = []
-    granted_spells: list[CharacterGrantedSpellResponse] = []
-    conditions: list[CharacterConditionResponse] = []
-
-
-class FeatBriefResponse(BaseModel):
-    """Feat name/description embedded in a character's feat grant row."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    description: str = ""
-
-
-class FeatAbilityScoreIncreaseResponse(BaseModel):
-    """
-    The ability score a granted feat improved (its chosen ASI option),
-    backed by a ``feature_ability_score_effects`` row.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    ability: AbilityScore
-    amount: int = 1
-
-
-class CharacterFeatResponse(BaseModel):
-    """Aggregates a character's feat grant with its chosen ASI and feat brief."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    character_id: int
-    feat_id: int
-    ability_score_increase_id: int | None = None
-    source_type: CharacterFeatSource = CharacterFeatSource.GM
-    feat: FeatBriefResponse | None = None
-    ability_score_increase: FeatAbilityScoreIncreaseResponse | None = None
-
-
-class CharacterFeatureBriefResponse(BaseModel):
-    """
-    Feature summary embedded in a character's feature grant row, carrying
-    ``description`` so the sheet renders details without a follow-up call.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    source_type: FeatureSourceType
-    level: int | None = None
-    description: str = ""
-
-
-class CharacterFeatureResponse(BaseModel):
-    """Aggregates a character's feature grant with notes and a brief feature summary."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    character_id: int
-    feature_id: int
-    grant_source: GrantSource = GrantSource.AUTO
-    notes: str = ""
-    feature: CharacterFeatureBriefResponse
-
-
-class CharacterItemResponse(BaseModel):
-    """
-    Aggregates an owned item stack with its quantity/state flags and the
-    full item record so the sheet renders without a follow-up call.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    character_id: int
-    item_id: int
-    quantity: int
-    is_equipped: bool
-    is_attuned: bool
-    notes: str = ""
-    item: ItemResponse

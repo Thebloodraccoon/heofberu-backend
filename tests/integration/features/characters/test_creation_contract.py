@@ -16,6 +16,16 @@ async def set_available_skills(db_session, character_class, *skills):
     await db_session.commit()
 
 
+async def get_proficiencies(client, token, character_id):
+    """Fetch a character's proficiency surface (skills/saving_throws/armor/weapons)."""
+
+    response = await client.get(
+        f"/characters/{character_id}/proficiencies", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCreationSkillChoices:
@@ -44,7 +54,7 @@ class TestCreationSkillChoices:
         )
 
         assert response.status_code == 201
-        proficiencies = response.json()["skill_proficiencies"]
+        proficiencies = (await get_proficiencies(client, player_token, response.json()["id"]))["skills"]
         assert {item["skill_id"] for item in proficiencies} == {skill_a.id, skill_b.id}
         assert all(item["is_expertise"] is False for item in proficiencies)
 
@@ -75,7 +85,7 @@ class TestCreationSkillChoices:
         )
 
         assert response.status_code == 201
-        proficiencies = response.json()["skill_proficiencies"]
+        proficiencies = (await get_proficiencies(client, player_token, response.json()["id"]))["skills"]
         assert {item["skill_id"] for item in proficiencies} == {skill_a.id}
         assert all(item["is_expertise"] is False for item in proficiencies)
 
@@ -202,7 +212,7 @@ class TestCreationBackgroundSkills:
         )
 
         assert response.status_code == 201
-        proficiencies = response.json()["skill_proficiencies"]
+        proficiencies = (await get_proficiencies(client, player_token, response.json()["id"]))["skills"]
         assert {item["skill_id"] for item in proficiencies} == {chosen.id, granted.id}
         assert len(proficiencies) == 2
 
@@ -237,7 +247,7 @@ class TestCreationBackgroundSkills:
         )
 
         assert response.status_code == 201
-        proficiencies = response.json()["skill_proficiencies"]
+        proficiencies = (await get_proficiencies(client, player_token, response.json()["id"]))["skills"]
         assert {item["skill_id"] for item in proficiencies} == {skill.id}
 
 
@@ -319,7 +329,7 @@ class TestCreationSavingThrows:
         )
 
         assert response.status_code == 201
-        throws = response.json()["saving_throw_proficiencies"]
+        throws = (await get_proficiencies(client, player_token, response.json()["id"]))["saving_throws"]
         assert {item["ability"] for item in throws} == {"STR", "CON"}
 
 
@@ -357,7 +367,7 @@ class TestCreationRaceSkills:
         )
 
         assert response.status_code == 201
-        proficiencies = response.json()["skill_proficiencies"]
+        proficiencies = (await get_proficiencies(client, player_token, response.json()["id"]))["skills"]
         assert {item["skill_id"] for item in proficiencies} == {skill.id}
         assert all(item["is_expertise"] is False for item in proficiencies)
 
@@ -409,6 +419,6 @@ class TestCreationRaceSkills:
         )
 
         assert response.status_code == 201
-        proficiencies = response.json()["skill_proficiencies"]
+        proficiencies = (await get_proficiencies(client, player_token, response.json()["id"]))["skills"]
         assert {item["skill_id"] for item in proficiencies} == {chosen.id, granted.id, racial.id}
         assert len(proficiencies) == 3

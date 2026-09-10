@@ -13,11 +13,9 @@ class FeatureRepository(BaseRepository[Feature]):
     """
     Feature-specific repository built on :class:`BaseRepository`.
 
-    ``ability_effects`` (the feature's FIXED ability-score effects — no
-    player choice involved) are always loaded alongside the row via
-    ``default_load_options``. The full engine effect tree (every
-    ``feature_*_effects`` table and its choice groups) is loaded on demand
-    by :meth:`get_with_effects`.
+    Listing and detail reads both eager-load the whole effect tree
+    via ``default_load_options`` so ``FeatureResponse`` serializes
+    without lazy loads.
     """
 
     def __init__(self, db: AsyncSession):
@@ -26,11 +24,20 @@ class FeatureRepository(BaseRepository[Feature]):
         super().__init__(
             Feature,
             db,
-            default_load_options=[
-                selectinload(Feature.ability_effects),
-            ],
+            default_load_options=_engine_effect_loads(),
             search_fields=["name"],
         )
+
+    async def get_by_id(self, model_id: int) -> Feature | None:
+        """Fetch a feature by id with its full engine effect tree eager-loaded."""
+
+        result = await self.db.execute(
+            select(Feature)
+            .where(Feature.id == model_id)
+            .options(*_engine_effect_loads())
+            .execution_options(populate_existing=True)
+        )
+        return result.scalars().first()
 
     async def get_with_effects(self, feature_id: int, *, fallback: Feature | None = None) -> Feature:
         """

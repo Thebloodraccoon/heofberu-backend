@@ -3,7 +3,15 @@
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.constants import AbilityScore, FeatureSourceType
-from app.features.features.effects.schemas import AbilityEffectItem, ChoiceGroupPayload, SkillEffectItem
+from app.features.features.effects.schemas import (
+    AbilityEffectItem,
+    ArmorEffectItem,
+    ChoiceGroupResponse,
+    SavingThrowEffectItem,
+    SkillEffectItem,
+    SpellEffectItem,
+    WeaponEffectItem,
+)
 
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS keys off subclass_id (not class_id — the old denorm approach).
@@ -106,12 +114,18 @@ class FeatureCreate(FeatureBase):
 
 
 class FeatureResponse(FeatureBase):
-    """Full feature representation returned by the API."""
+    """Full feature representation returned by the API, with the complete effect tree."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     ability_effects: list[AbilityEffectItem] = []
+    choice_groups: list[ChoiceGroupResponse] = []
+    skill_effects: list[SkillEffectItem] = []
+    saving_throw_effects: list[SavingThrowEffectItem] = []
+    armor_effects: list[ArmorEffectItem] = []
+    weapon_effects: list[WeaponEffectItem] = []
+    spell_effects: list[SpellEffectItem] = []
 
 
 class FeatureGetAllResponse(BaseModel):
@@ -179,15 +193,3 @@ class FeatureUpdate(BaseModel):
     prerequisite_minimum_score: int | None = None
     prerequisite_description: str | None = None
     is_repeatable: bool | None = None
-
-
-class FeatureWithEffectsResponse(FeatureResponse):
-    """
-    ``/features/{id}`` detail with the full effect tree attached.
-
-    Used by the character-facing reads where a feature's effects must render
-    without a second round-trip; the reference list endpoints stay light.
-    """
-
-    choice_groups: list[ChoiceGroupPayload] = []
-    skill_effects: list[SkillEffectItem] = []

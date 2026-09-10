@@ -17,8 +17,7 @@ from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
 )
-from app.features.characters.grants.materializer import FeatureGrantMaterializer, load_feature_effect_tree
-from app.features.characters.grants.schemas import ChoiceAnswerItem, GrantChoicesUpdate
+from app.features.characters.grants.schemas import ChoiceAnswerItem
 from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.exceptions import (
@@ -30,7 +29,6 @@ from app.features.characters.progression.exceptions import (
     InvalidRebuildMaxHpException,
     LevelUpChoiceNotAllowedException,
     LevelUpChoiceRequiredException,
-    LevelUpFeatureChoiceRequiredException,
     RebuildAsiChoicesMismatchException,
 )
 from app.features.characters.progression.feature_sync import sync_progression_features
@@ -457,10 +455,11 @@ class CharacterProgressionService(CharacterSubDomainService):
         rejected. HP defaults to the class's standard average (half hit
         die + 1 + CON) unless ``hit_points_gained`` is given (bounded by
         the hit die + CON). Features unlocked by the new level are granted
-        and their effect rows materialized; any of them still left with an
-        unanswered "pick N of M" choice group after applying
+        and their effect rows materialized; a chosen feat's own choice
+        groups (beyond its ASI pick) count too. Any of them still left with
+        an unanswered "pick N of M" choice group after applying
         ``data.feature_choices`` aborts the whole level-up
-        (``LevelUpFeatureChoiceRequiredException`` — see
+        (``GrantChoiceRequiredException`` — see
         :meth:`_resolve_new_feature_choices`), so a level-up never leaves a
         newly-unlocked proficiency/spell choice silently unmade. Spell
         slots are re-applied. Leveling up fully heals the character:
@@ -485,11 +484,12 @@ class CharacterProgressionService(CharacterSubDomainService):
         async with self._atomic():
             character.level = new_level
 
+            feat_grant: CharacterFeature | None = None
             if data.choice is not None:
                 if data.choice.type == ASILevelChoice.ASI:
                     await self._apply_asi(character, data.choice.increases, new_level)
                 else:
-                    await self._apply_feat(character, data.choice, new_level)
+                    feat_grant = await self._apply_feat(character, data.choice, new_level)
 
             hp_gain = await self._resolve_hp_gain(character, data.hit_points_gained)
             character.max_hp += hp_gain
@@ -498,8 +498,12 @@ class CharacterProgressionService(CharacterSubDomainService):
             character.current_hp = character.max_hp
             character.temp_hp = 0
 
-            # Grant any class/subclass features unlocked by the new level.
+            # Grant any class/subclass features unlocked by the new level,
+            # plus the chosen feat's own grant (its non-ASI choice groups,
+            # if any, are enforced the same way).
             new_grants = await sync_progression_features(self.repository.db, character)
+            if feat_grant is not None:
+                new_grants.append(feat_grant)
             await self._resolve_new_feature_choices(character, new_grants, data.feature_choices)
             await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
@@ -514,15 +518,13 @@ class CharacterProgressionService(CharacterSubDomainService):
     ) -> None:
         """
         Apply ``answers`` to the choice groups of features this level-up just
-        granted, then raise ``LevelUpFeatureChoiceRequiredException`` if any
-        of them still has an unresolved group afterward — a level-up never
-        silently leaves a newly-unlocked "pick N of M" unmade, exactly like
-        a missing ASI ``choice`` is rejected rather than defaulted.
-
-        A brand-new grant is never pre-answered (``FeatureGrantMaterializer
-        .pending_groups`` with an empty stored-choice list returns every
-        group the feature has), so this only needs to try the caller's
-        answers and see what's left. Runs inside the caller's ``_atomic()``.
+        granted (including the chosen feat's own grant), then raise
+        ``GrantChoiceRequiredException`` if any of them still has an
+        unresolved group afterward — a level-up never silently leaves a
+        newly-unlocked "pick N of M" unmade, exactly like a missing ASI
+        ``choice`` is rejected rather than defaulted. Runs inside the
+        caller's ``_atomic()``; the actual check is shared with GM-panel
+        grants via ``FeatureGrantService.resolve_grant_choices``.
         """
 
         answers_by_feature: dict[int, list[LevelUpFeatureChoiceAnswer]] = {}
@@ -532,33 +534,20 @@ class CharacterProgressionService(CharacterSubDomainService):
         grant_service = FeatureGrantService(self.repository.db)
 
         for grant in new_grants:
-            feature = await load_feature_effect_tree(self.repository.db, grant.feature_id)
-            if feature is None or not feature.choice_groups:
-                continue
-
             feature_answers = answers_by_feature.get(grant.feature_id, [])
-            if feature_answers:
-                update = GrantChoicesUpdate(
-                    answers=[
-                        ChoiceAnswerItem(
-                            choice_group_id=item.choice_group_id,
-                            choice_option_id=item.choice_option_id,
-                            skill_id=item.skill_id,
-                        )
-                        for item in feature_answers
-                    ]
-                )
-                pending_response = await grant_service.answer_choices(character.id, grant.id, update)
-                still_pending = pending_response.groups
-            else:
-                still_pending = FeatureGrantMaterializer.pending_groups(feature, [])
-
-            if still_pending:
-                raise LevelUpFeatureChoiceRequiredException(
-                    feature_id=feature.id,
-                    feature_name=feature.name,
-                    pending_group_ids=[group.id for group in still_pending],
-                )
+            await grant_service.resolve_grant_choices(
+                character,
+                grant,
+                [
+                    ChoiceAnswerItem(
+                        choice_group_id=item.choice_group_id,
+                        choice_option_id=item.choice_option_id,
+                        skill_id=item.skill_id,
+                        spell_id=item.spell_id,
+                    )
+                    for item in feature_answers
+                ],
+            )
 
     async def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
         """Return the character's resolved ASI-level choices, for audit."""
@@ -627,12 +616,14 @@ class CharacterProgressionService(CharacterSubDomainService):
             commit=False,
         )
 
-    async def _apply_feat(self, character: Character, choice: FeatChoice, class_level: int) -> None:
+    async def _apply_feat(self, character: Character, choice: FeatChoice, class_level: int) -> CharacterFeature:
         """
         Apply a feat-as-ASI: validate the feat exists, isn't already
         known, has a valid ASI pick (if any) and the prerequisite is met,
         then grant it (``grant_source=ASI``, materializing any effects it
-        carries) and record the choice in the ASI-level audit log.
+        carries), record the choice in the ASI-level audit log, and return
+        the grant so the caller can enforce any of its OTHER choice groups
+        (beyond the ASI pick) the same way a newly-unlocked feature's are.
         """
 
         feat = await self.feat_repository.get_by_id(choice.feat_id)
@@ -646,7 +637,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         validate_ability_score_increase(feat, choice.ability_score_increase_id)
         await check_feat_prerequisite(character, feat, self.stats_service)
 
-        await self.feat_grant_repository.add_character_feat(
+        grant = await self.feat_grant_repository.add_character_feat(
             character,
             choice.feat_id,
             choice.ability_score_increase_id,
@@ -661,6 +652,8 @@ class CharacterProgressionService(CharacterSubDomainService):
             ability_score_increase_id=choice.ability_score_increase_id,
             commit=False,
         )
+
+        return grant
 
     async def _resolve_hp_gain(self, character: Character, requested: int | None) -> int:
         """

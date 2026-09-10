@@ -7,7 +7,7 @@ from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.exceptions import CharacterItemNotFoundException
 from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.items.repository import CharacterItemRepository
-from app.features.characters.schemas import CharacterItemResponse
+from app.features.characters.items.schemas import CharacterItemResponse
 from app.features.items.crud.repository import ItemRepository
 from app.features.items.exceptions import ItemNotFoundException
 from app.features.users.schemas import UserResponse

@@ -27,6 +27,7 @@ from app.models.character_engine_models import (  # noqa: F401
 )
 from app.models.character_feature_model import CharacterFeature  # noqa: F401
 from app.models.character_item_model import CharacterItem  # noqa: F401
+from app.models.character_proficiency_audit_model import CharacterProficiencyAuditLog  # noqa: F401
 
 # Character and everything that depends on it.
 from app.models.character_max_level_model import CharacterMaxLevel  # noqa: F401

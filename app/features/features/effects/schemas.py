@@ -4,17 +4,21 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import AbilityScore, ArmorProficiency, SpellLevel, SpellSchool, WeaponProficiency
 
-# --- Single effect row payloads -------------------------------------------------
-
 VALID_NEW_CAP_MIN = 20
 VALID_NEW_CAP_MAX = 30
 
 
 class AbilityEffectItem(BaseModel):
-    """A fixed/option ability-score effect: ``amount`` added, optional ``new_cap`` raise."""
+    """
+    A fixed/option ability-score effect: ``amount`` added, optional
+    ``new_cap`` raise. ``id`` is the DB row id — absent on a write payload,
+    present on any response (e.g. a feat's ASI options each need their own
+    id so a grant can point ``ability_score_increase_id`` at the one picked).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int | None = None
     ability: AbilityScore
     amount: int
     new_cap: int | None = None
@@ -88,9 +92,6 @@ class SpellEffectItem(BaseModel):
         return self
 
 
-# --- Choice groups -------------------------------------------------------------
-
-
 class ChoiceOptionPayload(BaseModel):
     """
     One option of a choice group, carrying its effect bundle.
@@ -116,9 +117,6 @@ class ChoiceGroupPayload(BaseModel):
     sort_order: int = 0
     label: str = ""
     options: list[ChoiceOptionPayload] = []
-
-
-# --- Responses -----------------------------------------------------------------
 
 
 class ChoiceOptionResponse(ChoiceOptionPayload):

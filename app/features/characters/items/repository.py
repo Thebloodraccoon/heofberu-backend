@@ -20,7 +20,8 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
 
         super().__init__(CharacterItem, db)
 
-    def _stack_with_item(self, statement):
+    @staticmethod
+    def _stack_with_item(statement):
         """Return the query with the ``Item`` eager-loaded."""
 
         return statement.options(selectinload(CharacterItem.item))

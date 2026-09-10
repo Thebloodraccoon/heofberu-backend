@@ -145,6 +145,69 @@ class CharacterItemNotFoundException(AppError):
         super().__init__(f"Character {character_id} owns no item stack with id {character_item_id}.")
 
 
+class CharacterGrantedSpellNotFoundException(AppError):
+    """Raised when the character has no free-form (GM-granted) spell row with the given id."""
+
+    status_code = 404
+
+    def __init__(self, character_id: int, granted_spell_id: int):
+        """Record the character and missing granted-spell ids."""
+
+        self.character_id = character_id
+        self.granted_spell_id = granted_spell_id
+        super().__init__(f"Character {character_id} has no granted spell with id {granted_spell_id}.")
+
+
+class GrantedSpellNotRemovableException(AppError):
+    """Raised when trying to remove a granted spell that came from a feature/feat grant, not a bare GM grant."""
+
+    status_code = 409
+
+    def __init__(self, character_id: int, granted_spell_id: int):
+        """Record the character and offending granted-spell ids."""
+
+        self.character_id = character_id
+        self.granted_spell_id = granted_spell_id
+        super().__init__(
+            f"Granted spell {granted_spell_id} on character {character_id} came from a feature/feat grant — "
+            "revoke that grant instead of removing the spell directly."
+        )
+
+
+class InvalidWeaponProficiencyTargetException(AppError):
+    """Raised when a weapon-proficiency request sets both or neither of weapon_category/item_id."""
+
+    status_code = 422
+
+    def __init__(self):
+        """Fixed message — the constraint doesn't vary by input."""
+        super().__init__("Provide exactly one of weapon_category or item_id.")
+
+
+class ProficiencyAlreadyGrantedException(AppError):
+    """Raised when a GM tries to add a proficiency the character already has."""
+
+    status_code = 409
+
+    def __init__(self, character_id: int, detail: str):
+        """Record the character id and a human-readable description of the duplicate."""
+
+        self.character_id = character_id
+        super().__init__(f"Character {character_id} already has {detail}.")
+
+
+class ProficiencyNotFoundException(AppError):
+    """Raised when a GM tries to remove a proficiency the character doesn't have."""
+
+    status_code = 404
+
+    def __init__(self, character_id: int, detail: str):
+        """Record the character id and a human-readable description of the missing row."""
+
+        self.character_id = character_id
+        super().__init__(f"Character {character_id} has no {detail}.")
+
+
 class SkillProficiencyNotFoundException(AppError):
     """Raised when the character has no proficiency row for the given skill."""
 

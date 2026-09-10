@@ -12,9 +12,11 @@ from app.features.characters.gm_panel.exceptions import (
     CharacterFeatureNotFoundException,
     FeatureIsAFeatException,
 )
+from app.features.characters.features.schemas import CharacterFeatureBriefResponse, CharacterFeatureResponse
+from app.features.characters.grants.schemas import GrantEffectsResponse
 from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
+from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.progression.feature_sync import materialize_grant
-from app.features.characters.schemas import CharacterFeatureResponse
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
 from app.features.users.schemas import UserResponse
@@ -36,6 +38,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
         self.feature_grant_repository = CharacterFeatureRepository(db)
         self.feature_repository = FeatureRepository(db)
         self.stats_service = CharacterStatsService(db)
+        self.grant_service = FeatureGrantService(db)
 
     async def add_feature(
         self, character_id: int, data: CharacterFeatureAdd, current_user: UserResponse
@@ -57,15 +60,16 @@ class GmPanelFeatureService(CharacterSubDomainService):
         if existing:
             raise CharacterFeatureAlreadyKnownException(character_id=character_id, feature_id=data.feature_id)
 
-        grant = await self.feature_grant_repository.add_character_feature(
-            character_id, data.feature_id, data.notes, grant_source=GrantSource.GM
-        )
-        await materialize_grant(self.repository.db, character, grant)
-        await self.repository.db.commit()
+        async with self._atomic():
+            grant = await self.feature_grant_repository.add_character_feature(
+                character_id, data.feature_id, data.notes, grant_source=GrantSource.GM, commit=False
+            )
+            await materialize_grant(self.repository.db, character, grant)
+            await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
-        return CharacterFeatureResponse.model_validate(grant)
+        return self._to_response(grant)
 
     async def update_feature(
         self,
@@ -80,7 +84,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
 
         grant = await self._get_feature_grant_or_404(character_id, character_feature_id)
         updated_grant = await self.feature_grant_repository.update_notes(grant, data.notes or "")
-        return CharacterFeatureResponse.model_validate(updated_grant)
+        return self._to_response(updated_grant)
 
     async def remove_feature(self, character_id: int, character_feature_id: int, current_user: UserResponse) -> bool:
         """Remove a feature grant from a character."""
@@ -93,6 +97,27 @@ class GmPanelFeatureService(CharacterSubDomainService):
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
         return result
+
+    @staticmethod
+    def _to_response(grant: CharacterFeature) -> CharacterFeatureResponse:
+        """
+        Build a ``CharacterFeatureResponse`` for a write response without
+        touching ``grant.choices`` (not eager-loaded here — a lazy load
+        would raise ``MissingGreenlet`` under the async session). GM
+        add/update responses carry empty ``effects``/``choices``; the full
+        materialized picture is served by the player-facing listing.
+        """
+
+        return CharacterFeatureResponse(
+            id=grant.id,
+            character_id=grant.character_id,
+            feature_id=grant.feature_id,
+            grant_source=grant.grant_source,
+            notes=grant.notes,
+            feature=CharacterFeatureBriefResponse.model_validate(grant.feature),
+            effects=GrantEffectsResponse(),
+            choices=[],
+        )
 
     async def _get_feature_grant_or_404(self, character_id: int, character_feature_id: int) -> CharacterFeature:
         """Fetch a feature grant scoped to the character, or raise ``CharacterFeatureNotFoundException``."""

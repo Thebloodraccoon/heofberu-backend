@@ -133,9 +133,13 @@ class TestFullCharacterLifecycle:
         assert character["background_id"] is None
         assert character["ability_scores"]["strength_total"] == 16
         assert character["ability_scores"]["constitution_total"] == 14
-        assert {item["ability"] for item in character["saving_throw_proficiencies"]} == {"STR", "CON"}
-        assert [item["skill_id"] for item in character["skill_proficiencies"]] == [skill.id]
-        assert all(item["is_expertise"] is False for item in character["skill_proficiencies"])
+
+        proficiencies_response = await client.get(f"/characters/{character_id}/proficiencies", headers=player_headers)
+        assert proficiencies_response.status_code == 200
+        proficiencies = proficiencies_response.json()
+        assert {item["ability"] for item in proficiencies["saving_throws"]} == {"STR", "CON"}
+        assert [item["skill_id"] for item in proficiencies["skills"]] == [skill.id]
+        assert all(item["is_expertise"] is False for item in proficiencies["skills"])
 
         for spell in (fire_bolt, light, shield_spell):
             learn_response = await client.post(
@@ -296,7 +300,7 @@ class TestFullCharacterLifecycle:
         assert add_potions.json()["quantity"] == 5
 
         expertise_on = await client.patch(
-            f"/characters/{character_id}/gm-panel/skills",
+            f"/characters/{character_id}/gm-panel/proficiencies/skills/expertise",
             params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers=gm_headers,
@@ -322,7 +326,11 @@ class TestFullCharacterLifecycle:
         assert scores["wisdom_total"] == 9
         assert scores["charisma_total"] == 10
 
-        proficiencies = {item["skill_id"]: item for item in final["skill_proficiencies"]}
+        final_proficiencies_response = await client.get(
+            f"/characters/{character_id}/proficiencies", headers=player_headers
+        )
+        assert final_proficiencies_response.status_code == 200
+        proficiencies = {item["skill_id"]: item for item in final_proficiencies_response.json()["skills"]}
         assert proficiencies[skill.id]["is_expertise"] is True
 
         stats_response = await client.get(f"/characters/{character_id}/stats", headers=gm_headers)

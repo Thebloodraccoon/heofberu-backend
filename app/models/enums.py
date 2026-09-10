@@ -21,6 +21,8 @@ from app.constants import (
     HealingTarget,
     ItemRarity,
     ItemType,
+    ProficiencyAuditAction,
+    ProficiencyType,
     RaceSize,
     SpellCastTime,
     SpellDuration,
@@ -57,3 +59,5 @@ ASILevelChoiceType = SAEnum(ASILevelChoice, name="asi_choice", create_type=False
 GrantSourceType = SAEnum(GrantSource, name="feature_grant_source", create_type=False)
 ConditionTypeType = SAEnum(ConditionType, name="condition_type", create_type=False)
 ComponentType = SAEnum(Component, name="spell_component", create_type=False)
+ProficiencyTypeType = SAEnum(ProficiencyType, name="proficiency_type", create_type=False)
+ProficiencyAuditActionType = SAEnum(ProficiencyAuditAction, name="proficiency_audit_action", create_type=False)

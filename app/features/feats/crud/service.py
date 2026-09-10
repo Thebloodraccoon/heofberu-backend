@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
-from app.features.feats.asi.service import FeatAsiService
 from app.features.feats.cache import FEAT_CACHE_NAMESPACES, invalidate_feat_cache
 from app.features.feats.crud.repository import FeatRepository, feat_ability_score_effects
 from app.features.feats.schemas import (
@@ -33,17 +32,33 @@ def _flatten_ability_score_increases(feature: Feature) -> list[AbilityScoreIncre
 
 
 def _to_feat_response(feature: Feature) -> FeatResponse:
-    """Build a ``FeatResponse`` from a FEAT-source ``Feature`` row."""
+    """
+    Build a ``FeatResponse`` from a FEAT-source ``Feature`` row.
 
-    return FeatResponse(
-        id=feature.id,
-        name=feature.name,
-        description=feature.description,
-        prerequisite_ability=feature.prerequisite_ability,
-        prerequisite_minimum_score=feature.prerequisite_minimum_score,
-        prerequisite_description=feature.prerequisite_description,
-        min_level=feature.min_level,
-        ability_score_increases=_flatten_ability_score_increases(feature),
+    The six typed effect lists and ``choice_groups`` come straight from the
+    eager-loaded engine relationships (same tree ``GET /features/{id}``
+    returns); ``ability_score_increases`` remains the legacy flattened ASI
+    view over ``feature_ability_score_effects``.
+    """
+
+    return FeatResponse.model_validate(
+        {
+            "id": feature.id,
+            "name": feature.name,
+            "description": feature.description,
+            "prerequisite_ability": feature.prerequisite_ability,
+            "prerequisite_minimum_score": feature.prerequisite_minimum_score,
+            "prerequisite_description": feature.prerequisite_description,
+            "min_level": feature.min_level,
+            "ability_score_increases": _flatten_ability_score_increases(feature),
+            "choice_groups": feature.choice_groups,
+            "ability_effects": feature.ability_effects,
+            "skill_effects": feature.skill_effects,
+            "saving_throw_effects": feature.saving_throw_effects,
+            "armor_effects": feature.armor_effects,
+            "weapon_effects": feature.weapon_effects,
+            "spell_effects": feature.spell_effects,
+        }
     )
 
 
@@ -78,14 +93,13 @@ class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse,
     get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
-        """Compose the feat ASI capability service."""
+        """Set up the feat repository."""
 
         super().__init__(
             repository=FeatRepository(db),
             response_schema=FeatResponse,
             get_all_schema=FeatGetAllResponse,
         )
-        self._asi = FeatAsiService(db)
 
     async def create_feat(self, feat_data: FeatCreate) -> FeatResponse:
         """Create a feat (as a FEAT-source ``Feature``) after checking its name isn't already taken."""
@@ -99,7 +113,7 @@ class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse,
                 increases = [
                     {"ability": inc.ability, "amount": inc.amount} for inc in feat_data.ability_score_increases
                 ]
-                await self._asi.set_ability_score_increases_for_feat(item, increases, commit=False)
+                await self.repository.set_ability_score_increases(item, increases, commit=False)
 
         await self._invalidate_all()
 

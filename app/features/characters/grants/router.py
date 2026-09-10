@@ -13,6 +13,33 @@ router = APIRouter()
 
 
 @router.get(
+    "/{character_id:int}/grants/pending",
+    response_model=list[PendingChoiceGroupsResponse],
+    summary="List every pending choice across a character's grants",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def get_all_pending_choices(
+    character_id: int,
+    grant_service: FeatureGrantServiceDep,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+):
+    """
+    Character-wide "you still need to choose" surface: every feature/feat
+    grant that still has an unanswered choice group, across the whole
+    character. Meant to drive a forced picker right after character
+    creation or a level-up — poll this once instead of checking each
+    grant's own ``/features/{id}/choices`` individually.
+    """
+
+    await get_character_for_user(character_service.repository, character_id, current_user)
+    return await grant_service.get_all_pending_choices(character_id)
+
+
+@router.get(
     "/{character_id:int}/features/{character_feature_id:int}/choices",
     response_model=PendingChoiceGroupsResponse,
     summary="Get a granted feature's pending choice groups",
@@ -49,7 +76,9 @@ async def get_pending_choice_groups(
         422: {
             "description": (
                 "A group was answered with the wrong number of options, an option "
-                "doesn't belong to its group, or an open skill effect lacks a skill_id."
+                "doesn't belong to its group, or an open skill/spell effect lacks "
+                "its resolution (skill_id/spell_id) or resolves to a spell that "
+                "violates the school/level filter."
             )
         },
     },
@@ -91,6 +120,18 @@ async def answer_choice_groups(
                         ]
                     },
                 },
+                "open-spell-filter": {
+                    "summary": "A feature whose option grants 'any 1st-level Evocation spell', resolved to spell 9",
+                    "value": {
+                        "answers": [
+                            {
+                                "choice_group_id": 4,
+                                "choice_option_id": 52,
+                                "spell_id": 9,
+                            }
+                        ]
+                    },
+                },
             },
         ),
     ],
@@ -99,7 +140,9 @@ async def answer_choice_groups(
     Answer (or re-answer) a granted feature's choice groups. Replaces the
     answered groups' stored picks and re-materializes the grant's effect rows
     — skill/saving-throw/armor/weapon proficiencies and granted spells — in
-    the same transaction. The response lists any groups still pending.
+    the same transaction. Options carrying an open ("any skill") effect need
+    ``skill_id``; options carrying an open (school+level-filtered) spell
+    effect need ``spell_id``. The response lists any groups still pending.
     """
 
     await get_character_for_user(character_service.repository, character_id, current_user)

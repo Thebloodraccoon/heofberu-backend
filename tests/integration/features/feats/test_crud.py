@@ -49,13 +49,24 @@ class TestFeatCrud:
         feat = await create_feat(name="Resilient")
 
         response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-
         assert response.status_code == 200
-        assert {item["ability"]: item["amount"] for item in response.json()["ability_score_increases"]} == {"STR": 1}
+
+        read_response = await client.get(f"/feats/{feat.id}")
+        assert {item["ability"]: item["amount"] for item in read_response.json()["ability_score_increases"]} == {
+            "STR": 1
+        }
 
     async def test_gm_cannot_delete_feat(self, client, gm_token, create_feat):
         feat = await create_feat(name="Doomed Feat")

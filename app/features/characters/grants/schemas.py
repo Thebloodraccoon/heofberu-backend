@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
+from app.features.spells.crud.schemas import SpellResponse
 
 
 class ChoiceAnswerItem(BaseModel):
@@ -13,6 +14,9 @@ class ChoiceAnswerItem(BaseModel):
     # Required iff the option carries an open ("any skill") skill effect:
     # the concrete skill the player resolved it to.
     skill_id: int | None = None
+    # Required iff the option carries an open (school+level-filtered) spell
+    # effect: the concrete spell the player resolved it to.
+    spell_id: int | None = None
 
 
 class GrantChoicesUpdate(BaseModel):
@@ -31,13 +35,14 @@ class GrantChoicesUpdate(BaseModel):
 
 
 class PendingChoiceOption(BaseModel):
-    """A pending option inside a pending choice group, with its open-skill flag."""
+    """A pending option inside a pending choice group, with its open-effect flags."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     label: str = ""
     needs_skill: bool = False
+    needs_spell: bool = False
 
 
 class PendingChoiceGroup(BaseModel):
@@ -86,10 +91,42 @@ class CharacterWeaponProficiencyResponse(BaseModel):
 
 
 class CharacterGrantedSpellResponse(BaseModel):
-    """A spell granted to the character by a feature/feat."""
+    """A spell granted to the character by a feature/feat, with its full spell record."""
 
     model_config = ConfigDict(from_attributes=True)
 
     spell_id: int
     always_prepared: bool = True
     counts_against_known_limit: bool = False
+    spell: SpellResponse
+
+
+class GrantedSkillEffectResponse(BaseModel):
+    """A skill proficiency materialized by a grant."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    skill_id: int
+    is_expertise: bool
+
+
+class GrantEffectsResponse(BaseModel):
+    """
+    Every materialized effect row a single grant produced on the character —
+    what it actually did, resolved (an "any skill" pick already carries the
+    concrete ``skill_id``, an open spell filter the concrete ``spell_id``).
+    """
+
+    skills: list[GrantedSkillEffectResponse] = []
+    saving_throws: list[CharacterSavingThrowProficiencyResponse] = []
+    armor: list[CharacterArmorProficiencyResponse] = []
+    weapons: list[CharacterWeaponProficiencyResponse] = []
+    spells: list[CharacterGrantedSpellResponse] = []
+
+
+class ChosenOptionResponse(BaseModel):
+    """One of the player's stored picks for a grant's choice group."""
+
+    choice_group_id: int
+    choice_option_id: int
+    label: str = ""

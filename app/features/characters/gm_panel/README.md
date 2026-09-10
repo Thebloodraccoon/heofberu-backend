@@ -37,7 +37,8 @@ own capability segment.
 | `asi` | GET/POST/DELETE `/asi` | reads GM/owner, writes GM only | own schemas |
 | `hp` | PATCH `/max-hp` | GM only | — |
 | `level` | PATCH/GET `/max-level` | reads GM/owner, writes GM only | `CharacterMaxLevelRepository` |
-| `skills` | PATCH `/skills` | GM only | `CharacterSkillProficiencyRepository` |
+| `proficiencies` | POST/DELETE `/proficiencies/{skills,saving-throws,armor,weapons}`, PATCH `/proficiencies/skills/expertise` | GM only | 4 typed repos + `CharacterProficiencyAuditRepository` |
+| `spells` | POST/DELETE `/spells` | GM only | `CharacterGrantedSpellRepository` |
 
 ### `feats` — feat grants
 
@@ -109,16 +110,22 @@ character's current level (`MaxLevelBelowCharacterLevelException`) is
 rejected, and the schema caps it at `CHARACTER_MAX_LEVEL`. The repository is
 imported by progression for the level-up gate.
 
-### `skills` — expertise toggle
+### `proficiencies` — add/remove/expertise across all four proficiency tables
 
-PATCH `/skills?character_id=...&skill_id=...` with `{is_expertise: bool}`:
-toggles expertise on an EXISTING proficiency row (rows are written once at
-creation from class choices + background/race grants; 404
-`SkillProficiencyNotFoundException` if not proficient — expertise requires and
-implies proficiency). Expertise is never derived automatically; clients read
-`is_expertise` off the proficiency row and double the proficiency bonus. The
-repository is a plain class (not `BaseRepository`) because the model has a
-composite PK `(character_id, skill_id)`.
+POST/DELETE `/proficiencies/skills`, `/saving-throws`, `/armor`, `/weapons`
+grant or revoke a free-form (no feature behind it) proficiency row directly;
+PATCH `/proficiencies/skills/expertise?skill_id=...` with `{is_expertise:
+bool}` toggles expertise on an EXISTING skill proficiency row (404
+`SkillProficiencyNotFoundException` if not proficient — expertise requires
+and implies proficiency). Expertise is never derived automatically; clients
+read `is_expertise` off the proficiency row and double the proficiency
+bonus. Weapon add/remove takes exactly one of `weapon_category`/`item_id`.
+Every write appends a row to `character_proficiency_audit_log` (who did
+what, when) — the proficiency tables themselves carry no history, so a
+removal or a revoked expertise flag would otherwise be silent. The four
+per-type repositories are plain classes (not `BaseRepository`) because
+skill proficiency has a composite PK `(character_id, skill_id)` and the
+others key on a per-character-per-value uniqueness instead of a surrogate id.
 
 Services extend `CharacterSubDomainService` (light character fetch for access
 control; `GmPanelHpService` overrides `_light_character_fetch = False` because

@@ -52,7 +52,7 @@ class FakeCharacterFeatureRepository:
     async def get_character_feature_by_id(self, character_id, character_feature_id):
         return self._by_id.get(character_feature_id)
 
-    async def add_character_feature(self, character_id, feature_id, notes, *, grant_source=GrantSource.GM):
+    async def add_character_feature(self, character_id, feature_id, notes, *, grant_source=GrantSource.GM, commit=True):
         grant = SimpleNamespace(
             id=9,
             character_id=character_id,
@@ -62,7 +62,6 @@ class FakeCharacterFeatureRepository:
             feature=make_feature_brief(feature_id),
         )
         self.add_calls.append(grant)
-        await self.db.commit()
         return grant
 
     async def update_notes(self, grant, notes):
@@ -91,6 +90,7 @@ def make_grant(grant_id=6, feature_id=4) -> SimpleNamespace:
         character_id=1,
         feature_id=feature_id,
         notes="old",
+        grant_source=GrantSource.GM,
         feature=make_feature_brief(feature_id),
     )
 
@@ -107,6 +107,7 @@ def make_service(character=None, *, grants_by_id=None, feature_exists=True):
     service.feature_repository = FakeRepository(db, existing_by_id={4: SimpleNamespace(source_type=FeatureSourceType.CLASS)} if feature_exists else {})
     service.feature_grant_repository = FakeCharacterFeatureRepository(db, grants_by_id=grants_by_id or {})
     service.stats_service = FakeStatsService()
+    service.grant_service = SimpleNamespace(resolve_grant_choices=AsyncMock(return_value=None))
     return service
 
 

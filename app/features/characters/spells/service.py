@@ -10,9 +10,11 @@ from app.features.characters.spells.exceptions import (
     CharacterSpellNotFoundException,
 )
 from app.features.characters.spells.repository import (
+    CharacterGrantedSpellRepository,
     CharacterSpellRepository,
     CharacterSpellSlotRepository,
 )
+from app.features.characters.grants.schemas import CharacterGrantedSpellResponse
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
@@ -27,11 +29,13 @@ from app.models.character_spell_model import CharacterSpell
 
 class CharacterSpellService(CharacterSubDomainService):
     """
-    Spell slots and known spells for a character. There is no "prepared"
-    state and no slot spending: knowing a spell IS having it ready, and a
-    level's slot ``total`` (derived from the class/level progression)
-    doubles as the cap on spells of that level the character may know.
-    Eligibility is delegated to ``CharacterSpellEligibilityChecker``.
+    Spell slots, known spells, and feature-granted spells for a character.
+    There is no "prepared" state and no slot spending: knowing a spell IS
+    having it ready, and a level's slot ``total`` (derived from the class/
+    level progression) doubles as the cap on spells of that level the
+    character may know (feature-granted rows count only when their
+    ``counts_against_known_limit`` flag is set). Eligibility is delegated
+    to ``CharacterSpellEligibilityChecker``.
     """
 
     def __init__(self, db: AsyncSession):
@@ -40,25 +44,33 @@ class CharacterSpellService(CharacterSubDomainService):
         super().__init__(db)
         self.character_spell_slot_repository = CharacterSpellSlotRepository(db)
         self.character_spell_repository = CharacterSpellRepository(db)
+        self.character_granted_spell_repository = CharacterGrantedSpellRepository(db)
         self.spell_repository = SpellRepository(db)
         self.eligibility_checker = CharacterSpellEligibilityChecker(
-            self.character_spell_slot_repository, self.character_spell_repository
+            self.character_spell_slot_repository,
+            self.character_spell_repository,
+            self.character_granted_spell_repository,
         )
 
     async def get_spells(self, character_id: int, current_user: UserResponse) -> CharacterSpellsResponse:
         """
-        Return the whole spellcasting picture: slot totals per level plus
-        known spells. Slot totals are never client-authored — they mirror
-        the class progression.
+        Return the whole spellcasting picture: slot totals per level, the
+        free-form known spells, and the spells granted by features/feats.
+        Slot totals are never client-authored — they mirror the class
+        progression.
         """
 
         await self.get_character_for_user(character_id, current_user)
 
         slots = await self.character_spell_slot_repository.get_all_spell_slots(character_id)
         known_spells = await self.character_spell_repository.get_known_spells(character_id)
+        granted_spells = await self.character_granted_spell_repository.get_granted_spells(character_id)
         return CharacterSpellsResponse(
             spell_slots=[SpellSlotResponse.model_validate(slot) for slot in slots],
             spells=[CharacterSpellResponse.model_validate(cs) for cs in known_spells],
+            granted_spells=[
+                CharacterGrantedSpellResponse.model_validate(gs) for gs in granted_spells
+            ],
         )
 
     async def add_known_spell(

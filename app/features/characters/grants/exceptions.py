@@ -67,3 +67,39 @@ class SkillResolutionsError(AppError):
         super().__init__(
             f"Option {option_id} has an open skill effect — a skill_id must be provided for it."
         )
+
+
+class GrantChoiceRequiredException(AppError):
+    """
+    Raised when a grant (a level-up's newly-unlocked feature, an
+    ASI-level feat pick, or a GM-panel feat/feature grant) has a
+    "pick N of M" choice group that the caller's answers didn't resolve —
+    a grant is never left silently half-materialized regardless of who
+    created it.
+    """
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, feature_id: int, feature_name: str, pending_group_ids: list[int]):
+        """Initialize with the unresolved feature/groups."""
+
+        self.feature_id = feature_id
+        self.feature_name = feature_name
+        self.pending_group_ids = pending_group_ids
+        super().__init__(
+            f"Feature '{feature_name}' (id {feature_id}) still has unanswered choice group(s) "
+            f"{pending_group_ids} — include matching entries in the request's choice answers."
+        )
+
+
+class SpellResolutionsError(AppError):
+    """Raised (422) when an open (school+level-filtered) spell option is answered without a spell id, or with one that violates the filter."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int, *detail_parts: str):
+        """Initialize with the offending option id and optional filter-violation detail."""
+        detail = f"Option {option_id} has an open spell effect — a spell_id must be provided for it."
+        if detail_parts:
+            detail = f"Option {option_id} has an open spell effect — {detail_parts[0]}"
+        super().__init__(detail)

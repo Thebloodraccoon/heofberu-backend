@@ -5,8 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.gm_panel.dependencies import GmPanelFeaturesDep
+from app.features.characters.features.schemas import CharacterFeatureResponse
 from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
-from app.features.characters.schemas import CharacterFeatureResponse
 from app.features.users.security import GmUserDep
 
 router = APIRouter()

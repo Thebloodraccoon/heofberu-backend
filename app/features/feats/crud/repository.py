@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.constants import FeatureSourceType
 from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordAlreadyExistsError
+from app.features.features.crud.repository import _engine_effect_loads
 from app.models.character_feature_model import CharacterFeature
 from app.models.feature_engine_models import (
     FeatureAbilityScoreEffect,
@@ -76,7 +77,7 @@ class FeatRepository(BaseRepository[Feature]):
         result = await self.db.execute(
             select(Feature)
             .where(Feature.id == model_id, Feature.source_type == FeatureSourceType.FEAT)
-            .options(*_FEAT_LOAD_OPTIONS)
+            .options(*_engine_effect_loads())
             .execution_options(populate_existing=True)
         )
         return result.scalars().first()

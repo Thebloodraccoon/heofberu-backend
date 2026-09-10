@@ -196,7 +196,11 @@ class TestRebuild:
         assert rebuilt["max_hp"] == 12
         assert rebuilt["current_hp"] == 12
         assert rebuilt["temp_hp"] == 0
-        assert [row["skill_id"] for row in rebuilt["skill_proficiencies"]] == [fighter_skill.id]
+
+        rebuilt_proficiencies = await client.get(
+            f"/characters/{character['id']}/proficiencies", headers={"Authorization": f"Bearer {player_token}"}
+        )
+        assert [row["skill_id"] for row in rebuilt_proficiencies.json()["skills"]] == [fighter_skill.id]
         # Untouched by the rebuild:
         assert rebuilt["notes"] == "Keep me"
 
@@ -548,7 +552,7 @@ class TestLevelUp:
             "contributions": [{"source": "asi", "label": "Level 4 (ASI)", "amount": 2}],
         }
 
-    async def test_feat_choice_with_asi_options_without_choice_grants(
+    async def test_feat_choice_with_asi_options_without_choice_is_rejected(
         self,
         client,
         player,
@@ -558,13 +562,22 @@ class TestLevelUp:
         create_api_character,
         create_feat,
     ):
+        """A feat offering an ASI choice group must have it resolved — level-up never grants it half-picked."""
         character_class = await create_class(name="Fighter", hit_dice="D10")
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
         await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Resilient")
         await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -574,7 +587,7 @@ class TestLevelUp:
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 422
 
     async def test_asi_above_score_cap_returns_400(self, client, player, player_token, create_class, create_character):
         character_class = await create_class(name="Fighter", hit_dice="D10")
@@ -678,12 +691,20 @@ class TestLevelUp:
         await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert asi_response.status_code == 200
-        asi_id = asi_response.json()["ability_score_increases"][0]["id"]
+        asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -910,7 +931,11 @@ class TestLevelUpFeatureChoices:
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert refreshed.json()["level"] == 3
-        assert skill.id in [item["skill_id"] for item in refreshed.json()["skill_proficiencies"]]
+
+        refreshed_proficiencies = await client.get(
+            f"/characters/{character_id}/proficiencies", headers={"Authorization": f"Bearer {player_token}"}
+        )
+        assert skill.id in [item["skill_id"] for item in refreshed_proficiencies.json()["skills"]]
 
     async def test_feature_choices_for_unrelated_feature_are_ignored(
         self, client, player, player_token, gm_token, create_class, create_api_character, create_feature, create_skill
@@ -1026,10 +1051,10 @@ class TestLevelUpFeatureChoices:
         )
         assert full.status_code == 200, full.text
         refreshed = await client.get(
-            f"/characters/{character_id}",
+            f"/characters/{character_id}/proficiencies",
             headers={"Authorization": f"Bearer {player_token}"},
         )
-        skill_ids = {item["skill_id"] for item in refreshed.json()["skill_proficiencies"]}
+        skill_ids = {item["skill_id"] for item in refreshed.json()["skills"]}
         assert skill_a_id in skill_ids
         assert skill_b_id in skill_ids
 

@@ -75,10 +75,11 @@ async def load_feature_effect_tree(db: AsyncSession, feature_id: int) -> Feature
 
 @dataclass
 class ResolvedOption:
-    """One picked option inside a choice group, with the concrete skill it resolved an open effect to."""
+    """One picked option inside a choice group, with the concrete skill/spell it resolved any open effect to."""
 
     option: FeatureChoiceOption
     skill_id: int | None = None
+    spell_id: int | None = None
 
 
 @dataclass
@@ -132,6 +133,10 @@ class FeatureGrantMaterializer:
                 continue
             desired.weapons.append((effect.weapon_category, effect.item_id))
 
+        # Fixed feature-level spell effects: only concrete ``spell_id`` grants
+        # materialize here — an open (school+level-filtered) fixed effect has
+        # no choice point to resolve it, so it is skipped (author open spells
+        # inside choice options instead).
         for effect in feature.spell_effects:
             if effect.spell_id is None:
                 continue
@@ -166,9 +171,10 @@ class FeatureGrantMaterializer:
             desired.weapons.append((effect.weapon_category, effect.item_id))
 
         for effect in option.spell_effects:
-            if effect.spell_id is None:
+            spell_id = effect.spell_id if effect.spell_id is not None else item.spell_id
+            if spell_id is None:
                 continue
-            desired.spells.append((effect.spell_id, effect.always_prepared, effect.counts_against_known_limit))
+            desired.spells.append((spell_id, effect.always_prepared, effect.counts_against_known_limit))
 
     async def reconcile(
         self,

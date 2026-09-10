@@ -6,8 +6,11 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
+from app.models.character_engine_models import CharacterFeatureChoice
 from app.models.character_feature_model import CharacterFeature
 from app.models.feature_model import Feature
+
+_WITH_CHOICES = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
 
 
 class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
@@ -35,7 +38,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         result = await self.db.execute(
             select(CharacterFeature)
             .join(Feature, Feature.id == CharacterFeature.feature_id)
-            .options(selectinload(CharacterFeature.feature))
+            .options(selectinload(CharacterFeature.feature), _WITH_CHOICES)
             .where(CharacterFeature.character_id == character_id, Feature.source_type != FeatureSourceType.FEAT)
         )
         return list(result.scalars().unique().all())
@@ -73,6 +76,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         notes: str,
         *,
         grant_source: GrantSource = GrantSource.GM,
+        commit: bool = True,
     ) -> CharacterFeature:
         """
         Record a reference feature on a character, with per-character notes.
@@ -81,7 +85,8 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         auto-synced grants are written by
         ``progression.feature_sync.sync_progression_features`` with
         ``AUTO``) so a subsequent sync never mistakes a GM's manual grant
-        for a stale auto-grant and revokes it.
+        for a stale auto-grant and revokes it. ``commit=False`` flushes
+        instead, for callers running inside their own ``_atomic()``.
         """
 
         grant = CharacterFeature(
@@ -92,7 +97,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         )
 
         self.db.add(grant)
-        await self.commit_or_flush()
+        await self.commit_or_flush(commit=commit)
 
         result = await self.db.execute(
             select(CharacterFeature)

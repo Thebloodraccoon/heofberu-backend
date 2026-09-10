@@ -599,13 +599,12 @@ class TestCreateCharacterHappyPath:
         assert service.asi_repository.calls == []
 
         assert db.commits == 1
-        assert db.flushes == 4
+        assert db.flushes == 5
         assert result.id == 1
         assert result.level == 1
         assert result.temp_hp == 0
         assert result.current_hp == 12
         assert result.max_hp == 12
-        assert [st.ability for st in result.saving_throw_proficiencies] == [AbilityScore.STR, AbilityScore.CON]
         assert result.hit_dice == "D10"
         assert result.speed == 30
 
@@ -683,61 +682,6 @@ class TestCreateCharacterReferenceValidation:
 
         with pytest.raises(BackgroundNotFoundException):
             await service.create_character(make_create_payload(), make_user())
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-class TestToResponseSavingThrows:
-    async def test_saving_throws_derived_from_the_class_not_stored(self, monkeypatch):
-        service, _ = make_service(None, [])
-        character = SimpleNamespace(
-            id=1,
-            owner_id=7,
-            name="Grog",
-            class_id=1,
-            subclass_id=None,
-            race_id=5,
-            subrace_id=None,
-            background_id=3,
-            armor_class=10,
-            shield=0,
-            notes="",
-            personality_traits="",
-            ideals="",
-            bonds="",
-            flaws="",
-            money_gold=0,
-            money_silver=0,
-            money_copper=0,
-            level=1,
-            current_hp=12,
-            max_hp=12,
-            temp_hp=0,
-            saving_throw_proficiencies=[],
-            armor_proficiencies=[],
-            weapon_proficiencies=[],
-            granted_spells=[],
-            character_class=make_class(saving_throws=[SimpleNamespace(ability=AbilityScore.WIS)]),
-        )
-        cache_row = SimpleNamespace(
-            strength_total=14,
-            dexterity_total=10,
-            constitution_total=12,
-            intelligence_total=10,
-            wisdom_total=11,
-            charisma_total=10,
-        )
-
-        result = await service._to_response(
-            character,
-            cache_row=cache_row,
-            derived=DerivedStats(hit_dice="D8", speed=25),
-        )
-
-        assert [st.ability for st in result.saving_throw_proficiencies] == [AbilityScore.WIS]
-        assert result.hit_dice == "D8"
-        assert result.speed == 25
-        assert result.ability_scores.wisdom_total == 11
 
 
 @pytest.mark.unit

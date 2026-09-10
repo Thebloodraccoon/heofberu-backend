@@ -248,6 +248,24 @@ class WeaponProficiency(str, Enum):
     MARTIAL = "MARTIAL"
 
 
+class ProficiencyType(str, Enum):
+    """Which of a character's four proficiency tables a GM audit-log row (or a GM-panel write) targets."""
+
+    SKILL = "SKILL"
+    SAVING_THROW = "SAVING_THROW"
+    ARMOR = "ARMOR"
+    WEAPON = "WEAPON"
+
+
+class ProficiencyAuditAction(str, Enum):
+    """What a GM did to a character's proficiency row, for ``character_proficiency_audit_log``."""
+
+    ADD = "ADD"
+    REMOVE = "REMOVE"
+    EXPERTISE_GRANTED = "EXPERTISE_GRANTED"
+    EXPERTISE_REVOKED = "EXPERTISE_REVOKED"
+
+
 class ASILevelChoice(str, Enum):
     """What a character chose at a class level that grants an Ability Score Improvement."""
 

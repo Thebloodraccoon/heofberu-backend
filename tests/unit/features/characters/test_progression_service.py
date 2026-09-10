@@ -14,6 +14,7 @@ from app.features.characters.feats.exceptions import (
     FeatPrerequisiteNotMetException,
     InvalidAbilityScoreIncreaseException,
 )
+from app.features.characters.grants.exceptions import GrantChoiceRequiredException
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     BackgroundAlreadySetException,
@@ -22,7 +23,6 @@ from app.features.characters.progression.exceptions import (
     InvalidRebuildMaxHpException,
     LevelUpChoiceNotAllowedException,
     LevelUpChoiceRequiredException,
-    LevelUpFeatureChoiceRequiredException,
     RebuildAsiChoicesMismatchException,
 )
 from app.features.characters.progression.schemas import (
@@ -38,7 +38,6 @@ from app.features.characters.progression.schemas import (
     SubraceChange,
 )
 from app.features.characters.progression.service import CharacterProgressionService
-from app.features.characters.grants.schemas import PendingChoiceGroup, PendingChoiceGroupsResponse
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
@@ -1023,20 +1022,17 @@ class TestLevelUpFeatureChoices:
         service, db = self._make_service_with_grants([grant])
 
         monkeypatch.setattr(
-            "app.features.characters.progression.service.load_feature_effect_tree",
-            AsyncMock(return_value=feature_with_group),
-        )
-        monkeypatch.setattr(
             "app.features.characters.progression.service.FeatureGrantService",
             lambda db: SimpleNamespace(
-                answer_choices=AsyncMock(return_value=PendingChoiceGroupsResponse(
-                    character_feature_id=1000, feature_id=10, feature_name="Choose a Skill",
-                    groups=[PendingChoiceGroup(id=50, pick_count=1)],
-                ))
+                resolve_grant_choices=AsyncMock(
+                    side_effect=GrantChoiceRequiredException(
+                        feature_id=10, feature_name="Choose a Skill", pending_group_ids=[50]
+                    )
+                )
             ),
         )
 
-        with pytest.raises(LevelUpFeatureChoiceRequiredException) as exc_info:
+        with pytest.raises(GrantChoiceRequiredException) as exc_info:
             await service.level_up(1, LevelUpRequest(), make_user())
 
         assert exc_info.value.feature_id == 10
@@ -1054,17 +1050,8 @@ class TestLevelUpFeatureChoices:
         service, db = self._make_service_with_grants([grant])
 
         monkeypatch.setattr(
-            "app.features.characters.progression.service.load_feature_effect_tree",
-            AsyncMock(return_value=feature_with_group),
-        )
-        monkeypatch.setattr(
             "app.features.characters.progression.service.FeatureGrantService",
-            lambda db: SimpleNamespace(
-                answer_choices=AsyncMock(return_value=PendingChoiceGroupsResponse(
-                    character_feature_id=1000, feature_id=10, feature_name="Choose a Skill",
-                    groups=[],
-                ))
-            ),
+            lambda db: SimpleNamespace(resolve_grant_choices=AsyncMock(return_value=None)),
         )
 
         answer = LevelUpFeatureChoiceAnswer(
@@ -1083,7 +1070,7 @@ class TestLevelUpFeatureChoices:
         service, db = self._make_service_with_grants([grant])
 
         monkeypatch.setattr(
-            "app.features.characters.progression.service.load_feature_effect_tree",
+            "app.features.characters.grants.service.load_feature_effect_tree",
             AsyncMock(return_value=feature_without_groups),
         )
 
@@ -1104,7 +1091,7 @@ class TestLevelUpFeatureChoices:
         service, db = self._make_service_with_grants([grant])
 
         monkeypatch.setattr(
-            "app.features.characters.progression.service.load_feature_effect_tree",
+            "app.features.characters.grants.service.load_feature_effect_tree",
             AsyncMock(return_value=feature_no_groups),
         )
 

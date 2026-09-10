@@ -14,10 +14,11 @@ from app.features.characters.feats.validation import (
     validate_asi_choice_required,
 )
 from app.features.characters.gm_panel.exceptions import CharacterFeatNotFoundException
+from app.features.characters.feats.schemas import CharacterFeatResponse
 from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
+from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
-from app.features.characters.schemas import CharacterFeatResponse
 from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.users.schemas import UserResponse
@@ -41,6 +42,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         self.stats_service = CharacterStatsService(db)
         self.feat_repository = FeatRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
+        self.grant_service = FeatureGrantService(db)
 
     async def add_feat(
         self, character_id: int, data: CharacterFeatAdd, current_user: UserResponse
@@ -76,6 +78,7 @@ class GmPanelFeatService(CharacterSubDomainService):
                 commit=False,
             )
             await sync_progression_features(self.repository.db, character)
+            await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)

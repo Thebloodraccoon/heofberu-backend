@@ -38,6 +38,18 @@ class FakeKnownSpellRepository:
         return self.known_at_level
 
 
+class FakeGrantedSpellRepository:
+    """Stands in for CharacterGrantedSpellRepository's known-limit counting."""
+
+    def __init__(self, granted_at_level=0):
+        self.granted_at_level = granted_at_level
+        self.count_calls = []
+
+    async def count_against_known_limit_at_level(self, character_id, level):
+        self.count_calls.append((character_id, level))
+        return self.granted_at_level
+
+
 def make_character(class_id=1, race_id=None, subclass_id=None, subrace_id=None) -> Character:
     return Character(
         id=1,
@@ -68,8 +80,12 @@ def make_spell(
     )
 
 
-def make_checker(slot=None, known_at_level=0) -> CharacterSpellEligibilityChecker:
-    return CharacterSpellEligibilityChecker(FakeSlotRepository(slot), FakeKnownSpellRepository(known_at_level))
+def make_checker(slot=None, known_at_level=0, granted_at_level=0) -> CharacterSpellEligibilityChecker:
+    return CharacterSpellEligibilityChecker(
+        FakeSlotRepository(slot),
+        FakeKnownSpellRepository(known_at_level),
+        FakeGrantedSpellRepository(granted_at_level),
+    )
 
 
 @pytest.mark.unit
@@ -212,10 +228,40 @@ class TestCharacterSpellEligibilityChecker:
     async def test_uses_slot_and_known_counts_for_the_spells_level(self):
         slot_repository = FakeSlotRepository(SimpleNamespace(total=1))
         known_spell_repository = FakeKnownSpellRepository(0)
-        checker = CharacterSpellEligibilityChecker(slot_repository, known_spell_repository)
+        granted_spell_repository = FakeGrantedSpellRepository(0)
+        checker = CharacterSpellEligibilityChecker(
+            slot_repository, known_spell_repository, granted_spell_repository
+        )
         spell = make_spell(level=SpellLevel.LEVEL_3)
 
         await checker.check(make_character(class_id=1), spell)
 
         assert slot_repository.get_spell_slot_calls == [(1, SpellLevel.LEVEL_3)]
         assert known_spell_repository.count_calls == [(1, SpellLevel.LEVEL_3)]
+        assert granted_spell_repository.count_calls == [(1, SpellLevel.LEVEL_3)]
+
+    async def test_granted_known_limit_spell_consumes_capacity(self):
+        """Feature-granted spells flagged counts_against_known_limit fill the level's known cap."""
+        checker = make_checker(slot=SimpleNamespace(total=1), known_at_level=1, granted_at_level=0)
+
+        with pytest.raises(NoSpellSlotAvailableException):
+            await checker.check(make_character(), make_spell())
+
+        checker = make_checker(slot=SimpleNamespace(total=2), known_at_level=1, granted_at_level=1)
+
+        with pytest.raises(NoSpellSlotAvailableException):
+            await checker.check(make_character(), make_spell())
+
+        checker = make_checker(slot=SimpleNamespace(total=2), known_at_level=1, granted_at_level=0)
+
+        await checker.check(make_character(), make_spell())
+
+    async def test_granted_spells_not_marked_known_limit_do_not_count(self):
+        """The checker only consults the granted-spell count; non-flagged grants are tracked separately."""
+        checker = make_checker(slot=SimpleNamespace(total=1), known_at_level=0, granted_at_level=1)
+        granted_spell_repository = checker.granted_spell_repository
+
+        with pytest.raises(NoSpellSlotAvailableException):
+            await checker.check(make_character(), make_spell())
+
+        assert granted_spell_repository.count_calls == [(1, SpellLevel.LEVEL_1)]

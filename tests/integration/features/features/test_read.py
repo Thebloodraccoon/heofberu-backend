@@ -35,7 +35,14 @@ class TestFeatureOpenRead:
         response = await client.get(f"/features/{feature.id}")
 
         assert response.status_code == 200
-        assert response.json()["name"] == "Extra Attack"
+        body = response.json()
+        assert body["name"] == "Extra Attack"
+        assert body["choice_groups"] == []
+        assert body["skill_effects"] == []
+        assert body["saving_throw_effects"] == []
+        assert body["armor_effects"] == []
+        assert body["weapon_effects"] == []
+        assert body["spell_effects"] == []
 
     async def test_get_feature_by_id(self, client, create_feature):
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
@@ -43,7 +50,10 @@ class TestFeatureOpenRead:
         response = await client.get(f"/features/{feature.id}")
 
         assert response.status_code == 200
-        assert response.json()["name"] == "Extra Attack"
+        body = response.json()
+        assert body["name"] == "Extra Attack"
+        assert body["ability_effects"] == []
+        assert body["choice_groups"] == []
 
     async def test_get_feature_404(self, client):
         assert (await client.get("/features/999999")).status_code == 404

@@ -314,7 +314,91 @@ class TestFeatureResponsesEmbedAbilityEffects:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["ability_effects"] == [{"ability": "STR", "amount": 4, "new_cap": 30}]
+        assert [{k: v for k, v in item.items() if k != "id"} for item in body["ability_effects"]] == [
+            {"ability": "STR", "amount": 4, "new_cap": 30}
+        ]
+
+    async def test_feature_detail_embeds_whole_effect_tree(
+        self, client, gm_token, create_feature, create_skill, create_item, create_spell
+    ):
+        feature = await create_feature(name="Primal Champion")
+        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        item = await create_item(name="Longsword", item_type="WEAPON")
+        spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
+
+        await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {
+                "ability_effects": [{"ability": "STR", "amount": 4, "new_cap": 30}],
+                "skill_effects": [{"skill_id": skill.id}],
+                "saving_throw_effects": [{"ability": "DEX"}],
+                "armor_effects": [{"armor_type": "LIGHT"}],
+                "weapon_effects": [{"weapon_category": "MARTIAL"}],
+                "spell_effects": [{"spell_id": spell.id}],
+            },
+        )
+        await client.put(
+            f"/features/{feature.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "label": "Choose a boon",
+                        "options": [
+                            {
+                                "label": "STR +1",
+                                "ability_effects": [{"ability": "STR", "amount": 1}],
+                                "saving_throw_effects": [{"ability": "STR"}],
+                                "skill_effects": [{"skill_id": skill.id}],
+                                "armor_effects": [{"armor_type": "SHIELD"}],
+                                "weapon_effects": [{"item_id": item.id}],
+                                "spell_effects": [{"spell_id": spell.id}],
+                            }
+                        ],
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        response = await client.get(f"/features/{feature.id}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [{k: v for k, v in item.items() if k != "id"} for item in body["ability_effects"]] == [
+            {"ability": "STR", "amount": 4, "new_cap": 30}
+        ]
+        assert body["skill_effects"][0]["skill_id"] == skill.id
+        assert body["saving_throw_effects"][0]["ability"] == "DEX"
+        assert body["armor_effects"][0]["armor_type"] == "LIGHT"
+        assert body["weapon_effects"][0]["weapon_category"] == "MARTIAL"
+        assert body["spell_effects"][0]["spell_id"] == spell.id
+        assert len(body["choice_groups"]) == 1
+        option = body["choice_groups"][0]["options"][0]
+        assert option["ability_effects"][0]["ability"] == "STR"
+        assert option["saving_throw_effects"][0]["ability"] == "STR"
+        assert option["skill_effects"][0]["skill_id"] == skill.id
+        assert option["armor_effects"][0]["armor_type"] == "SHIELD"
+        assert option["weapon_effects"][0]["item_id"] == item.id
+        assert option["spell_effects"][0]["spell_id"] == spell.id
+
+    async def test_feature_detail_patch_returns_whole_effect_tree(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Dark Gaze")
+
+        response = await client.patch(
+            f"/features/{feature.id}",
+            json={"description": "updated"},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["description"] == "updated"
+        assert body["choice_groups"] == []
+        assert body["skill_effects"] == []
+        assert body["saving_throw_effects"] == []
 
     async def test_race_feature_list_embeds_ability_effects(self, client, gm_token, create_race, create_feature):
         race = await create_race(name="Half-Orc")
@@ -331,7 +415,9 @@ class TestFeatureResponsesEmbedAbilityEffects:
         assert response.status_code == 200
         body = response.json()
         assert body[0]["name"] == "Savage Attacks"
-        assert body[0]["ability_effects"] == [{"ability": "STR", "amount": 2, "new_cap": 30}]
+        assert [{k: v for k, v in item.items() if k != "id"} for item in body[0]["ability_effects"]] == [
+            {"ability": "STR", "amount": 2, "new_cap": 30}
+        ]
 
     async def test_fresh_feature_embeds_empty_ability_effects(self, client, create_feature):
         feature = await create_feature(name="Plain")

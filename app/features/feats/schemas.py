@@ -3,6 +3,15 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
+from app.features.features.effects.schemas import (
+    AbilityEffectItem,
+    ArmorEffectItem,
+    ChoiceGroupResponse,
+    SavingThrowEffectItem,
+    SkillEffectItem,
+    SpellEffectItem,
+    WeaponEffectItem,
+)
 
 
 class FeatBase(BaseModel):
@@ -96,18 +105,6 @@ class FeatUpdate(BaseModel):
         return value
 
 
-class AbilityScoreIncreasesUpdate(BaseModel):
-    """Full replacement list of ASI choices for a feat."""
-
-    ability_score_increases: list[AbilityScoreIncreaseItem]
-
-    @field_validator("ability_score_increases")
-    def validate_unique_asi_abilities(cls, ability_score_increases):
-        """Reject ASI lists containing duplicate abilities."""
-
-        return _validate_unique_asi_abilities(ability_score_increases)
-
-
 class AbilityScoreIncreaseResponse(BaseModel):
     """A feat's ASI choice as returned in responses."""
 
@@ -119,12 +116,27 @@ class AbilityScoreIncreaseResponse(BaseModel):
 
 
 class FeatResponse(FeatBase):
-    """Full feat representation returned by the API."""
+    """
+    Full feat representation returned by the API.
+
+    Besides the classic ``ability_score_increases`` (legacy, kept for
+    compatibility), the detail response carries the whole effect tree —
+    choice groups plus the six fixed-effect lists — mirroring the feature
+    endpoints. Feats currently have no write endpoints for effects, so these
+    are populated via the effect engine's reads only.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     ability_score_increases: list[AbilityScoreIncreaseResponse] = []
+    choice_groups: list[ChoiceGroupResponse] = []
+    ability_effects: list[AbilityEffectItem] = []
+    skill_effects: list[SkillEffectItem] = []
+    saving_throw_effects: list[SavingThrowEffectItem] = []
+    armor_effects: list[ArmorEffectItem] = []
+    weapon_effects: list[WeaponEffectItem] = []
+    spell_effects: list[SpellEffectItem] = []
 
 
 class FeatGetAllResponse(BaseModel):
