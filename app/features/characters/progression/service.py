@@ -56,10 +56,10 @@ from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models import Class
-from app.models.character_association_models import CharacterSkillProficiency
-from app.models.character_feature_model import CharacterFeature
-from app.models.character_item_model import CharacterItem
-from app.models.character_model import Character
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_item_model import CharacterItem
+from app.models.character.character_model import Character
+from app.models.character.skill_proficiency import CharacterSkillProficiency
 
 
 class CharacterProgressionService(CharacterSubDomainService):

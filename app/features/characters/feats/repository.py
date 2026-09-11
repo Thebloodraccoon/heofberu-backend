@@ -22,11 +22,11 @@ from app.features.characters.feats.schemas import (
 )
 from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
 from app.features.characters.progression.feature_sync import materialize_grant
-from app.models.character_engine_models import CharacterFeatureChoice
-from app.models.character_feature_model import CharacterFeature
-from app.models.character_model import Character
-from app.models.feature_engine_models import FeatureAbilityScoreEffect, FeatureChoiceOption
-from app.models.feature_model import Feature
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_model import Character
+from app.models.features.feature_engine_models import FeatureAbilityScoreEffect, FeatureChoiceOption
+from app.models.features.feature_model import Feature
 
 _GRANT_SOURCE_TO_FEAT_SOURCE = {
     GrantSource.GM: CharacterFeatSource.GM,
@@ -157,7 +157,6 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
             character_id=character.id,
             feature_id=feat_id,
             grant_source=source_type,
-            notes="",
         )
         self.db.add(grant)
         await self.db.flush()

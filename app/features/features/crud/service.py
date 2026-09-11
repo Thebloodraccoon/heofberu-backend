@@ -22,7 +22,7 @@ from app.features.features.crud.schemas import (
     NestedFeatureResponse,
 )
 from app.features.features.exceptions import InvalidFeatureSourceException
-from app.models.feature_model import Feature
+from app.models.features.feature_model import Feature
 
 # The per-catalog cache namespace holding that catalog's own feature list.
 # A central feature write purges the owning catalog's list namespace (and
@@ -253,9 +253,6 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         if "min_level" in fields and feature.source_type != FeatureSourceType.FEAT:
             raise InvalidFeatureSourceException("'min_level' is only valid for FEAT-source features.")
 
-        if "is_repeatable" in fields and feature.source_type != FeatureSourceType.FEAT:
-            raise InvalidFeatureSourceException("'is_repeatable' is only valid for FEAT-source features.")
-
         min_level = fields.get("min_level")
         if min_level is not None and not (_FEATURE_LEVEL_MIN <= min_level <= _FEATURE_LEVEL_MAX):
             raise InvalidFeatureSourceException(
@@ -269,8 +266,8 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         ``source_type`` and its FK can't change — ownership is permanent.
         A CLASS/SUBCLASS feature's ``level`` is mandatory (1-20) and may be
         changed but never cleared. FEAT rows may edit ``min_level`` /
-        ``prerequisite_*`` / ``is_repeatable`` instead. Any edit re-reconciles
-        the owning record's characters in the same transaction.
+        ``prerequisite_*`` instead. Any edit re-reconciles the owning
+        record's characters in the same transaction.
         """
 
         feature = await self._get_or_404(feature_id)

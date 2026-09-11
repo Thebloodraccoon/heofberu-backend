@@ -4,12 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query
 
+from app.features.classes.crud.schemas import ClassResponse
 from app.features.classes.dependencies import ClassProgressionDep
-from app.features.classes.schemas import (
-    ClassProgressionResponse,
-    ClassResponse,
-    SpellSlotProgressionUpdate,
-)
+from app.features.classes.progression.schemas import ClassProgressionResponse, SpellSlotProgressionUpdate
 from app.features.users.security import GmUserDep
 
 router = APIRouter()

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
 from app.core.base.repository import BaseRepository
-from app.models.character_condition_model import CharacterCondition
+from app.models.character.character_condition_model import CharacterCondition
 
 
 class CharacterConditionRepository(BaseRepository[CharacterCondition]):

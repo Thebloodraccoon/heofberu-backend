@@ -5,9 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.features.subraces.crud.schemas import (
-    SubraceBriefResponse,
     SubraceCreate,
-    SubraceFullResponse,
+    SubraceGetAllResponse,
     SubraceResponse,
     SubraceUpdate,
 )
@@ -19,7 +18,7 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=list[SubraceBriefResponse],
+    response_model=list[SubraceGetAllResponse],
     summary="List a race's subraces",
     responses={404: {"description": "No race exists with the given ID."}},
 )
@@ -76,7 +75,7 @@ async def create_subrace(
 
 @router.get(
     "/{subrace_id:int}",
-    response_model=SubraceFullResponse,
+    response_model=SubraceResponse,
     summary="Get a subrace by ID",
     responses={404: {"description": "No subrace exists with the given ID under this race."}},
 )

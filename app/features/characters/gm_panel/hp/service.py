@@ -8,7 +8,7 @@ from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.hp.schemas import MaxHpUpdate
 from app.features.characters.schemas import AbilityScoresResponse, CharacterResponse
 from app.features.users.schemas import UserResponse
-from app.models.character_model import Character
+from app.models.character.character_model import Character
 
 
 class GmPanelHpService(CharacterSubDomainService):

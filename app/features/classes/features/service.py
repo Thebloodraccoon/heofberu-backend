@@ -6,10 +6,10 @@ from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
 from app.core.cache import use_cache
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.schemas import ClassCreate, ClassResponse, ClassUpdate
+from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 
 
 class ClassFeatureService(

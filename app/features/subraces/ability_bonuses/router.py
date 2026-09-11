@@ -4,7 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
-from app.features.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceResponse
+from app.features.subraces.ability_bonuses.schemas import SubraceAbilityBonusesUpdate
+from app.features.subraces.crud.schemas import SubraceResponse
 from app.features.subraces.dependencies import SubraceAbilityBonusesDep
 from app.features.users.security import GmUserDep
 

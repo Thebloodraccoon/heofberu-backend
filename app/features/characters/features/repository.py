@@ -6,9 +6,9 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
-from app.models.character_engine_models import CharacterFeatureChoice
-from app.models.character_feature_model import CharacterFeature
-from app.models.feature_model import Feature
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.features.feature_model import Feature
 
 _WITH_CHOICES = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
 
@@ -73,13 +73,12 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         self,
         character_id: int,
         feature_id: int,
-        notes: str,
         *,
         grant_source: GrantSource = GrantSource.GM,
         commit: bool = True,
     ) -> CharacterFeature:
         """
-        Record a reference feature on a character, with per-character notes.
+        Record a reference feature on a character.
 
         ``grant_source`` defaults to ``GM`` (this is the manual-grant path —
         auto-synced grants are written by
@@ -93,7 +92,6 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
             character_id=character_id,
             feature_id=feature_id,
             grant_source=grant_source,
-            notes=notes,
         )
 
         self.db.add(grant)
@@ -105,14 +103,6 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
             .where(CharacterFeature.id == grant.id)
         )
         return result.scalar_one()
-
-    async def update_notes(self, grant: CharacterFeature, notes: str) -> CharacterFeature:
-        """Replace the notes on an existing feature grant."""
-
-        grant.notes = notes
-        await self.commit_or_flush()
-
-        return grant
 
     async def remove_character_feature(self, grant: CharacterFeature) -> bool:
         """Remove a feature grant from a character."""

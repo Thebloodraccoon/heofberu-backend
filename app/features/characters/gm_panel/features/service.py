@@ -1,4 +1,4 @@
-"""GM feature-grant service: record/update/remove reference features on a character."""
+"""GM feature-grant service: record/remove reference features on a character."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,20 +7,20 @@ from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.features.repository import CharacterFeatureRepository
+from app.features.characters.features.schemas import CharacterFeatureBriefResponse, CharacterFeatureResponse
 from app.features.characters.gm_panel.exceptions import (
     CharacterFeatureAlreadyKnownException,
     CharacterFeatureNotFoundException,
     FeatureIsAFeatException,
 )
-from app.features.characters.features.schemas import CharacterFeatureBriefResponse, CharacterFeatureResponse
+from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd
 from app.features.characters.grants.schemas import GrantEffectsResponse
-from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
 from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.progression.feature_sync import materialize_grant
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_feature_model import CharacterFeature
+from app.models.character.character_feature_model import CharacterFeature
 
 
 class GmPanelFeatureService(CharacterSubDomainService):
@@ -28,7 +28,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
     Grant management for reference features (``character_features``);
     adds/removals refresh the ability-score cache and materialize the
     grant's other effects (skills, saves, armor/weapons, granted spells —
-    grants can carry any of them), notes updates don't.
+    grants can carry any of them).
     """
 
     def __init__(self, db: AsyncSession):
@@ -43,7 +43,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
     async def add_feature(
         self, character_id: int, data: CharacterFeatureAdd, current_user: UserResponse
     ) -> CharacterFeatureResponse:
-        """Record a reference feature on a character, with optional notes."""
+        """Record a reference feature on a character."""
 
         character = await self.get_character_for_user(character_id, current_user)
 
@@ -62,7 +62,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
 
         async with self._atomic():
             grant = await self.feature_grant_repository.add_character_feature(
-                character_id, data.feature_id, data.notes, grant_source=GrantSource.GM, commit=False
+                character_id, data.feature_id, grant_source=GrantSource.GM, commit=False
             )
             await materialize_grant(self.repository.db, character, grant)
             await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
@@ -70,21 +70,6 @@ class GmPanelFeatureService(CharacterSubDomainService):
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
         return self._to_response(grant)
-
-    async def update_feature(
-        self,
-        character_id: int,
-        character_feature_id: int,
-        data: CharacterFeatureUpdate,
-        current_user: UserResponse,
-    ) -> CharacterFeatureResponse:
-        """Replace the notes on an already-recorded feature."""
-
-        await self.get_character_for_user(character_id, current_user)
-
-        grant = await self._get_feature_grant_or_404(character_id, character_feature_id)
-        updated_grant = await self.feature_grant_repository.update_notes(grant, data.notes or "")
-        return self._to_response(updated_grant)
 
     async def remove_feature(self, character_id: int, character_feature_id: int, current_user: UserResponse) -> bool:
         """Remove a feature grant from a character."""
@@ -113,7 +98,6 @@ class GmPanelFeatureService(CharacterSubDomainService):
             character_id=grant.character_id,
             feature_id=grant.feature_id,
             grant_source=grant.grant_source,
-            notes=grant.notes,
             feature=CharacterFeatureBriefResponse.model_validate(grant.feature),
             effects=GrantEffectsResponse(),
             choices=[],

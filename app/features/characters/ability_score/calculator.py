@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 
 from app.constants import ABILITY_SCORE_CAP, MAX_ABILITY_SCORE_CAP, AbilityScore
-from app.models.character_model import Character
-from app.models.race_association_models import RaceAbilityBonus
-from app.models.subrace_association_models import SubraceAbilityBonus
+from app.models.character.character_model import Character
+from app.models.races.race_association_models import RaceAbilityBonus
+from app.models.races.subrace_association_models import SubraceAbilityBonus
 
 BASE_FIELD_BY_ABILITY = {
     AbilityScore.STR: "strength",

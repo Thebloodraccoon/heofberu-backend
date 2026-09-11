@@ -9,13 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
-from app.models.character_association_models import CharacterSkillProficiency
-from app.models.character_engine_models import (
-    CharacterArmorProficiency,
-    CharacterSavingThrowProficiency,
-    CharacterWeaponProficiency,
-)
-from app.models.character_feature_model import CharacterFeature
+from app.models.character.armor_proficiency import CharacterArmorProficiency
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.saving_throw_proficiency import CharacterSavingThrowProficiency
+from app.models.character.skill_proficiency import CharacterSkillProficiency
+from app.models.character.weapon_proficiency import CharacterWeaponProficiency
 
 
 def _source_grant_load(source_grant_attr: InstrumentedAttribute):

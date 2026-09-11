@@ -15,8 +15,8 @@ from app.features.shared.items.schemas import (
     SourceItemEntry,
     SourceItemResponse,
 )
-from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
-from app.models.source_item_model import SourceItem
+from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
+from app.models.items.item_source_model import SourceItem
 
 
 class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResponse]):

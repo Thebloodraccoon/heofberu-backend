@@ -6,7 +6,7 @@ from app.core.base.cached_service import CachedService
 from app.features.items.cache import ITEM_CACHE_NAMESPACES, invalidate_item_cache
 from app.features.items.crud.repository import ItemRepository
 from app.features.items.crud.schemas import ItemCreate, ItemGetAllResponse, ItemResponse, ItemUpdate
-from app.models.item_model import Item
+from app.models.items.item_model import Item
 
 
 class ItemCrudService(CachedService[Item, ItemCreate, ItemUpdate, ItemResponse, ItemGetAllResponse]):

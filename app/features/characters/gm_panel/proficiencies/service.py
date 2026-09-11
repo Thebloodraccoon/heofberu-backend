@@ -1,14 +1,20 @@
 """
-GM proficiency service: direct add/remove/expertise writes on a character's
-skill/saving-throw/armor/weapon proficiency rows. Every write is logged to
-``character_proficiency_audit_log`` — the materialized proficiency tables
-themselves carry no history, so a GM removing a proficiency (or revoking
-expertise) would otherwise be silent.
+GM proficiency service: add/remove/expertise writes on a character's GM
+proficiency layer.
+
+Every write here only ever touches the ``source_type=GM`` row for the
+target (character, proficiency) — see ``CharacterProficiencyGmRepository``
+for the upsert-and-clear rule and ``CharacterProficiency`` for how a GM row
+resolves against class/race/background/feature rows. A GM "remove" on a
+proficiency the character only has through another source writes a
+``REVOKE`` row (a durable veto that survives re-sync); on a proficiency the
+character has ONLY because a GM granted it, it clears that grant back to
+nothing.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import AbilityScore, ArmorProficiency, ProficiencyAuditAction, ProficiencyType, WeaponProficiency
+from app.constants import AbilityScore, ArmorProficiency, ProficiencyAction, ProficiencyType, WeaponProficiency
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.exceptions import (
@@ -16,13 +22,7 @@ from app.features.characters.gm_panel.exceptions import (
     ProficiencyNotFoundException,
     SkillProficiencyNotFoundException,
 )
-from app.features.characters.gm_panel.proficiencies.repository import (
-    CharacterArmorProficiencyRepository,
-    CharacterProficiencyAuditRepository,
-    CharacterSavingThrowProficiencyRepository,
-    CharacterSkillProficiencyRepository,
-    CharacterWeaponProficiencyRepository,
-)
+from app.features.characters.gm_panel.proficiencies.repository import CharacterProficiencyGmRepository
 from app.features.characters.gm_panel.proficiencies.schemas import SkillExpertiseUpdate
 from app.features.characters.grants.schemas import (
     CharacterArmorProficiencyResponse,
@@ -34,17 +34,13 @@ from app.features.users.schemas import UserResponse
 
 
 class GmPanelProficiencyService(CharacterSubDomainService):
-    """Add/remove/expertise-toggle a character's proficiency rows, GM-only, each write audited."""
+    """Add/remove/expertise-toggle a character's GM-layer proficiency rows, GM-only."""
 
     def __init__(self, db: AsyncSession):
-        """Wire up the four proficiency repositories and the audit log."""
+        """Wire up the unified GM proficiency repository."""
 
         super().__init__(db)
-        self.skill_repository = CharacterSkillProficiencyRepository(db)
-        self.saving_throw_repository = CharacterSavingThrowProficiencyRepository(db)
-        self.armor_repository = CharacterArmorProficiencyRepository(db)
-        self.weapon_repository = CharacterWeaponProficiencyRepository(db)
-        self.audit_repository = CharacterProficiencyAuditRepository(db)
+        self.repository = CharacterProficiencyGmRepository(db)
 
     # --- Skills ---------------------------------------------------------
 
@@ -55,15 +51,15 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.skill_repository.get_proficiency(character_id, skill_id) is not None:
+        if await self.repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id) is not None:
             raise ProficiencyAlreadyGrantedException(character_id, f"proficiency in skill {skill_id}")
 
-        row = await self.skill_repository.add_proficiency(character_id, skill_id)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.SKILL, ProficiencyAuditAction.ADD,
-            actor_user_id=current_user.id, skill_id=skill_id,
+        await self.repository.set_override(
+            character_id, ProficiencyType.SKILL, ProficiencyAction.GRANT, current_user.id, skill_id=skill_id
         )
         await invalidate_character_cache(character_id)
+
+        row = await self.repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id)
         return SkillProficiencyResponse.model_validate(row)
 
     async def remove_skill(self, character_id: int, skill_id: int, current_user: UserResponse) -> None:
@@ -71,36 +67,36 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        row = await self.skill_repository.get_proficiency(character_id, skill_id)
-        if row is None:
+        if await self.repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id) is None:
             raise SkillProficiencyNotFoundException(character_id=character_id, skill_id=skill_id)
 
-        await self.skill_repository.remove_proficiency(row)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.SKILL, ProficiencyAuditAction.REMOVE,
-            actor_user_id=current_user.id, skill_id=skill_id,
+        await self.repository.set_override(
+            character_id, ProficiencyType.SKILL, ProficiencyAction.REVOKE, current_user.id, skill_id=skill_id
         )
         await invalidate_character_cache(character_id)
 
     async def set_skill_expertise(
         self, character_id: int, skill_id: int, data: SkillExpertiseUpdate, current_user: UserResponse
     ) -> SkillProficiencyResponse:
-        """Set is_expertise on one of the character's skill proficiencies."""
+        """Set is_expertise on a character's skill proficiency."""
 
         await self.get_character_for_user(character_id, current_user)
 
-        proficiency = await self.skill_repository.get_proficiency(character_id, skill_id)
-        if proficiency is None:
+        if await self.repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id) is None:
             raise SkillProficiencyNotFoundException(character_id=character_id, skill_id=skill_id)
 
-        updated = await self.skill_repository.set_expertise(proficiency, data.is_expertise)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.SKILL,
-            ProficiencyAuditAction.EXPERTISE_GRANTED if data.is_expertise else ProficiencyAuditAction.EXPERTISE_REVOKED,
-            actor_user_id=current_user.id, skill_id=skill_id,
+        await self.repository.set_override(
+            character_id,
+            ProficiencyType.SKILL,
+            ProficiencyAction.GRANT,
+            current_user.id,
+            skill_id=skill_id,
+            is_expertise=data.is_expertise,
         )
         await invalidate_character_cache(character_id)
-        return SkillProficiencyResponse.model_validate(updated)
+
+        row = await self.repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id)
+        return SkillProficiencyResponse.model_validate(row)
 
     # --- Saving throws ---------------------------------------------------
 
@@ -111,15 +107,15 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.saving_throw_repository.get_proficiency(character_id, ability) is not None:
+        if await self.repository.resolve(character_id, ProficiencyType.SAVING_THROW, ability=ability) is not None:
             raise ProficiencyAlreadyGrantedException(character_id, f"proficiency in the {ability.value} saving throw")
 
-        row = await self.saving_throw_repository.add_proficiency(character_id, ability)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.SAVING_THROW, ProficiencyAuditAction.ADD,
-            actor_user_id=current_user.id, ability=ability,
+        await self.repository.set_override(
+            character_id, ProficiencyType.SAVING_THROW, ProficiencyAction.GRANT, current_user.id, ability=ability
         )
         await invalidate_character_cache(character_id)
+
+        row = await self.repository.resolve(character_id, ProficiencyType.SAVING_THROW, ability=ability)
         return CharacterSavingThrowProficiencyResponse.model_validate(row)
 
     async def remove_saving_throw(self, character_id: int, ability: AbilityScore, current_user: UserResponse) -> None:
@@ -127,14 +123,11 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        row = await self.saving_throw_repository.get_proficiency(character_id, ability)
-        if row is None:
+        if await self.repository.resolve(character_id, ProficiencyType.SAVING_THROW, ability=ability) is None:
             raise ProficiencyNotFoundException(character_id, f"proficiency in the {ability.value} saving throw")
 
-        await self.saving_throw_repository.remove_proficiency(row)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.SAVING_THROW, ProficiencyAuditAction.REMOVE,
-            actor_user_id=current_user.id, ability=ability,
+        await self.repository.set_override(
+            character_id, ProficiencyType.SAVING_THROW, ProficiencyAction.REVOKE, current_user.id, ability=ability
         )
         await invalidate_character_cache(character_id)
 
@@ -147,15 +140,15 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.armor_repository.get_proficiency(character_id, armor_type) is not None:
+        if await self.repository.resolve(character_id, ProficiencyType.ARMOR, armor_type=armor_type) is not None:
             raise ProficiencyAlreadyGrantedException(character_id, f"proficiency in {armor_type.value} armor")
 
-        row = await self.armor_repository.add_proficiency(character_id, armor_type)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.ARMOR, ProficiencyAuditAction.ADD,
-            actor_user_id=current_user.id, armor_type=armor_type,
+        await self.repository.set_override(
+            character_id, ProficiencyType.ARMOR, ProficiencyAction.GRANT, current_user.id, armor_type=armor_type
         )
         await invalidate_character_cache(character_id)
+
+        row = await self.repository.resolve(character_id, ProficiencyType.ARMOR, armor_type=armor_type)
         return CharacterArmorProficiencyResponse.model_validate(row)
 
     async def remove_armor(self, character_id: int, armor_type: ArmorProficiency, current_user: UserResponse) -> None:
@@ -163,14 +156,11 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        row = await self.armor_repository.get_proficiency(character_id, armor_type)
-        if row is None:
+        if await self.repository.resolve(character_id, ProficiencyType.ARMOR, armor_type=armor_type) is None:
             raise ProficiencyNotFoundException(character_id, f"proficiency in {armor_type.value} armor")
 
-        await self.armor_repository.remove_proficiency(row)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.ARMOR, ProficiencyAuditAction.REMOVE,
-            actor_user_id=current_user.id, armor_type=armor_type,
+        await self.repository.set_override(
+            character_id, ProficiencyType.ARMOR, ProficiencyAction.REVOKE, current_user.id, armor_type=armor_type
         )
         await invalidate_character_cache(character_id)
 
@@ -188,23 +178,17 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        existing = (
-            await self.weapon_repository.get_by_category(character_id, weapon_category)
-            if weapon_category is not None
-            else await self.weapon_repository.get_by_item(character_id, item_id)
-        )
-        if existing is not None:
+        discriminator = {"weapon_category": weapon_category, "item_id": item_id}
+        if await self.repository.resolve(character_id, ProficiencyType.WEAPON, **discriminator) is not None:
             detail = f"proficiency in {weapon_category.value} weapons" if weapon_category else f"proficiency in item {item_id}"
             raise ProficiencyAlreadyGrantedException(character_id, detail)
 
-        row = await self.weapon_repository.add_proficiency(
-            character_id, weapon_category=weapon_category, item_id=item_id
-        )
-        await self.audit_repository.log(
-            character_id, ProficiencyType.WEAPON, ProficiencyAuditAction.ADD,
-            actor_user_id=current_user.id, weapon_category=weapon_category, item_id=item_id,
+        await self.repository.set_override(
+            character_id, ProficiencyType.WEAPON, ProficiencyAction.GRANT, current_user.id, **discriminator
         )
         await invalidate_character_cache(character_id)
+
+        row = await self.repository.resolve(character_id, ProficiencyType.WEAPON, **discriminator)
         return CharacterWeaponProficiencyResponse.model_validate(row)
 
     async def remove_weapon(
@@ -219,18 +203,12 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        row = (
-            await self.weapon_repository.get_by_category(character_id, weapon_category)
-            if weapon_category is not None
-            else await self.weapon_repository.get_by_item(character_id, item_id)
-        )
-        if row is None:
+        discriminator = {"weapon_category": weapon_category, "item_id": item_id}
+        if await self.repository.resolve(character_id, ProficiencyType.WEAPON, **discriminator) is None:
             detail = f"proficiency in {weapon_category.value} weapons" if weapon_category else f"proficiency in item {item_id}"
             raise ProficiencyNotFoundException(character_id, detail)
 
-        await self.weapon_repository.remove_proficiency(row)
-        await self.audit_repository.log(
-            character_id, ProficiencyType.WEAPON, ProficiencyAuditAction.REMOVE,
-            actor_user_id=current_user.id, weapon_category=weapon_category, item_id=item_id,
+        await self.repository.set_override(
+            character_id, ProficiencyType.WEAPON, ProficiencyAction.REVOKE, current_user.id, **discriminator
         )
         await invalidate_character_cache(character_id)

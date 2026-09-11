@@ -5,8 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.base.service import BaseService
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES, invalidate_class_cache
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.schemas import ClassCreate, ClassResponse, ClassUpdate, WeaponProficienciesUpdate
-from app.models.class_model import Class
+from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
+from app.features.classes.weapons.schemas import WeaponProficienciesUpdate
+from app.models.classes.class_model import Class
 
 
 class ClassWeaponService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None]):

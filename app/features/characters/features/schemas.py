@@ -23,9 +23,9 @@ class CharacterFeatureBriefResponse(BaseModel):
 
 class CharacterFeatureResponse(BaseModel):
     """
-    Aggregates a character's feature grant with notes, a brief feature
-    summary, everything it materialized on the character (``effects``),
-    and the player's resolved picks for its choice groups (``choices``).
+    Aggregates a character's feature grant with a brief feature summary,
+    everything it materialized on the character (``effects``), and the
+    player's resolved picks for its choice groups (``choices``).
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -34,7 +34,6 @@ class CharacterFeatureResponse(BaseModel):
     character_id: int
     feature_id: int
     grant_source: GrantSource = GrantSource.AUTO
-    notes: str = ""
     feature: CharacterFeatureBriefResponse
     effects: GrantEffectsResponse = GrantEffectsResponse()
     choices: list[ChosenOptionResponse] = []

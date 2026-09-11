@@ -26,15 +26,12 @@ class FakeCharacterItemRepository:
     async def get_character_item_by_id(self, character_id, character_item_id):
         return self._by_id.get(character_item_id)
 
-    async def add_character_item(self, character_id, item_id, quantity, is_equipped, is_attuned, notes):
+    async def add_character_item(self, character_id, item_id, quantity):
         stack = SimpleNamespace(
             id=self._next_id,
             character_id=character_id,
             item_id=item_id,
             quantity=quantity,
-            is_equipped=is_equipped,
-            is_attuned=is_attuned,
-            notes=notes,
             item=make_item(item_id),
         )
         self._next_id += 1
@@ -72,9 +69,6 @@ def make_stack(stack_id=3, item_id=5, **overrides) -> SimpleNamespace:
         "character_id": 1,
         "item_id": item_id,
         "quantity": 2,
-        "is_equipped": False,
-        "is_attuned": False,
-        "notes": "",
         "item": make_item(item_id),
     }
     base.update(overrides)
@@ -98,13 +92,12 @@ class TestAddItem:
 
         result = await service.add_item(
             1,
-            CharacterItemAdd(item_id=5, quantity=4, is_equipped=True, is_attuned=True, notes="loot"),
+            CharacterItemAdd(item_id=5, quantity=4),
             SimpleNamespace(),
         )
 
         assert result.id == 1
         assert result.quantity == 4
-        assert service.character_item_repository.add_calls[0].is_equipped is True
         assert service.repository.db.commits == 1
 
     async def test_unknown_item_raises(self):
@@ -123,13 +116,11 @@ class TestUpdateItem:
         stack = make_stack()
         service = make_service(stacks={stack.id: stack})
 
-        data = CharacterItemUpdate(quantity=7, is_equipped=True)
+        data = CharacterItemUpdate(quantity=7)
         await service.update_item(1, stack.id, data, SimpleNamespace())
 
         assert stack.quantity == 7
-        assert stack.is_equipped is True
-        assert stack.is_attuned is False
-        assert service.character_item_repository.update_calls == [(stack, {"quantity": 7, "is_equipped": True})]
+        assert service.character_item_repository.update_calls == [(stack, {"quantity": 7})]
 
     async def test_missing_stack_raises(self):
         service = make_service()

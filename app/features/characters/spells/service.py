@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.grants.schemas import CharacterGrantedSpellResponse
 from app.features.characters.spells.eligibility import CharacterSpellEligibilityChecker
 from app.features.characters.spells.exceptions import (
     CharacterSpellAlreadyKnownException,
@@ -14,7 +15,6 @@ from app.features.characters.spells.repository import (
     CharacterSpellRepository,
     CharacterSpellSlotRepository,
 )
-from app.features.characters.grants.schemas import CharacterGrantedSpellResponse
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
@@ -24,7 +24,7 @@ from app.features.characters.spells.schemas import (
 from app.features.spells.crud.repository import SpellRepository
 from app.features.spells.exceptions import SpellNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_spell_model import CharacterSpell
+from app.models.character.character_spell_model import CharacterSpell
 
 
 class CharacterSpellService(CharacterSubDomainService):

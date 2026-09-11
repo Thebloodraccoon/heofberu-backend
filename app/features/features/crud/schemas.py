@@ -1,6 +1,6 @@
 """Request/response schemas for the feature endpoints and nested parent feature payloads."""
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import AbilityScore, FeatureSourceType
 from app.features.features.effects.schemas import (
@@ -16,7 +16,7 @@ from app.features.features.effects.schemas import (
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS keys off subclass_id (not class_id — the old denorm approach).
 # FEAT and OTHER require none of the FKs; a FEAT row carries the feat
-# columns (min_level / prerequisite_* / is_repeatable) instead.
+# columns (min_level / prerequisite_*) instead.
 _REQUIRED_FK_BY_SOURCE_TYPE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.CLASS: "class_id",
     FeatureSourceType.SUBCLASS: "subclass_id",
@@ -66,7 +66,56 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
             )
 
 
-class FeatureBase(BaseModel):
+def _validate_min_level(value: int | None) -> int | None:
+    """Reject an out-of-range ``min_level`` when provided."""
+
+    if value is not None and not (_FEATURE_LEVEL_MIN <= value <= _FEATURE_LEVEL_MAX):
+        raise ValueError(f"min_level must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}.")
+
+    return value
+
+
+class FeatPrerequisiteFields(BaseModel):
+    """
+    Feat-only prerequisite/level-gate fields (only meaningful for
+    ``source_type=FEAT`` rows).
+
+    Factored out so the dedicated ``/feats`` catalog schemas
+    (``app/features/feats/crud/schemas.py``) can reuse this exact field set
+    instead of redeclaring it — both write the same underlying ``Feature``
+    columns.
+    """
+
+    prerequisite_ability: AbilityScore | None = None
+    prerequisite_minimum_score: int | None = None
+    prerequisite_description: str = ""
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject an out-of-range ``min_level`` when provided."""
+
+        return _validate_min_level(value)
+
+
+class FeatPrerequisiteFieldsUpdate(BaseModel):
+    """Same fields as :class:`FeatPrerequisiteFields`, all optional for PATCH semantics."""
+
+    prerequisite_ability: AbilityScore | None = None
+    prerequisite_minimum_score: int | None = None
+    prerequisite_description: str | None = None
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject an out-of-range ``min_level`` when provided."""
+
+        return _validate_min_level(value)
+
+
+class FeatureBase(FeatPrerequisiteFields):
     """Base feature fields, including the source_type/FK/level consistency rules."""
 
     model_config = ConfigDict(extra="forbid")
@@ -84,15 +133,11 @@ class FeatureBase(BaseModel):
 
     description: str = ""
 
-    # Feat columns (only meaningful when source_type == FEAT). A standalone
-    # feat-like row also carries no choice/effects data in this schema — the
-    # effect engine (choice groups + fixed effects) is managed through the
+    # ``min_level``/``prerequisite_*`` (inherited from ``FeatPrerequisiteFields``)
+    # are only meaningful when source_type == FEAT. A standalone feat-like row
+    # also carries no choice/effects data in this schema — the effect engine
+    # (choice groups + fixed effects) is managed through the
     # ``/features/{id}/effects`` endpoints.
-    min_level: int | None = None
-    prerequisite_ability: AbilityScore | None = None
-    prerequisite_minimum_score: int | None = None
-    prerequisite_description: str = ""
-    is_repeatable: bool = False
 
 
 class FeatureCreate(FeatureBase):
@@ -102,7 +147,7 @@ class FeatureCreate(FeatureBase):
 
     The parent FK is set directly for source-owned features; a standalone
     ``FEAT`` or ``OTHER`` feature needs no FK. Feat rows additionally carry
-    ``min_level`` / ``prerequisite_*`` / ``is_repeatable``.
+    ``min_level`` / ``prerequisite_*``.
     """
 
     @model_validator(mode="after")
@@ -171,16 +216,16 @@ class NestedFeatureResponse(BaseModel):
     ability_effects: list[AbilityEffectItem] = []
 
 
-class FeatureUpdate(BaseModel):
+class FeatureUpdate(FeatPrerequisiteFieldsUpdate):
     """
     All fields optional — PATCH semantics.
 
     ``source_type`` and its FK are immutable once a feature exists; only
     ``name``, ``level``, ``description`` are editable for source-owned
     features, plus the feat columns (``min_level``, ``prerequisite_*``,
-    ``is_repeatable``) for FEAT rows. A CLASS/SUBCLASS feature's ``level``
-    can be changed but never cleared — the service enforces this against the
-    existing ``source_type``.
+    inherited from ``FeatPrerequisiteFieldsUpdate``) for FEAT rows. A
+    CLASS/SUBCLASS feature's ``level`` can be changed but never cleared —
+    the service enforces this against the existing ``source_type``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -188,8 +233,3 @@ class FeatureUpdate(BaseModel):
     name: str | None = None
     level: int | None = None
     description: str | None = None
-    min_level: int | None = None
-    prerequisite_ability: AbilityScore | None = None
-    prerequisite_minimum_score: int | None = None
-    prerequisite_description: str | None = None
-    is_repeatable: bool | None = None

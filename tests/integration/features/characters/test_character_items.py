@@ -15,15 +15,13 @@ class TestCharacterItems:
 
         add_response = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "quantity": 2, "is_equipped": True, "notes": "Primary"},
+            json={"item_id": item.id, "quantity": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert add_response.status_code == 201
         assert add_response.json()["item_id"] == item.id
         assert add_response.json()["quantity"] == 2
-        assert add_response.json()["is_equipped"] is True
-        assert add_response.json()["notes"] == "Primary"
 
         list_response = await client.get(
             f"/characters/{character.id}/items",
@@ -60,14 +58,12 @@ class TestCharacterItems:
         response = await client.patch(
             f"/characters/{character.id}/gm-panel/items",
             params={"item_id": character_item_id},
-            json={"quantity": 3, "is_attuned": True},
+            json={"quantity": 3},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
         assert response.json()["quantity"] == 3
-        assert response.json()["is_attuned"] is True
-        assert response.json()["is_equipped"] is False
 
     async def test_remove_item(
         self, client, gm_token, player, player_token, create_class, create_character, create_item
@@ -105,12 +101,12 @@ class TestCharacterItems:
 
         first = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "is_equipped": True},
+            json={"item_id": item.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         second = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "is_equipped": False},
+            json={"item_id": item.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -148,7 +144,7 @@ class TestCharacterItems:
 
         add_response = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "quantity": 2, "is_equipped": True},
+            json={"item_id": item.id, "quantity": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
@@ -163,7 +159,6 @@ class TestCharacterItems:
         assert len(entries) == 1
         assert entries[0]["item_id"] == item.id
         assert entries[0]["quantity"] == 2
-        assert entries[0]["is_equipped"] is True
 
     async def test_gm_can_list_any_characters_items(
         self, client, gm_token, player, create_class, create_character, create_item

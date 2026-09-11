@@ -8,13 +8,13 @@ from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.feats.exceptions import CharacterFeatAlreadyKnownException
 from app.features.characters.feats.repository import CharacterFeatRepository, to_character_feat_response
+from app.features.characters.feats.schemas import CharacterFeatResponse
 from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
     validate_asi_choice_required,
 )
 from app.features.characters.gm_panel.exceptions import CharacterFeatNotFoundException
-from app.features.characters.feats.schemas import CharacterFeatResponse
 from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
 from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.progression.feature_sync import sync_progression_features
@@ -22,8 +22,8 @@ from app.features.characters.progression.repository import CharacterASIChoiceRep
 from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_feature_model import CharacterFeature
-from app.models.feature_model import Feature
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.features.feature_model import Feature
 
 
 class GmPanelFeatService(CharacterSubDomainService):

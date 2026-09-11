@@ -14,11 +14,4 @@ class CharacterFeatureAdd(BaseModel):
     """
 
     feature_id: int
-    notes: str = ""
     choices: list[ChoiceAnswerItem] = Field(default_factory=list)
-
-
-class CharacterFeatureUpdate(BaseModel):
-    """Replace the notes on an already-recorded feature."""
-
-    notes: str | None = None

@@ -15,8 +15,8 @@ It is deliberately small and side-effect free (never commits): callers wrap
 it in their own transaction — ``CharacterService.create_character``,
 ``CharacterProgressionService``, ``GmPanelFeatService``, and the central
 ``FeatureCrudService``. Rows it does not own (manual features from other
-sources, player notes on a grant, GM free-form proficiency rows with a NULL
-source) are left untouched. Re-materialization only ever touches rows whose
+sources, GM free-form proficiency rows with a NULL source) are left
+untouched. Re-materialization only ever touches rows whose
 ``source_character_feature_id`` is set, and preserves skill ``is_expertise``
 upgrades.
 """
@@ -33,8 +33,8 @@ from app.features.characters.grants.materializer import (
     load_feature_effect_tree,
 )
 from app.models import CharacterFeature, Feature
-from app.models.character_engine_models import CharacterFeatureChoice
-from app.models.character_model import Character
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_model import Character
 
 _AUTO_SOURCE_TYPES = (
     FeatureSourceType.CLASS,
@@ -130,9 +130,9 @@ async def materialize_grant(db: AsyncSession, character: Character, grant: Chara
 async def sync_progression_features(db: AsyncSession, character: Character) -> list[CharacterFeature]:
     """
     Reconcile ``character_features`` to match the character's current
-    class/subclass/race/subrace/background/level, keeping FEAT/OTHER grants,
-    GM manual grants, and character notes. Then re-materialize the effect
-    rows of every ``grant_source=AUTO`` grant so newly added features apply
+    class/subclass/race/subrace/background/level, keeping FEAT/OTHER grants
+    and GM manual grants. Then re-materialize the effect rows of every
+    ``grant_source=AUTO`` grant so newly added features apply
     their skills/saves/armor/weapons/spells and revoked features lose them.
     Never commits — ``db.flush()`` is used so callers can read new grant ids.
 
@@ -167,7 +167,6 @@ async def sync_progression_features(db: AsyncSession, character: Character) -> l
                 character_id=character.id,
                 feature_id=feature_id,
                 grant_source=GrantSource.AUTO,
-                notes="",
             )
         )
 

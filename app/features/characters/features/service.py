@@ -40,7 +40,6 @@ class CharacterFeatureService(CharacterSubDomainService):
                 character_id=grant.character_id,
                 feature_id=grant.feature_id,
                 grant_source=grant.grant_source,
-                notes=grant.notes,
                 feature=CharacterFeatureBriefResponse.model_validate(grant.feature),
                 effects=effects_by_grant[grant.id],
                 choices=build_chosen_options(grant),

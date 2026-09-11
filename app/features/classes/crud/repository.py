@@ -14,9 +14,9 @@ from app.models import (
     ClassWeaponProficiency,
     SourceItem,
 )
-from app.models.feature_model import Feature
-from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
-from app.models.subclass_model import Subclass
+from app.models.classes.subclass_model import Subclass
+from app.models.features.feature_model import Feature
+from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 
 
 class ClassRepository(BaseRepository[Class]):

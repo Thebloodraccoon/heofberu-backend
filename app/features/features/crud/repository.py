@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
-from app.models.feature_model import Feature
+from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_model import Feature
 
 
 class FeatureRepository(BaseRepository[Feature]):
@@ -48,11 +48,7 @@ class FeatureRepository(BaseRepository[Feature]):
         fallback row is returned as-is.
         """
 
-        result = await self.db.execute(
-            select(Feature)
-            .where(Feature.id == feature_id)
-            .options(*_engine_effect_loads())
-        )
+        result = await self.db.execute(select(Feature).where(Feature.id == feature_id).options(*_engine_effect_loads()))
         feature = result.scalars().first()
         return feature if feature is not None else fallback
 

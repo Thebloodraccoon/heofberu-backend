@@ -4,10 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
 from app.features.races.cache import RACE_CACHE_NAMESPACES
-from app.features.races.schemas import RaceCreate, RaceResponse, RaceUpdate
+from app.features.races.crud.schemas import RaceCreate, RaceResponse, RaceUpdate
 from app.features.races.skills.repository import RaceSkillsRepository
 from app.features.shared.skills.mixins import SkillsManagerMixin
-from app.models.race_model import Race
+from app.models.races.race_model import Race
 from app.models.skill_model import Skill
 
 

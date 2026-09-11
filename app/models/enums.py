@@ -12,6 +12,7 @@ from app.constants import (
     ArmorProficiency,
     ASILevelChoice,
     AttackType,
+    BackgroundSuggestionType,
     Component,
     ConditionType,
     DamageType,
@@ -21,7 +22,9 @@ from app.constants import (
     HealingTarget,
     ItemRarity,
     ItemType,
+    ProficiencyAction,
     ProficiencyAuditAction,
+    ProficiencySourceType,
     ProficiencyType,
     RaceSize,
     SpellCastTime,
@@ -60,4 +63,7 @@ GrantSourceType = SAEnum(GrantSource, name="feature_grant_source", create_type=F
 ConditionTypeType = SAEnum(ConditionType, name="condition_type", create_type=False)
 ComponentType = SAEnum(Component, name="spell_component", create_type=False)
 ProficiencyTypeType = SAEnum(ProficiencyType, name="proficiency_type", create_type=False)
+ProficiencySourceTypeType = SAEnum(ProficiencySourceType, name="proficiency_source_type", create_type=False)
+ProficiencyActionType = SAEnum(ProficiencyAction, name="proficiency_action", create_type=False)
 ProficiencyAuditActionType = SAEnum(ProficiencyAuditAction, name="proficiency_audit_action", create_type=False)
+BackgroundSuggestionTypeType = SAEnum(BackgroundSuggestionType, name="background_suggestion_type", create_type=False)

@@ -11,7 +11,7 @@ from app.features.characters.items.schemas import CharacterItemResponse
 from app.features.items.crud.repository import ItemRepository
 from app.features.items.exceptions import ItemNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_item_model import CharacterItem
+from app.models.character.character_item_model import CharacterItem
 
 
 class GmPanelItemService(CharacterSubDomainService):
@@ -42,9 +42,6 @@ class GmPanelItemService(CharacterSubDomainService):
             character_id,
             item_id=data.item_id,
             quantity=data.quantity,
-            is_equipped=data.is_equipped,
-            is_attuned=data.is_attuned,
-            notes=data.notes,
         )
         await invalidate_character_cache(character_id)
 
@@ -53,7 +50,7 @@ class GmPanelItemService(CharacterSubDomainService):
     async def update_item(
         self, character_id: int, character_item_id: int, data: CharacterItemUpdate, current_user: UserResponse
     ) -> CharacterItemResponse:
-        """Change a stack's quantity/equip/attunement/notes. GM-only. PATCH semantics."""
+        """Change a stack's quantity. GM-only. PATCH semantics."""
 
         await self.get_character_for_user(character_id, current_user)
 

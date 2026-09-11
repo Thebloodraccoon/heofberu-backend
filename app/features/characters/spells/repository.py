@@ -5,10 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.character_association_models import CharacterSpellSlot
-from app.models.character_engine_models import CharacterGrantedSpell
-from app.models.character_spell_model import CharacterSpell
-from app.models.spell_model import Spell
+from app.models.character.character_spell_model import CharacterGrantedSpell, CharacterSpell, CharacterSpellSlot
+from app.models.spells.spell_model import Spell
 
 
 def spell_response_loads(base) -> list:

@@ -17,7 +17,4 @@ class CharacterItemResponse(BaseModel):
     character_id: int
     item_id: int
     quantity: int
-    is_equipped: bool
-    is_attuned: bool
-    notes: str = ""
     item: ItemResponse

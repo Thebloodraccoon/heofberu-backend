@@ -6,14 +6,23 @@ A grant's "desired" effect surface is the union of:
 - the effect rows bundled inside the options the player picked for the
   grant's choice groups.
 
-The materializer diffs that against the rows currently stored for the
-grant (``source_character_feature_id == grant.id``) and writes the delta:
-rows whose effect vanished are deleted (cascade keeps this targeted, never
-touching rows owned by other grants or raw free-form rows), and missing
-rows are inserted — deduped against the character's other rows so unique
-constraints (skill PK, save/armor per-character uniques) never collide.
-Skill ``is_expertise`` is monotonic: an existing GM-upgraded expertise row
-survives a non-expertise effect re-materialization.
+For skills/saves/armor/weapons, the materializer diffs that against THIS
+GRANT'S OWN rows in ``character_proficiencies``
+(``source_character_feature_id == grant.id``) and writes the delta: rows
+whose effect vanished are deleted, missing ones are inserted with
+``source_type=FEATURE``. It never looks at (or touches) another grant's
+rows, a GM row, or a CLASS_CHOICE/RACE/BACKGROUND row for the same
+proficiency — two sources both granting the same skill are two legitimate
+rows, not a collision (see ``CharacterProficiency`` for the resolution
+algorithm that turns these rows into "does the character currently have
+it"). Skill ``is_expertise`` on this grant's own row is monotonic (an
+effect wanting expertise can upgrade it, never downgrades it) — whether the
+character's *effective* expertise is on doesn't depend on this row alone,
+it's resolved across every row for that skill plus any GM override.
+
+Granted-spell rows (``character_granted_spells``) are a separate table,
+untouched by this refactor, and still reconcile the old way (grant-scoped,
+one row per grant+spell).
 
 Never commits — the caller's transaction owns persistence.
 """
@@ -24,17 +33,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.character_association_models import CharacterSkillProficiency
-from app.models.character_engine_models import (
-    CharacterArmorProficiency,
-    CharacterFeatureChoice,
-    CharacterGrantedSpell,
-    CharacterSavingThrowProficiency,
-    CharacterWeaponProficiency,
-)
-from app.models.character_feature_model import CharacterFeature
-from app.models.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
-from app.models.feature_model import Feature
+from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_proficiency_model import CharacterProficiency
+from app.models.character.character_spell_model import CharacterGrantedSpell
+from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_model import Feature
 
 
 def engine_effect_loads() -> list:
@@ -193,45 +198,74 @@ class FeatureGrantMaterializer:
         """
 
         desired = await self.build_desired(feature, choices)
-        await self._reconcile_skills(db, character_id, grant, desired)
-        await self._reconcile_saves(db, character_id, grant, desired)
-        await self._reconcile_armor(db, character_id, grant, desired)
-        await self._reconcile_weapons(db, character_id, grant, desired)
+        await self._reconcile_skills(db, character_id, grant, feature, desired)
+        await self._reconcile_saves(db, character_id, grant, feature, desired)
+        await self._reconcile_armor(db, character_id, grant, feature, desired)
+        await self._reconcile_weapons(db, character_id, grant, feature, desired)
         await self._reconcile_spells(db, character_id, grant, desired)
+
+    @staticmethod
+    def _new_proficiency(
+        character_id: int,
+        grant: CharacterFeature,
+        feature,
+        proficiency_type: ProficiencyType,
+        **discriminator,
+    ) -> CharacterProficiency:
+        """Build one grant-sourced ``CharacterProficiency`` row (``source_type=FEATURE``)."""
+
+        return CharacterProficiency(
+            character_id=character_id,
+            proficiency_type=proficiency_type,
+            source_type=ProficiencySourceType.FEATURE,
+            action=ProficiencyAction.GRANT,
+            source_character_feature_id=grant.id,
+            grant_source=grant.grant_source,
+            feature_id=feature.id,
+            feature_source_type=feature.source_type,
+            **discriminator,
+        )
+
+    async def _own_rows(
+        self, db: AsyncSession, character_id: int, grant: CharacterFeature, proficiency_type: ProficiencyType
+    ) -> list[CharacterProficiency]:
+        """Fetch this grant's own ``CharacterProficiency`` rows of one kind."""
+
+        result = await db.execute(
+            select(CharacterProficiency).where(
+                CharacterProficiency.character_id == character_id,
+                CharacterProficiency.proficiency_type == proficiency_type,
+                CharacterProficiency.source_character_feature_id == grant.id,
+            )
+        )
+        return list(result.scalars().unique().all())
 
     async def _reconcile_skills(
         self,
         db: AsyncSession,
         character_id: int,
         grant: CharacterFeature,
+        feature,
         desired: DesiredEffects,
     ) -> None:
-        """Reconcile skill-proficiency rows (preserving expertise upgrades)."""
+        """Reconcile this grant's own skill-proficiency rows (preserving expertise upgrades)."""
 
-        result = await db.execute(
-            select(CharacterSkillProficiency).where(CharacterSkillProficiency.character_id == character_id)
-        )
-        existing = list(result.scalars().unique().all())
+        own = {row.skill_id: row for row in await self._own_rows(db, character_id, grant, ProficiencyType.SKILL)}
 
-        by_skill = {row.skill_id: row for row in existing}
-
-        for row in existing:
-            if row.source_character_feature_id == grant.id and row.skill_id not in desired.skills:
+        for skill_id, row in own.items():
+            if skill_id not in desired.skills:
                 await db.delete(row)
 
         for skill_id, wants_expertise in desired.skills.items():
-            row = by_skill.get(skill_id)
+            row = own.get(skill_id)
             if row is not None:
-                if row.source_character_feature_id == grant.id and wants_expertise and not row.is_expertise:
+                if wants_expertise and not row.is_expertise:
                     row.is_expertise = True
                 continue
 
             db.add(
-                CharacterSkillProficiency(
-                    character_id=character_id,
-                    skill_id=skill_id,
-                    is_expertise=wants_expertise,
-                    source_character_feature_id=grant.id,
+                self._new_proficiency(
+                    character_id, grant, feature, ProficiencyType.SKILL, skill_id=skill_id, is_expertise=wants_expertise
                 )
             )
 
@@ -240,107 +274,76 @@ class FeatureGrantMaterializer:
         db: AsyncSession,
         character_id: int,
         grant: CharacterFeature,
+        feature,
         desired: DesiredEffects,
     ) -> None:
-        """Reconcile saving-throw proficiency rows (per-character unique on ability)."""
+        """Reconcile this grant's own saving-throw proficiency rows."""
 
-        result = await db.execute(
-            select(CharacterSavingThrowProficiency).where(
-                CharacterSavingThrowProficiency.character_id == character_id
-            )
-        )
-        existing = list(result.scalars().unique().all())
-        present = {row.ability for row in existing}
+        own = {row.ability: row for row in await self._own_rows(db, character_id, grant, ProficiencyType.SAVING_THROW)}
 
-        for row in existing:
-            if row.source_character_feature_id == grant.id and row.ability not in desired.saving_throws:
+        for ability, row in own.items():
+            if ability not in desired.saving_throws:
                 await db.delete(row)
 
         for ability in desired.saving_throws:
-            if ability not in present:
-                db.add(
-                    CharacterSavingThrowProficiency(
-                        character_id=character_id,
-                        ability=ability,
-                        source_character_feature_id=grant.id,
-                    )
-                )
+            if ability not in own:
+                db.add(self._new_proficiency(character_id, grant, feature, ProficiencyType.SAVING_THROW, ability=ability))
 
     async def _reconcile_armor(
         self,
         db: AsyncSession,
         character_id: int,
         grant: CharacterFeature,
+        feature,
         desired: DesiredEffects,
     ) -> None:
-        """Reconcile armor-proficiency rows (per-character unique on armor_type)."""
+        """Reconcile this grant's own armor-proficiency rows."""
 
-        result = await db.execute(
-            select(CharacterArmorProficiency).where(CharacterArmorProficiency.character_id == character_id)
-        )
-        existing = list(result.scalars().unique().all())
-        present = {row.armor_type for row in existing}
+        own = {row.armor_type: row for row in await self._own_rows(db, character_id, grant, ProficiencyType.ARMOR)}
 
-        for row in existing:
-            if row.source_character_feature_id == grant.id and row.armor_type not in desired.armor:
+        for armor_type, row in own.items():
+            if armor_type not in desired.armor:
                 await db.delete(row)
 
         for armor_type in desired.armor:
-            if armor_type not in present:
-                db.add(
-                    CharacterArmorProficiency(
-                        character_id=character_id,
-                        armor_type=armor_type,
-                        source_character_feature_id=grant.id,
-                    )
-                )
+            if armor_type not in own:
+                db.add(self._new_proficiency(character_id, grant, feature, ProficiencyType.ARMOR, armor_type=armor_type))
 
     async def _reconcile_weapons(
         self,
         db: AsyncSession,
         character_id: int,
         grant: CharacterFeature,
+        feature,
         desired: DesiredEffects,
     ) -> None:
-        """Reconcile weapon-proficiency rows (category rows + concrete item rows)."""
+        """Reconcile this grant's own weapon-proficiency rows (category rows + concrete item rows)."""
 
-        result = await db.execute(
-            select(CharacterWeaponProficiency).where(CharacterWeaponProficiency.character_id == character_id)
-        )
-        existing = list(result.scalars().unique().all())
-
-        existing_categories = {row.weapon_category for row in existing if row.weapon_category is not None}
-        existing_items = {row.item_id for row in existing if row.item_id is not None}
+        existing = await self._own_rows(db, character_id, grant, ProficiencyType.WEAPON)
+        own_categories = {row.weapon_category for row in existing if row.weapon_category is not None}
+        own_items = {row.item_id for row in existing if row.item_id is not None}
         desired_weapons = set(desired.weapons)
 
         for row in existing:
             marker = (row.weapon_category, row.item_id)
-            if row.source_character_feature_id == grant.id and marker not in desired_weapons:
+            if marker not in desired_weapons:
                 await db.delete(row)
 
         for category, item_id in desired.weapons:
             if category is not None:
-                if category not in existing_categories:
+                if category not in own_categories:
                     db.add(
-                        CharacterWeaponProficiency(
-                            character_id=character_id,
-                            weapon_category=category,
-                            item_id=None,
-                            source_character_feature_id=grant.id,
+                        self._new_proficiency(
+                            character_id, grant, feature, ProficiencyType.WEAPON, weapon_category=category
                         )
                     )
-                    existing_categories.add(category)
+                    own_categories.add(category)
             elif item_id is not None:
-                if item_id not in existing_items:
+                if item_id not in own_items:
                     db.add(
-                        CharacterWeaponProficiency(
-                            character_id=character_id,
-                            weapon_category=None,
-                            item_id=item_id,
-                            source_character_feature_id=grant.id,
-                        )
+                        self._new_proficiency(character_id, grant, feature, ProficiencyType.WEAPON, item_id=item_id)
                     )
-                    existing_items.add(item_id)
+                    own_items.add(item_id)
 
     async def _reconcile_spells(
         self,

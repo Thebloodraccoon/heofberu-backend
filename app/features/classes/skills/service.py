@@ -4,15 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES
-from app.features.classes.schemas import (
-    AvailableSkillsUpdate,
-    ClassCreate,
-    ClassResponse,
-    ClassUpdate,
-)
+from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
 from app.features.classes.skills.repository import ClassSkillsRepository
+from app.features.classes.skills.schemas import AvailableSkillsUpdate
 from app.features.shared.skills.mixins import SkillsManagerMixin
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 from app.models.skill_model import Skill
 
 
@@ -51,13 +47,12 @@ class ClassSkillService(
         """
         Resolve ``skill_ids`` to ``Skill`` rows, or ``None`` when absent/empty.
 
-        Raises ``RecordIdsInvalidError`` if any id is unknown. Shared with
-        ``create_class`` so it can seed skills in the same transaction.
+        Raises ``RecordIdsInvalidError`` if any id is unknown.
         """
 
         return await self._resolve_skills(skill_ids)
 
     async def set_skills_for_class(self, character_class: Class, skills: list[Skill], *, commit: bool = True) -> None:
-        """Attach ``skills`` to an existing ``class`` row (used by ``create_class``)."""
+        """Attach ``skills`` to an existing ``class`` row."""
 
         await self.repository.set_available_skills(character_class, skills, commit=commit)

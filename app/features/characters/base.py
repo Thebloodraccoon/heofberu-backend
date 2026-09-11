@@ -9,7 +9,7 @@ from app.core.base.service import atomic
 from app.features.characters.access import get_character_for_user as _get_character_for_user
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.users.schemas import UserResponse
-from app.models.character_model import Character
+from app.models.character.character_model import Character
 
 
 class CharacterSubDomainService:

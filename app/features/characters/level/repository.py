@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
-from app.models.character_max_level_model import CharacterMaxLevel
+from app.models.character.character_max_level_model import CharacterMaxLevel
 
 
 class CharacterMaxLevelRepository(BaseRepository[CharacterMaxLevel]):

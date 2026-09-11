@@ -4,8 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.classes.crud.schemas import ClassResponse
 from app.features.classes.dependencies import ClassItemsDep
-from app.features.classes.schemas import ClassResponse
 from app.features.shared.items.schemas import (
     ChoiceGroupsResponse,
     ChoiceGroupsUpdate,

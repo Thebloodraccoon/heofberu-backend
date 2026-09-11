@@ -29,11 +29,11 @@ from app.features.characters.grants.schemas import (
     PendingChoiceOption,
 )
 from app.features.spells.crud.repository import SpellRepository
-from app.models.character_engine_models import CharacterFeatureChoice
-from app.models.character_feature_model import CharacterFeature
-from app.models.character_model import Character
-from app.models.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
-from app.models.feature_model import Feature
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_model import Character
+from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_model import Feature
 
 _SPELL_LEVEL_RANK = {level: rank for rank, level in enumerate(SpellLevel)}
 

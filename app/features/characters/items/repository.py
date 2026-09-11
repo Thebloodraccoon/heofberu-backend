@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.character_item_model import CharacterItem
+from app.models.character.character_item_model import CharacterItem
 
 
 class CharacterItemRepository(BaseRepository[CharacterItem]):
@@ -52,9 +52,6 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         character_id: int,
         item_id: int,
         quantity: int,
-        is_equipped: bool,
-        is_attuned: bool,
-        notes: str,
     ) -> CharacterItem:
         """Add an item stack to a character."""
 
@@ -62,9 +59,6 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
             character_id=character_id,
             item_id=item_id,
             quantity=quantity,
-            is_equipped=is_equipped,
-            is_attuned=is_attuned,
-            notes=notes,
         )
 
         self.db.add(stack)

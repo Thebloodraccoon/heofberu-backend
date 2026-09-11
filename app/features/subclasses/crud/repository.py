@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordAlreadyExistsError
-from app.models.character_model import Character
-from app.models.subclass_model import Subclass
+from app.models.character.character_model import Character
+from app.models.classes.subclass_model import Subclass
 
 
 class SubclassRepository(BaseRepository[Subclass]):

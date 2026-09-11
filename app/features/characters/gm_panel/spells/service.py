@@ -14,7 +14,7 @@ from app.features.characters.spells.repository import CharacterGrantedSpellRepos
 from app.features.spells.crud.repository import SpellRepository
 from app.features.spells.exceptions import SpellNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_engine_models import CharacterGrantedSpell
+from app.models.character.character_spell_model import CharacterGrantedSpell
 
 
 class GmPanelSpellService(CharacterSubDomainService):

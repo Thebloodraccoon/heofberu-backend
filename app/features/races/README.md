@@ -12,7 +12,7 @@ races/
 ├── cache.py             # RACE_CACHE_NAMESPACES + invalidate_race_cache()
 ├── exceptions.py        # RaceNotFoundException, SubraceNotFoundException
 ├── schemas.py           # race create/update/response schemas
-├── crud/                # race catalog CRUD (CachedService) + create-time seeding
+├── crud/                # race catalog CRUD (CachedService), create is base fields only
 ├── features/            # read-only cached RACE-source feature list
 ├── skills/              # granted-skill full replacement (PUT /skills)
 ├── ability_bonuses/     # ability-bonus primitives shared with subraces + PUT /ability-bonuses
@@ -21,19 +21,21 @@ races/
 
 ## Race CRUD (`crud/`)
 
-`RaceCrudService` extends `CachedService` and composes the other capabilities
-explicitly in `__init__` (no mixin MRO): `_skills`, `_ability_bonuses`,
-`_features` (a `FeatureCrudService` for nested-seed + read delegation). Endpoints are the standard set — paginated listing
-(`GET /races`), detail read (`GET /races/{id}`), `POST`/`PATCH`/`DELETE`
-(GM / GM / Founder).
+`RaceCrudService` extends `CachedService` and composes nothing else — it is
+a plain catalog CRUD over `RaceRepository`. Endpoints are the standard set —
+paginated listing (`GET /races`), detail read (`GET /races/{id}`),
+`POST`/`PATCH`/`DELETE` (GM / GM / Founder).
 
 - The listing is lightweight (`RaceGetAllResponse`: id/name/size only);
   the detail read returns `RaceResponse`, which embeds `ability_bonuses`,
-  `granted_skills`, the race's RACE-source `features`, and `subraces` (the
-  dedicated `GET /races/features?race_id=...` list stays available too).
-- `create_race` seeds optional `ability_bonuses`, `granted_skills`, and
-  nested `features` in one `_atomic()` transaction through the capability
-  services (each inner write passes `commit=False`).
+  `granted_skills`, the race's RACE-source `features`, and `subraces` — all
+  eager-loaded straight off `Race`'s relationships by `RaceRepository`
+  (no per-request composition needed, unlike backgrounds' `features`).
+- `create_race` writes base fields only (mirrors backgrounds). None of
+  `ability_bonuses`/`granted_skills`/`features` are seeded at create — each
+  is attached afterwards through its own capability endpoint:
+  `PUT /races/{id}/ability-bonuses`, `PUT /races/{id}/skills`, and the
+  central `POST /features` (`source_type=RACE`).
 - Deletion is blocked while characters still reference the race
   (`check_in_use_on_delete=True` + `RaceRepository.is_in_use`) → 409.
 

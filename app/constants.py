@@ -199,9 +199,9 @@ class FeatureSourceType(str, Enum):
     facto its own feature" living in a parallel ``feats`` table). Under the
     unified Feature/Feat engine it is a real source again: a row with
     ``source_type=FEAT`` carries no source FK, instead holding the
-    feat-specific ``min_level`` / ``prerequisite_*`` / ``is_repeatable``
-    columns. The value has always remained in the Postgres ENUM type
-    (Postgres cannot drop enum values), so no DB enum surgery is needed.
+    feat-specific ``min_level`` / ``prerequisite_*`` columns. The value has
+    always remained in the Postgres ENUM type (Postgres cannot drop enum
+    values), so no DB enum surgery is needed.
     """
 
     CLASS = "CLASS"
@@ -249,12 +249,55 @@ class WeaponProficiency(str, Enum):
 
 
 class ProficiencyType(str, Enum):
-    """Which of a character's four proficiency tables a GM audit-log row (or a GM-panel write) targets."""
+    """Which of a character's four proficiency kinds a row concerns — the discriminator on ``character_proficiencies``."""
 
     SKILL = "SKILL"
     SAVING_THROW = "SAVING_THROW"
     ARMOR = "ARMOR"
     WEAPON = "WEAPON"
+
+
+class ProficiencySourceType(str, Enum):
+    """
+    How a ``character_proficiencies`` row came to exist — a second axis
+    alongside ``proficiency_type``.
+
+    - ``CLASS_CHOICE`` — the player's skill pick at character creation from
+      the class's ``available_skills``.
+    - ``RACE`` — auto-granted by the race's ``granted_skills`` (no choice).
+    - ``BACKGROUND`` — auto-granted by the background's granted skills.
+    - ``FEATURE`` — a fixed (non-choice) effect of a granted feature/feat.
+    - ``FEATURE_CHOICE`` — the player resolved a choice group inside a
+      granted feature/feat.
+    - ``GM`` — a manual GM-panel add/remove/expertise edit. At most one
+      ``GM`` row exists per (character, proficiency) — see
+      :class:`ProficiencyAction`.
+    """
+
+    CLASS_CHOICE = "CLASS_CHOICE"
+    RACE = "RACE"
+    BACKGROUND = "BACKGROUND"
+    FEATURE = "FEATURE"
+    FEATURE_CHOICE = "FEATURE_CHOICE"
+    GM = "GM"
+
+
+class ProficiencyAction(str, Enum):
+    """
+    What a ``character_proficiencies`` row does — only meaningful for
+    ``source_type=GM`` rows (every other source only ever grants). A GM row
+    is upserted in place, never appended, so exactly one reflects the GM's
+    latest decision for a given (character, proficiency).
+
+    - ``GRANT`` — the GM hands the character this proficiency outright,
+      independent of any other source.
+    - ``REVOKE`` — the GM vetoes this proficiency even though another
+      source (class/race/background/feature) would otherwise grant it;
+      wins over every other source when resolving current state.
+    """
+
+    GRANT = "GRANT"
+    REVOKE = "REVOKE"
 
 
 class ProficiencyAuditAction(str, Enum):
@@ -304,6 +347,15 @@ class ConditionType(str, Enum):
     STUNNED = "STUNNED"
     UNCONSCIOUS = "UNCONSCIOUS"
     EXHAUSTION = "EXHAUSTION"
+
+
+class BackgroundSuggestionType(str, Enum):
+    """Which personality-card field a ``background_suggestions`` row is a suggested entry for."""
+
+    PERSONALITY_TRAIT = "PERSONALITY_TRAIT"
+    IDEAL = "IDEAL"
+    BOND = "BOND"
+    FLAW = "FLAW"
 
 
 # Kept as plain lists for backward compatibility with existing CheckConstraints

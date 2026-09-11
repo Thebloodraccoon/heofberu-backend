@@ -16,13 +16,13 @@ from app.constants import FeatureSourceType
 from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.features.crud.repository import _engine_effect_loads
-from app.models.character_feature_model import CharacterFeature
-from app.models.feature_engine_models import (
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.features.feature_engine_models import (
     FeatureAbilityScoreEffect,
     FeatureChoiceGroup,
     FeatureChoiceOption,
 )
-from app.models.feature_model import Feature
+from app.models.features.feature_model import Feature
 
 # A feat's ASI options live under at most one choice group (pick_count=1);
 # fixed (feature_id-owned) ability effects are never used for FEAT rows —
@@ -123,7 +123,9 @@ class FeatRepository(BaseRepository[Feature]):
 
         return await self.exists_referencing(CharacterFeature, "feature_id", feat_id)
 
-    async def set_ability_score_increases(self, feat: Feature, increases: list[dict], *, commit: bool = True) -> Feature:
+    async def set_ability_score_increases(
+        self, feat: Feature, increases: list[dict], *, commit: bool = True
+    ) -> Feature:
         """
         Replace a feat's ASI options.
 

@@ -1,12 +1,12 @@
-"""GM feature-grant endpoints: POST/PATCH/DELETE under ``/gm-panel/features`` (query-style IDs)."""
+"""GM feature-grant endpoints: POST/DELETE under ``/gm-panel/features`` (query-style IDs)."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.features.characters.gm_panel.dependencies import GmPanelFeaturesDep
 from app.features.characters.features.schemas import CharacterFeatureResponse
-from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
+from app.features.characters.gm_panel.dependencies import GmPanelFeaturesDep
+from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
@@ -30,8 +30,8 @@ async def add_character_feature(
         Body(
             openapi_examples={
                 "add": {
-                    "summary": "Record a feature with usage notes",
-                    "value": {"feature_id": 21, "notes": "Usable once per short rest."},
+                    "summary": "Record a feature",
+                    "value": {"feature_id": 21},
                 },
             }
         ),
@@ -41,46 +41,10 @@ async def add_character_feature(
 ):
     """
     Record a reference feature on a character outside the automatic
-    progression grants, optionally with free-form notes. **GM only.**
+    progression grants. **GM only.**
     """
 
     return await feature_service.add_feature(character_id, data, current_user)
-
-
-@router.patch(
-    "/features",
-    response_model=CharacterFeatureResponse,
-    summary="Change a feature grant's notes",
-    responses={
-        403: {"description": "You are not a GM."},
-        404: {
-            "description": "No character exists with the given ID, or no feature grant exists with the given `feature_id`."
-        },
-    },
-)
-async def update_character_feature(
-    character_id: int,
-    feature_id: Annotated[int, Query(gt=0)],
-    data: Annotated[
-        CharacterFeatureUpdate,
-        Body(
-            openapi_examples={
-                "update": {
-                    "summary": "Replace the notes on a recorded feature",
-                    "value": {"notes": "Recharge changed to once per long rest."},
-                },
-            }
-        ),
-    ],
-    feature_service: GmPanelFeaturesDep,
-    current_user: GmUserDep,
-):
-    """
-    Replace the notes on an already-recorded feature; the referenced
-    feature itself is immutable. **GM only.**
-    """
-
-    return await feature_service.update_feature(character_id, feature_id, data, current_user)
 
 
 @router.delete(

@@ -13,7 +13,7 @@ from app.features.characters.proficiencies.schemas import (
     WeaponProficiencyView,
 )
 from app.features.users.schemas import UserResponse
-from app.models.character_feature_model import CharacterFeature
+from app.models.character.character_feature_model import CharacterFeature
 
 
 def _resolve_source(grant: CharacterFeature | None) -> ProficiencySource:

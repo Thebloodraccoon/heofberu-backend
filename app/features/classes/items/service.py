@@ -6,10 +6,10 @@ from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.schemas import ClassCreate, ClassResponse, ClassUpdate
+from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
 from app.features.shared.items.mixins import ChoiceGroupManagerMixin, SourceItemManagerMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 
 
 class ClassItemsService(

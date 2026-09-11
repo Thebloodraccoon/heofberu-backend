@@ -6,16 +6,16 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.models import CharacterAbilityScore, Class, Race, Subrace
-from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
-from app.models.character_engine_models import CharacterFeatureChoice
-from app.models.character_feature_model import CharacterFeature
-from app.models.feature_engine_models import (
+from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.features.feature_engine_models import (
     FeatureAbilityScoreEffect,
     FeatureChoiceGroup,
     FeatureChoiceOption,
 )
-from app.models.race_association_models import RaceAbilityBonus
-from app.models.subrace_association_models import SubraceAbilityBonus
+from app.models.races.race_association_models import RaceAbilityBonus
+from app.models.races.subrace_association_models import SubraceAbilityBonus
 
 
 def _label_for_effect_row(effect) -> str:

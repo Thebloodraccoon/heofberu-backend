@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import ASILevelChoice
 from app.core.base.repository import BaseRepository
-from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
+from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 
 
 class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):

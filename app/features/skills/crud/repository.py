@@ -17,8 +17,8 @@ class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
         super().__init__(
             Skill,
             db,
-            search_fields=["name", "key"],
-            unique_fields=["name", "key"],
+            search_fields=["name"],
+            unique_fields=["name"],
             check_in_use_on_delete=True,
         )
 

@@ -22,7 +22,7 @@ from app.features.features.effects.schemas import (
     SpellEffectItem,
     WeaponEffectItem,
 )
-from app.models.feature_engine_models import (
+from app.models.features.feature_engine_models import (
     FeatureAbilityScoreEffect,
     FeatureArmorProficiencyEffect,
     FeatureChoiceGroup,
@@ -32,7 +32,7 @@ from app.models.feature_engine_models import (
     FeatureSpellGrantEffect,
     FeatureWeaponProficiencyEffect,
 )
-from app.models.feature_model import Feature
+from app.models.features.feature_model import Feature
 
 
 # Model -> payload-item conversion tables (kept close to the service so both
@@ -130,20 +130,14 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
             await db.execute(delete(model).where(model.feature_id == feature.id))
             db.add_all([model(feature_id=feature.id, **dump) for dump in dumps])
 
-        await _replace(
-            FeatureAbilityScoreEffect, data.ability_effects, [e.model_dump() for e in data.ability_effects]
-        )
-        await _replace(
-            FeatureSkillProficiencyEffect, data.skill_effects, [e.model_dump() for e in data.skill_effects]
-        )
+        await _replace(FeatureAbilityScoreEffect, data.ability_effects, [e.model_dump() for e in data.ability_effects])
+        await _replace(FeatureSkillProficiencyEffect, data.skill_effects, [e.model_dump() for e in data.skill_effects])
         await _replace(
             FeatureSavingThrowEffect,
             data.saving_throw_effects,
             [e.model_dump() for e in data.saving_throw_effects],
         )
-        await _replace(
-            FeatureArmorProficiencyEffect, data.armor_effects, [e.model_dump() for e in data.armor_effects]
-        )
+        await _replace(FeatureArmorProficiencyEffect, data.armor_effects, [e.model_dump() for e in data.armor_effects])
         await _replace(
             FeatureWeaponProficiencyEffect, data.weapon_effects, [e.model_dump() for e in data.weapon_effects]
         )
@@ -189,12 +183,8 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
                 label=payload.label,
                 sort_order=payload.sort_order,
                 ability_effects=[FeatureAbilityScoreEffect(**e.model_dump()) for e in payload.ability_effects],
-                skill_effects=[
-                    FeatureSkillProficiencyEffect(**e.model_dump()) for e in payload.skill_effects
-                ],
-                saving_throw_effects=[
-                    FeatureSavingThrowEffect(**e.model_dump()) for e in payload.saving_throw_effects
-                ],
+                skill_effects=[FeatureSkillProficiencyEffect(**e.model_dump()) for e in payload.skill_effects],
+                saving_throw_effects=[FeatureSavingThrowEffect(**e.model_dump()) for e in payload.saving_throw_effects],
                 armor_effects=[FeatureArmorProficiencyEffect(**e.model_dump()) for e in payload.armor_effects],
                 weapon_effects=[FeatureWeaponProficiencyEffect(**e.model_dump()) for e in payload.weapon_effects],
                 spell_effects=[FeatureSpellGrantEffect(**e.model_dump()) for e in payload.spell_effects],

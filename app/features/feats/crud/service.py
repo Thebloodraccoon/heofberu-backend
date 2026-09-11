@@ -6,7 +6,7 @@ from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.features.feats.cache import FEAT_CACHE_NAMESPACES, invalidate_feat_cache
 from app.features.feats.crud.repository import FeatRepository, feat_ability_score_effects
-from app.features.feats.schemas import (
+from app.features.feats.crud.schemas import (
     AbilityScoreIncreaseResponse,
     FeatCreate,
     FeatGetAllResponse,
@@ -14,7 +14,7 @@ from app.features.feats.schemas import (
     FeatUpdate,
 )
 from app.features.features.cache import invalidate_feature_cache
-from app.models.feature_model import Feature
+from app.models.features.feature_model import Feature
 
 
 def _flatten_ability_score_increases(feature: Feature) -> list[AbilityScoreIncreaseResponse]:

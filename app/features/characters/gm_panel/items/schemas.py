@@ -8,15 +8,9 @@ class CharacterItemAdd(BaseModel):
 
     item_id: int
     quantity: int = Field(default=1, ge=0)
-    is_equipped: bool = False
-    is_attuned: bool = False
-    notes: str = ""
 
 
 class CharacterItemUpdate(BaseModel):
-    """Change a stack's quantity, equip/attunement state, or notes (``item_id`` itself is immutable)."""
+    """Change a stack's quantity (``item_id`` itself is immutable)."""
 
     quantity: int | None = Field(default=None, ge=0)
-    is_equipped: bool | None = None
-    is_attuned: bool | None = None
-    notes: str | None = None

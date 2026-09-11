@@ -32,7 +32,7 @@ own capability segment.
 | Capability | Endpoints | Access | Owns |
 |---|---|---|---|
 | `feats` | POST/PATCH/DELETE `/feats` | GM only | `CharacterFeatRepository` |
-| `features` | POST/PATCH/DELETE `/features` | GM only | `CharacterFeatureRepository` |
+| `features` | POST/DELETE `/features` | GM only | `CharacterFeatureRepository` |
 | `items` | GET/POST/PATCH/DELETE `/items` | reads GM/owner, writes GM only | `CharacterItemRepository` + own schemas |
 | `asi` | GET/POST/DELETE `/asi` | reads GM/owner, writes GM only | own schemas |
 | `hp` | PATCH `/max-hp` | GM only | — |
@@ -59,21 +59,18 @@ same table through this repository with `source_type=ASI`.
 
 ### `features` — feature grants
 
-Records/removes reference features on a character (optionally with free-form
-per-character notes; PATCH replaces notes only — the referenced feature is
-immutable). Lightweight by design: no cache refresh on note updates, but
-add/remove DO refresh the ability-score cache because features can carry fixed
-`feature_ability_increases` effects. Progression auto-grants can be removed
-here too.
+Records/removes reference features on a character (the referenced feature
+itself is immutable). Add/remove refresh the ability-score cache because
+features can carry fixed `feature_ability_increases` effects. Progression
+auto-grants can be removed here too.
 
 ### `items` — inventory
 
 The former standalone `characters/items/` subpackage. Each `character_items`
 row is an independent stack, so the same item may be owned several times;
 each POST creates its own stack row (`quantity` defaults to 1, 0 allowed).
-PATCH applies partial updates (`exclude_unset` semantics) to
-quantity/equip/attunement/notes; there is no way to change `item_id` — remove
-the stack and add a new one instead.
+PATCH applies partial updates (`exclude_unset` semantics) to quantity; there
+is no way to change `item_id` — remove the stack and add a new one instead.
 `CharacterItemNotFoundException` lives in the root `exceptions.py`.
 
 ### `asi` — free-form ±adjustments

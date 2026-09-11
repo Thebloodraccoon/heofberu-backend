@@ -12,13 +12,12 @@ from app.features.features.crud.service import FeatureCrudService
 from app.features.subclasses.cache import SUBCLASS_CACHE_NAMESPACES, invalidate_subclass_cache
 from app.features.subclasses.crud.repository import SubclassRepository
 from app.features.subclasses.crud.schemas import (
-    SubclassBriefResponse,
     SubclassCreate,
-    SubclassFullResponse,
+    SubclassGetAllResponse,
     SubclassResponse,
     SubclassUpdate,
 )
-from app.models.subclass_model import Subclass
+from app.models.classes.subclass_model import Subclass
 
 
 class SubclassCrudService(
@@ -62,7 +61,7 @@ class SubclassCrudService(
         return await self._get_response(item.id)
 
     @use_cache(key_builder=lambda self, item_id: f"{cache_prefix()}:classes:subclass:get_by_id:{item_id}")
-    async def get_by_id(self, item_id: int) -> SubclassFullResponse:
+    async def get_by_id(self, item_id: int) -> SubclassResponse:
         """
         Return the subclass plus its own SUBCLASS-source ``features``.
 
@@ -73,20 +72,20 @@ class SubclassCrudService(
         subclass = await self._get_or_404(item_id)
         features = await self._features.list_for_source(FeatureSourceType.SUBCLASS, item_id)
 
-        return SubclassFullResponse.model_validate(
+        return SubclassResponse.model_validate(
             {**SubclassResponse.model_validate(subclass).model_dump(), "features": features}
         )
 
-    async def get_subclass(self, subclass_id: int) -> SubclassFullResponse:
+    async def get_subclass(self, subclass_id: int) -> SubclassResponse:
         """Return a subclass's full picture, 404ing if it belongs to a different class."""
 
         return await self.get_by_id(subclass_id)
 
-    async def list_for_class(self, class_id: int) -> list[SubclassBriefResponse]:
+    async def list_for_class(self, class_id: int) -> list[SubclassGetAllResponse]:
         """Return all subclasses for ``class_id`` as brief rows."""
 
         subclasses = await self.repository.list_for_class(class_id)
-        return [SubclassBriefResponse.model_validate(s) for s in subclasses]
+        return [SubclassGetAllResponse.model_validate(s) for s in subclasses]
 
     async def _ensure_class_exists(self, class_id: int) -> None:
         """Raise ``RecordNotFoundError`` when no class with ``class_id`` exists."""

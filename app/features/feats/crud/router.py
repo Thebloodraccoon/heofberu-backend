@@ -5,13 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
-from app.features.feats.dependencies import FeatCrudDep
-from app.features.feats.schemas import (
+from app.features.feats.crud.schemas import (
     FeatCreate,
     FeatGetAllResponse,
     FeatResponse,
     FeatUpdate,
 )
+from app.features.feats.dependencies import FeatCrudDep
 from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()

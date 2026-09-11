@@ -10,8 +10,8 @@ from app.features.characters.feats.exceptions import (
 )
 from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
 from app.features.feats.crud.repository import feat_ability_score_effects
-from app.models.character_model import Character
-from app.models.feature_model import Feature
+from app.models.character.character_model import Character
+from app.models.features.feature_model import Feature
 
 
 def validate_ability_score_increase(feat: Feature, ability_score_increase_id: int | None) -> None:

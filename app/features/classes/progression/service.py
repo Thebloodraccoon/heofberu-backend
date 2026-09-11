@@ -1,22 +1,27 @@
 """Class progression service: spell-slot table and full 1-20 progression."""
 
+import math
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES, invalidate_class_cache
 from app.features.classes.crud.repository import ClassRepository
+from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
 from app.features.classes.exceptions import InvalidClassLevelException
-from app.features.classes.schemas import (
-    ClassCreate,
+from app.features.classes.progression.schemas import (
     ClassProgressionResponse,
-    ClassResponse,
-    ClassUpdate,
     ProgressionLevelRow,
     SpellSlotProgressionUpdate,
-    _proficiency_bonus,
 )
 from app.features.features.crud.schemas import NestedFeatureCreate
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
+
+
+def _proficiency_bonus(class_level: int) -> int:
+    """Return the proficiency bonus for a given class level (1-20)."""
+
+    return math.ceil(class_level / 4) + 1
 
 
 class ClassProgressionService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None]):

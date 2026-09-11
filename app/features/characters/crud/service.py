@@ -44,11 +44,11 @@ from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models import CharacterAbilityScore, CharacterSkillProficiency, Class
-from app.models.character_engine_models import CharacterSavingThrowProficiency
-from app.models.character_backstory_model import CharacterBackstory
-from app.models.character_item_model import CharacterItem
-from app.models.character_model import Character
-from app.models.source_item_choice_model import SourceItemChoiceOption
+from app.models.character.character_backstory_model import CharacterBackstory
+from app.models.character.character_item_model import CharacterItem
+from app.models.character.character_model import Character
+from app.models.character.saving_throw_proficiency import CharacterSavingThrowProficiency
+from app.models.items.item_source_choice_model import SourceItemChoiceOption
 
 
 class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, CharacterResponse]):
