@@ -239,14 +239,7 @@ class CharacterGrantedSpellRepository(BaseRepository[CharacterGrantedSpell]):
         )
         return result.scalar_one_or_none()
 
-    async def add_granted_spell(
-        self,
-        character_id: int,
-        spell_id: int,
-        *,
-        always_prepared: bool = True,
-        counts_against_known_limit: bool = False,
-    ) -> CharacterGrantedSpell:
+    async def add_granted_spell(self, character_id: int, spell_id: int) -> CharacterGrantedSpell:
         """
         Grant a spell directly to a character, with no ``source_character_feature_id``
         (a free-form, GM-authored grant — no feature/feat behind it, so it is
@@ -254,12 +247,7 @@ class CharacterGrantedSpellRepository(BaseRepository[CharacterGrantedSpell]):
         who added it removes it).
         """
 
-        row = CharacterGrantedSpell(
-            character_id=character_id,
-            spell_id=spell_id,
-            always_prepared=always_prepared,
-            counts_against_known_limit=counts_against_known_limit,
-        )
+        row = CharacterGrantedSpell(character_id=character_id, spell_id=spell_id)
         self.db.add(row)
         await self.commit_or_flush()
 
@@ -276,23 +264,3 @@ class CharacterGrantedSpellRepository(BaseRepository[CharacterGrantedSpell]):
         await self.db.delete(row)
         await self.commit_or_flush()
         return True
-
-    async def count_against_known_limit_at_level(self, character_id: int, level: str) -> int:
-        """
-        Count the character's granted spells at ``level`` whose
-        ``counts_against_known_limit`` flag competes for the known-spells
-        budget (compared against the slot ``total`` alongside free-form
-        known spells).
-        """
-
-        result = await self.db.execute(
-            select(func.count())
-            .select_from(CharacterGrantedSpell)
-            .join(Spell, Spell.id == CharacterGrantedSpell.spell_id)
-            .where(
-                CharacterGrantedSpell.character_id == character_id,
-                CharacterGrantedSpell.counts_against_known_limit.is_(True),
-                Spell.level == level,
-            )
-        )
-        return result.scalar_one()

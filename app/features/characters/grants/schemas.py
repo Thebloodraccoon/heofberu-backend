@@ -2,7 +2,15 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
+from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
+from app.features.features.effects.schemas import (
+    AbilityEffectItem,
+    ArmorEffectItem,
+    SavingThrowEffectItem,
+    SkillEffectItem,
+    SpellEffectItem,
+    WeaponEffectItem,
+)
 from app.features.spells.crud.schemas import SpellResponse
 
 
@@ -35,14 +43,25 @@ class GrantChoicesUpdate(BaseModel):
 
 
 class PendingChoiceOption(BaseModel):
-    """A pending option inside a pending choice group, with its open-effect flags."""
+    """
+    A pending option inside a pending choice group, with its open-effect
+    flags and its full effect bundle — so a client can render what the
+    option actually does (e.g. "+1 STR") without a separate fetch of the
+    feature's catalog definition. Carries no label of its own; the group's
+    own ``label`` names the overall decision.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    label: str = ""
     needs_skill: bool = False
     needs_spell: bool = False
+    ability_effects: list[AbilityEffectItem] = []
+    skill_effects: list[SkillEffectItem] = []
+    saving_throw_effects: list[SavingThrowEffectItem] = []
+    armor_effects: list[ArmorEffectItem] = []
+    weapon_effects: list[WeaponEffectItem] = []
+    spell_effects: list[SpellEffectItem] = []
 
 
 class PendingChoiceGroup(BaseModel):
@@ -53,6 +72,7 @@ class PendingChoiceGroup(BaseModel):
     id: int
     pick_count: int
     label: str = ""
+    choice_type: ChoiceType
     options: list[PendingChoiceOption] = []
 
 
@@ -96,8 +116,6 @@ class CharacterGrantedSpellResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     spell_id: int
-    always_prepared: bool = True
-    counts_against_known_limit: bool = False
     spell: SpellResponse
 
 
@@ -125,8 +143,13 @@ class GrantEffectsResponse(BaseModel):
 
 
 class ChosenOptionResponse(BaseModel):
-    """One of the player's stored picks for a grant's choice group."""
+    """One of the player's stored picks for a grant's choice group, with the option's effect bundle."""
 
     choice_group_id: int
     choice_option_id: int
-    label: str = ""
+    ability_effects: list[AbilityEffectItem] = []
+    skill_effects: list[SkillEffectItem] = []
+    saving_throw_effects: list[SavingThrowEffectItem] = []
+    armor_effects: list[ArmorEffectItem] = []
+    weapon_effects: list[WeaponEffectItem] = []
+    spell_effects: list[SpellEffectItem] = []

@@ -3,12 +3,10 @@
 from pydantic import ValidationError
 import pytest
 
-from app.features.classes.schemas import (
-    AvailableSkillsUpdate,
-    ClassCreate,
-    SavingThrowsUpdate,
-    SpellSlotProgressionUpdate,
-)
+from app.features.classes.crud.schemas import ClassCreate
+from app.features.classes.progression.schemas import SpellSlotProgressionUpdate
+from app.features.classes.skills.schemas import AvailableSkillsUpdate
+from app.features.classes.throws.schemas import SavingThrowsUpdate
 
 
 @pytest.mark.unit
@@ -22,15 +20,6 @@ class TestClassCreateValidators:
         character_class = ClassCreate(name="Wizard", hit_dice="D6", spellcasting_ability="INT")
 
         assert character_class.spellcasting_ability == "INT"
-
-    def test_duplicate_saving_throws_rejected(self):
-        with pytest.raises(ValidationError, match="Duplicate saving throws"):
-            ClassCreate(
-                name="Dup",
-                hit_dice="D8",
-                spellcasting_ability=None,
-                saving_throws=["STR", "STR"],
-            )
 
 
 @pytest.mark.unit

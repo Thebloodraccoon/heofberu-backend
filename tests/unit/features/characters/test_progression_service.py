@@ -6,7 +6,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, AbilityScore, ASILevelChoice, CharacterFeatSource, GrantSource, UserRole
+from app.constants import (
+    ABILITY_SCORE_CAP,
+    ASI_LEVELS,
+    AbilityScore,
+    ASILevelChoice,
+    CharacterFeatSource,
+    GrantSource,
+    ProficiencyType,
+    UserRole,
+)
 from app.features.characters.crud.exceptions import SkillNotAvailableForClassException, TooManySkillChoicesException
 from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.feats.exceptions import (
@@ -42,8 +51,8 @@ from app.features.classes.exceptions import ClassNotFoundException, SubclassNotF
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_association_models import CharacterSkillProficiency
-from app.models.character_model import Character
+from app.models.character.character_model import Character
+from app.models.character.character_proficiency_model import CharacterProficiency
 from tests.unit.fakes import FakeAsyncSession, FakeResult
 
 
@@ -725,7 +734,6 @@ class TestSetBackground:
         return service, db
 
     async def test_sets_background_and_grants_skills_equipment_features(self):
-        existing_skill_rows = [(10,)]
         existing_stack = SimpleNamespace(item_id=100, quantity=1)
         background = SimpleNamespace(
             id=3,
@@ -734,15 +742,15 @@ class TestSetBackground:
         service, db = self.make_background_service(
             background=background,
             item_entries=[SimpleNamespace(item_id=100, quantity=2)],
-            execute_results=[FakeResult(existing_skill_rows), FakeResult([existing_stack])],
+            execute_results=[FakeResult([existing_stack])],
         )
         character = service.repository.character
 
         await service.set_background(1, BackgroundChange(background_id=3), make_user())
 
         assert character.background_id == 3
-        added_proficiencies = [row for row in db.added if isinstance(row, CharacterSkillProficiency)]
-        assert [row.skill_id for row in added_proficiencies] == [11]
+        added_proficiencies = [row for row in db.added if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL]
+        assert [row.skill_id for row in added_proficiencies] == [10, 11]
         assert all(row.is_expertise is False for row in added_proficiencies)
         assert existing_stack.quantity == 3
         assert db.commits == 1
@@ -827,7 +835,7 @@ class TestRebuildCharacter:
         assert character.subrace_id is None
         assert character.constitution == 14
 
-        added_proficiencies = [row for row in db.added if isinstance(row, CharacterSkillProficiency)]
+        added_proficiencies = [row for row in db.added if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL]
         assert {row.skill_id for row in added_proficiencies} == {10, 20, 21}
         assert all(row.is_expertise is False for row in added_proficiencies)
 

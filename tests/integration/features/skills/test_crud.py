@@ -18,12 +18,12 @@ class TestSkillCrud:
     async def test_gm_can_create_skill(self, client, gm_token):
         response = await client.post(
             "/skills",
-            json={"key": "CUSTOM", "name": "Custom Skill", "ability": "STR"},
+            json={"name": "Custom Skill", "ability": "STR"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 201
-        assert response.json()["key"] == "CUSTOM"
+        assert response.json()["name"] == "Custom Skill"
 
     async def test_create_duplicate_skill_key_returns_400(self, client, gm_token, create_skill):
         await create_skill(key="STEALTH", name="Stealth", ability="DEX")

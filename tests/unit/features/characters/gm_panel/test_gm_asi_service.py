@@ -13,7 +13,7 @@ from app.features.characters.gm_panel.exceptions import (
     LevelTiedAsiChoiceException,
 )
 from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
-from app.models.character_model import Character
+from app.models.character.character_model import Character
 from tests.unit.fakes import FakeAsyncSession
 
 

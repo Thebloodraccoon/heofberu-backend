@@ -14,17 +14,17 @@ import pytest
 
 from app.constants import AbilityScore, FeatureSourceType, RaceSize
 from app.core.exceptions import RecordNotFoundError
-from app.features.features.crud.schemas import NestedFeatureCreate, NestedFeatureResponse
 from app.features.races.ability_bonuses import service as race_ability_bonus_service
-from app.features.races.ability_bonuses.schemas import AbilityBonusItem
+from app.features.races.ability_bonuses.schemas import AbilityBonusesUpdate, AbilityBonusItem
 from app.features.races.ability_bonuses.service import RaceAbilityBonusService
 from app.features.races.crud.repository import RaceRepository
+from app.features.races.crud.schemas import RaceCreate
 from app.features.races.crud.service import RaceCrudService
-from app.features.races.schemas import AbilityBonusesUpdate, RaceCreate, SkillsUpdate
 from app.features.races.skills.repository import RaceSkillsRepository
+from app.features.races.skills.schemas import SkillsUpdate
 from app.features.races.skills.service import RaceSkillService
-from app.models.race_association_models import RaceAbilityBonus
-from app.models.race_model import Race
+from app.models.races.race_association_models import RaceAbilityBonus
+from app.models.races.race_model import Race
 from app.models.skill_model import Skill
 from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
 
@@ -47,7 +47,6 @@ def make_race(**overrides) -> Race:
 def make_skill(**overrides) -> Skill:
     base = {
         "id": 1,
-        "key": "perception",
         "name": "Perception",
         "ability": AbilityScore.WIS,
         "description": "",
@@ -204,7 +203,7 @@ def make_skill_service(existing_by_id=None, skills=None):
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestRaceCrudService:
-    async def test_create_race_without_nested_capabilities(self):
+    async def test_create_race_persists_base_fields_and_invalidates_cache(self):
         service, db = make_crud_service(resolved_skills=None)
 
         result = await service.create_race(RaceCreate(name="Elf", speed=35))
@@ -213,35 +212,19 @@ class TestRaceCrudService:
         assert result.name == "Elf"
         assert result.speed == 35
         assert db.commits == 1
-        assert service._features.created == [(FeatureSourceType.RACE, 1, None, False)]
+
+    async def test_create_race_does_not_touch_capability_services(self):
+        """ability_bonuses/granted_skills/features are attached via their own endpoints, not at creation."""
+        service, _ = make_crud_service(resolved_skills=None)
+
+        await service.create_race(RaceCreate(name="Elf"))
+
+        assert service._features.created == []
         assert service._ability_bonuses.calls == []
         assert service._skills.set_calls == []
 
-    async def test_create_race_with_bonuses_skills_and_features(self):
-        skill = make_skill()
-        service, db = make_crud_service(resolved_skills=[skill])
-        data = RaceCreate(
-            name="Elf",
-            ability_bonuses=[AbilityBonusItem(ability=AbilityScore.DEX, bonus=2)],
-            granted_skills=[1],
-            features=[NestedFeatureCreate(name="Keen Senses", description="d")],
-        )
-
-        result = await service.create_race(data)
-
-        assert result.id == 1
-        assert result.ability_bonuses[0].ability == AbilityScore.DEX
-        assert result.ability_bonuses[0].bonus == 2
-        assert result.granted_skills[0].id == 1
-        assert db.commits == 1
-        assert service._skills.resolve_calls == [[1]]
-        assert service._ability_bonuses.calls[0][1] == [{"ability": AbilityScore.DEX, "bonus": 2}]
-        assert service._ability_bonuses.calls[0][2] is False
-        assert service._skills.set_calls == [(service.repository._rows[1], [skill], False)]
-        assert service._features.created == [(FeatureSourceType.RACE, 1, data.features, False)]
-
-    async def test_create_race_rolls_back_when_persist_fails(self):
-        service, db = make_crud_service(resolved_skills=None)
+    async def test_create_race_propagates_persist_failure(self):
+        service, _ = make_crud_service(resolved_skills=None)
 
         class Boom(Exception):
             pass
@@ -253,8 +236,6 @@ class TestRaceCrudService:
 
         with pytest.raises(Boom):
             await service.create_race(RaceCreate(name="Elf"))
-
-        assert db.rollbacks == 1
 
 
 @pytest.mark.unit
@@ -434,7 +415,7 @@ class TestRaceFeatureAbilityEffectsSerialization:
 
     def test_race_with_feature_ability_effects_serializes_correctly(self):
         """A race whose feature carries fixed ability_effects must serialize them in the response."""
-        from app.features.races.schemas import RaceResponse
+        from app.features.races.crud.schemas import RaceResponse
 
         feature_with_effects = SimpleNamespace(
             id=10,
@@ -466,7 +447,7 @@ class TestRaceFeatureAbilityEffectsSerialization:
 
     def test_race_with_empty_feature_effects_serializes_empty_list(self):
         """A race whose features have no ability_effects serializes empty lists."""
-        from app.features.races.schemas import RaceResponse
+        from app.features.races.crud.schemas import RaceResponse
 
         feature_no_effects = SimpleNamespace(
             id=11,

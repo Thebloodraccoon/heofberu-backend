@@ -54,8 +54,9 @@ class TestFeatCrud:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
-                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }
                 ]
             },
@@ -121,7 +122,7 @@ class TestFeatCrud:
 
         response = await client.post(
             "/features",
-            json={"name": "Alert Initiative", "source_type": "FEAT", "is_repeatable": True},
+            json={"name": "Alert Initiative", "source_type": "FEAT"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 

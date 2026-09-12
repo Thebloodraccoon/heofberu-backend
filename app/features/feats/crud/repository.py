@@ -12,10 +12,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.constants import FeatureSourceType
+from app.constants import ChoiceType, FeatureSourceType
 from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordAlreadyExistsError
-from app.features.features.crud.repository import _engine_effect_loads
+from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.features.feature_engine_models import (
     FeatureAbilityScoreEffect,
@@ -77,7 +77,7 @@ class FeatRepository(BaseRepository[Feature]):
         result = await self.db.execute(
             select(Feature)
             .where(Feature.id == model_id, Feature.source_type == FeatureSourceType.FEAT)
-            .options(*_engine_effect_loads())
+            .options(*feature_summary_loads())
             .execution_options(populate_existing=True)
         )
         return result.scalars().first()
@@ -146,10 +146,10 @@ class FeatRepository(BaseRepository[Feature]):
                 pick_count=1,
                 sort_order=0,
                 label="Ability Score Increase",
+                choice_type=ChoiceType.ABILITY_SCORE,
                 options=[
                     FeatureChoiceOption(
                         sort_order=index,
-                        label=str(getattr(item["ability"], "value", item["ability"])),
                         ability_effects=[
                             FeatureAbilityScoreEffect(ability=item["ability"], amount=item["amount"], new_cap=None)
                         ],

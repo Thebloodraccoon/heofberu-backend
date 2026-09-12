@@ -126,24 +126,17 @@ async def set_feature_choice_groups(
         ChoiceGroupsUpdate,
         Body(
             openapi_examples={
-                "resilient": {
-                    "summary": "Resilient (2014): choose one ability — +1 and saving-throw proficiency in it",
+                "ability_score": {
+                    "summary": "Choose an ability score to raise by 1",
                     "value": {
                         "choice_groups": [
                             {
                                 "pick_count": 1,
+                                "choice_type": "ABILITY_SCORE",
                                 "label": "Choose an ability",
                                 "options": [
-                                    {
-                                        "label": "STR",
-                                        "ability_effects": [{"ability": "STR", "amount": 1}],
-                                        "saving_throw_effects": [{"ability": "STR"}],
-                                    },
-                                    {
-                                        "label": "DEX",
-                                        "ability_effects": [{"ability": "DEX", "amount": 1}],
-                                        "saving_throw_effects": [{"ability": "DEX"}],
-                                    },
+                                    {"ability_effects": [{"ability": "STR", "amount": 1}]},
+                                    {"ability_effects": [{"ability": "DEX", "amount": 1}]},
                                 ],
                             }
                         ]

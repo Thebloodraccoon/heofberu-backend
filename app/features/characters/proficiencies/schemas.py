@@ -1,54 +1,68 @@
-"""Schemas for a character's proficiency surface, each row tagged with the grant it came from."""
+"""Schemas for a character's proficiency surface, each row tagged with every source that grants it."""
 
 from pydantic import BaseModel, ConfigDict
 
-from app.constants import AbilityScore, ArmorProficiency, FeatureSourceType, GrantSource, WeaponProficiency
+from app.constants import (
+    AbilityScore,
+    ArmorProficiency,
+    FeatureSourceType,
+    ProficiencySourceType,
+    WeaponProficiency,
+)
 
 
 class ProficiencySource(BaseModel):
     """
-    Where one proficiency row came from. ``grant_source`` is None for a raw
-    free-form row (``source_character_feature_id`` is NULL — a GM toggle or
-    a pre-engine player pick); otherwise it mirrors the granting
-    ``CharacterFeature.grant_source`` (AUTO/GM/ASI), and ``feature_*``
-    identifies the reference ``Feature`` (class/subclass/race/background/feat)
-    that produced it.
+    One source contributing to a resolved proficiency.
+
+    ``feature_*`` is populated only for FEATURE/FEATURE_CHOICE rows
+    (denormalized from the granting ``CharacterFeature``/reference
+    ``Feature``, identifying the class/subclass/race/background/feat that
+    produced it); ``actor_user_id`` only for a GM row. CLASS_CHOICE/RACE/
+    BACKGROUND rows carry neither — ``source_type`` alone identifies them.
     """
 
-    grant_source: GrantSource | None = None
+    source_type: ProficiencySourceType
     feature_id: int | None = None
     feature_name: str | None = None
     feature_source_type: FeatureSourceType | None = None
+    actor_user_id: int | None = None
 
 
 class SkillProficiencyView(BaseModel):
-    """A materialized skill proficiency with its source."""
+    """
+    A resolved skill proficiency with every source that grants it.
+
+    Multiple sources are legitimate (e.g. class AND a feat both granting
+    the same skill) — this is not deduplicated to one; ``is_expertise`` is
+    the OR across all of them (any source wanting expertise turns it on).
+    """
 
     skill_id: int
     is_expertise: bool
-    source: ProficiencySource
+    sources: list[ProficiencySource]
 
 
 class SavingThrowProficiencyView(BaseModel):
-    """A materialized saving-throw proficiency with its source."""
+    """A resolved saving-throw proficiency with every source that grants it."""
 
     ability: AbilityScore
-    source: ProficiencySource
+    sources: list[ProficiencySource]
 
 
 class ArmorProficiencyView(BaseModel):
-    """A materialized armor proficiency with its source."""
+    """A resolved armor proficiency with every source that grants it."""
 
     armor_type: ArmorProficiency
-    source: ProficiencySource
+    sources: list[ProficiencySource]
 
 
 class WeaponProficiencyView(BaseModel):
-    """A materialized weapon proficiency (category or item) with its source."""
+    """A resolved weapon proficiency (category or item) with every source that grants it."""
 
     weapon_category: WeaponProficiency | None = None
     item_id: int | None = None
-    source: ProficiencySource
+    sources: list[ProficiencySource]
 
 
 class CharacterProficienciesResponse(BaseModel):

@@ -230,18 +230,11 @@ class TestChoiceGroups:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Choose an ability",
                         "options": [
-                            {
-                                "label": "STR",
-                                "ability_effects": [{"ability": "STR", "amount": 1}],
-                                "saving_throw_effects": [{"ability": "STR"}],
-                            },
-                            {
-                                "label": "DEX",
-                                "ability_effects": [{"ability": "DEX", "amount": 1}],
-                                "saving_throw_effects": [{"ability": "DEX"}],
-                            },
+                            {"ability_effects": [{"ability": "STR", "amount": 1}]},
+                            {"ability_effects": [{"ability": "DEX", "amount": 1}]},
                         ],
                     }
                 ]
@@ -255,17 +248,42 @@ class TestChoiceGroups:
         assert groups[0]["pick_count"] == 1
         assert groups[0]["label"] == "Choose an ability"
         assert len(groups[0]["options"]) == 2
-        str_opt = next(o for o in groups[0]["options"] if o["label"] == "STR")
+        str_opt = next(o for o in groups[0]["options"] if o["ability_effects"][0]["ability"] == "STR")
         assert len(str_opt["ability_effects"]) == 1
         assert str_opt["ability_effects"][0]["ability"] == "STR"
-        assert len(str_opt["saving_throw_effects"]) == 1
-        assert str_opt["saving_throw_effects"][0]["ability"] == "STR"
+
+    async def test_second_ability_choice_group_rejected(self, client, gm_token, create_feature):
+        """A feature may offer only one choice group of type ABILITY_SCORE, not two."""
+        feature = await create_feature(name="Double ASI")
+
+        response = await client.put(
+            f"/features/{feature.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Choose an ability",
+                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    },
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Choose another ability",
+                        "options": [{"ability_effects": [{"ability": "DEX", "amount": 1}]}],
+                    },
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
 
     async def test_clear_choice_groups(self, client, gm_token, create_feature):
         feature = await create_feature(name="Temporary Choice")
         await client.put(
             f"/features/{feature.id}/choice-groups",
-            json={"choice_groups": [{"pick_count": 1, "options": [{"label": "A"}]}]},
+            json={"choice_groups": [{"pick_count": 1, "choice_type": "SKILL", "options": []}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -345,19 +363,40 @@ class TestFeatureResponsesEmbedAbilityEffects:
                 "choice_groups": [
                     {
                         "pick_count": 1,
-                        "label": "Choose a boon",
-                        "options": [
-                            {
-                                "label": "STR +1",
-                                "ability_effects": [{"ability": "STR", "amount": 1}],
-                                "saving_throw_effects": [{"ability": "STR"}],
-                                "skill_effects": [{"skill_id": skill.id}],
-                                "armor_effects": [{"armor_type": "SHIELD"}],
-                                "weapon_effects": [{"item_id": item.id}],
-                                "spell_effects": [{"spell_id": spell.id}],
-                            }
-                        ],
-                    }
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Ability boon",
+                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    },
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SAVING_THROW",
+                        "label": "Save boon",
+                        "options": [{"saving_throw_effects": [{"ability": "STR"}]}],
+                    },
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SKILL",
+                        "label": "Skill boon",
+                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                    },
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ARMOR",
+                        "label": "Armor boon",
+                        "options": [{"armor_effects": [{"armor_type": "SHIELD"}]}],
+                    },
+                    {
+                        "pick_count": 1,
+                        "choice_type": "WEAPON",
+                        "label": "Weapon boon",
+                        "options": [{"weapon_effects": [{"item_id": item.id}]}],
+                    },
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SPELL",
+                        "label": "Spell boon",
+                        "options": [{"spell_effects": [{"spell_id": spell.id}]}],
+                    },
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -375,14 +414,14 @@ class TestFeatureResponsesEmbedAbilityEffects:
         assert body["armor_effects"][0]["armor_type"] == "LIGHT"
         assert body["weapon_effects"][0]["weapon_category"] == "MARTIAL"
         assert body["spell_effects"][0]["spell_id"] == spell.id
-        assert len(body["choice_groups"]) == 1
-        option = body["choice_groups"][0]["options"][0]
-        assert option["ability_effects"][0]["ability"] == "STR"
-        assert option["saving_throw_effects"][0]["ability"] == "STR"
-        assert option["skill_effects"][0]["skill_id"] == skill.id
-        assert option["armor_effects"][0]["armor_type"] == "SHIELD"
-        assert option["weapon_effects"][0]["item_id"] == item.id
-        assert option["spell_effects"][0]["spell_id"] == spell.id
+        assert len(body["choice_groups"]) == 6
+        groups_by_type = {group["choice_type"]: group for group in body["choice_groups"]}
+        assert groups_by_type["ABILITY_SCORE"]["options"][0]["ability_effects"][0]["ability"] == "STR"
+        assert groups_by_type["SAVING_THROW"]["options"][0]["saving_throw_effects"][0]["ability"] == "STR"
+        assert groups_by_type["SKILL"]["options"][0]["skill_effects"][0]["skill_id"] == skill.id
+        assert groups_by_type["ARMOR"]["options"][0]["armor_effects"][0]["armor_type"] == "SHIELD"
+        assert groups_by_type["WEAPON"]["options"][0]["weapon_effects"][0]["item_id"] == item.id
+        assert groups_by_type["SPELL"]["options"][0]["spell_effects"][0]["spell_id"] == spell.id
 
     async def test_feature_detail_patch_returns_whole_effect_tree(self, client, gm_token, create_feature):
         feature = await create_feature(name="Dark Gaze")

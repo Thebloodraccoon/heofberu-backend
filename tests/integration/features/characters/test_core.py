@@ -22,6 +22,7 @@ class TestCharacterCreate:
                 "name": "Aragorn",
                 "class_id": character_class.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -65,6 +66,7 @@ class TestCharacterCreate:
                 "name": "Ghost",
                 "class_id": 999999,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -87,6 +89,7 @@ class TestCharacterCreate:
                 "name": "Gandalf",
                 "class_id": character_class.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -120,6 +123,7 @@ class TestCharacterCreate:
                 "class_id": character_class.id,
                 "subclass_id": subclass.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -147,6 +151,7 @@ class TestCharacterCreate:
                 "class_id": fighter.id,
                 "subclass_id": wizard_subclass.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -526,6 +531,7 @@ class TestCharacterRest:
                 "name": "Gandalf",
                 "class_id": character_class.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -568,6 +574,7 @@ class TestCharacterRest:
                 "name": "Conan",
                 "class_id": character_class.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )

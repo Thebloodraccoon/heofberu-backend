@@ -14,7 +14,7 @@ from app.features.backgrounds.features.service import BackgroundFeatureService
 from app.features.backgrounds.skills.repository import BackgroundSkillsRepository
 from app.features.backgrounds.skills.schemas import SkillsUpdate
 from app.features.backgrounds.skills.service import BackgroundSkillsService
-from app.models.background_model import Background
+from app.models.backgrounds.background_model import Background
 from app.models.skill_model import Skill
 from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
 
@@ -23,13 +23,11 @@ def make_background(**overrides) -> Background:
     base = {
         "id": 1,
         "name": "Criminal",
-        "personality_traits_suggestions": "",
-        "ideals_suggestions": "",
-        "bonds_suggestions": "",
-        "flaws_suggestions": "",
         "description": "",
+        "starting_gold": 0,
         "granted_skills": [],
         "starting_items": [],
+        "suggestions": [],
     }
     base.update(overrides)
     return Background(**base)
@@ -38,7 +36,6 @@ def make_background(**overrides) -> Background:
 def make_skill(**overrides) -> Skill:
     base = {
         "id": 1,
-        "key": "perception",
         "name": "Perception",
         "ability": AbilityScore.WIS,
         "description": "",
@@ -60,13 +57,11 @@ class FakeBackgroundRepository(FakeRepository):
         row = Background(
             id=self._next_id,
             name=payload["name"],
-            personality_traits_suggestions=payload.get("personality_traits_suggestions", ""),
-            ideals_suggestions=payload.get("ideals_suggestions", ""),
-            bonds_suggestions=payload.get("bonds_suggestions", ""),
-            flaws_suggestions=payload.get("flaws_suggestions", ""),
             description=payload.get("description", ""),
+            starting_gold=payload.get("starting_gold", 0),
             granted_skills=[],
             starting_items=[],
+            suggestions=[],
         )
         self._next_id += 1
         self._rows[row.id] = row
@@ -176,7 +171,7 @@ def make_feature_service(existing_by_id=None):
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestBackgroundCrudService:
-    async def test_create_background_without_skills(self):
+    async def test_create_background_persists_base_fields_and_invalidates_cache(self):
         service, db = make_crud_service(resolved_skills=None)
 
         result = await service.create_background(BackgroundCreate(name="Criminal"))
@@ -184,22 +179,17 @@ class TestBackgroundCrudService:
         assert result.id == 1
         assert result.name == "Criminal"
         assert db.commits == 1
-        assert service._skills.resolve_calls == [None]
+
+    async def test_create_background_does_not_touch_capability_services(self):
+        """granted_skills/features are attached via their own endpoints, not at creation."""
+        service, _ = make_crud_service(resolved_skills=None)
+
+        await service.create_background(BackgroundCreate(name="Criminal"))
+
         assert service._skills.set_calls == []
-        assert service._features.list_calls == [1]
 
-    async def test_create_background_with_granted_skills(self):
-        skill = make_skill()
-        service, db = make_crud_service(resolved_skills=[skill])
-
-        result = await service.create_background(BackgroundCreate(name="Criminal", granted_skills=[1]))
-
-        assert result.id == 1
-        assert result.granted_skills[0].id == 1
-        assert service._skills.set_calls == [(service.repository._rows[1], [skill], False)]
-
-    async def test_create_background_rolls_back_when_persist_fails(self):
-        service, db = make_crud_service(resolved_skills=None)
+    async def test_create_background_propagates_persist_failure(self):
+        service, _ = make_crud_service(resolved_skills=None)
 
         class Boom(Exception):
             pass
@@ -211,8 +201,6 @@ class TestBackgroundCrudService:
 
         with pytest.raises(Boom):
             await service.create_background(BackgroundCreate(name="Criminal"))
-
-        assert db.rollbacks == 1
 
     async def test_get_by_id_returns_full_response_with_features(self):
         service, db = make_crud_service(

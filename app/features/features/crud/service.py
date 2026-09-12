@@ -2,14 +2,17 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.core.base.cached_service import CachedService
-from app.core.cache import invalidate
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
-from app.features.features.cache import FEATURE_CACHE_NAMESPACES, invalidate_feature_cache
-from app.features.features.crud.repository import FeatureRepository
+from app.features.features.cache import (
+    FEATURE_CACHE_NAMESPACES,
+    SOURCE_FEATURE_LIST_NAMESPACE,
+    SOURCE_PARENT_READ_NAMESPACE,
+    purge_feature_cache_for_source,
+)
+from app.features.features.crud.repository import FeatureRepository, feature_summary_loads
 from app.features.features.crud.schemas import (
     _FEATURE_LEVEL_MAX,
     _FEATURE_LEVEL_MIN,
@@ -23,34 +26,6 @@ from app.features.features.crud.schemas import (
 )
 from app.features.features.exceptions import InvalidFeatureSourceException
 from app.models.features.feature_model import Feature
-
-# The per-catalog cache namespace holding that catalog's own feature list.
-# A central feature write purges the owning catalog's list namespace (and
-# only that one) so its cached ``GET /{source}/features`` goes stale.
-# FEAT/OTHER features are standalone — no catalog owns them.
-SOURCE_FEATURE_LIST_NAMESPACE: dict[FeatureSourceType, str | None] = {
-    FeatureSourceType.CLASS: "class_features",
-    FeatureSourceType.SUBCLASS: "subclass_features",
-    FeatureSourceType.RACE: "race_features",
-    FeatureSourceType.SUBRACE: "subrace_features",
-    FeatureSourceType.BACKGROUND: "background_features",
-    FeatureSourceType.FEAT: None,
-    FeatureSourceType.OTHER: None,
-}
-
-# The parent catalog read namespace holding that source's cached FULL response.
-# A central feature write must also purge it: the parent detail reads embed
-# their features, so the whole cached payload would go stale otherwise.
-# Subrace detail is cached under ``races`` and subclass detail under ``classes``.
-SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
-    FeatureSourceType.CLASS: "classes",
-    FeatureSourceType.SUBCLASS: "classes",
-    FeatureSourceType.RACE: "races",
-    FeatureSourceType.SUBRACE: "races",
-    FeatureSourceType.BACKGROUND: "backgrounds",
-    FeatureSourceType.FEAT: None,
-    FeatureSourceType.OTHER: None,
-}
 
 
 def _get_fk_name(source_type: FeatureSourceType) -> str:
@@ -101,18 +76,11 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         Purge every cached read a feature write can hit.
 
         Clears the shared ``features`` namespace, plus (for source-owned
-        features) the owning catalog's feature-list and read namespaces.
+        features) the owning catalog's feature-list and read namespaces —
+        see ``purge_feature_cache_for_source``.
         """
 
-        await invalidate_feature_cache()
-
-        list_namespace = SOURCE_FEATURE_LIST_NAMESPACE[source_type]
-        if list_namespace is not None:
-            await invalidate(list_namespace)
-
-        parent_namespace = SOURCE_PARENT_READ_NAMESPACE[source_type]
-        if parent_namespace is not None:
-            await invalidate(parent_namespace)
+        await purge_feature_cache_for_source(source_type)
 
     async def list_for_source(self, source_type: FeatureSourceType, source_id: int) -> list[NestedFeatureResponse]:
         """
@@ -128,7 +96,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         result = await self.repository.db.execute(
             select(Feature)
             .where(getattr(Feature, fk_name) == source_id)
-            .options(selectinload(Feature.ability_effects))
+            .options(*feature_summary_loads())
             .order_by(Feature.id)
         )
         rows = result.scalars().all()

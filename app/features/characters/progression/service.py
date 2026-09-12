@@ -3,7 +3,15 @@
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, FeatureSourceType, GrantSource
+from app.constants import (
+    ABILITY_SCORE_CAP,
+    ASI_LEVELS,
+    ASILevelChoice,
+    FeatureSourceType,
+    GrantSource,
+    ProficiencySourceType,
+    ProficiencyType,
+)
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
@@ -20,6 +28,7 @@ from app.features.characters.feats.validation import (
 from app.features.characters.grants.schemas import ChoiceAnswerItem
 from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.level.repository import CharacterMaxLevelRepository
+from app.features.characters.proficiencies.writer import add_skill_proficiencies
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     BackgroundAlreadySetException,
@@ -59,7 +68,7 @@ from app.models import Class
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.character.character_item_model import CharacterItem
 from app.models.character.character_model import Character
-from app.models.character.skill_proficiency import CharacterSkillProficiency
+from app.models.character.character_proficiency_model import CharacterProficiency
 
 
 class CharacterProgressionService(CharacterSubDomainService):
@@ -149,8 +158,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         """
         Set a character's background — only while it has none. In one
         transaction it grants the background's features
-        (``sync_progression_features``), its skills (deduped against current
-        proficiencies), and its starting equipment (merged into stacks). A
+        (``sync_progression_features``), its skills as BACKGROUND-sourced
+        proficiency rows, and its starting equipment (merged into stacks). A
         background whose equipment is built on "pick N of M" choice groups
         is rejected up front (no late-choice surface). Re-choosing is only
         possible through :meth:`rebuild_character`.
@@ -344,29 +353,32 @@ class CharacterProgressionService(CharacterSubDomainService):
         race_skill_ids: list[int],
     ) -> None:
         """
-        Wipe ONLY the character's engine-sourced skill proficiencies
-        (``source_character_feature_id`` set) and rebuild them from the new
-        choices/sources (merged and deduplicated, same as character
-        creation), starting with ``is_expertise=False``.
+        Wipe ONLY the character's CLASS_CHOICE/RACE/BACKGROUND skill
+        proficiency rows and rebuild them from the new choices/sources,
+        each re-tagged with its actual source.
 
-        Free-form rows with a NULL source (GM-set expertise toggles, raw
-        rows) are left untouched — after the Phase 4 data migration the
-        engine materialization in ``sync_progression_features`` owns every
-        skill row, so this method's legacy free-form writes become empty.
+        FEATURE/FEATURE_CHOICE rows (owned by the feature engine, reconciled
+        separately via ``sync_progression_features``) and GM rows (a durable
+        override) are left untouched.
         """
 
         await self.repository.db.execute(
-            delete(CharacterSkillProficiency).where(
-                CharacterSkillProficiency.character_id == character.id,
-                CharacterSkillProficiency.source_character_feature_id.isnot(None),
+            delete(CharacterProficiency).where(
+                CharacterProficiency.character_id == character.id,
+                CharacterProficiency.proficiency_type == ProficiencyType.SKILL,
+                CharacterProficiency.source_type.in_(
+                    [
+                        ProficiencySourceType.CLASS_CHOICE,
+                        ProficiencySourceType.RACE,
+                        ProficiencySourceType.BACKGROUND,
+                    ]
+                ),
             )
         )
 
-        merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
-        for skill_id in merged_skill_ids:
-            self.repository.db.add(
-                CharacterSkillProficiency(character_id=character.id, skill_id=skill_id, is_expertise=False)
-            )
+        add_skill_proficiencies(self.repository.db, character.id, chosen_skill_ids, ProficiencySourceType.CLASS_CHOICE)
+        add_skill_proficiencies(self.repository.db, character.id, background_skill_ids, ProficiencySourceType.BACKGROUND)
+        add_skill_proficiencies(self.repository.db, character.id, race_skill_ids, ProficiencySourceType.RACE)
 
         await self.repository.db.flush()
 
@@ -394,23 +406,11 @@ class CharacterProgressionService(CharacterSubDomainService):
         return level_1_hp + levels_above_one, level_1_hp + levels_above_one * max_gain
 
     async def _grant_background_skills(self, character: Character, granted_skills) -> None:
-        """Add the background's granted skills as proficiency rows, skipping skills the character already has."""
+        """Add the background's granted skills as BACKGROUND-sourced proficiency rows."""
 
-        existing_result = await self.repository.db.execute(
-            select(CharacterSkillProficiency.skill_id).where(CharacterSkillProficiency.character_id == character.id)
+        add_skill_proficiencies(
+            self.repository.db, character.id, [skill.id for skill in granted_skills], ProficiencySourceType.BACKGROUND
         )
-        existing_ids = {skill_id for (skill_id,) in existing_result.all()}
-
-        for skill in granted_skills:
-            if skill.id not in existing_ids:
-                self.repository.db.add(
-                    CharacterSkillProficiency(
-                        character_id=character.id,
-                        skill_id=skill.id,
-                        is_expertise=False,
-                    )
-                )
-
         await self.repository.db.flush()
 
     async def _grant_background_equipment(self, character: Character) -> None:

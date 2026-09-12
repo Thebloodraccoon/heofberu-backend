@@ -5,7 +5,7 @@ character's effective ability scores (and the per-ability cap).
 
 import pytest
 
-from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
+from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 
 
 async def set_feature_effects(client, gm_token, feature_id, ability_effects):
@@ -327,6 +327,7 @@ class TestPerAbilityCap:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
                         "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 2}]}],
                     }
@@ -358,6 +359,7 @@ class TestPerAbilityCap:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
                         "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }

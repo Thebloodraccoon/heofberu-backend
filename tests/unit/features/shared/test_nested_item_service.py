@@ -22,8 +22,8 @@ from app.features.shared.items.schemas import (
     SourceItemEntry,
     SourceItemsUpdate,
 )
-from app.models.class_model import Class
-from app.models.source_item_model import SourceItem
+from app.models.classes.class_model import Class
+from app.models.items.item_source_model import SourceItem
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 

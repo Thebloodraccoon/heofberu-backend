@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.models.class_association_models import class_available_skills
+from app.models.classes.class_association_models import class_available_skills
 
 
 async def set_available_skills(db_session, character_class, *skills):
@@ -206,6 +206,7 @@ class TestCreationBackgroundSkills:
                 "name": "Acolyte",
                 "class_id": character_class.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
                 "skill_ids": [chosen.id],
             },
             headers={"Authorization": f"Bearer {player_token}"},
@@ -242,6 +243,7 @@ class TestCreationBackgroundSkills:
                 "name": "Acolyte",
                 "class_id": character_class.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
             },
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -249,6 +251,109 @@ class TestCreationBackgroundSkills:
         assert response.status_code == 201
         proficiencies = (await get_proficiencies(client, player_token, response.json()["id"]))["skills"]
         assert {item["skill_id"] for item in proficiencies} == {skill.id}
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestCreationBackgroundSuggestions:
+    async def test_background_without_suggestion_ids_returns_400(
+        self, client, player_token, create_class, create_background
+    ):
+        character_class = await create_class(name="Fighter")
+        background = await create_background(name="Acolyte")
+
+        response = await client.post(
+            "/characters",
+            json={"name": "Grog", "class_id": character_class.id, "background_id": background.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_background_with_duplicate_type_suggestion_ids_returns_400(
+        self, client, player_token, create_class, create_background
+    ):
+        character_class = await create_class(name="Fighter")
+        background = await create_background(name="Acolyte")
+        by_type = {s.suggestion_type: s.id for s in background.suggestions}
+        # Two PERSONALITY_TRAIT ids instead of covering all 4 types.
+        suggestion_ids = [by_type["PERSONALITY_TRAIT"], by_type["PERSONALITY_TRAIT"]]
+
+        response = await client.post(
+            "/characters",
+            json={
+                "name": "Grog",
+                "class_id": character_class.id,
+                "background_id": background.id,
+                "suggestion_ids": suggestion_ids,
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_background_with_suggestion_from_another_background_returns_400(
+        self, client, player_token, create_class, create_background
+    ):
+        character_class = await create_class(name="Fighter")
+        background = await create_background(name="Acolyte")
+        other_background = await create_background(name="Sage")
+
+        response = await client.post(
+            "/characters",
+            json={
+                "name": "Grog",
+                "class_id": character_class.id,
+                "background_id": background.id,
+                "suggestion_ids": [s.id for s in other_background.suggestions],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_suggestion_ids_without_background_returns_400(
+        self, client, player_token, create_class, create_background
+    ):
+        character_class = await create_class(name="Fighter")
+        background = await create_background(name="Acolyte")
+
+        response = await client.post(
+            "/characters",
+            json={
+                "name": "Grog",
+                "class_id": character_class.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_background_with_valid_suggestion_ids_uses_their_text(
+        self, client, player_token, create_class, create_background
+    ):
+        character_class = await create_class(name="Fighter")
+        background = await create_background(name="Acolyte")
+        by_type = {s.suggestion_type: s for s in background.suggestions}
+
+        response = await client.post(
+            "/characters",
+            json={
+                "name": "Grog",
+                "class_id": character_class.id,
+                "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
+            },
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["personality_traits"] == by_type["PERSONALITY_TRAIT"].text
+        assert body["ideals"] == by_type["IDEAL"].text
+        assert body["bonds"] == by_type["BOND"].text
+        assert body["flaws"] == by_type["FLAW"].text
 
 
 @pytest.mark.integration
@@ -413,6 +518,7 @@ class TestCreationRaceSkills:
                 "class_id": character_class.id,
                 "race_id": race.id,
                 "background_id": background.id,
+                "suggestion_ids": [s.id for s in background.suggestions],
                 "skill_ids": [chosen.id],
             },
             headers={"Authorization": f"Bearer {player_token}"},

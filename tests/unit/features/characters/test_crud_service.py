@@ -19,6 +19,7 @@ from app.constants import (
     AbilityScore,
     DiceType,
     FeatureSourceType,
+    ProficiencyType,
     UserRole,
 )
 from app.features.characters.ability_score.calculator import DerivedStats
@@ -36,8 +37,9 @@ from app.features.characters.schemas import CharacterCreate, CharacterUpdate
 from app.features.classes.exceptions import ClassNotFoundException
 from app.features.races.exceptions import RaceNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models import Character, CharacterSkillProficiency
-from app.models.character_item_model import CharacterItem
+from app.models import Character
+from app.models.character.character_item_model import CharacterItem
+from app.models.character.character_proficiency_model import CharacterProficiency
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 
@@ -73,15 +75,19 @@ def make_class(**overrides):
     return SimpleNamespace(**fields)
 
 
+def make_background_suggestions():
+    return [
+        SimpleNamespace(id=100 + i, suggestion_type=suggestion_type, text=f"{suggestion_type} text")
+        for i, suggestion_type in enumerate(("PERSONALITY_TRAIT", "IDEAL", "BOND", "FLAW"))
+    ]
+
+
 def make_background():
     return SimpleNamespace(
         id=3,
         granted_skills=[SimpleNamespace(id=2)],
         description="",
-        personality_traits_suggestions="",
-        ideals_suggestions="",
-        bonds_suggestions="",
-        flaws_suggestions="",
+        suggestions=make_background_suggestions(),
     )
 
 
@@ -95,6 +101,7 @@ def make_create_payload(**overrides):
         "class_id": 1,
         "race_id": 5,
         "background_id": 3,
+        "suggestion_ids": [100, 101, 102, 103],
         "skill_ids": [1],
         "strength": 14,
         "dexterity": 10,
@@ -581,7 +588,11 @@ class TestCreateCharacterHappyPath:
         assert character.current_hp == 12
         assert character.max_hp == 12
 
-        proficiency_rows = [row for row in db.added if isinstance(row, CharacterSkillProficiency)]
+        proficiency_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL
+        ]
         assert sorted(row.skill_id for row in proficiency_rows) == [1, 2, 3]
         assert all(row.is_expertise is False for row in proficiency_rows)
         assert all(row.character_id == 1 for row in proficiency_rows)

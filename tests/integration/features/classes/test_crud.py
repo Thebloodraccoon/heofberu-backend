@@ -33,18 +33,26 @@ class TestClassCrud:
 
         response = await client.post(
             "/classes",
-            json={
-                "name": "Wizard",
-                "hit_dice": "D6",
-                "spellcasting_ability": "INT",
-                "saving_throws": ["INT", "WIS"],
-                "available_skills": [skill.id],
-            },
+            json={"name": "Wizard", "hit_dice": "D6", "spellcasting_ability": "INT"},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-
         assert response.status_code == 201
-        body = response.json()
+        class_id = response.json()["id"]
+
+        throws_response = await client.put(
+            f"/classes/{class_id}/saving-throws",
+            json={"saving_throws": ["INT", "WIS"]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert throws_response.status_code == 200
+        skills_response = await client.put(
+            f"/classes/{class_id}/available-skills",
+            json={"skill_ids": [skill.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert skills_response.status_code == 200
+
+        body = skills_response.json()
         assert body["spellcasting_ability"] == "INT"
         assert body["saving_throws"] == [{"ability": "INT"}, {"ability": "WIS"}]
         assert [item["id"] for item in body["available_skills"]] == [skill.id]
@@ -232,17 +240,20 @@ class TestClassCrud:
     async def test_gm_can_create_class_with_armor_proficiencies(self, client, gm_token):
         response = await client.post(
             "/classes",
-            json={
-                "name": "Fighter",
-                "hit_dice": "D10",
-                "spellcasting_ability": None,
-                "armor_proficiencies": ["LIGHT", "MEDIUM", "HEAVY", "SHIELD"],
-            },
+            json={"name": "Fighter", "hit_dice": "D10", "spellcasting_ability": None},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 201
+        class_id = response.json()["id"]
+
+        armor_response = await client.put(
+            f"/classes/{class_id}/armor-proficiencies",
+            json={"armor_proficiencies": ["LIGHT", "MEDIUM", "HEAVY", "SHIELD"]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 201
-        assert [item["armor_type"] for item in response.json()["armor_proficiencies"]] == [
+        assert armor_response.status_code == 200
+        assert [item["armor_type"] for item in armor_response.json()["armor_proficiencies"]] == [
             "LIGHT",
             "MEDIUM",
             "HEAVY",
@@ -304,17 +315,20 @@ class TestClassCrud:
     async def test_gm_can_create_class_with_weapon_proficiencies(self, client, gm_token):
         response = await client.post(
             "/classes",
-            json={
-                "name": "Fighter",
-                "hit_dice": "D10",
-                "spellcasting_ability": None,
-                "weapon_proficiencies": ["SIMPLE", "MARTIAL"],
-            },
+            json={"name": "Fighter", "hit_dice": "D10", "spellcasting_ability": None},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 201
+        class_id = response.json()["id"]
+
+        weapons_response = await client.put(
+            f"/classes/{class_id}/weapon-proficiencies",
+            json={"weapon_proficiencies": ["SIMPLE", "MARTIAL"]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 201
-        assert [item["weapon_category"] for item in response.json()["weapon_proficiencies"]] == [
+        assert weapons_response.status_code == 200
+        assert [item["weapon_category"] for item in weapons_response.json()["weapon_proficiencies"]] == [
             "SIMPLE",
             "MARTIAL",
         ]
@@ -626,12 +640,8 @@ class TestClassCrud:
 
         player = await create_user()
         character = await create_character(owner_id=player.id, class_id=class_id, level=11)
-        kept_grant = CharacterFeature(
-            character_id=character.id, feature_id=features["Extra Attack"]["id"], notes="notes"
-        )
-        removed_grant = CharacterFeature(
-            character_id=character.id, feature_id=features["Second Wind"]["id"], notes="notes"
-        )
+        kept_grant = CharacterFeature(character_id=character.id, feature_id=features["Extra Attack"]["id"])
+        removed_grant = CharacterFeature(character_id=character.id, feature_id=features["Second Wind"]["id"])
         db_session.add_all([kept_grant, removed_grant])
         await db_session.commit()
 

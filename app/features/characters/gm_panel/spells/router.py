@@ -29,8 +29,8 @@ async def add_character_granted_spell(
         Body(
             openapi_examples={
                 "boon": {
-                    "summary": "Grant Fireball as an always-prepared boon",
-                    "value": {"spell_id": 12, "always_prepared": True},
+                    "summary": "Grant Fireball as a homebrew boon",
+                    "value": {"spell_id": 12},
                 },
             }
         ),

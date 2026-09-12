@@ -6,11 +6,13 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
+from app.features.characters.grants.materializer import choice_option_effect_loads
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.features.feature_model import Feature
 
-_WITH_CHOICES = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
+_CHOICE_OPTION_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
+_WITH_CHOICES = [_CHOICE_OPTION_LOADER, *choice_option_effect_loads(_CHOICE_OPTION_LOADER)]
 
 
 class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
@@ -38,7 +40,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         result = await self.db.execute(
             select(CharacterFeature)
             .join(Feature, Feature.id == CharacterFeature.feature_id)
-            .options(selectinload(CharacterFeature.feature), _WITH_CHOICES)
+            .options(selectinload(CharacterFeature.feature), *_WITH_CHOICES)
             .where(CharacterFeature.character_id == character_id, Feature.source_type != FeatureSourceType.FEAT)
         )
         return list(result.scalars().unique().all())

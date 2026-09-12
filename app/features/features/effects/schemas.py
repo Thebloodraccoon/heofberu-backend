@@ -2,7 +2,27 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.constants import AbilityScore, ArmorProficiency, SpellLevel, SpellSchool, WeaponProficiency
+from app.constants import AbilityScore, ArmorProficiency, ChoiceType, SpellLevel, SpellSchool, WeaponProficiency
+
+# Which of a ``ChoiceOptionPayload``'s six effect-list fields a given
+# ``ChoiceType`` allows non-empty. Every other field must be empty — see
+# ``ChoiceGroupPayload.validate_options_match_choice_type``.
+_ALLOWED_EFFECT_FIELD_BY_CHOICE_TYPE: dict[ChoiceType, str] = {
+    ChoiceType.SKILL: "skill_effects",
+    ChoiceType.SPELL: "spell_effects",
+    ChoiceType.ABILITY_SCORE: "ability_effects",
+    ChoiceType.SAVING_THROW: "saving_throw_effects",
+    ChoiceType.ARMOR: "armor_effects",
+    ChoiceType.WEAPON: "weapon_effects",
+}
+_ALL_OPTION_EFFECT_FIELDS = (
+    "ability_effects",
+    "skill_effects",
+    "saving_throw_effects",
+    "armor_effects",
+    "weapon_effects",
+    "spell_effects",
+)
 
 VALID_NEW_CAP_MIN = 20
 VALID_NEW_CAP_MAX = 30
@@ -81,8 +101,6 @@ class SpellEffectItem(BaseModel):
     spell_id: int | None = None
     spell_school: SpellSchool | None = None
     spell_level_max: SpellLevel | None = None
-    always_prepared: bool = True
-    counts_against_known_limit: bool = False
 
     @model_validator(mode="after")
     def _guard_specific_or_filter(self):
@@ -96,11 +114,14 @@ class ChoiceOptionPayload(BaseModel):
     """
     One option of a choice group, carrying its effect bundle.
 
-    Choosing the option applies every effect below together (e.g. Resilient's
-    "DEX" option: +1 DEX AND DEX saving-throw proficiency).
+    Only the ONE effect-list field its group's ``choice_type`` allows may be
+    non-empty (see ``ChoiceGroupPayload``) — an option never mixes effect
+    kinds. Carries no label of its own — what it grants is read straight off
+    its effects (and rendered to text on read, see ``effects.rendering``),
+    so authoring an option never risks a hand-typed name drifting from what
+    it materializes.
     """
 
-    label: str = ""
     sort_order: int = 0
     ability_effects: list[AbilityEffectItem] = []
     skill_effects: list[SkillEffectItem] = []
@@ -111,12 +132,36 @@ class ChoiceOptionPayload(BaseModel):
 
 
 class ChoiceGroupPayload(BaseModel):
-    """One "pick N of M" group of a feature."""
+    """
+    One "pick N of M" group of a feature.
+
+    ``choice_type`` fixes what kind of effect this group's options carry —
+    every option may only populate the one effect-list field that type
+    allows (e.g. ``SKILL`` → only ``skill_effects``); every other field must
+    be empty. One effect type per group, no mixed bundles.
+    """
 
     pick_count: int = 1
     sort_order: int = 0
     label: str = ""
+    choice_type: ChoiceType
     options: list[ChoiceOptionPayload] = []
+
+    @model_validator(mode="after")
+    def validate_options_match_choice_type(self):
+        """Reject an option carrying an effect list outside its group's declared ``choice_type``."""
+
+        allowed_field = _ALLOWED_EFFECT_FIELD_BY_CHOICE_TYPE[self.choice_type]
+        for index, option in enumerate(self.options):
+            for field_name in _ALL_OPTION_EFFECT_FIELDS:
+                if field_name == allowed_field:
+                    continue
+                if getattr(option, field_name):
+                    raise ValueError(
+                        f"Option {index} in a '{self.choice_type.value}' group may not set "
+                        f"'{field_name}' — only '{allowed_field}' is allowed here."
+                    )
+        return self
 
 
 class ChoiceOptionResponse(ChoiceOptionPayload):
@@ -137,6 +182,7 @@ class ChoiceGroupResponse(BaseModel):
     pick_count: int
     sort_order: int = 0
     label: str = ""
+    choice_type: ChoiceType
     options: list[ChoiceOptionResponse] = []
 
 
@@ -185,3 +231,21 @@ class ChoiceGroupsUpdate(BaseModel):
     """Full-replace payload for a feature's choice groups (options included)."""
 
     choice_groups: list[ChoiceGroupPayload] = []
+
+    @model_validator(mode="after")
+    def validate_single_ability_choice_group(self):
+        """
+        Reject a second choice group of type ``ABILITY_SCORE``.
+
+        ``feat_ability_score_effects`` (and every ASI grant-answering path
+        built on it) assumes "at most one" choice group carries the ASI
+        alternatives — a feature offering, say, "+2 STR or +2 DEX" is one
+        group with two options, not two separate groups. A second
+        ability-carrying group would silently merge into that same flattened
+        list, breaking the single-pick semantics.
+        """
+
+        ability_groups = [group for group in self.choice_groups if group.choice_type == ChoiceType.ABILITY_SCORE]
+        if len(ability_groups) > 1:
+            raise ValueError("A feature may have at most one choice group of type ABILITY_SCORE.")
+        return self

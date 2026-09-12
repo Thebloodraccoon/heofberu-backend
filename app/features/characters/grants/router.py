@@ -94,7 +94,7 @@ async def answer_choice_groups(
         Body(
             openapi_examples={
                 "resilient-con": {
-                    "summary": "Resilient feat: choose CON (+1 CON and CON save proficiency)",
+                    "summary": "Resilient feat: choose CON (+1 CON)",
                     "value": {
                         "answers": [
                             {

@@ -13,6 +13,7 @@ from app.constants import (
     ASILevelChoice,
     AttackType,
     BackgroundSuggestionType,
+    ChoiceType,
     Component,
     ConditionType,
     DamageType,
@@ -67,3 +68,4 @@ ProficiencySourceTypeType = SAEnum(ProficiencySourceType, name="proficiency_sour
 ProficiencyActionType = SAEnum(ProficiencyAction, name="proficiency_action", create_type=False)
 ProficiencyAuditActionType = SAEnum(ProficiencyAuditAction, name="proficiency_audit_action", create_type=False)
 BackgroundSuggestionTypeType = SAEnum(BackgroundSuggestionType, name="background_suggestion_type", create_type=False)
+ChoiceTypeType = SAEnum(ChoiceType, name="choice_type", create_type=False)

@@ -171,6 +171,14 @@ class FeatureResponse(FeatureBase):
     armor_effects: list[ArmorEffectItem] = []
     weapon_effects: list[WeaponEffectItem] = []
     spell_effects: list[SpellEffectItem] = []
+    # Server-rendered, read-only: plain ``Feature`` properties (see
+    # ``app/models/features/feature_model.py`` and
+    # ``app.features.features.effects.rendering``), picked up automatically
+    # by ``model_validate`` off the eager-loaded effect tree — never
+    # accepted on write (this schema is response-only).
+    has_static_effects: bool = False
+    has_choices: bool = False
+    effects_summary: str = ""
 
 
 class FeatureGetAllResponse(BaseModel):
@@ -188,6 +196,9 @@ class FeatureGetAllResponse(BaseModel):
     background_id: int | None = None
     level: int | None = None
     ability_effects: list[AbilityEffectItem] = []
+    has_static_effects: bool = False
+    has_choices: bool = False
+    effects_summary: str = ""
 
 
 class NestedFeatureCreate(BaseModel):
@@ -214,6 +225,9 @@ class NestedFeatureResponse(BaseModel):
     description: str
     level: int | None = None
     ability_effects: list[AbilityEffectItem] = []
+    has_static_effects: bool = False
+    has_choices: bool = False
+    effects_summary: str = ""
 
 
 class FeatureUpdate(FeatPrerequisiteFieldsUpdate):

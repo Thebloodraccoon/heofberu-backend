@@ -47,10 +47,11 @@ class TestPendingChoiceGroups:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Choose a skill",
                         "options": [
-                            {"label": "Stealth", "skill_effects": [{"skill_id": skill.id}]},
-                            {"label": "Perception", "skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
                         ],
                     }
                 ]
@@ -122,7 +123,6 @@ class TestAnswerChoices:
     async def test_patch_valid_option_materializes_skill(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill, db_session
     ):
-        from app.models.character_association_models import CharacterSkillProficiency
 
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
@@ -136,10 +136,11 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Skill",
                         "options": [
-                            {"label": "Stealth", "skill_effects": [{"skill_id": skill.id}]},
-                            {"label": "Perception", "skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
                         ],
                     }
                 ]
@@ -191,9 +192,10 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Skill",
                         "options": [
-                            {"label": "Stealth", "skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
                         ],
                     }
                 ]
@@ -234,10 +236,11 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 2,
+                        "choice_type": "SKILL",
                         "label": "Two Skills",
                         "options": [
-                            {"label": "Athletics", "skill_effects": [{"skill_id": skill1.id}]},
-                            {"label": "Acrobatics", "skill_effects": [{"skill_id": skill1.id}]},
+                            {"skill_effects": [{"skill_id": skill1.id}]},
+                            {"skill_effects": [{"skill_id": skill1.id}]},
                         ],
                     }
                 ]
@@ -267,7 +270,6 @@ class TestAnswerChoices:
     async def test_re_answer_replaces_old_choice(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill, db_session
     ):
-        from app.models.character_association_models import CharacterSkillProficiency
 
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
@@ -281,10 +283,11 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Skill",
                         "options": [
-                            {"label": "Stealth", "skill_effects": [{"skill_id": skill_a.id}]},
-                            {"label": "Perception", "skill_effects": [{"skill_id": skill_b.id}]},
+                            {"skill_effects": [{"skill_id": skill_a.id}]},
+                            {"skill_effects": [{"skill_id": skill_b.id}]},
                         ],
                     }
                 ]
@@ -349,9 +352,10 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Any Skill",
                         "options": [
-                            {"label": "Any Skill", "skill_effects": [{"skill_id": None}]},
+                            {"skill_effects": [{"skill_id": None}]},
                         ],
                     }
                 ]
@@ -400,9 +404,10 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Any Skill",
                         "options": [
-                            {"label": "Any Skill", "skill_effects": [{"skill_id": None}]},
+                            {"skill_effects": [{"skill_id": None}]},
                         ],
                     }
                 ]
@@ -455,16 +460,18 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Group A",
                         "options": [
-                            {"label": "A1", "skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
                         ],
                     },
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Group B",
                         "options": [
-                            {"label": "B1", "skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
                         ],
                     },
                 ]
@@ -506,9 +513,10 @@ class TestAnswerChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Skill",
                         "options": [
-                            {"label": "Athletics", "skill_effects": [{"skill_id": skill.id}]},
+                            {"skill_effects": [{"skill_id": skill.id}]},
                         ],
                     }
                 ]
@@ -552,10 +560,10 @@ class TestOpenSpellResolution:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SPELL",
                         "label": "Any Evocation Spell (level 1)",
                         "options": [
                             {
-                                "label": "Evocation",
                                 "spell_effects": [
                                     {
                                         "spell_id": None,
@@ -603,10 +611,10 @@ class TestOpenSpellResolution:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SPELL",
                         "label": "Choose a spell",
                         "options": [
                             {
-                                "label": "Any Evocation",
                                 "spell_effects": [{"spell_id": None, "spell_school": "EVOCATION"}],
                             }
                         ],
@@ -649,10 +657,10 @@ class TestOpenSpellResolution:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SPELL",
                         "label": "Choose a spell",
                         "options": [
                             {
-                                "label": "Any Evocation",
                                 "spell_effects": [{"spell_id": None, "spell_school": "EVOCATION"}],
                             }
                         ],
@@ -702,10 +710,10 @@ class TestOpenSpellResolution:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SPELL",
                         "label": "Choose a spell",
                         "options": [
                             {
-                                "label": "Level 1 or lower",
                                 "spell_effects": [
                                     {"spell_id": None, "spell_level_max": "LEVEL_1"}
                                 ],
@@ -757,16 +765,15 @@ class TestOpenSpellResolution:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SPELL",
                         "label": "Choose a spell",
                         "options": [
                             {
-                                "label": "Any Evocation Level 1",
                                 "spell_effects": [
                                     {
                                         "spell_id": None,
                                         "spell_school": "EVOCATION",
                                         "spell_level_max": "LEVEL_1",
-                                        "counts_against_known_limit": True,
                                     }
                                 ],
                             }
@@ -811,7 +818,6 @@ class TestOpenSpellResolution:
         granted = body["granted_spells"]
         assert len(granted) == 1
         assert granted[0]["spell_id"] == evocation_spell.id
-        assert granted[0]["counts_against_known_limit"] is True
         assert granted[0]["spell"]["name"] == "Magic Missile"
         assert granted[0]["spell"]["school"] == "EVOCATION"
 
@@ -827,13 +833,7 @@ class TestOpenSpellResolution:
         fx_resp = await client.put(
             f"/features/{feature.id}/effects",
             json={
-                "spell_effects": [
-                    {
-                        "spell_id": cantrip.id,
-                        "always_prepared": True,
-                        "counts_against_known_limit": False,
-                    }
-                ]
+                "spell_effects": [{"spell_id": cantrip.id}]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -860,6 +860,4 @@ class TestOpenSpellResolution:
         granted = spells_resp.json()["granted_spells"]
         assert len(granted) == 1
         assert granted[0]["spell_id"] == cantrip.id
-        assert granted[0]["always_prepared"] is True
-        assert granted[0]["counts_against_known_limit"] is False
         assert granted[0]["spell"]["name"] == "Prestidigitation"

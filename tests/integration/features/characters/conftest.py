@@ -36,7 +36,7 @@ async def create_api_character(client, login_as, create_user, create_background,
     level-1 cap (used by the max-level system's own tests).
     """
 
-    default_background_id = None
+    default_background = None
 
     async def _create_api_character(
         class_id,
@@ -47,11 +47,12 @@ async def create_api_character(client, login_as, create_user, create_background,
         raise_max_level=True,
         **kwargs,
     ):
-        nonlocal default_background_id
+        nonlocal default_background
         if owner is None:
             owner = await create_user()
         # ``background_id=False`` omits the field entirely — a character
         # with no background (for the late-background setup tests).
+        suggestion_ids = None
         if background_id is False:
             background_id = None
             omit_background = True
@@ -60,9 +61,10 @@ async def create_api_character(client, login_as, create_user, create_background,
                 # Reuse one background per test so calling this fixture for
                 # several characters (each auto-picking a background) does
                 # not collide on ``backgrounds.name`` unique.
-                if default_background_id is None:
-                    default_background_id = (await create_background()).id
-                background_id = default_background_id
+                if default_background is None:
+                    default_background = await create_background()
+                background_id = default_background.id
+                suggestion_ids = [s.id for s in default_background.suggestions]
             omit_background = False
         token = await login_as(owner)
         payload = {
@@ -74,6 +76,8 @@ async def create_api_character(client, login_as, create_user, create_background,
         }
         if omit_background:
             del payload["background_id"]
+        elif "suggestion_ids" not in payload and suggestion_ids is not None:
+            payload["suggestion_ids"] = suggestion_ids
         response = await client.post(
             "/characters",
             json=payload,

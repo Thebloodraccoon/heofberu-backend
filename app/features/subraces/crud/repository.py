@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordAlreadyExistsError
+from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_model import Character
 from app.models.races.subrace_association_models import SubraceAbilityBonus
 from app.models.races.subrace_model import Subrace
@@ -22,7 +23,10 @@ class SubraceRepository(BaseRepository[Subrace]):
         super().__init__(
             Subrace,
             db,
-            default_load_options=[selectinload(Subrace.ability_bonuses)],
+            default_load_options=[
+                selectinload(Subrace.ability_bonuses),
+                *feature_summary_loads(selectinload(Subrace.features)),
+            ],
             search_fields=["name"],
             unique_fields=["name"],
             check_in_use_on_delete=True,

@@ -1,4 +1,4 @@
-"""Unit tests for GmPanelFeatureService: record/update/remove feature grants."""
+"""Unit tests for GmPanelFeatureService: record/remove feature grants."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -11,7 +11,7 @@ from app.features.characters.gm_panel.exceptions import (
     CharacterFeatureNotFoundException,
     FeatureIsAFeatException,
 )
-from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd, CharacterFeatureUpdate
+from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd
 from app.features.characters.gm_panel.features.service import GmPanelFeatureService
 from app.features.features.exceptions import FeatureNotFoundException
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
@@ -43,7 +43,6 @@ class FakeCharacterFeatureRepository:
         self.db = db
         self._by_id = grants_by_id or {}
         self.add_calls = []
-        self.notes_calls = []
         self.remove_calls = []
 
     async def get_character_feature_by_feature_id(self, character_id, feature_id):
@@ -52,21 +51,15 @@ class FakeCharacterFeatureRepository:
     async def get_character_feature_by_id(self, character_id, character_feature_id):
         return self._by_id.get(character_feature_id)
 
-    async def add_character_feature(self, character_id, feature_id, notes, *, grant_source=GrantSource.GM, commit=True):
+    async def add_character_feature(self, character_id, feature_id, *, grant_source=GrantSource.GM, commit=True):
         grant = SimpleNamespace(
             id=9,
             character_id=character_id,
             feature_id=feature_id,
-            notes=notes,
             grant_source=grant_source,
             feature=make_feature_brief(feature_id),
         )
         self.add_calls.append(grant)
-        return grant
-
-    async def update_notes(self, grant, notes):
-        grant.notes = notes
-        self.notes_calls.append((grant, notes))
         return grant
 
     async def remove_character_feature(self, grant):
@@ -89,7 +82,6 @@ def make_grant(grant_id=6, feature_id=4) -> SimpleNamespace:
         id=grant_id,
         character_id=1,
         feature_id=feature_id,
-        notes="old",
         grant_source=GrantSource.GM,
         feature=make_feature_brief(feature_id),
     )
@@ -121,7 +113,7 @@ class TestAddFeature:
         character = SimpleNamespace(id=1)
         service = make_service(character, feature_exists=True)
 
-        result = await service.add_feature(1, CharacterFeatureAdd(feature_id=4, notes="homebrew"), SimpleNamespace())
+        result = await service.add_feature(1, CharacterFeatureAdd(feature_id=4), SimpleNamespace())
 
         assert result.id == 9
         assert service.feature_grant_repository.add_calls[0].feature_id == 4
@@ -177,34 +169,6 @@ class TestAddFeature:
         await service.add_feature(1, CharacterFeatureAdd(feature_id=4), SimpleNamespace())
 
         assert materialize_mock.call_count == 1
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-class TestUpdateFeature:
-    async def test_replaces_notes_without_touching_the_score_cache(self):
-        grant = make_grant()
-        service = make_service(grants_by_id={grant.id: grant})
-
-        result = await service.update_feature(1, grant.id, CharacterFeatureUpdate(notes="new"), SimpleNamespace())
-
-        assert result.notes == "new"
-        assert service.feature_grant_repository.notes_calls == [(grant, "new")]
-        assert service.stats_service.refresh_calls == []
-
-    async def test_none_notes_collapse_to_empty_string(self):
-        grant = make_grant()
-        service = make_service(grants_by_id={grant.id: grant})
-
-        await service.update_feature(1, grant.id, CharacterFeatureUpdate(notes=None), SimpleNamespace())
-
-        assert grant.notes == ""
-
-    async def test_missing_grant_raises(self):
-        service = make_service()
-
-        with pytest.raises(CharacterFeatureNotFoundException):
-            await service.update_feature(1, 42, CharacterFeatureUpdate(notes="x"), SimpleNamespace())
 
 
 @pytest.mark.unit

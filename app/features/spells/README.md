@@ -13,12 +13,14 @@ same `Spells` tag):
 | Capability | Endpoints |
 | --- | --- |
 | `crud/` | `GET ""` (paginated, heavily filterable listing), `GET /{spell_id}`, `POST ""` (GM), `PATCH /{spell_id}` (GM), `DELETE /{spell_id}` (Founder) |
-| `availability/` | `PUT /spells/classes|subclasses|races|subraces?spell_id=` — full-replace of each availability dimension (GM) |
+| `availability/` | `PUT /spells/{spell_id}/classes`, `PUT /spells/{spell_id}/subclasses`, `PUT /spells/{spell_id}/races`, `PUT /spells/{spell_id}/subraces` — full-replace of each availability dimension (GM) |
 
-The spell is identified via the required `spell_id` query parameter on all
-availability endpoints (query-style IDs). Deps live in `dependencies.py`
-(`SpellCrudDep`, `SpellAvailabilityDep`); `exceptions.py` holds
-`SpellNotFoundException`.
+The spell is identified via a **path** parameter (`{spell_id}`) on all
+availability endpoints, consistent with the other catalogs (no query-style
+IDs remain). Request body is generation-based (`{class_ids: [...]}`,
+`{subclass_ids: [...]}`, etc.); unknown ids → 400. Each `set_*` returns the
+full `SpellResponse`. Deps live in `dependencies.py` (`SpellCrudDep`,
+`SpellAvailabilityDep`); `exceptions.py` holds `SpellNotFoundException`.
 
 ## Service Composition & Create Seeding
 
@@ -26,8 +28,9 @@ availability endpoints (query-style IDs). Deps live in `dependencies.py`
 `SpellAvailabilityService` in `__init__`. `create_spell` seeds association
 rows at create time inside one `_atomic()` transaction: each provided
 availability list is resolved through `resolve_ids` (400 on unknown ids),
-then written through the availability service's `set_*_for_spell(...,
-commit=False)` variants next to the new `Spell` row. Empty or omitted lists
+then written through the availability service's `set_classes_for_spell` /
+`set_subclasses_for_spell` / `set_races_for_spell` / `set_subraces_for_spell`
+(`commit=False`) variants next to the new `Spell` row. Empty or omitted lists
 mean the spell stays unrestricted on that dimension.
 
 `get_all` is overridden to build the cached listing WITHOUT materializing
@@ -50,6 +53,6 @@ calls it after commit; the crud service also declares it as
   subrace checks (each unrestricted dimension passes automatically). See
   `characters/spells/eligibility.py`.
 - The known-cantrip cap is a `"CANTRIP"` row in a class's spell-slot
-  progression table (`PUT /classes/spell-slots` with
+  progression table (`PUT /classes/{class_id}/spell-slots?class_level=` with
   `{"spell_level": "CANTRIP"}`) — that lives in the classes catalog, not
   here; without such a row no character of that class can learn any cantrip.

@@ -257,11 +257,32 @@ class ProficiencyType(str, Enum):
     WEAPON = "WEAPON"
 
 
+class ChoiceType(str, Enum):
+    """
+    What kind of effect a ``FeatureChoiceGroup``'s options carry — fixed at
+    the group, and enforced on every option in it: an option in a ``SKILL``
+    group may only populate ``skill_effects``, an ``ABILITY_SCORE`` group
+    only ``ability_effects``, and so on. One effect type per group, no mixed
+    bundles.
+    """
+
+    SKILL = "SKILL"
+    SPELL = "SPELL"
+    ABILITY_SCORE = "ABILITY_SCORE"
+    SAVING_THROW = "SAVING_THROW"
+    ARMOR = "ARMOR"
+    WEAPON = "WEAPON"
+
+
 class ProficiencySourceType(str, Enum):
     """
     How a ``character_proficiencies`` row came to exist — a second axis
     alongside ``proficiency_type``.
 
+    - ``CLASS`` — auto-granted by the class (e.g. its fixed saving throws),
+      no choice involved. Distinct from ``CLASS_CHOICE``: this is for the
+      class's own non-choice grants, not yet routed through the feature
+      engine (``class_saving_throws`` isn't itself a Feature source).
     - ``CLASS_CHOICE`` — the player's skill pick at character creation from
       the class's ``available_skills``.
     - ``RACE`` — auto-granted by the race's ``granted_skills`` (no choice).
@@ -274,6 +295,7 @@ class ProficiencySourceType(str, Enum):
       :class:`ProficiencyAction`.
     """
 
+    CLASS = "CLASS"
     CLASS_CHOICE = "CLASS_CHOICE"
     RACE = "RACE"
     BACKGROUND = "BACKGROUND"

@@ -3,7 +3,7 @@
 import pytest
 
 from app.constants import FeatureSourceType
-from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
+from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 
 
 async def set_class_equipment(client, gm_token, class_id, items):
@@ -25,12 +25,16 @@ async def set_class_choice_groups(client, gm_token, class_id, groups):
     return response.json()["choice_groups"]
 
 
-async def create_character_with_choices(client, player_token, class_id, item_choice_ids, background_id=None):
+async def create_character_with_choices(
+    client, player_token, class_id, item_choice_ids, background_id=None, suggestion_ids=None
+):
     payload = {"name": "Raistlin", "class_id": class_id}
     if background_id is not None:
         payload["background_id"] = background_id
     if item_choice_ids is not None:
         payload["item_choice_ids"] = item_choice_ids
+    if suggestion_ids is not None:
+        payload["suggestion_ids"] = suggestion_ids
     return await client.post("/characters", json=payload, headers={"Authorization": f"Bearer {player_token}"})
 
 
@@ -203,6 +207,7 @@ class TestBackgroundItemChoices:
     ):
         character_class = await create_class(name="Fighter")
         background = await create_background(name="Entertainer")
+        suggestion_ids = [s.id for s in background.suggestions]
         vest = await create_item(name="Vest")
         lute_item = await create_item(name="Lute")
 
@@ -218,12 +223,17 @@ class TestBackgroundItemChoices:
         await db_session.commit()
 
         missing = await create_character_with_choices(
-            client, player_token, character_class.id, [], background_id=background.id
+            client, player_token, character_class.id, [], background_id=background.id, suggestion_ids=suggestion_ids
         )
         assert missing.status_code == 400, missing.text
 
         response = await create_character_with_choices(
-            client, player_token, character_class.id, [vest_option.id], background_id=background.id
+            client,
+            player_token,
+            character_class.id,
+            [vest_option.id],
+            background_id=background.id,
+            suggestion_ids=suggestion_ids,
         )
         assert response.status_code == 201, response.text
         items = await get_character_items(client, player_token, response.json()["id"])

@@ -42,17 +42,32 @@ from app.models.features.feature_engine_models import FeatureChoiceGroup, Featur
 from app.models.features.feature_model import Feature
 
 
+_OPTION_EFFECT_ATTRS = (
+    "ability_effects",
+    "skill_effects",
+    "saving_throw_effects",
+    "armor_effects",
+    "weapon_effects",
+    "spell_effects",
+)
+
+
+def choice_option_effect_loads(base_loader) -> list:
+    """
+    Chain onto ``base_loader`` (a ``selectinload`` chain ending at a
+    ``FeatureChoiceOption``, e.g. a stored ``CharacterFeatureChoice``'s
+    ``.choice_option``) the six effect-type loads a chosen option's bundle
+    needs — used wherever a resolved pick's effects are read back (see
+    ``ChosenOptionResponse``).
+    """
+
+    return [base_loader.selectinload(getattr(FeatureChoiceOption, attr)) for attr in _OPTION_EFFECT_ATTRS]
+
+
 def engine_effect_loads() -> list:
     """Eager loads for the whole feature-engine effect tree (shared loader)."""
 
-    option_effect_attrs = (
-        "ability_effects",
-        "skill_effects",
-        "saving_throw_effects",
-        "armor_effects",
-        "weapon_effects",
-        "spell_effects",
-    )
+    option_effect_attrs = _OPTION_EFFECT_ATTRS
 
     return [
         selectinload(Feature.ability_effects),
@@ -95,7 +110,7 @@ class DesiredEffects:
     saving_throws: set = field(default_factory=set)
     armor: set = field(default_factory=set)
     weapons: list[tuple] = field(default_factory=list)
-    spells: list[tuple] = field(default_factory=list)
+    spells: set = field(default_factory=set)
 
 
 class FeatureGrantMaterializer:
@@ -145,7 +160,7 @@ class FeatureGrantMaterializer:
         for effect in feature.spell_effects:
             if effect.spell_id is None:
                 continue
-            desired.spells.append((effect.spell_id, effect.always_prepared, effect.counts_against_known_limit))
+            desired.spells.add(effect.spell_id)
 
         for resolved in choices.values():
             for item in resolved:
@@ -179,7 +194,7 @@ class FeatureGrantMaterializer:
             spell_id = effect.spell_id if effect.spell_id is not None else item.spell_id
             if spell_id is None:
                 continue
-            desired.spells.append((spell_id, effect.always_prepared, effect.counts_against_known_limit))
+            desired.spells.add(spell_id)
 
     async def reconcile(
         self,
@@ -240,6 +255,41 @@ class FeatureGrantMaterializer:
         )
         return list(result.scalars().unique().all())
 
+    async def _reconcile_by_key(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        grant: CharacterFeature,
+        feature,
+        proficiency_type: ProficiencyType,
+        desired_keys,
+        key_of,
+        build_kwargs,
+        on_keep=None,
+    ) -> None:
+        """
+        Generic keyed diff: delete this grant's own rows of ``proficiency_type``
+        whose ``key_of`` isn't in ``desired_keys``, insert the missing ones
+        (built via ``build_kwargs``). ``on_keep``, if given, runs on every
+        already-present row whose key is still desired (used by skills to
+        upgrade ``is_expertise`` without ever downgrading it).
+        """
+
+        own = {key_of(row): row for row in await self._own_rows(db, character_id, grant, proficiency_type)}
+
+        for key, row in own.items():
+            if key not in desired_keys:
+                await db.delete(row)
+
+        for key in desired_keys:
+            row = own.get(key)
+            if row is not None:
+                if on_keep is not None:
+                    on_keep(row, key)
+                continue
+
+            db.add(self._new_proficiency(character_id, grant, feature, proficiency_type, **build_kwargs(key)))
+
     async def _reconcile_skills(
         self,
         db: AsyncSession,
@@ -250,24 +300,21 @@ class FeatureGrantMaterializer:
     ) -> None:
         """Reconcile this grant's own skill-proficiency rows (preserving expertise upgrades)."""
 
-        own = {row.skill_id: row for row in await self._own_rows(db, character_id, grant, ProficiencyType.SKILL)}
+        def on_keep(row: CharacterProficiency, skill_id: int) -> None:
+            if desired.skills[skill_id] and not row.is_expertise:
+                row.is_expertise = True
 
-        for skill_id, row in own.items():
-            if skill_id not in desired.skills:
-                await db.delete(row)
-
-        for skill_id, wants_expertise in desired.skills.items():
-            row = own.get(skill_id)
-            if row is not None:
-                if wants_expertise and not row.is_expertise:
-                    row.is_expertise = True
-                continue
-
-            db.add(
-                self._new_proficiency(
-                    character_id, grant, feature, ProficiencyType.SKILL, skill_id=skill_id, is_expertise=wants_expertise
-                )
-            )
+        await self._reconcile_by_key(
+            db,
+            character_id,
+            grant,
+            feature,
+            ProficiencyType.SKILL,
+            desired_keys=set(desired.skills),
+            key_of=lambda row: row.skill_id,
+            build_kwargs=lambda skill_id: {"skill_id": skill_id, "is_expertise": desired.skills[skill_id]},
+            on_keep=on_keep,
+        )
 
     async def _reconcile_saves(
         self,
@@ -279,15 +326,16 @@ class FeatureGrantMaterializer:
     ) -> None:
         """Reconcile this grant's own saving-throw proficiency rows."""
 
-        own = {row.ability: row for row in await self._own_rows(db, character_id, grant, ProficiencyType.SAVING_THROW)}
-
-        for ability, row in own.items():
-            if ability not in desired.saving_throws:
-                await db.delete(row)
-
-        for ability in desired.saving_throws:
-            if ability not in own:
-                db.add(self._new_proficiency(character_id, grant, feature, ProficiencyType.SAVING_THROW, ability=ability))
+        await self._reconcile_by_key(
+            db,
+            character_id,
+            grant,
+            feature,
+            ProficiencyType.SAVING_THROW,
+            desired_keys=desired.saving_throws,
+            key_of=lambda row: row.ability,
+            build_kwargs=lambda ability: {"ability": ability},
+        )
 
     async def _reconcile_armor(
         self,
@@ -299,15 +347,16 @@ class FeatureGrantMaterializer:
     ) -> None:
         """Reconcile this grant's own armor-proficiency rows."""
 
-        own = {row.armor_type: row for row in await self._own_rows(db, character_id, grant, ProficiencyType.ARMOR)}
-
-        for armor_type, row in own.items():
-            if armor_type not in desired.armor:
-                await db.delete(row)
-
-        for armor_type in desired.armor:
-            if armor_type not in own:
-                db.add(self._new_proficiency(character_id, grant, feature, ProficiencyType.ARMOR, armor_type=armor_type))
+        await self._reconcile_by_key(
+            db,
+            character_id,
+            grant,
+            feature,
+            ProficiencyType.ARMOR,
+            desired_keys=desired.armor,
+            key_of=lambda row: row.armor_type,
+            build_kwargs=lambda armor_type: {"armor_type": armor_type},
+        )
 
     async def _reconcile_weapons(
         self,
@@ -319,31 +368,18 @@ class FeatureGrantMaterializer:
     ) -> None:
         """Reconcile this grant's own weapon-proficiency rows (category rows + concrete item rows)."""
 
-        existing = await self._own_rows(db, character_id, grant, ProficiencyType.WEAPON)
-        own_categories = {row.weapon_category for row in existing if row.weapon_category is not None}
-        own_items = {row.item_id for row in existing if row.item_id is not None}
-        desired_weapons = set(desired.weapons)
-
-        for row in existing:
-            marker = (row.weapon_category, row.item_id)
-            if marker not in desired_weapons:
-                await db.delete(row)
-
-        for category, item_id in desired.weapons:
-            if category is not None:
-                if category not in own_categories:
-                    db.add(
-                        self._new_proficiency(
-                            character_id, grant, feature, ProficiencyType.WEAPON, weapon_category=category
-                        )
-                    )
-                    own_categories.add(category)
-            elif item_id is not None:
-                if item_id not in own_items:
-                    db.add(
-                        self._new_proficiency(character_id, grant, feature, ProficiencyType.WEAPON, item_id=item_id)
-                    )
-                    own_items.add(item_id)
+        await self._reconcile_by_key(
+            db,
+            character_id,
+            grant,
+            feature,
+            ProficiencyType.WEAPON,
+            desired_keys=set(desired.weapons),
+            key_of=lambda row: (row.weapon_category, row.item_id),
+            build_kwargs=lambda key: (
+                {"weapon_category": key[0]} if key[0] is not None else {"item_id": key[1]}
+            ),
+        )
 
     async def _reconcile_spells(
         self,
@@ -362,21 +398,18 @@ class FeatureGrantMaterializer:
         )
         existing = list(result.scalars().unique().all())
 
-        stored = {(row.spell_id, row.always_prepared, row.counts_against_known_limit) for row in existing}
-        desired_set = set(desired.spells)
+        stored = {row.spell_id for row in existing}
 
         for row in existing:
-            if (row.spell_id, row.always_prepared, row.counts_against_known_limit) not in desired_set:
+            if row.spell_id not in desired.spells:
                 await db.delete(row)
 
-        for spell_id, always_prepared, counts_against_known_limit in desired_set:
-            if (spell_id, always_prepared, counts_against_known_limit) not in stored:
+        for spell_id in desired.spells:
+            if spell_id not in stored:
                 db.add(
                     CharacterGrantedSpell(
                         character_id=character_id,
                         spell_id=spell_id,
-                        always_prepared=always_prepared,
-                        counts_against_known_limit=counts_against_known_limit,
                         source_character_feature_id=grant.id,
                     )
                 )
@@ -396,6 +429,7 @@ __all__ = [
     "DesiredEffects",
     "FeatureGrantMaterializer",
     "ResolvedOption",
+    "choice_option_effect_loads",
     "engine_effect_loads",
     "load_feature_effect_tree",
 ]

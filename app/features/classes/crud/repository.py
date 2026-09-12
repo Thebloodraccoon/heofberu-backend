@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
+from app.features.features.crud.repository import feature_summary_loads
 from app.models import (
     Character,
     Class,
@@ -39,6 +40,7 @@ class ClassRepository(BaseRepository[Class]):
                 .selectinload(SourceItemChoiceOption.item),
                 selectinload(Class.spell_slot_progression),
                 selectinload(Class.subclasses),
+                *feature_summary_loads(selectinload(Class.features)),
             ],
             search_fields=["name"],
             unique_fields=["name"],

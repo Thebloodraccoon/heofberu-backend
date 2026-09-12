@@ -11,7 +11,7 @@ from app.features.characters.gm_panel.exceptions import (
 )
 from app.features.characters.gm_panel.level.schemas import MaxLevelUpdate
 from app.features.characters.gm_panel.level.service import GmPanelLevelService
-from app.models.character_model import Character
+from app.models.character.character_model import Character
 from tests.unit.fakes import FakeAsyncSession
 
 

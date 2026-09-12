@@ -3,9 +3,11 @@
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import ProficiencyType
 from app.core.base.repository import BaseRepository
 from app.features.shared.skills.mixins import SkillLookupMixin
-from app.models import CharacterSkillProficiency, Skill, background_skills, class_available_skills, race_skills
+from app.models import Skill, background_skills, class_available_skills, race_skills
+from app.models.character.character_proficiency_model import CharacterProficiency
 
 
 class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
@@ -30,7 +32,10 @@ class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
                 exists().where(race_skills.c.skill_id == skill_id),
                 exists().where(class_available_skills.c.skill_id == skill_id),
                 exists().where(background_skills.c.skill_id == skill_id),
-                exists().where(CharacterSkillProficiency.skill_id == skill_id),
+                exists().where(
+                    CharacterProficiency.proficiency_type == ProficiencyType.SKILL,
+                    CharacterProficiency.skill_id == skill_id,
+                ),
             )
         )
         result = await self.db.execute(query)

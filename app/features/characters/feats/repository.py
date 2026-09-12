@@ -20,6 +20,7 @@ from app.features.characters.feats.schemas import (
     FeatAbilityScoreIncreaseResponse,
     FeatBriefResponse,
 )
+from app.features.characters.grants.materializer import choice_option_effect_loads
 from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
 from app.features.characters.progression.feature_sync import materialize_grant
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
@@ -34,11 +35,11 @@ _GRANT_SOURCE_TO_FEAT_SOURCE = {
     GrantSource.AUTO: CharacterFeatSource.GM,  # feats are never AUTO-granted; defensive fallback only.
 }
 
+_CHOICE_OPTION_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
 _LOAD_OPTIONS = [
     selectinload(CharacterFeature.feature),
-    selectinload(CharacterFeature.choices)
-    .selectinload(CharacterFeatureChoice.choice_option)
-    .selectinload(FeatureChoiceOption.ability_effects),
+    _CHOICE_OPTION_LOADER,
+    *choice_option_effect_loads(_CHOICE_OPTION_LOADER),
 ]
 
 

@@ -573,8 +573,9 @@ class TestLevelUp:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
-                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }
                 ]
             },
@@ -696,8 +697,9 @@ class TestLevelUp:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
-                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }
                 ]
             },
@@ -858,8 +860,9 @@ class TestLevelUpFeatureChoices:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "SKILL",
                         "label": "Pick a skill",
-                        "options": [{"label": "Athletics", "skill_effects": [{"skill_id": skill.id}]}],
+                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
                     }
                 ]
             },
@@ -986,7 +989,8 @@ class TestLevelUpFeatureChoices:
                     "choice_groups": [
                         {
                             "pick_count": 1,
-                            "options": [{"label": "Pick", "skill_effects": [{"skill_id": skill_id}]}],
+                            "choice_type": "SKILL",
+                            "options": [{"skill_effects": [{"skill_id": skill_id}]}],
                         }
                     ]
                 },

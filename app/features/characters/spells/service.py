@@ -32,10 +32,9 @@ class CharacterSpellService(CharacterSubDomainService):
     Spell slots, known spells, and feature-granted spells for a character.
     There is no "prepared" state and no slot spending: knowing a spell IS
     having it ready, and a level's slot ``total`` (derived from the class/
-    level progression) doubles as the cap on spells of that level the
-    character may know (feature-granted rows count only when their
-    ``counts_against_known_limit`` flag is set). Eligibility is delegated
-    to ``CharacterSpellEligibilityChecker``.
+    level progression) doubles as the cap on known spells of that level;
+    feature-granted spells never compete for that budget. Eligibility is
+    delegated to ``CharacterSpellEligibilityChecker``.
     """
 
     def __init__(self, db: AsyncSession):
@@ -49,7 +48,6 @@ class CharacterSpellService(CharacterSubDomainService):
         self.eligibility_checker = CharacterSpellEligibilityChecker(
             self.character_spell_slot_repository,
             self.character_spell_repository,
-            self.character_granted_spell_repository,
         )
 
     async def get_spells(self, character_id: int, current_user: UserResponse) -> CharacterSpellsResponse:

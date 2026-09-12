@@ -41,12 +41,7 @@ class GmPanelSpellService(CharacterSubDomainService):
         if not await self.spell_repository.exists_by_id(data.spell_id):
             raise SpellNotFoundException(spell_id=data.spell_id)
 
-        row = await self.granted_spell_repository.add_granted_spell(
-            character_id,
-            data.spell_id,
-            always_prepared=data.always_prepared,
-            counts_against_known_limit=data.counts_against_known_limit,
-        )
+        row = await self.granted_spell_repository.add_granted_spell(character_id, data.spell_id)
         await invalidate_character_cache(character_id)
 
         return CharacterGrantedSpellResponse.model_validate(row)

@@ -10,5 +10,3 @@ class CharacterGrantedSpellAdd(BaseModel):
     """
 
     spell_id: int
-    always_prepared: bool = True
-    counts_against_known_limit: bool = False

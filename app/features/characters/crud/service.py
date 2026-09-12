@@ -4,7 +4,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import FeatureSourceType, UserRole
+from app.constants import (
+    BackgroundSuggestionType,
+    FeatureSourceType,
+    ProficiencyAction,
+    ProficiencySourceType,
+    ProficiencyType,
+    UserRole,
+)
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
@@ -15,10 +22,13 @@ from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.cache import CHARACTER_CACHE_NAMESPACE, invalidate_character_cache
 from app.features.characters.crud.exceptions import (
+    BackgroundSuggestionIdsRequiredException,
+    InvalidBackgroundSuggestionException,
     InvalidHpUpdateException,
     ItemChoiceNotAvailableException,
     ItemChoicesWithoutGroupsException,
     SkillNotAvailableForClassException,
+    SuggestionIdsWithoutBackgroundException,
     TooFewItemChoicesException,
     TooManySkillChoicesException,
 )
@@ -26,6 +36,7 @@ from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.level.repository import CharacterMaxLevelRepository
+from app.features.characters.proficiencies.writer import add_skill_proficiencies
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.schemas import (
@@ -43,11 +54,12 @@ from app.features.items.crud.repository import ItemRepository
 from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models import CharacterAbilityScore, CharacterSkillProficiency, Class
+from app.models import CharacterAbilityScore, Class
+from app.models.backgrounds.background_model import Background
 from app.models.character.character_backstory_model import CharacterBackstory
 from app.models.character.character_item_model import CharacterItem
 from app.models.character.character_model import Character
-from app.models.character.saving_throw_proficiency import CharacterSavingThrowProficiency
+from app.models.character.character_proficiency_model import CharacterProficiency
 from app.models.items.item_source_choice_model import SourceItemChoiceOption
 
 
@@ -247,6 +259,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             character_data.class_id, character_data.background_id, character_data.item_choice_ids
         )
 
+        if character_data.background_id is None and character_data.suggestion_ids:
+            raise SuggestionIdsWithoutBackgroundException()
+
         background_skill_ids: list[int] = []
         background_personality = {
             "personality_traits": "",
@@ -259,15 +274,14 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             background = await self.background_repository.get_by_id(character_data.background_id)
             if background is not None:
                 background_skill_ids = [skill.id for skill in background.granted_skills]
-                # Always take the personality card from the background when one
-                # is chosen (the player's own values are replaced with the
-                # background's suggestions).
-                background_personality = {
-                    "personality_traits": background.personality_traits_suggestions,
-                    "ideals": background.ideals_suggestions,
-                    "bonds": background.bonds_suggestions,
-                    "flaws": background.flaws_suggestions,
-                }
+                # The player picks exactly one suggestion per personality-card
+                # field from the background's own suggestions (see
+                # ``_resolve_background_suggestions``); the player's own
+                # personality_traits/ideals/bonds/flaws values are replaced
+                # with the chosen suggestions' text.
+                background_personality = self._resolve_background_suggestions(
+                    background, character_data.suggestion_ids
+                )
                 # The backstory is written from the background's description —
                 # the client does not send backstory at creation.
                 background_description = background.description
@@ -280,7 +294,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             if race is not None:
                 race_skill_ids = [skill.id for skill in race.granted_skills]
 
-        payload = character_data.model_dump(exclude={"skill_ids", "item_choice_ids"})
+        payload = character_data.model_dump(exclude={"skill_ids", "item_choice_ids", "suggestion_ids"})
         payload["owner_id"] = current_user.id
         payload["level"] = 1
         payload["temp_hp"] = 0
@@ -350,6 +364,42 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
                 raise SkillNotAvailableForClassException(class_id=character_class.id, skill_id=skill_id)
 
         return skill_ids
+
+    @staticmethod
+    def _resolve_background_suggestions(background: Background, suggestion_ids: list[int]) -> dict[str, str]:
+        """
+        Resolve the player's picked suggestion ids into the personality-card
+        payload: exactly one id per :class:`BackgroundSuggestionType`
+        (PERSONALITY_TRAIT, IDEAL, BOND, FLAW), each belonging to this
+        background.
+        """
+
+        if len(suggestion_ids) != len(BackgroundSuggestionType):
+            raise BackgroundSuggestionIdsRequiredException(background_id=background.id, requested=len(suggestion_ids))
+
+        suggestions_by_id = {suggestion.id: suggestion for suggestion in background.suggestions}
+        chosen_by_type: dict[BackgroundSuggestionType, str] = {}
+        for suggestion_id in suggestion_ids:
+            suggestion = suggestions_by_id.get(suggestion_id)
+            if suggestion is None:
+                raise InvalidBackgroundSuggestionException(background_id=background.id, suggestion_id=suggestion_id)
+
+            suggestion_type = BackgroundSuggestionType(suggestion.suggestion_type)
+            if suggestion_type in chosen_by_type:
+                raise BackgroundSuggestionIdsRequiredException(
+                    background_id=background.id, requested=len(suggestion_ids)
+                )
+            chosen_by_type[suggestion_type] = suggestion.text
+
+        if set(chosen_by_type) != set(BackgroundSuggestionType):
+            raise BackgroundSuggestionIdsRequiredException(background_id=background.id, requested=len(suggestion_ids))
+
+        return {
+            "personality_traits": chosen_by_type[BackgroundSuggestionType.PERSONALITY_TRAIT],
+            "ideals": chosen_by_type[BackgroundSuggestionType.IDEAL],
+            "bonds": chosen_by_type[BackgroundSuggestionType.BOND],
+            "flaws": chosen_by_type[BackgroundSuggestionType.FLAW],
+        }
 
     async def _resolve_item_choices(
         self,
@@ -426,21 +476,17 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         commit: bool = True,
     ) -> None:
         """
-        Write the starting skill proficiencies: the validated class choices
-        plus the background's and race's granted skills, deduplicated, all
-        starting with ``is_expertise=False``.
-
-        These are legacy free-form rows (``source_character_feature_id`` is
-        NULL). Once the Phase 4 data scripts move class/background/race
-        skills into the feature engine, the engine's grant materializer
-        owns them and this method's lists become empty.
+        Write the starting skill proficiencies as ``CharacterProficiency``
+        rows, each tagged with its actual source: the validated class
+        choices as ``CLASS_CHOICE``, the background's granted skills as
+        ``BACKGROUND``, the race's as ``RACE``. A skill reachable from more
+        than one source is written once per source (not deduplicated across
+        them — see ``CharacterProficiency`` for why).
         """
 
-        merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
-        for skill_id in merged_skill_ids:
-            self.repository.db.add(
-                CharacterSkillProficiency(character_id=character.id, skill_id=skill_id, is_expertise=False)
-            )
+        add_skill_proficiencies(self.repository.db, character.id, chosen_skill_ids, ProficiencySourceType.CLASS_CHOICE)
+        add_skill_proficiencies(self.repository.db, character.id, background_skill_ids, ProficiencySourceType.BACKGROUND)
+        add_skill_proficiencies(self.repository.db, character.id, race_skill_ids, ProficiencySourceType.RACE)
 
         if commit:
             await self.repository.db.commit()
@@ -450,17 +496,23 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     async def _apply_class_saving_throws(self, character: Character, character_class: Class, *, commit: bool = True) -> None:
         """
         Write the character's starting saving-throw proficiencies from the
-        class's default saves (e.g. Fighter -> STR, CON).
+        class's default saves (e.g. Fighter -> STR, CON), as
+        ``CharacterProficiency`` rows with ``source_type=CLASS``.
 
-        Legacy free-form rows (``source_character_feature_id`` is NULL),
-        same as ``_apply_skill_proficiencies`` — the class's saves table
-        (``class_saving_throws``) isn't itself part of the feature engine,
-        so nothing else would ever materialize these onto the character.
+        Not yet routed through the feature engine — ``class_saving_throws``
+        isn't itself a Feature source, so nothing else would ever
+        materialize these onto the character.
         """
 
         for throw in character_class.saving_throws:
             self.repository.db.add(
-                CharacterSavingThrowProficiency(character_id=character.id, ability=throw.ability)
+                CharacterProficiency(
+                    character_id=character.id,
+                    proficiency_type=ProficiencyType.SAVING_THROW,
+                    ability=throw.ability,
+                    source_type=ProficiencySourceType.CLASS,
+                    action=ProficiencyAction.GRANT,
+                )
             )
 
         if commit:

@@ -1,6 +1,6 @@
 """
 Unit tests for ClassCrudService: create_class capability seeding, the
-ClassFullResponse composition in get_by_id, and full-replace update_class.
+ClassResponse composition in get_by_id, and full-replace update_class.
 
 The capability services (skills/features/throws/armor/weapons) and the
 subclass crud service are faked, mirroring the background/race house
@@ -16,9 +16,9 @@ import pytest
 from app.constants import AbilityScore, ArmorProficiency, DiceType, WeaponProficiency
 from app.core.exceptions import RecordNotFoundError
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES
+from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
 from app.features.classes.crud.service import ClassCrudService
-from app.features.classes.schemas import ClassCreate, ClassFullResponse, ClassUpdate
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 
@@ -161,85 +161,30 @@ def make_crud_service(existing_by_id=None, resolved_skills=None, features=None, 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestClassCrudServiceCreate:
-    async def test_create_class_seeds_capability_rows_inside_atomic(self, invalidated):
-        skill = make_skill()
-        service, db = make_crud_service(resolved_skills=[skill])
-        data = ClassCreate(
-            name="Fighter",
-            hit_dice=DiceType.D10,
-            spellcasting_ability=None,
-            saving_throws=[AbilityScore.STR, AbilityScore.CON],
-            armor_proficiencies=[ArmorProficiency.LIGHT, ArmorProficiency.SHIELD],
-            weapon_proficiencies=[WeaponProficiency.SIMPLE, WeaponProficiency.MARTIAL],
-            available_skills=[1],
-        )
-
-        result = await service.create_class(data)
-
-        item = service.repository.created[0]
-        assert result.id == 1
-        assert item.name == "Fighter"
-        assert service._skills.resolve_calls == [[1]]
-        assert service._throws.set_calls == [(item, data.saving_throws, False)]
-        assert service._armor.set_calls == [(item, data.armor_proficiencies, False)]
-        assert service._weapons.set_calls == [(item, data.weapon_proficiencies, False)]
-        assert service._skills.set_calls == [(item, [skill], False)]
-        assert db.commits == 1
-        assert invalidated.await_count == 1
-
-    async def test_create_class_response_embeds_seeded_capability_rows(self, invalidated):
-        service, _ = make_crud_service(
-            resolved_skills=[make_skill()],
-            existing_by_id={},
-        )
-        data = ClassCreate(
-            name="Wizard",
-            hit_dice=DiceType.D6,
-            spellcasting_ability=AbilityScore.INT,
-            saving_throws=[AbilityScore.INT, AbilityScore.WIS],
-            armor_proficiencies=[ArmorProficiency.LIGHT],
-            weapon_proficiencies=[WeaponProficiency.SIMPLE],
-            available_skills=[1],
-        )
-
-        result = await service.create_class(data)
-
-        assert [throw.ability for throw in result.saving_throws] == [AbilityScore.INT, AbilityScore.WIS]
-        assert result.armor_proficiencies[0].armor_type == ArmorProficiency.LIGHT
-        assert result.weapon_proficiencies[0].weapon_category == WeaponProficiency.SIMPLE
-        assert result.available_skills[0].name == "Athletics"
-
-    async def test_create_class_minimal_skips_capability_services(self, invalidated):
+    async def test_create_class_persists_base_fields_and_invalidates_cache(self, invalidated):
         service, db = make_crud_service()
 
         result = await service.create_class(
             ClassCreate(name="Fighter", hit_dice=DiceType.D10, spellcasting_ability=None)
         )
 
-        assert result.name == "Fighter"
-        assert service._skills.resolve_calls == [None]
+        item = service.repository.created[0]
+        assert result.id == 1
+        assert item.name == "Fighter"
+        assert db.commits == 1
+        assert invalidated.await_count == 1
+
+    async def test_create_class_does_not_touch_capability_services(self, invalidated):
+        """saving_throws/armor/weapons/available_skills are attached via their own endpoints, not at creation."""
+        service, _ = make_crud_service()
+
+        await service.create_class(ClassCreate(name="Fighter", hit_dice=DiceType.D10, spellcasting_ability=None))
+
+        assert service._skills.resolve_calls == []
         assert service._throws.set_calls == []
         assert service._armor.set_calls == []
         assert service._weapons.set_calls == []
         assert service._skills.set_calls == []
-        assert db.commits == 1
-
-    async def test_create_class_rolls_back_when_persist_fails(self, invalidated):
-        service, db = make_crud_service()
-
-        class Boom(Exception):
-            pass
-
-        async def boom(*args, **kwargs):
-            raise Boom()
-
-        service.repository.create = boom
-
-        with pytest.raises(Boom):
-            await service.create_class(ClassCreate(name="Fighter", hit_dice=DiceType.D10, spellcasting_ability=None))
-
-        assert db.rollbacks == 1
-        assert invalidated.await_count == 0
 
 
 @pytest.mark.unit
@@ -252,7 +197,7 @@ class TestClassCrudServiceGetById:
 
         result = await service.get_by_id(1)
 
-        assert isinstance(result, ClassFullResponse)
+        assert isinstance(result, ClassResponse)
         assert result.id == 1
         assert result.features[0].id == 3
         assert result.subclasses[0].id == 2

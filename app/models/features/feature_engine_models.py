@@ -4,10 +4,11 @@ ORM models for the unified Feature/Feat effect engine (Phase 1 of the feature-en
 Every ``Feature`` may carry any number of typed effects. An effect is
 either **fixed** (applied automatically for as long as the grant exists) or
 belongs to a **choice option** (applied only when the player selected that
-option). A choice option is a *bundle*: choosing it applies every child
-effect together — e.g. the 2014 Resilient feat is one option "DEX" with two
-child rows (``feature_ability_score_effects`` with ability=DEX and
-``feature_saving_throw_effects`` with ability=DEX).
+option). Every choice group is pinned to exactly one ``ChoiceType`` (see
+``app.constants``) — every option inside it may only populate the one
+effect table that type allows (e.g. a ``SKILL`` group's options may only
+carry ``feature_skill_proficiency_effects`` rows), enforced on write by
+``ChoiceGroupPayload``'s validator.
 
 All effect tables share one invariant — exactly one of ``feature_id``
 (fixed effect) or ``choice_option_id`` (effect inside a choice option) is
@@ -27,6 +28,7 @@ from sqlalchemy.orm import relationship
 from app.models.enums import (
     AbilityScoreType,
     ArmorProficiencyType,
+    ChoiceTypeType,
     SpellLevelType,
     SpellSchoolType,
     WeaponProficiencyType,
@@ -58,6 +60,7 @@ class FeatureChoiceGroup(settings.Base):  # type: ignore
     pick_count = Column(Integer, nullable=False, default=1)
     sort_order = Column(Integer, nullable=False, default=0)
     label = Column(String(200), nullable=False, default="")
+    choice_type = Column(ChoiceTypeType, nullable=False)
 
     __table_args__ = (CheckConstraint("pick_count >= 1", name="check_feature_choice_group_pick_count_positive"),)
 
@@ -79,8 +82,10 @@ class FeatureChoiceOption(settings.Base):  # type: ignore
     One option inside a :class:`FeatureChoiceGroup`.
 
     The option is a *bundle*: all of its child effect rows apply together
-    when the option is selected. ``label`` is a human-readable name
-    (e.g. "DEX" or "Proficiency with a martial weapon").
+    when the option is selected. It carries no label of its own — what it
+    grants is fully described by its effect rows, rendered on read (see
+    ``app.features.features.effects.rendering``); the group's own
+    ``label`` still names the overall decision.
     """
 
     __tablename__ = "feature_choice_options"
@@ -93,7 +98,6 @@ class FeatureChoiceOption(settings.Base):  # type: ignore
         index=True,
     )
     sort_order = Column(Integer, nullable=False, default=0)
-    label = Column(String(200), nullable=False, default="")
 
     group = relationship("FeatureChoiceGroup", back_populates="options")
 
@@ -135,7 +139,7 @@ class FeatureChoiceOption(settings.Base):  # type: ignore
     )
 
     def __repr__(self):
-        return f"<FeatureChoiceOption(id={self.id}, group_id={self.group_id}, label='{self.label}')>"
+        return f"<FeatureChoiceOption(id={self.id}, group_id={self.group_id})>"
 
 
 class FeatureAbilityScoreEffect(settings.Base):  # type: ignore
@@ -321,12 +325,6 @@ class FeatureSpellGrantEffect(settings.Base):  # type: ignore
     ``spell_id`` NULL means an open choice filtered by ``spell_school`` /
     ``spell_level_max``: the concrete options are computed at choice time
     against the spell catalog instead of being denormalized into rows.
-
-    ``always_prepared`` (default True): the spell does not consume a
-    prepared slot. ``counts_against_known_limit`` (default False): when True
-    the granted spell competes for the character's limited "known spells"
-    budget (``character_spells`` with the ``CharacterSpellSlot.total`` cap)
-    instead of living in the separate ``character_granted_spells`` table.
     """
 
     __tablename__ = "feature_spell_grant_effects"
@@ -343,8 +341,6 @@ class FeatureSpellGrantEffect(settings.Base):  # type: ignore
     spell_id = Column(Integer, ForeignKey("spells.id", ondelete="RESTRICT"), nullable=True, index=True)
     spell_school = Column(SpellSchoolType, nullable=True)
     spell_level_max = Column(SpellLevelType, nullable=True)
-    always_prepared = Column(Boolean, nullable=False, default=True)
-    counts_against_known_limit = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_spell_grant_effect_parent"),

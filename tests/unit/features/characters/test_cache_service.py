@@ -7,9 +7,9 @@ import pytest
 from app.constants import AbilityScore
 from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
-from app.models.character_model import Character
-from app.models.race_association_models import RaceAbilityBonus
-from app.models.subrace_association_models import SubraceAbilityBonus
+from app.models.character.character_model import Character
+from app.models.races.race_association_models import RaceAbilityBonus
+from app.models.races.subrace_association_models import SubraceAbilityBonus
 
 
 def make_character(**overrides) -> Character:

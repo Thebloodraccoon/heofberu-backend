@@ -15,9 +15,9 @@ from app.features.characters.gm_panel.exceptions import CharacterFeatNotFoundExc
 from app.features.characters.gm_panel.feats.schemas import CharacterFeatAdd, CharacterFeatUpdate
 from app.features.characters.gm_panel.feats.service import GmPanelFeatService
 from app.features.feats.exceptions import FeatNotFoundException
-from app.models.character_model import Character
-from tests.unit.features.characters.conftest import make_feat_with_choice_groups as make_feat
+from app.models.character.character_model import Character
 from tests.unit.fakes import FakeAsyncSession
+from tests.unit.features.characters.conftest import make_feat_with_choice_groups as make_feat
 
 
 def make_character(**overrides) -> Character:

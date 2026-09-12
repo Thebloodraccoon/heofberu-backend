@@ -6,7 +6,7 @@ import pytest
 
 from app.constants import AbilityScore
 from app.features.characters.ability_score.repository import CharacterStatsRepository
-from app.models.character_ability_score_model import CharacterAbilityScore
+from app.models.character.character_ability_score_model import CharacterAbilityScore
 from tests.unit.fakes import FakeAsyncSession, FakeResult
 
 

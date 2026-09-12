@@ -7,9 +7,9 @@ import pytest
 
 from app.constants import DiceType, WeaponProficiency
 from app.core.exceptions import RecordNotFoundError
-from app.features.classes.schemas import WeaponProficienciesUpdate
+from app.features.classes.weapons.schemas import WeaponProficienciesUpdate
 from app.features.classes.weapons.service import ClassWeaponService
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 

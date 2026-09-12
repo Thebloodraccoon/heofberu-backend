@@ -17,10 +17,10 @@ from app.constants import DiceType, SpellLevel
 from app.core.exceptions import RecordNotFoundError
 from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.exceptions import InvalidClassLevelException
+from app.features.classes.progression.schemas import SpellSlotEntry, SpellSlotProgressionUpdate
 from app.features.classes.progression.service import ClassProgressionService
-from app.features.classes.schemas import SpellSlotEntry, SpellSlotProgressionUpdate
-from app.models.class_model import Class
-from app.models.class_spell_slot_progression_model import ClassSpellSlotProgression
+from app.models.classes.class_model import Class
+from app.models.classes.class_spell_slot_progression_model import ClassSpellSlotProgression
 from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
 
 

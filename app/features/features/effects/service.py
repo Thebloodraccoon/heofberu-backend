@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
 from app.features.characters.progression.feature_sync import refresh_feature_effect_caches
-from app.features.features.cache import FEATURE_CACHE_NAMESPACES, invalidate_feature_cache
+from app.features.features.cache import FEATURE_CACHE_NAMESPACES, purge_feature_cache_for_source
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.crud.schemas import FeatureResponse
 from app.features.features.effects.schemas import (
@@ -45,7 +45,6 @@ def _to_choice_group_response(group: FeatureChoiceGroup) -> ChoiceGroupResponse:
         option_responses.append(
             ChoiceOptionResponse(
                 id=option.id,
-                label=option.label,
                 sort_order=option.sort_order,
                 ability_effects=[AbilityEffectItem.model_validate(e) for e in option.ability_effects],
                 skill_effects=[SkillEffectItem.model_validate(e) for e in option.skill_effects],
@@ -61,6 +60,7 @@ def _to_choice_group_response(group: FeatureChoiceGroup) -> ChoiceGroupResponse:
         pick_count=group.pick_count,
         sort_order=group.sort_order,
         label=group.label,
+        choice_type=group.choice_type,
         options=option_responses,
     )
 
@@ -151,7 +151,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
 
         await refresh_feature_effect_caches(self.repository.db, feature_id)
         await self.repository.db.commit()
-        await invalidate_feature_cache()
+        await purge_feature_cache_for_source(feature.source_type)
 
         return await self.get_effects(feature_id)
 
@@ -180,7 +180,6 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
 
         def _make_option(payload: ChoiceOptionPayload) -> FeatureChoiceOption:
             return FeatureChoiceOption(
-                label=payload.label,
                 sort_order=payload.sort_order,
                 ability_effects=[FeatureAbilityScoreEffect(**e.model_dump()) for e in payload.ability_effects],
                 skill_effects=[FeatureSkillProficiencyEffect(**e.model_dump()) for e in payload.skill_effects],
@@ -197,6 +196,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
                     pick_count=payload.pick_count,
                     sort_order=payload.sort_order,
                     label=payload.label,
+                    choice_type=payload.choice_type,
                     options=[_make_option(option) for option in payload.options],
                 )
             )
@@ -207,6 +207,6 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         await db.flush()
         await refresh_feature_effect_caches(self.repository.db, feature_id)
         await db.commit()
-        await invalidate_feature_cache()
+        await purge_feature_cache_for_source(feature.source_type)
 
         return await self.get_choice_groups(feature_id)

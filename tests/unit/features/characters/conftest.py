@@ -11,7 +11,8 @@ def make_feat_with_choice_groups(
     prerequisite_description="",
     min_level=None,
 ):
-    """Build a feat-shaped SimpleNamespace using the engine's choice_groups form.
+    """
+    Build a feat-shaped SimpleNamespace using the engine's choice_groups form.
 
     ability_effects: list of (ability, amount) tuples.
     One choice_group with pick_count=1 is created when there are effects.

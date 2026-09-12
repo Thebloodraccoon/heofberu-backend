@@ -5,7 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_engine_models import (
+    FeatureChoiceGroup,
+    FeatureChoiceOption,
+    FeatureSkillProficiencyEffect,
+    FeatureSpellGrantEffect,
+    FeatureWeaponProficiencyEffect,
+)
 from app.models.features.feature_model import Feature
 
 
@@ -24,7 +30,7 @@ class FeatureRepository(BaseRepository[Feature]):
         super().__init__(
             Feature,
             db,
-            default_load_options=_engine_effect_loads(),
+            default_load_options=feature_summary_loads(),
             search_fields=["name"],
         )
 
@@ -34,7 +40,7 @@ class FeatureRepository(BaseRepository[Feature]):
         result = await self.db.execute(
             select(Feature)
             .where(Feature.id == model_id)
-            .options(*_engine_effect_loads())
+            .options(*feature_summary_loads())
             .execution_options(populate_existing=True)
         )
         return result.scalars().first()
@@ -48,34 +54,63 @@ class FeatureRepository(BaseRepository[Feature]):
         fallback row is returned as-is.
         """
 
-        result = await self.db.execute(select(Feature).where(Feature.id == feature_id).options(*_engine_effect_loads()))
+        result = await self.db.execute(select(Feature).where(Feature.id == feature_id).options(*feature_summary_loads()))
         feature = result.scalars().first()
         return feature if feature is not None else fallback
 
 
-def _engine_effect_loads() -> list:
-    """Eager loads for the whole feature-engine effect tree (choice groups + fixed effects)."""
+# The catalog relationship each effect type resolves its display name
+# through — shared between a feature's FIXED rows and its choice-OPTION
+# rows (same model classes either way, see feature_engine_models.py).
+_NAME_RELATIONSHIP_BY_EFFECT_ATTR = {
+    "skill_effects": FeatureSkillProficiencyEffect.skill,
+    "weapon_effects": FeatureWeaponProficiencyEffect.item,
+    "spell_effects": FeatureSpellGrantEffect.spell,
+}
 
-    option_effect_attrs = (
-        "ability_effects",
-        "skill_effects",
-        "saving_throw_effects",
-        "armor_effects",
-        "weapon_effects",
-        "spell_effects",
-    )
+_EFFECT_ATTRS = (
+    "ability_effects",
+    "skill_effects",
+    "saving_throw_effects",
+    "armor_effects",
+    "weapon_effects",
+    "spell_effects",
+)
 
-    return [
-        selectinload(Feature.ability_effects),
-        selectinload(Feature.skill_effects),
-        selectinload(Feature.saving_throw_effects),
-        selectinload(Feature.armor_effects),
-        selectinload(Feature.weapon_effects),
-        selectinload(Feature.spell_effects),
-        *(
-            selectinload(Feature.choice_groups)
-            .selectinload(FeatureChoiceGroup.options)
-            .selectinload(getattr(FeatureChoiceOption, attr))
-            for attr in option_effect_attrs
-        ),
-    ]
+
+def feature_summary_loads(base=None) -> list:
+    """
+    Full eager-load set for a ``Feature``'s engine effect tree — fixed
+    effects, choice groups/options with their own effects, and the
+    skill/spell/item relationships those effects need to render a NAME
+    (not just an id). Every response exposing ``has_static_effects``/
+    ``has_choices``/``effects_summary`` needs this: they're plain
+    ``Feature`` properties, populated by ``from_attributes`` off whatever's
+    eager-loaded here — nothing async happens at serialization time.
+
+    Pass a ``base`` loader (a ``selectinload`` for a ``Feature``-valued
+    relationship, e.g. ``selectinload(Background.features)``) to chain onto
+    it when querying a parent that embeds features; omit it when querying
+    ``Feature`` rows directly.
+    """
+
+    def load(attr):
+        return selectinload(attr) if base is None else base.selectinload(attr)
+
+    loads = []
+    for attr in _EFFECT_ATTRS:
+        fixed_load = load(getattr(Feature, attr))
+        name_relationship = _NAME_RELATIONSHIP_BY_EFFECT_ATTR.get(attr)
+        if name_relationship is not None:
+            fixed_load = fixed_load.selectinload(name_relationship)
+        loads.append(fixed_load)
+
+    options_load = load(Feature.choice_groups).selectinload(FeatureChoiceGroup.options)
+    for attr in _EFFECT_ATTRS:
+        option_load = options_load.selectinload(getattr(FeatureChoiceOption, attr))
+        name_relationship = _NAME_RELATIONSHIP_BY_EFFECT_ATTR.get(attr)
+        if name_relationship is not None:
+            option_load = option_load.selectinload(name_relationship)
+        loads.append(option_load)
+
+    return loads

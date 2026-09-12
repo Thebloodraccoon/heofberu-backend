@@ -1,6 +1,6 @@
 """ORM models for a character's known spells, spell slots, and granted spells."""
 
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
 from app.models.enums import SpellLevelType
@@ -56,14 +56,9 @@ class CharacterSpellSlot(settings.Base):  # type: ignore
 class CharacterGrantedSpell(settings.Base):  # type: ignore
     """
     A spell granted to a character by a feature/feat — deliberately separate
-    from the limited "known spells" table ``character_spells``.
-
-    Known spells are capped by ``CharacterSpellSlot.total``; granted spells
-    never compete for that budget unless ``counts_against_known_limit`` is
-    True (content explicitly sold as "learn one additional spell as part of
-    your known list"). ``always_prepared`` (default True) means the spell is
-    always available without slotting. A character may hold the same spell
-    from multiple grants; the unique constraint therefore keys on
+    from the limited "known spells" table ``character_spells`` and never
+    competing for its budget. A character may hold the same spell from
+    multiple grants; the unique constraint therefore keys on
     ``source_character_feature_id`` rather than the plain pair.
     """
 
@@ -72,8 +67,6 @@ class CharacterGrantedSpell(settings.Base):  # type: ignore
     id = Column(Integer, primary_key=True)
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
     spell_id = Column(Integer, ForeignKey("spells.id", ondelete="RESTRICT"), nullable=False, index=True)
-    always_prepared = Column(Boolean, nullable=False, default=True)
-    counts_against_known_limit = Column(Boolean, nullable=False, default=False)
     source_character_feature_id = Column(
         Integer,
         ForeignKey("character_features.id", ondelete="CASCADE"),

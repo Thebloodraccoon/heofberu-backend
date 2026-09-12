@@ -17,7 +17,7 @@ from app.core.exceptions import RecordNotFoundError
 from app.features.features.crud.schemas import FeatureCreate, FeatureResponse, FeatureUpdate
 from app.features.features.crud.service import SOURCE_FEATURE_LIST_NAMESPACE, FeatureCrudService
 from app.features.features.exceptions import InvalidFeatureSourceException
-from app.models.feature_model import Feature
+from app.models.features.feature_model import Feature
 from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
 
 _FK_BY_SOURCE = {
@@ -61,8 +61,8 @@ class FakeFeatureRepository(FakeRepository):
 def no_redis(monkeypatch):
     """Stop feature cache invalidation from touching Redis."""
 
-    monkeypatch.setattr("app.features.features.crud.service.invalidate_feature_cache", AsyncMock())
-    monkeypatch.setattr("app.features.features.crud.service.invalidate", AsyncMock())
+    monkeypatch.setattr("app.features.features.cache.invalidate_feature_cache", AsyncMock())
+    monkeypatch.setattr("app.features.features.cache.invalidate", AsyncMock())
     monkeypatch.setattr("app.core.cache.invalidation.invalidate", AsyncMock())
 
 
@@ -123,8 +123,8 @@ class TestFeatureCrudCreate:
     async def test_create_invalidates_owning_catalog_list_and_parent_only(self, monkeypatch):
         invalidate_feature = AsyncMock()
         invalidate = AsyncMock()
-        monkeypatch.setattr("app.features.features.crud.service.invalidate_feature_cache", invalidate_feature)
-        monkeypatch.setattr("app.features.features.crud.service.invalidate", invalidate)
+        monkeypatch.setattr("app.features.features.cache.invalidate_feature_cache", invalidate_feature)
+        monkeypatch.setattr("app.features.features.cache.invalidate", invalidate)
         service, _ = make_crud_service()
 
         await service.create(FeatureCreate(name="Fey", source_type=FeatureSourceType.SUBRACE, subrace_id=1, level=1))

@@ -32,38 +32,48 @@ class TestRaceCrud:
 
         response = await client.post(
             "/races",
-            json={
-                "name": "Wood Elf",
-                "size": "MEDIUM",
-                "speed": 35,
-                "ability_bonuses": [{"ability": "DEX", "bonus": 2}],
-                "granted_skills": [skill.id],
-            },
+            json={"name": "Wood Elf", "size": "MEDIUM", "speed": 35},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-
         assert response.status_code == 201
-        body = response.json()
+        race_id = response.json()["id"]
+
+        bonuses_response = await client.put(
+            f"/races/{race_id}/ability-bonuses",
+            json={"ability_bonuses": [{"ability": "DEX", "bonus": 2}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert bonuses_response.status_code == 200
+        skills_response = await client.put(
+            f"/races/{race_id}/skills",
+            json={"skill_ids": [skill.id]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert skills_response.status_code == 200
+
+        body = skills_response.json()
         assert body["ability_bonuses"] == [{"ability": "DEX", "bonus": 2}]
         assert body["granted_skills"][0]["id"] == skill.id
 
     async def test_create_race_with_nested_features(self, client, gm_token):
         response = await client.post(
             "/races",
-            json={
-                "name": "Drow",
-                "size": "MEDIUM",
-                "speed": 30,
-                "features": [
-                    {"name": "Darkvision", "description": "See in dim light within 60 ft."},
-                    {"name": "Sunlight Sensitivity", "description": "Disadvantage in direct sunlight."},
-                ],
-            },
+            json={"name": "Drow", "size": "MEDIUM", "speed": 30},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-
         assert response.status_code == 201
         race_id = response.json()["id"]
+
+        for feature in [
+            {"name": "Darkvision", "description": "See in dim light within 60 ft."},
+            {"name": "Sunlight Sensitivity", "description": "Disadvantage in direct sunlight."},
+        ]:
+            added = await client.post(
+                "/features",
+                json={**feature, "source_type": "RACE", "race_id": race_id},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            assert added.status_code == 201
 
         fetched = await client.get(f"/races/{race_id}/features")
         assert fetched.status_code == 200

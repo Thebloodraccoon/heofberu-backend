@@ -67,6 +67,7 @@ class CharacterCreate(CharacterBase):
 
     skill_ids: list[int] = Field(default_factory=list)
     item_choice_ids: list[int] = Field(default_factory=list)
+    suggestion_ids: list[int] = Field(default_factory=list)
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
@@ -76,6 +77,15 @@ class CharacterCreate(CharacterBase):
             raise ValueError("Duplicate skill IDs are not allowed.")
 
         return skill_ids
+
+    @field_validator("suggestion_ids")
+    def validate_unique_suggestion_ids(cls, suggestion_ids):
+        """Reject lists containing duplicate suggestion IDs."""
+
+        if len(suggestion_ids) != len(set(suggestion_ids)):
+            raise ValueError("Duplicate suggestion IDs are not allowed.")
+
+        return suggestion_ids
 
     @field_validator("item_choice_ids")
     def validate_unique_item_choice_ids(cls, item_choice_ids):

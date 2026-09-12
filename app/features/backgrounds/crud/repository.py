@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
+from app.features.features.crud.repository import feature_summary_loads
 from app.models import Background, CharacterFeature, Feature, SourceItem
 from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 
@@ -25,6 +26,7 @@ class BackgroundRepository(BaseRepository[Background]):
                 .selectinload(SourceItemChoiceGroup.options)
                 .selectinload(SourceItemChoiceOption.item),
                 selectinload(Background.suggestions),
+                *feature_summary_loads(selectinload(Background.features)),
             ],
             search_fields=["name"],
             unique_fields=["name"],

@@ -3,6 +3,7 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
+from app.features.features.effects.rendering import render_effects_summary
 from app.models.enums import AbilityScoreType, FeatureSourceTypeType
 from app.settings import settings
 
@@ -113,6 +114,31 @@ class Feature(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    @property
+    def has_static_effects(self) -> bool:
+        """Whether this feature applies any fixed (non-choice) effect automatically."""
+
+        return bool(
+            self.ability_effects
+            or self.skill_effects
+            or self.saving_throw_effects
+            or self.armor_effects
+            or self.weapon_effects
+            or self.spell_effects
+        )
+
+    @property
+    def has_choices(self) -> bool:
+        """Whether this feature has any "pick N of M" choice group."""
+
+        return bool(self.choice_groups)
+
+    @property
+    def effects_summary(self) -> str:
+        """Human-readable summary of this feature's fixed effects and choice groups (see ``rendering.py``)."""
+
+        return render_effects_summary(self)
 
     def __repr__(self):
         return f"<Feature(id={self.id}, name='{self.name}', source_type='{self.source_type}')>"

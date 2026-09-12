@@ -77,6 +77,7 @@ class TestCharacterFeats:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
                         "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }
@@ -108,6 +109,7 @@ class TestCharacterFeats:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
                         "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }
@@ -136,6 +138,7 @@ class TestCharacterFeats:
                 "choice_groups": [
                     {
                         "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
                         "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }

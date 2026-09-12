@@ -85,14 +85,23 @@ def build_chosen_options(grant: CharacterFeature) -> list[ChosenOptionResponse]:
     """
     Build the player's resolved picks for a grant from its stored
     ``CharacterFeatureChoice`` rows. Requires ``grant.choices`` (and each
-    choice's ``choice_option``) to already be eager-loaded.
+    choice's ``choice_option``, with its six effect-type relationships) to
+    already be eager-loaded (see ``choice_option_effect_loads``).
     """
 
-    return [
-        ChosenOptionResponse(
-            choice_group_id=choice.choice_group_id,
-            choice_option_id=choice.choice_option_id,
-            label=choice.choice_option.label if choice.choice_option is not None else "",
+    responses = []
+    for choice in grant.choices:
+        option = choice.choice_option
+        responses.append(
+            ChosenOptionResponse(
+                choice_group_id=choice.choice_group_id,
+                choice_option_id=choice.choice_option_id,
+                ability_effects=option.ability_effects if option is not None else [],
+                skill_effects=option.skill_effects if option is not None else [],
+                saving_throw_effects=option.saving_throw_effects if option is not None else [],
+                armor_effects=option.armor_effects if option is not None else [],
+                weapon_effects=option.weapon_effects if option is not None else [],
+                spell_effects=option.spell_effects if option is not None else [],
+            )
         )
-        for choice in grant.choices
-    ]
+    return responses
