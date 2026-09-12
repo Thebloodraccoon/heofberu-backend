@@ -30,17 +30,7 @@ async def upload_subrace_image(
     **GM only.**
     """
 
-    content = await image.read()
-    try:
-        url = await image_service.upload_image(
-            subrace_id,
-            content,
-            image.content_type or "",
-        )
-    finally:
-        await image.close()
-
-    return {"image_url": url}
+    return {"image_url": await image_service.upload(subrace_id, image)}
 
 
 @router.delete(

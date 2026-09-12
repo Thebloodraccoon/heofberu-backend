@@ -173,6 +173,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["app"]
+concurrency = ["greenlet"]
 omit = [
     "*/__init__.py",
     "app/settings/*",

@@ -55,7 +55,12 @@ class GmPanelProficiencyService(CharacterSubDomainService):
             raise ProficiencyAlreadyGrantedException(character_id, f"proficiency in skill {skill_id}")
 
         await self.proficiency_repository.set_override(
-            character_id, ProficiencyType.SKILL, ProficiencyAction.GRANT, current_user.id, skill_id=skill_id
+            character_id,
+            ProficiencyType.SKILL,
+            ProficiencyAction.GRANT,
+            current_user.id,
+            skill_id=skill_id,
+            is_expertise=False,
         )
         await invalidate_character_cache(character_id)
 

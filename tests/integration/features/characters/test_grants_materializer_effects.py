@@ -462,3 +462,178 @@ class TestGmGrantInlineChoices:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert len(pending_resp.json()["groups"]) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestAllPendingChoicesSurface:
+    async def test_get_all_pending_choices_lists_only_grants_with_unanswered_groups(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
+    ):
+        feature_class = await create_class(name="Rogue")
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
+        skill = await create_skill(key="SURVIVAL", name="Survival", ability="WIS")
+
+        pending_feature = await create_feature(name="Unanswered", source_type="CLASS", level=None)
+        await client.put(
+            f"/features/{pending_feature.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {"pick_count": 1, "choice_type": "SKILL", "label": "Skill", "options": [{"skill_effects": [{"skill_id": skill.id}]}]}
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        no_choice_feature = await create_feature(name="No Choices", source_type="CLASS", level=None)
+
+        pending_grant = await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": pending_feature.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert pending_grant.status_code == 201, pending_grant.text
+        answered_grant = await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": no_choice_feature.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert answered_grant.status_code == 201, answered_grant.text
+
+        response = await client.get(
+            f"/characters/{character.id}/grants/pending",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["feature_id"] == pending_feature.id
+        assert body[0]["feature_name"] == "Unanswered"
+        assert len(body[0]["groups"]) == 1
+
+    async def test_get_all_pending_choices_empty_when_nothing_pending(
+        self, client, gm, gm_token, create_class, create_character, create_feature
+    ):
+        feature_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
+        feature = await create_feature(name="Extra Attack", source_type="CLASS", level=None)
+
+        grant_resp = await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": feature.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert grant_resp.status_code == 201, grant_resp.text
+
+        response = await client.get(
+            f"/characters/{character.id}/grants/pending",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestSpellResolutionEdgeCases:
+    async def test_open_spell_resolved_to_nonexistent_spell_id_returns_422(
+        self, client, gm, gm_token, create_class, create_character, create_feature
+    ):
+        feature_class = await create_class(name="Wizard")
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
+        feature = await create_feature(name="Spell Pick", source_type="CLASS", level=None)
+
+        cg_resp = await client.put(
+            f"/features/{feature.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SPELL",
+                        "label": "Choose a spell",
+                        "options": [{"spell_effects": [{"spell_id": None, "spell_school": "EVOCATION"}]}],
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        group_id = cg_resp.json()[0]["id"]
+        option_id = cg_resp.json()[0]["options"][0]["id"]
+
+        grant_resp = await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": feature.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        cf_id = grant_resp.json()["id"]
+
+        ans = await client.patch(
+            f"/characters/{character.id}/features/{cf_id}/choices",
+            json={
+                "answers": [
+                    {"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": 999999}
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert ans.status_code == 422
+        assert "does not exist" in ans.json()["error"]["message"]
+
+    async def test_reanswer_removes_stale_granted_spell(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
+    ):
+        feature_class = await create_class(name="Wizard")
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
+        feature = await create_feature(name="Spell Swap", source_type="CLASS", level=None)
+
+        fireball = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
+        cure_wounds = await create_spell(name="Cure Wounds", school="EVOCATION", level="LEVEL_1")
+
+        cg_resp = await client.put(
+            f"/features/{feature.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SPELL",
+                        "label": "Spell",
+                        "options": [
+                            {"spell_effects": [{"spell_id": fireball.id}]},
+                            {"spell_effects": [{"spell_id": cure_wounds.id}]},
+                        ],
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        group_id = cg_resp.json()[0]["id"]
+        fireball_option_id = cg_resp.json()[0]["options"][0]["id"]
+        cure_wounds_option_id = cg_resp.json()[0]["options"][1]["id"]
+
+        grant_resp = await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": feature.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        cf_id = grant_resp.json()["id"]
+
+        ans1 = await client.patch(
+            f"/characters/{character.id}/features/{cf_id}/choices",
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": fireball_option_id}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert ans1.status_code == 200
+        first_spells = (
+            await client.get(f"/characters/{character.id}/spells", headers={"Authorization": f"Bearer {gm_token}"})
+        ).json()["granted_spells"]
+        assert [s["spell_id"] for s in first_spells] == [fireball.id]
+
+        ans2 = await client.patch(
+            f"/characters/{character.id}/features/{cf_id}/choices",
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": cure_wounds_option_id}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert ans2.status_code == 200
+        second_spells = (
+            await client.get(f"/characters/{character.id}/spells", headers={"Authorization": f"Bearer {gm_token}"})
+        ).json()["granted_spells"]
+        assert [s["spell_id"] for s in second_spells] == [cure_wounds.id]

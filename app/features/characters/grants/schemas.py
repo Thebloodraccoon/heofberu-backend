@@ -111,10 +111,15 @@ class CharacterWeaponProficiencyResponse(BaseModel):
 
 
 class CharacterGrantedSpellResponse(BaseModel):
-    """A spell granted to the character by a feature/feat, with its full spell record."""
+    """
+    A spell granted to the character, with its full spell record. ``id`` is
+    the grant row's own id — pass it as ``granted_spell_id`` to
+    ``DELETE /gm-panel/spells`` to revoke a free-form (GM-granted) one.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int
     spell_id: int
     spell: SpellResponse
 
