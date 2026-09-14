@@ -110,6 +110,7 @@ class CharacterUpdate(BaseModel):
 
     armor_class: int | None = Field(default=None, ge=0)
     shield: int | None = Field(default=None, ge=0)
+    speed: int | None = Field(default=None, ge=0)
 
     # Inspiration points (0-13) the GM grants.
     inspiration: int | None = Field(default=None, ge=0, le=13)
@@ -189,10 +190,13 @@ class SkillProficiencyResponse(BaseModel):
 class CharacterResponse(CharacterBase):
     """
     Aggregates response schemas from every sub-domain into one payload.
-    Base ability scores are excluded from output; ``hit_dice``/``speed``
-    are derived from class/race on every read. Proficiencies (skills,
-    saving throws, armor, weapons) and granted spells are NOT included
-    here — see ``GET /characters/{id}/proficiencies`` and
+    Base ability scores are excluded from output; ``hit_dice`` is derived
+    from the class on every read. ``speed`` is seeded from the race at
+    creation and is plain editable state after that (see
+    ``CharacterUpdate.speed``), not recomputed from the race on every read.
+    Proficiencies (skills, saving throws, armor, weapons) and granted
+    spells are NOT included here — see
+    ``GET /characters/{id}/proficiencies`` and
     ``GET /characters/{id}/spells``.
     """
 

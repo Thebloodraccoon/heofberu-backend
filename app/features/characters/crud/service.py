@@ -17,7 +17,7 @@ from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
 from app.core.exceptions import GmAccessException
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, DerivedStats
+from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, DEFAULT_SPEED, DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.cache import CHARACTER_CACHE_NAMESPACE, invalidate_character_cache
@@ -289,15 +289,21 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         # Same pattern as the background: get_by_id eager-loads granted_skills,
         # so no extra query is needed to collect them.
         race_skill_ids: list[int] = []
+        race_speed = DEFAULT_SPEED
         if character_data.race_id is not None:
             race = await self.race_repository.get_by_id(character_data.race_id)
             if race is not None:
                 race_skill_ids = [skill.id for skill in race.granted_skills]
+                race_speed = race.speed
 
         payload = character_data.model_dump(exclude={"skill_ids", "item_choice_ids", "suggestion_ids"})
         payload["owner_id"] = current_user.id
         payload["level"] = 1
         payload["temp_hp"] = 0
+        # Seeded from the race at creation, same as any other combat stat —
+        # from here on it's plain editable state (see CharacterUpdate.speed),
+        # not recomputed from the race on every read.
+        payload["speed"] = race_speed
         if character_data.background_id is not None:
             payload.update(background_personality)
 
@@ -319,6 +325,7 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
                 character, chosen_skill_ids, background_skill_ids, race_skill_ids, commit=False
             )
             await self._apply_class_saving_throws(character, character_class, commit=False)
+            await self._apply_class_armor_and_weapon_proficiencies(character, character_class, commit=False)
             await self._apply_spell_slot_progression(character, commit=False)
 
             # Features are granted (and their engine effect rows materialized)
@@ -510,6 +517,46 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
                     character_id=character.id,
                     proficiency_type=ProficiencyType.SAVING_THROW,
                     ability=throw.ability,
+                    source_type=ProficiencySourceType.CLASS,
+                    action=ProficiencyAction.GRANT,
+                )
+            )
+
+        if commit:
+            await self.repository.db.commit()
+        else:
+            await self.repository.db.flush()
+
+    async def _apply_class_armor_and_weapon_proficiencies(
+        self, character: Character, character_class: Class, *, commit: bool = True
+    ) -> None:
+        """
+        Write the character's starting armor and weapon proficiencies from
+        the class's grants (e.g. Fighter -> LIGHT/MEDIUM/HEAVY armor,
+        SIMPLE/MARTIAL weapons), as ``CharacterProficiency`` rows with
+        ``source_type=CLASS``.
+
+        Not yet routed through the feature engine — same reasoning as
+        ``_apply_class_saving_throws``.
+        """
+
+        for armor_proficiency in character_class.armor_proficiencies:
+            self.repository.db.add(
+                CharacterProficiency(
+                    character_id=character.id,
+                    proficiency_type=ProficiencyType.ARMOR,
+                    armor_type=armor_proficiency.armor_type,
+                    source_type=ProficiencySourceType.CLASS,
+                    action=ProficiencyAction.GRANT,
+                )
+            )
+
+        for weapon_proficiency in character_class.weapon_proficiencies:
+            self.repository.db.add(
+                CharacterProficiency(
+                    character_id=character.id,
+                    proficiency_type=ProficiencyType.WEAPON,
+                    weapon_category=weapon_proficiency.weapon_category,
                     source_type=ProficiencySourceType.CLASS,
                     action=ProficiencyAction.GRANT,
                 )
@@ -724,6 +771,5 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         response = CharacterResponse.model_validate(character)
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
         response.hit_dice = derived.hit_dice
-        response.speed = derived.speed
 
         return response

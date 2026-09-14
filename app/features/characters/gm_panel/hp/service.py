@@ -38,7 +38,7 @@ class GmPanelHpService(CharacterSubDomainService):
         return await self._character_response(character)
 
     async def _character_response(self, character: Character) -> CharacterResponse:
-        """Serialize a full ``CharacterResponse`` (cache row as-is + derived hit dice/speed)."""
+        """Serialize a full ``CharacterResponse`` (cache row as-is + derived hit dice)."""
 
         cache_row = await self.stats_service.get_or_stale(character.id)
         derived = await self.stats_service.compute_derived(character)
@@ -46,5 +46,4 @@ class GmPanelHpService(CharacterSubDomainService):
         response = CharacterResponse.model_validate(character)
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
         response.hit_dice = derived.hit_dice
-        response.speed = derived.speed
         return response

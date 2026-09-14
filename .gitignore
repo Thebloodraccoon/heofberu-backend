@@ -233,7 +233,9 @@ yarn-error.log*
 # Refactoring output (working drafts)
 /output/
 .opencode/
+.rules/
 AGENTS.md
+CLAUDE.md
 
 poetry.toml
 /backups/

@@ -17,10 +17,13 @@ import pytest
 
 from app.constants import (
     AbilityScore,
+    ArmorProficiency,
     DiceType,
     FeatureSourceType,
+    ProficiencySourceType,
     ProficiencyType,
     UserRole,
+    WeaponProficiency,
 )
 from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.crud import service as crud_service_module
@@ -70,6 +73,14 @@ def make_class(**overrides):
             SimpleNamespace(ability=AbilityScore.STR),
             SimpleNamespace(ability=AbilityScore.CON),
         ],
+        "armor_proficiencies": [
+            SimpleNamespace(armor_type=ArmorProficiency.LIGHT),
+            SimpleNamespace(armor_type=ArmorProficiency.MEDIUM),
+        ],
+        "weapon_proficiencies": [
+            SimpleNamespace(weapon_category=WeaponProficiency.SIMPLE),
+            SimpleNamespace(weapon_category=WeaponProficiency.MARTIAL),
+        ],
     }
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -91,8 +102,10 @@ def make_background():
     )
 
 
-def make_race():
-    return SimpleNamespace(id=5, granted_skills=[SimpleNamespace(id=3)])
+def make_race(**overrides):
+    fields = {"id": 5, "granted_skills": [SimpleNamespace(id=3)], "speed": 30}
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
 
 
 def make_create_payload(**overrides):
@@ -597,6 +610,34 @@ class TestCreateCharacterHappyPath:
         assert all(row.is_expertise is False for row in proficiency_rows)
         assert all(row.character_id == 1 for row in proficiency_rows)
 
+        saving_throw_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SAVING_THROW
+        ]
+        assert sorted(row.ability for row in saving_throw_rows) == sorted([AbilityScore.STR, AbilityScore.CON])
+        assert all(row.source_type == ProficiencySourceType.CLASS for row in saving_throw_rows)
+
+        armor_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.ARMOR
+        ]
+        assert sorted(row.armor_type for row in armor_rows) == sorted([ArmorProficiency.LIGHT, ArmorProficiency.MEDIUM])
+        assert all(row.source_type == ProficiencySourceType.CLASS for row in armor_rows)
+        assert all(row.character_id == 1 for row in armor_rows)
+
+        weapon_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.WEAPON
+        ]
+        assert sorted(row.weapon_category for row in weapon_rows) == sorted(
+            [WeaponProficiency.SIMPLE, WeaponProficiency.MARTIAL]
+        )
+        assert all(row.source_type == ProficiencySourceType.CLASS for row in weapon_rows)
+        assert all(row.character_id == 1 for row in weapon_rows)
+
         item_rows = [row for row in db.added if isinstance(row, CharacterItem)]
         assert sorted((row.item_id, row.quantity) for row in item_rows) == [(10, 3), (11, 1)]
         assert service.item_repository.source_calls == [
@@ -610,7 +651,7 @@ class TestCreateCharacterHappyPath:
         assert service.asi_repository.calls == []
 
         assert db.commits == 1
-        assert db.flushes == 5
+        assert db.flushes == 6
         assert result.id == 1
         assert result.level == 1
         assert result.temp_hp == 0
@@ -618,6 +659,41 @@ class TestCreateCharacterHappyPath:
         assert result.max_hp == 12
         assert result.hit_dice == "D10"
         assert result.speed == 30
+
+    async def test_speed_is_seeded_from_the_race(self, monkeypatch):
+        service, db = make_service(monkeypatch, [], race=make_race(speed=35))
+        user = make_user()
+
+        result = await service.create_character(make_create_payload(), user)
+
+        character = service.repository.created[0]
+        assert character.speed == 35
+        assert result.speed == 35
+
+    async def test_speed_falls_back_to_default_without_a_race(self, monkeypatch):
+        service, db = make_service(monkeypatch, [])
+        user = make_user()
+
+        result = await service.create_character(make_create_payload(race_id=None), user)
+
+        character = service.repository.created[0]
+        assert character.speed == 30
+        assert result.speed == 30
+
+    async def test_class_with_no_armor_or_weapon_proficiencies_writes_no_rows(self, monkeypatch):
+        klass = make_class(armor_proficiencies=[], weapon_proficiencies=[])
+        service, db = make_service(monkeypatch, [], character_class=klass)
+        user = make_user()
+
+        await service.create_character(make_create_payload(), user)
+
+        armor_or_weapon_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency)
+            and row.proficiency_type in (ProficiencyType.ARMOR, ProficiencyType.WEAPON)
+        ]
+        assert armor_or_weapon_rows == []
 
     async def test_creation_grants_chosen_item_options_merged_with_guaranteed(self, monkeypatch):
         events = []
