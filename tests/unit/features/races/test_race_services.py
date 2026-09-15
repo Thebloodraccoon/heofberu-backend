@@ -410,11 +410,11 @@ class TestRaceSkillsRepository:
 
 
 @pytest.mark.unit
-class TestRaceFeatureAbilityEffectsSerialization:
-    """Regression: RaceRepository eager-loads Feature.ability_effects without crashing."""
+class TestRaceFeatureStaticEffectGroupsSerialization:
+    """Regression: RaceRepository eager-loads Feature.static_groups without crashing."""
 
-    def test_race_with_feature_ability_effects_serializes_correctly(self):
-        """A race whose feature carries fixed ability_effects must serialize them in the response."""
+    def test_race_with_feature_static_groups_serializes_correctly(self):
+        """A race whose feature carries fixed ability effects serializes them in static_groups."""
         from app.features.races.crud.schemas import RaceResponse
 
         feature_with_effects = SimpleNamespace(
@@ -422,8 +422,8 @@ class TestRaceFeatureAbilityEffectsSerialization:
             name="Darkvision",
             description="Superior vision in dim light.",
             level=None,
-            ability_effects=[
-                SimpleNamespace(ability=AbilityScore.STR, amount=2, new_cap=None),
+            static_groups=[
+                {"effect_type": "ability", "items": [SimpleNamespace(ability=AbilityScore.STR, amount=2, new_cap=None)]},
             ],
         )
         race = SimpleNamespace(
@@ -442,11 +442,11 @@ class TestRaceFeatureAbilityEffectsSerialization:
         response = RaceResponse.model_validate(race)
 
         assert len(response.features) == 1
-        assert response.features[0].ability_effects[0].ability == AbilityScore.STR
-        assert response.features[0].ability_effects[0].amount == 2
+        assert response.features[0].static_groups[0].items[0].ability == AbilityScore.STR
+        assert response.features[0].static_groups[0].items[0].amount == 2
 
-    def test_race_with_empty_feature_effects_serializes_empty_list(self):
-        """A race whose features have no ability_effects serializes empty lists."""
+    def test_race_with_empty_feature_static_groups_serializes_empty_list(self):
+        """A race whose features have no static effects serializes empty lists."""
         from app.features.races.crud.schemas import RaceResponse
 
         feature_no_effects = SimpleNamespace(
@@ -454,7 +454,7 @@ class TestRaceFeatureAbilityEffectsSerialization:
             name="Keen Senses",
             description="Proficiency in Perception.",
             level=None,
-            ability_effects=[],
+            static_groups=[],
         )
         race = SimpleNamespace(
             id=2,
@@ -471,4 +471,4 @@ class TestRaceFeatureAbilityEffectsSerialization:
 
         response = RaceResponse.model_validate(race)
 
-        assert response.features[0].ability_effects == []
+        assert response.features[0].static_groups == []

@@ -234,10 +234,10 @@ class TestFeatureCrudDelete:
 
 
 @pytest.mark.unit
-class TestFeatureAbilityEffectsSerialization:
-    """Verify that FeatureResponse serializes ability_effects (renamed from ability_increases)."""
+class TestFeatureStaticEffectsSerialization:
+    """Verify that FeatureResponse serializes static_groups (the discriminated effect groups)."""
 
-    def test_feature_response_serializes_ability_effects(self):
+    def test_feature_response_serializes_static_groups(self):
         feature = SimpleNamespace(
             id=1,
             name="Primal Champion",
@@ -249,21 +249,27 @@ class TestFeatureAbilityEffectsSerialization:
             background_id=None,
             level=20,
             description="You embrace the primal power.",
-            ability_effects=[
-                SimpleNamespace(ability=AbilityScore.STR, amount=4, new_cap=None),
-                SimpleNamespace(ability=AbilityScore.CON, amount=4, new_cap=None),
+            static_groups=[
+                {
+                    "effect_type": "ability",
+                    "items": [
+                        SimpleNamespace(ability=AbilityScore.STR, amount=4, new_cap=None),
+                        SimpleNamespace(ability=AbilityScore.CON, amount=4, new_cap=None),
+                    ],
+                }
             ],
         )
 
         response = FeatureResponse.model_validate(feature)
 
-        assert len(response.ability_effects) == 2
-        assert response.ability_effects[0].ability == AbilityScore.STR
-        assert response.ability_effects[0].amount == 4
-        assert response.ability_effects[1].ability == AbilityScore.CON
-        assert response.ability_effects[1].amount == 4
+        items = response.static_groups[0].items
+        assert len(items) == 2
+        assert items[0].ability == AbilityScore.STR
+        assert items[0].amount == 4
+        assert items[1].ability == AbilityScore.CON
+        assert items[1].amount == 4
 
-    def test_feature_response_empty_ability_effects_by_default(self):
+    def test_feature_response_empty_static_groups_by_default(self):
         feature = SimpleNamespace(
             id=2,
             name="Extra Attack",
@@ -279,4 +285,4 @@ class TestFeatureAbilityEffectsSerialization:
 
         response = FeatureResponse.model_validate(feature)
 
-        assert response.ability_effects == []
+        assert response.static_groups == []

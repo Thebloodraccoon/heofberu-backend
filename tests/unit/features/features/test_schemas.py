@@ -64,8 +64,8 @@ class TestAbilityEffectItemCap:
 
 
 @pytest.mark.unit
-class TestFeatureResponsesEmbedAbilityEffects:
-    def test_feature_response_embeds_ability_effects(self):
+class TestFeatureResponsesEmbedStaticEffectGroups:
+    def test_feature_response_embeds_static_effect_groups(self):
         source = type(
             "Feature",
             (),
@@ -80,18 +80,21 @@ class TestFeatureResponsesEmbedAbilityEffects:
                 "background_id": None,
                 "level": None,
                 "description": "",
-                "ability_effects": [
-                    AbilityEffectItem(ability="STR", amount=4, new_cap=30),
+                "static_groups": [
+                    {"effect_type": "ability", "items": [AbilityEffectItem(ability="STR", amount=4, new_cap=30)]},
                 ],
+                "has_static_effects": True,
             },
         )()
 
         response = FeatureResponse.model_validate(source)
 
-        assert response.ability_effects[0].ability.value == "STR"
-        assert response.ability_effects[0].new_cap == 30
+        ability_group = response.static_groups[0]
+        assert ability_group.effect_type == "ability"
+        assert ability_group.items[0].ability.value == "STR"
+        assert ability_group.items[0].new_cap == 30
 
-    def test_nested_feature_response_embeds_ability_effects(self):
+    def test_nested_feature_response_embeds_static_effect_groups(self):
         source = type(
             "Feature",
             (),
@@ -100,17 +103,18 @@ class TestFeatureResponsesEmbedAbilityEffects:
                 "name": "Keen Senses",
                 "description": "",
                 "level": None,
-                "ability_effects": [
-                    AbilityEffectItem(ability="WIS", amount=1, new_cap=None),
+                "static_groups": [
+                    {"effect_type": "ability", "items": [AbilityEffectItem(ability="WIS", amount=1)]},
                 ],
+                "has_static_effects": True,
             },
         )()
 
         response = NestedFeatureResponse.model_validate(source)
 
-        assert response.ability_effects[0].ability.value == "WIS"
+        assert response.static_groups[0].items[0].ability.value == "WIS"
 
-    def test_missing_ability_effects_defaults_to_empty(self):
+    def test_missing_static_groups_defaults_to_empty(self):
         source = SimpleNamespace(
             id=1,
             name="Plain",
@@ -118,4 +122,4 @@ class TestFeatureResponsesEmbedAbilityEffects:
             level=None,
         )
 
-        assert NestedFeatureResponse.model_validate(source).ability_effects == []
+        assert NestedFeatureResponse.model_validate(source).static_groups == []

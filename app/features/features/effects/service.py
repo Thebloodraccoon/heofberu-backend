@@ -200,10 +200,21 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         feature = await self._feature_with_effects(feature_id)
         return [_to_choice_group_response(group) for group in feature.choice_groups]
 
-    async def _diff_choice_options(self, group: FeatureChoiceGroup, option_payloads: list[ChoiceOptionPayload]) -> None:
+    async def _diff_choice_options(
+        self,
+        group: FeatureChoiceGroup,
+        option_payloads: list[ChoiceOptionPayload],
+        existing_options: dict[int, FeatureChoiceOption],
+    ) -> None:
         """
         Diff one group's options — and each surviving/new option's six
         effect-type rows — against ``option_payloads``.
+
+        ``existing_options`` must be passed in by the caller: for an existing
+        group it's built from the eager-loaded ``group.options`` collection,
+        and for a freshly-flushed NEW group it's ``{}`` — never read
+        ``group.options`` here, a lazy load on a new group would trip the
+        async session (``greenlet_spawn``).
 
         A removed option may already be a character's stored pick
         (``CharacterFeatureChoice.choice_option_id``, ``ondelete
@@ -216,7 +227,6 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         """
 
         db = self.repository.db
-        existing_options = {option.id: option for option in group.options}
         seen_option_ids: set[int] = set()
 
         for payload in option_payloads:
@@ -285,6 +295,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
                 group.sort_order = payload.sort_order
                 group.choice_type = payload.choice_type
                 seen_group_ids.add(payload.id)
+                existing_options = {option.id: option for option in group.options}
             else:
                 group = FeatureChoiceGroup(
                     feature_id=feature.id,
@@ -294,8 +305,9 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
                 )
                 db.add(group)
                 await db.flush()  # need group.id before diffing its options
+                existing_options = {}
 
-            await self._diff_choice_options(group, payload.options)
+            await self._diff_choice_options(group, payload.options, existing_options)
 
         removed_group_ids = [group_id for group_id in existing_groups if group_id not in seen_group_ids]
         if removed_group_ids:
