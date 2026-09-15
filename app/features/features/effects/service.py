@@ -1,13 +1,17 @@
 """Feature effects service: read/write the effect engine on the reference side (Phase 3)."""
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.base.service import BaseService
+from app.core.exceptions import RecordInUseError
 from app.features.characters.progression.feature_sync import refresh_feature_effect_caches
 from app.features.features.cache import FEATURE_CACHE_NAMESPACES, purge_feature_cache_for_source
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.crud.schemas import FeatureResponse
+from app.features.features.effects.exceptions import InvalidFeatureEffectDataError
 from app.features.features.effects.schemas import (
     AbilityEffectItem,
     ArmorEffectItem,
@@ -22,6 +26,7 @@ from app.features.features.effects.schemas import (
     SpellEffectItem,
     WeaponEffectItem,
 )
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.features.feature_engine_models import (
     FeatureAbilityScoreEffect,
     FeatureArmorProficiencyEffect,
@@ -59,7 +64,6 @@ def _to_choice_group_response(group: FeatureChoiceGroup) -> ChoiceGroupResponse:
         feature_id=group.feature_id,
         pick_count=group.pick_count,
         sort_order=group.sort_order,
-        label=group.label,
         choice_type=group.choice_type,
         options=option_responses,
     )
@@ -71,10 +75,27 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
     each option a bundle of effects) and its fixed automatic effects across
     the six typed tables.
 
-    All writes are full replaces inside the caller's transaction and purge
-    the ``features`` cache. Because
-    an effect edit can change what granted characters receive, every write
-    also re-materializes the granted characters' effect rows via
+    Writes **diff by id** against the existing rows (``_diff_owned_rows`` /
+    ``_diff_choice_options``) rather than deleting everything and
+    recreating it from the payload: a row whose id is given and matches an
+    existing one is updated in place, a row with no id is inserted, and an
+    existing row whose id is absent from the payload is deleted. This
+    matters because ``CharacterFeatureChoice.choice_option_id`` is
+    ``ondelete RESTRICT`` — dropping an option (or a whole group) that a
+    character already picked would otherwise fail outright. Instead,
+    ``set_choice_groups`` deletes that character's now-invalid
+    ``CharacterFeatureChoice`` row(s) itself before removing the
+    option/group, so the pick simply reverts to pending — every character
+    currently granted the feature is then re-materialized (and their
+    ability totals recomputed) by the same ``refresh_feature_effect_caches``
+    call every write already does, so the option's effects disappear from
+    everyone it affected, not just the one whose pick was cleared. The
+    ``IntegrityError`` → ``RecordInUseError`` (409) catch around the final
+    flush/commit is a safety net for anything this proactive cleanup missed,
+    not the primary mechanism. Everything runs inside the caller's
+    transaction and purges the ``features`` cache. Because an effect edit
+    can change what granted characters receive, every write also
+    re-materializes the granted characters' effect rows via
     ``refresh_feature_effect_caches`` → ``reconcile_effect_rows_for_feature``
     (the known one-way characters import — no import cycle).
     """
@@ -105,48 +126,66 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         return FeatureEffectsResponse(
             feature_id=feature.id,
             choice_groups=[_to_choice_group_response(group) for group in feature.choice_groups],
-            ability_effects=[AbilityEffectItem.model_validate(e) for e in feature.ability_effects],
-            skill_effects=[SkillEffectItem.model_validate(e) for e in feature.skill_effects],
-            saving_throw_effects=[SavingThrowEffectItem.model_validate(e) for e in feature.saving_throw_effects],
-            armor_effects=[ArmorEffectItem.model_validate(e) for e in feature.armor_effects],
-            weapon_effects=[WeaponEffectItem.model_validate(e) for e in feature.weapon_effects],
-            spell_effects=[SpellEffectItem.model_validate(e) for e in feature.spell_effects],
+            static_groups=feature.static_groups,
         )
+
+    async def _diff_owned_rows(self, model, owner_field: str, owner_id: int, payload_items: list) -> None:
+        """
+        Diff ``payload_items`` (each optionally carrying its DB ``id``)
+        against ``model``'s existing rows where ``owner_field == owner_id``.
+
+        An item with an id matching an existing row updates that row in
+        place; an item with no id inserts a new row; an existing row whose
+        id is absent from ``payload_items`` is deleted. An item whose id
+        matches nothing raises ``InvalidFeatureEffectDataError`` (stale or
+        foreign id) rather than silently creating a duplicate.
+        """
+
+        db = self.repository.db
+        owner_col = getattr(model, owner_field)
+        existing = (await db.execute(select(model).where(owner_col == owner_id))).scalars().all()
+        existing_by_id = {row.id: row for row in existing}
+        seen_ids: set[int] = set()
+
+        for item in payload_items:
+            dump = item.model_dump(exclude={"id"})
+            if item.id is not None:
+                row = existing_by_id.get(item.id)
+                if row is None:
+                    raise InvalidFeatureEffectDataError(
+                        f"{model.__name__} id {item.id} does not belong to this feature/option."
+                    )
+                for field, value in dump.items():
+                    setattr(row, field, value)
+                seen_ids.add(item.id)
+            else:
+                db.add(model(**{owner_field: owner_id}, **dump))
+
+        for row_id, row in existing_by_id.items():
+            if row_id not in seen_ids:
+                await db.delete(row)
 
     async def set_fixed_effects(self, feature_id: int, data: FeatureEffectsUpdate) -> FeatureEffectsResponse:
         """
-        Fully replace a feature's fixed effects (all six types).
+        Diff a feature's fixed effects (all six types) against the payload.
 
-        Choice groups are untouched. After the replace, every character
+        Choice groups are untouched. After the diff, every character
         currently granted the feature is re-materialized in the same
         transaction (fixed effects apply to all grant holders automatically).
         """
 
         feature = await self._get_or_404(feature_id)
 
-        async def _replace(model, items: list, dumps) -> None:
-            """Delete the feature's fixed rows of one effect type and insert the new ones."""
-            db = self.repository.db
-            await db.execute(delete(model).where(model.feature_id == feature.id))
-            db.add_all([model(feature_id=feature.id, **dump) for dump in dumps])
+        await self._diff_owned_rows(FeatureAbilityScoreEffect, "feature_id", feature.id, data.ability_effects)
+        await self._diff_owned_rows(FeatureSkillProficiencyEffect, "feature_id", feature.id, data.skill_effects)
+        await self._diff_owned_rows(FeatureSavingThrowEffect, "feature_id", feature.id, data.saving_throw_effects)
+        await self._diff_owned_rows(FeatureArmorProficiencyEffect, "feature_id", feature.id, data.armor_effects)
+        await self._diff_owned_rows(FeatureWeaponProficiencyEffect, "feature_id", feature.id, data.weapon_effects)
+        await self._diff_owned_rows(FeatureSpellGrantEffect, "feature_id", feature.id, data.spell_effects)
 
-        await _replace(FeatureAbilityScoreEffect, data.ability_effects, [e.model_dump() for e in data.ability_effects])
-        await _replace(FeatureSkillProficiencyEffect, data.skill_effects, [e.model_dump() for e in data.skill_effects])
-        await _replace(
-            FeatureSavingThrowEffect,
-            data.saving_throw_effects,
-            [e.model_dump() for e in data.saving_throw_effects],
-        )
-        await _replace(FeatureArmorProficiencyEffect, data.armor_effects, [e.model_dump() for e in data.armor_effects])
-        await _replace(
-            FeatureWeaponProficiencyEffect, data.weapon_effects, [e.model_dump() for e in data.weapon_effects]
-        )
-        await _replace(FeatureSpellGrantEffect, data.spell_effects, [e.model_dump() for e in data.spell_effects])
-
-        # The session runs with autoflush=False — flush the newly added rows
-        # so refresh_feature_effect_caches's SELECT-based recomputation
-        # (get_feature_increases et al.) actually sees them, instead of
-        # silently recomputing off the just-deleted (now empty) old set.
+        # The session runs with autoflush=False — flush the diffed rows so
+        # refresh_feature_effect_caches's SELECT-based recomputation
+        # (get_feature_increases et al.) actually sees them.
         await self.repository.db.flush()
 
         await refresh_feature_effect_caches(self.repository.db, feature_id)
@@ -161,52 +200,132 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         feature = await self._feature_with_effects(feature_id)
         return [_to_choice_group_response(group) for group in feature.choice_groups]
 
+    async def _diff_choice_options(self, group: FeatureChoiceGroup, option_payloads: list[ChoiceOptionPayload]) -> None:
+        """
+        Diff one group's options — and each surviving/new option's six
+        effect-type rows — against ``option_payloads``.
+
+        A removed option may already be a character's stored pick
+        (``CharacterFeatureChoice.choice_option_id``, ``ondelete
+        RESTRICT``); rather than blocking the edit, that pick is deleted
+        here BEFORE the option itself, so the group reverts to pending for
+        that character. ``refresh_feature_effect_caches`` (called once at
+        the end of ``set_choice_groups``) then re-materializes every
+        character granted the feature, which both strips the removed
+        option's effects and recomputes ability totals for anyone affected.
+        """
+
+        db = self.repository.db
+        existing_options = {option.id: option for option in group.options}
+        seen_option_ids: set[int] = set()
+
+        for payload in option_payloads:
+            if payload.id is not None:
+                option = existing_options.get(payload.id)
+                if option is None:
+                    raise InvalidFeatureEffectDataError(
+                        f"Choice option id {payload.id} does not belong to group {group.id}."
+                    )
+                option.sort_order = payload.sort_order
+                seen_option_ids.add(payload.id)
+            else:
+                option = FeatureChoiceOption(group_id=group.id, sort_order=payload.sort_order)
+                db.add(option)
+                await db.flush()  # need option.id before diffing its effect rows
+
+            await self._diff_owned_rows(
+                FeatureAbilityScoreEffect, "choice_option_id", option.id, payload.ability_effects
+            )
+            await self._diff_owned_rows(FeatureSkillProficiencyEffect, "choice_option_id", option.id, payload.skill_effects)
+            await self._diff_owned_rows(
+                FeatureSavingThrowEffect, "choice_option_id", option.id, payload.saving_throw_effects
+            )
+            await self._diff_owned_rows(
+                FeatureArmorProficiencyEffect, "choice_option_id", option.id, payload.armor_effects
+            )
+            await self._diff_owned_rows(
+                FeatureWeaponProficiencyEffect, "choice_option_id", option.id, payload.weapon_effects
+            )
+            await self._diff_owned_rows(FeatureSpellGrantEffect, "choice_option_id", option.id, payload.spell_effects)
+
+        removed_option_ids = [option_id for option_id in existing_options if option_id not in seen_option_ids]
+        if removed_option_ids:
+            await db.execute(
+                delete(CharacterFeatureChoice).where(CharacterFeatureChoice.choice_option_id.in_(removed_option_ids))
+            )
+        for option_id in removed_option_ids:
+            await db.delete(existing_options[option_id])
+
     async def set_choice_groups(self, feature_id: int, data: ChoiceGroupsUpdate) -> list[ChoiceGroupResponse]:
         """
-        Fully replace a feature's choice groups (and their options/effects).
-
-        Full replace via delete-orphan cascade: the given tree becomes the
-        complete set. Grants that already answered the old tree keep their
-        rows pointing at still-existing options; stale options' effects are
-        re-materialized by the caller's re-sync.
+        Diff a feature's choice groups (and their options/effects) against
+        the payload — see the class docstring. Dropping an option or a whole
+        group that a character already picked clears that character's
+        stored pick (reverting it to pending) instead of failing; every
+        character currently granted the feature is then re-materialized.
         """
 
         feature = await self._get_or_404(feature_id)
         db = self.repository.db
 
-        existing = await db.execute(select(FeatureChoiceGroup).where(FeatureChoiceGroup.feature_id == feature.id))
-        for group in existing.scalars().all():
-            await db.delete(group)
-
-        def _make_option(payload: ChoiceOptionPayload) -> FeatureChoiceOption:
-            return FeatureChoiceOption(
-                sort_order=payload.sort_order,
-                ability_effects=[FeatureAbilityScoreEffect(**e.model_dump()) for e in payload.ability_effects],
-                skill_effects=[FeatureSkillProficiencyEffect(**e.model_dump()) for e in payload.skill_effects],
-                saving_throw_effects=[FeatureSavingThrowEffect(**e.model_dump()) for e in payload.saving_throw_effects],
-                armor_effects=[FeatureArmorProficiencyEffect(**e.model_dump()) for e in payload.armor_effects],
-                weapon_effects=[FeatureWeaponProficiencyEffect(**e.model_dump()) for e in payload.weapon_effects],
-                spell_effects=[FeatureSpellGrantEffect(**e.model_dump()) for e in payload.spell_effects],
-            )
+        existing_result = await db.execute(
+            select(FeatureChoiceGroup)
+            .where(FeatureChoiceGroup.feature_id == feature.id)
+            .options(selectinload(FeatureChoiceGroup.options))
+        )
+        existing_groups = {group.id: group for group in existing_result.unique().scalars().all()}
+        seen_group_ids: set[int] = set()
 
         for payload in data.choice_groups:
-            db.add(
-                FeatureChoiceGroup(
+            if payload.id is not None:
+                group = existing_groups.get(payload.id)
+                if group is None:
+                    raise InvalidFeatureEffectDataError(f"Choice group id {payload.id} does not belong to this feature.")
+                group.pick_count = payload.pick_count
+                group.sort_order = payload.sort_order
+                group.choice_type = payload.choice_type
+                seen_group_ids.add(payload.id)
+            else:
+                group = FeatureChoiceGroup(
                     feature_id=feature.id,
                     pick_count=payload.pick_count,
                     sort_order=payload.sort_order,
-                    label=payload.label,
                     choice_type=payload.choice_type,
-                    options=[_make_option(option) for option in payload.options],
                 )
+                db.add(group)
+                await db.flush()  # need group.id before diffing its options
+
+            await self._diff_choice_options(group, payload.options)
+
+        removed_group_ids = [group_id for group_id in existing_groups if group_id not in seen_group_ids]
+        if removed_group_ids:
+            # Whole group dropped: every character's pick(s) in it revert to
+            # pending, same as a removed option — see _diff_choice_options.
+            await db.execute(
+                delete(CharacterFeatureChoice).where(CharacterFeatureChoice.choice_group_id.in_(removed_group_ids))
             )
+        for group_id in removed_group_ids:
+            await db.delete(existing_groups[group_id])
 
         # Flush BEFORE recomputing: the session runs with autoflush=False,
         # so refresh_feature_effect_caches's SELECT-based recomputation
-        # would otherwise miss the newly added groups/options/effects.
-        await db.flush()
-        await refresh_feature_effect_caches(self.repository.db, feature_id)
-        await db.commit()
+        # would otherwise miss the diffed groups/options/effects. Stale
+        # CharacterFeatureChoice rows for anything removed above were
+        # already cleared, so this shouldn't trip ON DELETE RESTRICT — the
+        # try/except is a safety net for anything that cleanup missed,
+        # surfaced as a clean 409 instead of a raw IntegrityError.
+        try:
+            await db.flush()
+            await refresh_feature_effect_caches(self.repository.db, feature_id)
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise RecordInUseError(
+                model_name="FeatureChoiceOption",
+                model_id="one or more removed options/groups",
+                reason="still referenced by a character's answered choice",
+            ) from exc
+
         await purge_feature_cache_for_source(feature.source_type)
 
         return await self.get_choice_groups(feature_id)

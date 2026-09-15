@@ -135,6 +135,25 @@ class Feature(settings.Base):  # type: ignore
         return bool(self.choice_groups)
 
     @property
+    def static_groups(self) -> list[dict]:
+        """
+        This feature's fixed effects grouped by kind (one entry per non-empty
+        effect relationship), for ``FeatureResponse``/``NestedFeatureResponse``'s
+        ``static_groups`` field — see ``StaticEffectGroup`` in
+        ``app.features.features.effects.schemas``.
+        """
+
+        groups = [
+            ("ability", self.ability_effects),
+            ("skill", self.skill_effects),
+            ("saving_throw", self.saving_throw_effects),
+            ("armor", self.armor_effects),
+            ("weapon", self.weapon_effects),
+            ("spell", self.spell_effects),
+        ]
+        return [{"effect_type": effect_type, "items": items} for effect_type, items in groups if items]
+
+    @property
     def effects_summary(self) -> str:
         """Human-readable summary of this feature's fixed effects and choice groups (see ``rendering.py``)."""
 

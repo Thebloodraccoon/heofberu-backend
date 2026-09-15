@@ -4,9 +4,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.core.base.repository import _commit_or_rollback
 from app.features.characters.access import get_character_for_user
 from app.features.characters.dependencies import CharacterServiceDep, FeatureGrantServiceDep
-from app.features.characters.grants.schemas import GrantChoicesUpdate, PendingChoiceGroupsResponse
+from app.features.characters.grants.schemas import (
+    AnsweredChoicesResponse,
+    GrantChoicesUpdate,
+    PendingChoiceGroupsResponse,
+)
 from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
@@ -63,6 +68,60 @@ async def get_pending_choice_groups(
 
     await get_character_for_user(character_service.repository, character_id, current_user)
     return await grant_service.get_pending_choice_groups(character_id, character_feature_id)
+
+
+@router.get(
+    "/{character_id:int}/grants/answered",
+    response_model=list[AnsweredChoicesResponse],
+    summary="List every answered choice across a character's grants",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def get_all_answered_choices(
+    character_id: int,
+    grant_service: FeatureGrantServiceDep,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+):
+    """
+    Character-wide view of every grant that has at least one answered
+    choice group, with the option(s) the player actually picked (full
+    effect bundle, resolved skill/saving-throw/armor/weapon/spell). Mirrors
+    ``GET /grants/pending`` for the answered side; grants with no stored
+    pick yet are omitted.
+    """
+
+    await get_character_for_user(character_service.repository, character_id, current_user)
+    return await grant_service.get_all_answered_choices(character_id)
+
+
+@router.get(
+    "/{character_id:int}/features/{character_feature_id:int}/choices/answered",
+    response_model=AnsweredChoicesResponse,
+    summary="Get a granted feature's answered choice groups",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character or feature grant exists with the given ID."},
+    },
+)
+async def get_answered_choices(
+    character_id: int,
+    character_feature_id: int,
+    grant_service: FeatureGrantServiceDep,
+    character_service: CharacterServiceDep,
+    current_user: CurrentUserDep,
+):
+    """
+    Return the player's resolved picks for one grant's choice groups — the
+    option(s) actually chosen, with their full effect bundle. An empty
+    ``choices`` list means nothing has been answered yet (see ``GET
+    .../choices`` for what's still pending).
+    """
+
+    await get_character_for_user(character_service.repository, character_id, current_user)
+    return await grant_service.get_answered_choices(character_id, character_feature_id)
 
 
 @router.patch(
@@ -146,4 +205,6 @@ async def answer_choice_groups(
     """
 
     await get_character_for_user(character_service.repository, character_id, current_user)
-    return await grant_service.answer_choices(character_id, character_feature_id, data)
+    response = await grant_service.answer_choices(character_id, character_feature_id, data)
+    await _commit_or_rollback(grant_service.db)
+    return response

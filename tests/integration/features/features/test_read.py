@@ -38,11 +38,9 @@ class TestFeatureOpenRead:
         body = response.json()
         assert body["name"] == "Extra Attack"
         assert body["choice_groups"] == []
-        assert body["skill_effects"] == []
-        assert body["saving_throw_effects"] == []
-        assert body["armor_effects"] == []
-        assert body["weapon_effects"] == []
-        assert body["spell_effects"] == []
+        assert body["static_groups"] == []
+        assert body["has_static_effects"] is False
+        assert body["has_choices"] is False
 
     async def test_get_feature_by_id(self, client, create_feature):
         feature = await create_feature(name="Extra Attack", source_type="OTHER")
@@ -52,7 +50,7 @@ class TestFeatureOpenRead:
         assert response.status_code == 200
         body = response.json()
         assert body["name"] == "Extra Attack"
-        assert body["ability_effects"] == []
+        assert body["static_groups"] == []
         assert body["choice_groups"] == []
 
     async def test_get_feature_404(self, client):

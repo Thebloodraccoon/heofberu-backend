@@ -21,7 +21,6 @@ from sqlalchemy import (
     Column,
     ForeignKey,
     Integer,
-    String,
 )
 from sqlalchemy.orm import relationship
 
@@ -59,7 +58,6 @@ class FeatureChoiceGroup(settings.Base):  # type: ignore
 
     pick_count = Column(Integer, nullable=False, default=1)
     sort_order = Column(Integer, nullable=False, default=0)
-    label = Column(String(200), nullable=False, default="")
     choice_type = Column(ChoiceTypeType, nullable=False)
 
     __table_args__ = (CheckConstraint("pick_count >= 1", name="check_feature_choice_group_pick_count_positive"),)

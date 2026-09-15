@@ -1,4 +1,4 @@
-"""Feature effects endpoints: read + full-replace of a feature's fixed effects and choice groups (Phase 3)."""
+"""Feature effects endpoints: read + diff-based write of a feature's fixed effects and choice groups (Phase 3)."""
 
 from typing import Annotated
 
@@ -36,11 +36,11 @@ async def get_feature_effects(
 @router.put(
     "/{feature_id:int}/effects",
     response_model=FeatureEffectsResponse,
-    summary="Replace a feature's fixed (automatic) effects",
+    summary="Diff-update a feature's fixed (automatic) effects",
     responses={
         403: {"description": "You are not a GM."},
         404: {"description": "No feature exists with the given ID."},
-        422: {"description": "Invalid effect payload."},
+        422: {"description": "Invalid effect payload, or an item's id doesn't belong to this feature."},
     },
 )
 async def set_feature_effects(
@@ -81,11 +81,15 @@ async def set_feature_effects(
     _: GmUserDep,
 ):
     """
-    Replace all fixed effects for a feature. **GM only.**
+    Diff-update all fixed effects for a feature. **GM only.**
 
-    Full replace (not merge): each list becomes the complete set of that
-    effect type; send ``[]`` to clear it. Effects apply automatically to
-    every character the feature is granted to (existing characters are
+    Each list becomes the complete set of that effect type, but existing
+    rows aren't deleted and recreated wholesale: an item with an existing
+    row's ``id`` updates that row in place, an item with no ``id`` inserts a
+    new row, and an existing row whose ``id`` is missing from the list is
+    deleted (send ``[]`` to clear a type entirely). An ``id`` that doesn't
+    belong to this feature is a 422. Effects apply automatically to every
+    character the feature is granted to (existing characters are
     re-materialized in the same transaction). Choice groups are managed via
     ``PUT /features/{id}/choice-groups``.
     """
@@ -113,11 +117,11 @@ async def get_feature_choice_groups(
 @router.put(
     "/{feature_id:int}/choice-groups",
     response_model=list[ChoiceGroupResponse],
-    summary="Replace a feature's choice groups",
+    summary="Diff-update a feature's choice groups",
     responses={
         403: {"description": "You are not a GM."},
         404: {"description": "No feature exists with the given ID."},
-        422: {"description": "Invalid choice-group payload."},
+        422: {"description": "Invalid choice-group payload, or a group/option id doesn't belong to this feature."},
     },
 )
 async def set_feature_choice_groups(
@@ -133,7 +137,6 @@ async def set_feature_choice_groups(
                             {
                                 "pick_count": 1,
                                 "choice_type": "ABILITY_SCORE",
-                                "label": "Choose an ability",
                                 "options": [
                                     {"ability_effects": [{"ability": "STR", "amount": 1}]},
                                     {"ability_effects": [{"ability": "DEX", "amount": 1}]},
@@ -153,12 +156,20 @@ async def set_feature_choice_groups(
     _: GmUserDep,
 ):
     """
-    Replace all choice groups for a feature. **GM only.**
+    Diff-update all choice groups for a feature. **GM only.**
 
-    Full replace: the given tree becomes the complete set. Each option is a
-    bundle — picking it applies all of its child effects together. Grants
-    whose picks referenced removed options have those picks re-materialized
-    by the sync on the next progression write.
+    The given tree becomes the complete set, but existing rows aren't
+    deleted and recreated wholesale: a group/option with an existing ``id``
+    updates it in place, one with no ``id`` creates a new row, and an
+    existing row whose ``id`` is missing from the payload is removed. An
+    ``id`` that doesn't belong to this feature is a 422. Each option is a
+    bundle — picking it applies all of its child effects together. Removing
+    an option or a whole group that a character already picked clears that
+    character's stored pick (it reverts to pending, see ``GET
+    /characters/{id}/grants/pending``) instead of failing; every character
+    currently granted the feature is re-materialized in the same
+    transaction, so the removed option's effects disappear immediately for
+    everyone it applied to.
     """
 
     return await service.set_choice_groups(feature_id, data)

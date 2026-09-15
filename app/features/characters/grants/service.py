@@ -2,10 +2,12 @@
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.constants import SpellLevel
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.grants.effects import build_chosen_options
 from app.features.characters.grants.exceptions import (
     ChoiceCountMismatchError,
     ChoiceGroupNotFoundError,
@@ -19,9 +21,12 @@ from app.features.characters.grants.exceptions import (
 from app.features.characters.grants.materializer import (
     FeatureGrantMaterializer,
     ResolvedOption,
+    choice_option_effect_loads,
+    engine_effect_loads,
     load_feature_effect_tree,
 )
 from app.features.characters.grants.schemas import (
+    AnsweredChoicesResponse,
     ChoiceAnswerItem,
     GrantChoicesUpdate,
     PendingChoiceGroup,
@@ -36,6 +41,13 @@ from app.models.features.feature_engine_models import FeatureChoiceGroup, Featur
 from app.models.features.feature_model import Feature
 
 _SPELL_LEVEL_RANK = {level: rank for rank, level in enumerate(SpellLevel)}
+
+_CHOICE_OPTION_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
+_ANSWERED_LOAD_OPTIONS = [
+    selectinload(CharacterFeature.feature),
+    _CHOICE_OPTION_LOADER,
+    *choice_option_effect_loads(_CHOICE_OPTION_LOADER),
+]
 
 
 class FeatureGrantService:
@@ -166,7 +178,6 @@ class FeatureGrantService:
                 PendingChoiceGroup(
                     id=group.id,
                     pick_count=group.pick_count,
-                    label=group.label,
                     choice_type=group.choice_type,
                     options=[
                         PendingChoiceOption(
@@ -203,23 +214,102 @@ class FeatureGrantService:
         the ones that still have unanswered choice groups — the
         character-wide "you still need to choose" surface, meant to drive
         a forced picker right after character creation or a level-up.
+
+        Batches the feature-effect-tree load and the stored-choices load
+        across every grant (2 queries total, not counting the fan-out
+        ``selectinload`` queries) instead of looping ``load_feature_effect_tree``
+        / ``_load_stored_choices`` once per grant — a character with N grants
+        used to issue roughly N times the eager-load query set.
         """
 
         result = await self.db.execute(select(CharacterFeature).where(CharacterFeature.character_id == character_id))
         grants = list(result.scalars().unique().all())
+        if not grants:
+            return []
+
+        feature_ids = {grant.feature_id for grant in grants}
+        features_result = await self.db.execute(
+            select(Feature).where(Feature.id.in_(feature_ids)).options(*engine_effect_loads())
+        )
+        feature_by_id = {feature.id: feature for feature in features_result.unique().scalars().all()}
+
+        grant_ids = [grant.id for grant in grants]
+        stored_result = await self.db.execute(
+            select(CharacterFeatureChoice).where(CharacterFeatureChoice.character_feature_id.in_(grant_ids))
+        )
+        stored_by_grant: dict[int, list[CharacterFeatureChoice]] = {}
+        for choice in stored_result.scalars().unique().all():
+            stored_by_grant.setdefault(choice.character_feature_id, []).append(choice)
 
         pending_responses = []
         for grant in grants:
-            feature = await load_feature_effect_tree(self.db, grant.feature_id)
+            feature = feature_by_id.get(grant.feature_id)
             if feature is None or not feature.choice_groups:
                 continue
 
-            stored = await self._load_stored_choices(grant.id)
+            stored = stored_by_grant.get(grant.id, [])
             pending = self.materializer.pending_groups(feature, stored)
             if pending:
                 pending_responses.append(self._to_pending_response(grant, feature, pending))
 
         return pending_responses
+
+    async def _load_grant_with_choices(self, character_id: int, grant_id: int) -> CharacterFeature:
+        """Fetch the grant scoped to the character, with its stored picks (+ option effects) eager-loaded."""
+
+        result = await self.db.execute(
+            select(CharacterFeature)
+            .where(
+                CharacterFeature.id == grant_id,
+                CharacterFeature.character_id == character_id,
+            )
+            .options(*_ANSWERED_LOAD_OPTIONS)
+        )
+        grant = result.unique().scalar_one_or_none()
+        if grant is None:
+            raise GrantNotFoundError(character_id=character_id, grant_id=grant_id)
+        return grant
+
+    async def get_answered_choices(self, character_id: int, grant_id: int) -> AnsweredChoicesResponse:
+        """
+        Return the player's resolved picks for one grant's choice groups —
+        the options actually chosen, with their full effect bundle. An empty
+        ``choices`` list means nothing has been answered yet (see
+        ``get_pending_choice_groups`` for what's still outstanding).
+        """
+
+        grant = await self._load_grant_with_choices(character_id, grant_id)
+        return AnsweredChoicesResponse(
+            character_feature_id=grant.id,
+            feature_id=grant.feature_id,
+            feature_name=grant.feature.name,
+            choices=build_chosen_options(grant),
+        )
+
+    async def get_all_answered_choices(self, character_id: int) -> list[AnsweredChoicesResponse]:
+        """
+        Character-wide view of every grant that has at least one answered
+        choice group, with the options picked — the answered-side mirror of
+        ``get_all_pending_choices``.
+        """
+
+        result = await self.db.execute(
+            select(CharacterFeature)
+            .where(CharacterFeature.character_id == character_id)
+            .options(*_ANSWERED_LOAD_OPTIONS)
+        )
+        grants = list(result.unique().scalars().all())
+
+        return [
+            AnsweredChoicesResponse(
+                character_feature_id=grant.id,
+                feature_id=grant.feature_id,
+                feature_name=grant.feature.name,
+                choices=build_chosen_options(grant),
+            )
+            for grant in grants
+            if grant.choices
+        ]
 
     async def resolve_grant_choices(
         self,

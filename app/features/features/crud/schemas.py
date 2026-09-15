@@ -3,15 +3,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.constants import AbilityScore, FeatureSourceType
-from app.features.features.effects.schemas import (
-    AbilityEffectItem,
-    ArmorEffectItem,
-    ChoiceGroupResponse,
-    SavingThrowEffectItem,
-    SkillEffectItem,
-    SpellEffectItem,
-    WeaponEffectItem,
-)
+from app.features.features.effects.schemas import ChoiceGroupResponse, StaticEffectGroup
 
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS keys off subclass_id (not class_id — the old denorm approach).
@@ -133,12 +125,6 @@ class FeatureBase(FeatPrerequisiteFields):
 
     description: str = ""
 
-    # ``min_level``/``prerequisite_*`` (inherited from ``FeatPrerequisiteFields``)
-    # are only meaningful when source_type == FEAT. A standalone feat-like row
-    # also carries no choice/effects data in this schema — the effect engine
-    # (choice groups + fixed effects) is managed through the
-    # ``/features/{id}/effects`` endpoints.
-
 
 class FeatureCreate(FeatureBase):
     """
@@ -164,18 +150,10 @@ class FeatureResponse(FeatureBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    ability_effects: list[AbilityEffectItem] = []
+
     choice_groups: list[ChoiceGroupResponse] = []
-    skill_effects: list[SkillEffectItem] = []
-    saving_throw_effects: list[SavingThrowEffectItem] = []
-    armor_effects: list[ArmorEffectItem] = []
-    weapon_effects: list[WeaponEffectItem] = []
-    spell_effects: list[SpellEffectItem] = []
-    # Server-rendered, read-only: plain ``Feature`` properties (see
-    # ``app/models/features/feature_model.py`` and
-    # ``app.features.features.effects.rendering``), picked up automatically
-    # by ``model_validate`` off the eager-loaded effect tree — never
-    # accepted on write (this schema is response-only).
+    static_groups: list[StaticEffectGroup] = []
+
     has_static_effects: bool = False
     has_choices: bool = False
     effects_summary: str = ""
@@ -189,16 +167,16 @@ class FeatureGetAllResponse(BaseModel):
     id: int
     name: str
     source_type: FeatureSourceType
+
     class_id: int | None = None
     subclass_id: int | None = None
     race_id: int | None = None
     subrace_id: int | None = None
     background_id: int | None = None
+
     level: int | None = None
-    ability_effects: list[AbilityEffectItem] = []
     has_static_effects: bool = False
     has_choices: bool = False
-    effects_summary: str = ""
 
 
 class NestedFeatureCreate(BaseModel):
@@ -216,7 +194,7 @@ class NestedFeatureCreate(BaseModel):
 
 
 class NestedFeatureResponse(BaseModel):
-    """Compact feature row for embedding inside a parent entity response."""
+    """Feature row for embedding inside a parent entity response, with the complete effect tree."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -224,7 +202,10 @@ class NestedFeatureResponse(BaseModel):
     name: str
     description: str
     level: int | None = None
-    ability_effects: list[AbilityEffectItem] = []
+
+    choice_groups: list[ChoiceGroupResponse] = []
+    static_groups: list[StaticEffectGroup] = []
+
     has_static_effects: bool = False
     has_choices: bool = False
     effects_summary: str = ""

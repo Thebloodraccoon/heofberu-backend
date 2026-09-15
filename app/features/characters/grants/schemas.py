@@ -47,8 +47,7 @@ class PendingChoiceOption(BaseModel):
     A pending option inside a pending choice group, with its open-effect
     flags and its full effect bundle — so a client can render what the
     option actually does (e.g. "+1 STR") without a separate fetch of the
-    feature's catalog definition. Carries no label of its own; the group's
-    own ``label`` names the overall decision.
+    feature's catalog definition.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -71,7 +70,6 @@ class PendingChoiceGroup(BaseModel):
 
     id: int
     pick_count: int
-    label: str = ""
     choice_type: ChoiceType
     options: list[PendingChoiceOption] = []
 
@@ -158,3 +156,12 @@ class ChosenOptionResponse(BaseModel):
     armor_effects: list[ArmorEffectItem] = []
     weapon_effects: list[WeaponEffectItem] = []
     spell_effects: list[SpellEffectItem] = []
+
+
+class AnsweredChoicesResponse(BaseModel):
+    """The player's resolved picks for one granted feature's choice groups — the answered side of ``PendingChoiceGroupsResponse``."""
+
+    character_feature_id: int
+    feature_id: int
+    feature_name: str = ""
+    choices: list[ChosenOptionResponse] = []

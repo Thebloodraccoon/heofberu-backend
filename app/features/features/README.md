@@ -24,30 +24,42 @@ features/
 
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
-| GET | `/features` | open | Paginated `Page[FeatureGetAllResponse]` of **standalone OTHER** features only (id/name/source_type/FKs/level/`ability_effects`), ordered by name; `search` on name. Source-owned features are listed through their parent record. |
-| GET | `/features/{feature_id}` | open | Full `FeatureResponse` for any source, embedding the **whole effect tree** (choice groups + all six fixed-effect lists). |
+| GET | `/features` | open | Paginated `Page[FeatureGetAllResponse]` of **standalone OTHER** features only (id/name/source_type/FKs/level/`has_static_effects`/`has_choices`), ordered by name; `search` on name. Source-owned features are listed through their parent record. |
+| GET | `/features/{feature_id}` | open | Full `FeatureResponse` for any source, embedding the **whole effect tree** (`choice_groups` + `static_groups`, the discriminated union of fixed effects — see below). |
 | POST | `/features` | GM | Create a feature of **any** source type, including `FEAT` (feat rows carry `min_level`/`prerequisite_*`). Source FK + `level` rules enforced at the schema layer (422). |
 | PATCH | `/features/{feature_id}` | GM | Editable fields only: `name`, `level`, `description` (+ `min_level`/`prerequisite_*` for FEAT rows). `source_type` and its FK are **immutable** — ownership is permanent. Level-rule violations → 400 (`InvalidFeatureSourceException`). |
 | DELETE | `/features/{feature_id}` | GM | Cascades away `CharacterFeature` grants; re-reconciles the owning record's characters. |
-| GET/PUT | `/features/{feature_id}/effects` | open / GM | Read / **full-replace** the feature's fixed effects across all six tables (send `[]` to clear); choice groups untouched. |
-| GET/PUT | `/features/{feature_id}/choice-groups` | open / GM | Read / **full-replace** the feature's choice-group tree (delete-orphan cascade; stale option effects re-synced on the next grant refresh). |
+| GET/PUT | `/features/{feature_id}/effects` | open / GM | Read / **diff-update** the feature's fixed effects across all six tables by row id (send `[]` to clear a type); choice groups untouched. |
+| GET/PUT | `/features/{feature_id}/choice-groups` | open / GM | Read / **diff-update** the feature's choice-group tree by id (groups → options → effects); dropping an option/group a character has already picked clears that pick (reverts to pending) instead of failing. |
 
 ## The effect engine
 
 A feature's mechanical payload lives in `app/models/features/feature_engine_models.py`
 and is served as three things:
 
-- **Six fixed-effect lists** (`FeatureEffectsUpdate`): `ability_effects`,
+- **Six fixed-effect lists on write** (`FeatureEffectsUpdate`): `ability_effects`,
   `skill_effects`, `saving_throw_effects`, `armor_effects`, `weapon_effects`,
   `spell_effects`. A fixed effect applies automatically to any character
-  granted the feature.
+  granted the feature. `PUT /features/{feature_id}/effects` still takes this
+  flat six-list shape.
 - **Choice groups** ("pick N of M", `ChoiceGroupsUpdate`) — each group is
   pinned to one `choice_type` (`SKILL`/`SPELL`/`ABILITY_SCORE`/
   `SAVING_THROW`/`ARMOR`/`WEAPON`); every option in it may only populate the
   one effect-list field that type allows, enforced on write. Groups are
   independent of the fixed effects and are written separately.
-- **`FeatureEffectsResponse`** aggregates both (fixed + choice groups) and is
-  what `GET /features/{feature_id}` / feats reads serialize.
+- **`static_groups: list[StaticEffectGroup]` on read** — the six flat lists
+  are no longer serialized separately on responses. Instead `Feature.static_groups`
+  (a model `@property`, `app/models/features/feature_model.py`) emits one entry
+  per **non-empty** fixed-effect relationship, each a discriminated union member
+  keyed by `effect_type` (`"ability"` / `"skill"` / `"saving_throw"` / `"armor"`
+  / `"weapon"` / `"spell"`) carrying that type's `items` list. `FeatureResponse`,
+  `NestedFeatureResponse` and `FeatureEffectsResponse` all expose
+  `static_groups` this way, plus the derived `has_static_effects` / `has_choices`
+  booleans and rendered `effects_summary` string (all three are `Feature`
+  `@property`s, not columns).
+- **`FeatureEffectsResponse`** aggregates `choice_groups` + `static_groups` and
+  is what `GET /features/{feature_id}/effects` returns (`GET /features/{feature_id}`
+  embeds the same shape inline via `FeatureResponse`).
 
 Payload-item rules (schema-enforced, 422):
 - `AbilityEffectItem`: `ability` + `amount`, plus optional `new_cap` — **20–30
@@ -102,12 +114,26 @@ characters, so they need no reconciliation.
 ## FeatureEffectsService
 
 `FeatureEffectsService` (in `effects/`, exposed via `FeatureEffectsDep`) owns
-the two write endpoints above. Both are **full replaces** executed inside the
-request transaction; after flushing the replacement rows they re-materialize
+the two write endpoints above. Both **diff by row id** against the existing
+rows (`_diff_owned_rows` / `_diff_choice_options`) instead of deleting
+everything and recreating it: an item with an existing id updates that row,
+an item with no id creates one, and an existing row whose id is missing from
+the payload is deleted — an id that doesn't belong to this feature is a 422.
+This matters because `CharacterFeatureChoice.choice_option_id` is `ondelete
+RESTRICT`: removing an option/group a character already picked would
+otherwise fail outright, so `set_choice_groups` deletes that character's
+now-stale `CharacterFeatureChoice` row(s) itself first — the pick reverts to
+pending rather than blocking the edit (the `IntegrityError` → 409
+`RecordInUseError` catch around the diff's flush/commit is a safety net for
+anything this cleanup missed, not the primary path). Executed inside
+the request transaction; after flushing the diffed rows they re-materialize
 every character currently granted the feature via
 `refresh_feature_effect_caches` → `reconcile_effect_rows_for_feature` (one-way
 characters import, `autoflush=False`-safe), commit, then invalidate the
-`features` cache.
+`features` cache. The response is built by reading `feature.static_groups`
+straight off the refreshed ORM instance (one dict per non-empty effect
+relationship) rather than `model_validate`-ing each of the six effect lists
+individually.
 
 The exception/error split to document: schema-level rule violations (wrong FK,
 duplicate ability, out-of-range `new_cap`, two ASI groups) surface as **422**

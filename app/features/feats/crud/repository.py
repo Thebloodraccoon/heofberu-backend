@@ -145,7 +145,6 @@ class FeatRepository(BaseRepository[Feature]):
                 feature_id=feat.id,
                 pick_count=1,
                 sort_order=0,
-                label="Ability Score Increase",
                 choice_type=ChoiceType.ABILITY_SCORE,
                 options=[
                     FeatureChoiceOption(

@@ -1,6 +1,8 @@
 """Feature effects capability: request/response schemas for the effect engine (Phase 3)."""
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.constants import AbilityScore, ArmorProficiency, ChoiceType, SpellLevel, SpellSchool, WeaponProficiency
 
@@ -53,35 +55,46 @@ class AbilityEffectItem(BaseModel):
 
 
 class SkillEffectItem(BaseModel):
-    """A fixed/option skill-proficiency effect. ``skill_id`` None = "any skill" (choice only)."""
+    """
+    A fixed/option skill-proficiency effect. ``skill_id`` None = "any skill" (choice only).
+
+    ``id`` is the DB row id — absent (or omitted) on a write payload means
+    "create"; set it to an existing row's id to update that row in place
+    instead of replacing it (see ``FeatureEffectsService`` — writes diff by
+    id rather than deleting and recreating every row).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int | None = None
     skill_id: int | None = None
     grants_expertise: bool = False
 
 
 class SavingThrowEffectItem(BaseModel):
-    """A fixed/option saving-throw-proficiency effect."""
+    """A fixed/option saving-throw-proficiency effect. ``id``: see ``SkillEffectItem``."""
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int | None = None
     ability: AbilityScore
 
 
 class ArmorEffectItem(BaseModel):
-    """A fixed/option armor-proficiency effect."""
+    """A fixed/option armor-proficiency effect. ``id``: see ``SkillEffectItem``."""
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int | None = None
     armor_type: ArmorProficiency
 
 
 class WeaponEffectItem(BaseModel):
-    """A fixed/option weapon-proficiency effect: category OR concrete item — exactly one."""
+    """A fixed/option weapon-proficiency effect: category OR concrete item — exactly one. ``id``: see ``SkillEffectItem``."""
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int | None = None
     weapon_category: WeaponProficiency | None = None
     item_id: int | None = None
 
@@ -94,10 +107,11 @@ class WeaponEffectItem(BaseModel):
 
 
 class SpellEffectItem(BaseModel):
-    """A fixed/option spell-grant effect: a concrete spell OR an open filter."""
+    """A fixed/option spell-grant effect: a concrete spell OR an open filter. ``id``: see ``SkillEffectItem``."""
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int | None = None
     spell_id: int | None = None
     spell_school: SpellSchool | None = None
     spell_level_max: SpellLevel | None = None
@@ -110,6 +124,76 @@ class SpellEffectItem(BaseModel):
         return self
 
 
+class AbilityStaticEffectGroup(BaseModel):
+    """A feature's fixed ability-score effects, grouped under ``effect_type='ability'``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    effect_type: Literal["ability"] = "ability"
+    items: list[AbilityEffectItem] = []
+
+
+class SkillStaticEffectGroup(BaseModel):
+    """A feature's fixed skill-proficiency effects, grouped under ``effect_type='skill'``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    effect_type: Literal["skill"] = "skill"
+    items: list[SkillEffectItem] = []
+
+
+class SavingThrowStaticEffectGroup(BaseModel):
+    """A feature's fixed saving-throw-proficiency effects, grouped under ``effect_type='saving_throw'``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    effect_type: Literal["saving_throw"] = "saving_throw"
+    items: list[SavingThrowEffectItem] = []
+
+
+class ArmorStaticEffectGroup(BaseModel):
+    """A feature's fixed armor-proficiency effects, grouped under ``effect_type='armor'``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    effect_type: Literal["armor"] = "armor"
+    items: list[ArmorEffectItem] = []
+
+
+class WeaponStaticEffectGroup(BaseModel):
+    """A feature's fixed weapon-proficiency effects, grouped under ``effect_type='weapon'``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    effect_type: Literal["weapon"] = "weapon"
+    items: list[WeaponEffectItem] = []
+
+
+class SpellStaticEffectGroup(BaseModel):
+    """A feature's fixed spell-grant effects, grouped under ``effect_type='spell'``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    effect_type: Literal["spell"] = "spell"
+    items: list[SpellEffectItem] = []
+
+
+# One entry per non-empty fixed-effect relationship a ``Feature`` carries —
+# built by ``Feature.static_groups`` (see ``app.models.features.feature_model``)
+# and consumed by ``FeatureResponse``/``NestedFeatureResponse`` in place of
+# six separate flat effect lists. ``effect_type`` discriminates which of the
+# six typed groups a given entry is.
+StaticEffectGroup = Annotated[
+    AbilityStaticEffectGroup
+    | SkillStaticEffectGroup
+    | SavingThrowStaticEffectGroup
+    | ArmorStaticEffectGroup
+    | WeaponStaticEffectGroup
+    | SpellStaticEffectGroup,
+    Field(discriminator="effect_type"),
+]
+
+
 class ChoiceOptionPayload(BaseModel):
     """
     One option of a choice group, carrying its effect bundle.
@@ -120,8 +204,16 @@ class ChoiceOptionPayload(BaseModel):
     its effects (and rendered to text on read, see ``effects.rendering``),
     so authoring an option never risks a hand-typed name drifting from what
     it materializes.
+
+    ``id``: see ``SkillEffectItem`` — omit to create a new option, set to an
+    existing option's id to update it in place. An option a character has
+    already picked (``CharacterFeatureChoice.choice_option_id``, ``ondelete
+    RESTRICT``) can only be edited this way, never removed — dropping it
+    from the payload while a character still points at it fails with a
+    foreign-key error.
     """
 
+    id: int | None = None
     sort_order: int = 0
     ability_effects: list[AbilityEffectItem] = []
     skill_effects: list[SkillEffectItem] = []
@@ -139,11 +231,14 @@ class ChoiceGroupPayload(BaseModel):
     every option may only populate the one effect-list field that type
     allows (e.g. ``SKILL`` → only ``skill_effects``); every other field must
     be empty. One effect type per group, no mixed bundles.
+
+    ``id``: see ``SkillEffectItem`` — omit to create a new group, set to an
+    existing group's id to update it (and diff its ``options``) in place.
     """
 
+    id: int | None = None
     pick_count: int = 1
     sort_order: int = 0
-    label: str = ""
     choice_type: ChoiceType
     options: list[ChoiceOptionPayload] = []
 
@@ -181,7 +276,6 @@ class ChoiceGroupResponse(BaseModel):
     feature_id: int
     pick_count: int
     sort_order: int = 0
-    label: str = ""
     choice_type: ChoiceType
     options: list[ChoiceOptionResponse] = []
 
@@ -191,21 +285,19 @@ class FeatureEffectsResponse(BaseModel):
 
     feature_id: int
     choice_groups: list[ChoiceGroupResponse] = []
-    ability_effects: list[AbilityEffectItem] = []
-    skill_effects: list[SkillEffectItem] = []
-    saving_throw_effects: list[SavingThrowEffectItem] = []
-    armor_effects: list[ArmorEffectItem] = []
-    weapon_effects: list[WeaponEffectItem] = []
-    spell_effects: list[SpellEffectItem] = []
+    static_groups: list[StaticEffectGroup] = []
 
 
 class FeatureEffectsUpdate(BaseModel):
     """
-    Full-replace payload for a feature's FIXED (automatic) effects.
+    Diff-update payload for a feature's FIXED (automatic) effects.
 
-    Every list replaces its table's rows for the feature (send ``[]`` to
-    clear). Choice groups are managed separately via
-    ``PUT /features/{id}/choice-groups``.
+    Every list becomes the complete set for that effect type, but rows are
+    diffed by id rather than deleted and recreated wholesale: an item with
+    an existing row's ``id`` updates it in place, one with no ``id`` inserts
+    a new row, and an existing row absent from the list is deleted (send
+    ``[]`` to clear a type entirely). Choice groups are managed separately
+    via ``PUT /features/{id}/choice-groups``.
     """
 
     ability_effects: list[AbilityEffectItem] = []

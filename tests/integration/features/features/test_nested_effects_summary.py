@@ -74,7 +74,7 @@ class TestNestedFeatureSummary:
         nested = next(f for f in detail.json()["features"] if f["id"] == feature.id)
         assert nested["has_choices"] is True
         assert nested["has_static_effects"] is False
-        assert "Силу" in nested["effects_summary"]
+        assert "Сила" in nested["effects_summary"]
         assert "Ловкость" in nested["effects_summary"]
 
 
