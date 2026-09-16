@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType, GrantSource
 from app.features.characters.ability_score.service import CharacterStatsService
-from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.cache import invalidate_characters_cache
 from app.features.characters.grants.materializer import (
     FeatureGrantMaterializer,
     ResolvedOption,
@@ -205,14 +205,21 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
 
     result = await db.execute(select(Character).where(source_filter(source_id)))
     characters = list(result.scalars().unique().all())
+    if not characters:
+        return
 
-    stats_service = CharacterStatsService(db)
     for character in characters:
         await sync_progression_features(db, character)
-        # Feature grants can carry fixed ability effects — refresh the
-        # stat cache in the caller's transaction (never commits here).
-        await stats_service.refresh(character, commit=False)
-        await invalidate_character_cache(character.id)
+
+    # Feature grants can carry fixed ability effects — refresh every
+    # affected character's stat cache in the caller's transaction (never
+    # commits here). Batched: one query per bonus/increase dimension across
+    # the whole list instead of 4 per character (see
+    # CharacterStatsService.compute_many), and one Redis round trip instead
+    # of one per character (see invalidate_characters_cache).
+    stats_service = CharacterStatsService(db)
+    await stats_service.refresh_many(characters, commit=False)
+    await invalidate_characters_cache(character.id for character in characters)
 
 
 async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> None:
@@ -237,14 +244,17 @@ async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> No
     ).scalars().unique().all()
     character_by_id = {character.id: character for character in characters}
 
-    stats_service = CharacterStatsService(db)
     for grant in grants:
         character = character_by_id.get(grant.character_id)
         if character is None:
             continue
         await materialize_grant(db, character, grant)
-        await stats_service.refresh(character, commit=False)
-        # The DB cache row was just refreshed, but ``GET /characters/{id}``
-        # serves its ability scores from a Redis-cached CharacterResponse —
-        # purge it so the new totals are visible immediately.
-        await invalidate_character_cache(character.id)
+
+    # The DB cache row was just refreshed, but ``GET /characters/{id}``
+    # serves its ability scores from a Redis-cached CharacterResponse —
+    # purge it so the new totals are visible immediately. Batched across
+    # every affected character (see reconcile_characters_for_source).
+    affected_characters = list(character_by_id.values())
+    stats_service = CharacterStatsService(db)
+    await stats_service.refresh_many(affected_characters, commit=False)
+    await invalidate_characters_cache(character.id for character in affected_characters)

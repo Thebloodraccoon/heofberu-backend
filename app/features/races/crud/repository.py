@@ -25,7 +25,7 @@ class RaceRepository(BaseRepository[Race]):
                 selectinload(Race.ability_bonuses),
                 selectinload(Race.granted_skills),
                 *feature_summary_loads(selectinload(Race.features)),
-                selectinload(Race.subraces).selectinload(Subrace.ability_bonuses),
+                selectinload(Race.subraces),
             ],
             search_fields=["name"],
             unique_fields=["name"],
@@ -47,15 +47,13 @@ class RaceRepository(BaseRepository[Race]):
 
         return await self.exists_referencing(Character, "race_id", race_id)
 
-    async def set_ability_bonuses(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> Race:
+    async def set_ability_bonuses(self, race_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
         """Replace all ability bonuses for a race with the given list."""
 
         await self.replace_child_rows(
             RaceAbilityBonus,
-            race,
+            Race(id=race_id),
             "race_id",
             bonuses,
             commit=commit,
         )
-
-        return race

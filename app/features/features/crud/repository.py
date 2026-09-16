@@ -6,13 +6,27 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.models.features.feature_engine_models import (
+    FeatureAbilityScoreEffect,
+    FeatureArmorProficiencyEffect,
     FeatureChoiceGroup,
     FeatureChoiceOption,
+    FeatureSavingThrowEffect,
     FeatureSkillProficiencyEffect,
     FeatureSpellGrantEffect,
     FeatureWeaponProficiencyEffect,
 )
 from app.models.features.feature_model import Feature
+
+# The six fixed-effect models a feature's ``has_static_effects`` checks —
+# shared between ``feature_summary_loads`` (below) and ``load_effect_flags``.
+_STATIC_EFFECT_MODELS = (
+    FeatureAbilityScoreEffect,
+    FeatureSkillProficiencyEffect,
+    FeatureSavingThrowEffect,
+    FeatureArmorProficiencyEffect,
+    FeatureWeaponProficiencyEffect,
+    FeatureSpellGrantEffect,
+)
 
 
 class FeatureRepository(BaseRepository[Feature]):
@@ -114,3 +128,37 @@ def feature_summary_loads(base=None) -> list:
         loads.append(option_load)
 
     return loads
+
+
+async def load_effect_flags(db, feature_ids: list[int]) -> dict[int, dict[str, bool]]:
+    """
+    Batched ``has_static_effects``/``has_choices`` flags for every id in
+    ``feature_ids`` — 7 cheap ``SELECT DISTINCT feature_id`` queries total
+    (one per fixed-effect type, one for choice groups), regardless of page
+    size, instead of eager-loading the full effect tree
+    (``feature_summary_loads`` — fixed effects, choice groups, their
+    options, and the skill/spell/item name joins those need) just to
+    compute two booleans per row.
+
+    Only valid for listings whose response schema doesn't need the actual
+    effect data — ``FeatGetAllResponse``/``FeatureGetAllResponse``. Detail
+    reads (``FeatResponse``, ``NestedFeatureResponse``) still need the full
+    tree via ``feature_summary_loads``.
+    """
+
+    flags = {feature_id: {"has_static_effects": False, "has_choices": False} for feature_id in feature_ids}
+    if not feature_ids:
+        return flags
+
+    for model in _STATIC_EFFECT_MODELS:
+        result = await db.execute(select(model.feature_id).where(model.feature_id.in_(feature_ids)).distinct())
+        for (feature_id,) in result.all():
+            flags[feature_id]["has_static_effects"] = True
+
+    result = await db.execute(
+        select(FeatureChoiceGroup.feature_id).where(FeatureChoiceGroup.feature_id.in_(feature_ids)).distinct()
+    )
+    for (feature_id,) in result.all():
+        flags[feature_id]["has_choices"] = True
+
+    return flags

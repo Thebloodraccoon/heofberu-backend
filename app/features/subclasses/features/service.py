@@ -40,5 +40,5 @@ class SubclassFeatureService(
     async def list_features(self, subclass_id: int) -> list[NestedFeatureResponse]:
         """Return every SUBCLASS-source feature of the subclass (cached)."""
 
-        await self._get_or_404(subclass_id)
+        await self._exists_or_404(subclass_id)
         return await self._features.list_for_source(FeatureSourceType.SUBCLASS, subclass_id)

@@ -54,7 +54,22 @@ class SubclassRepository(BaseRepository[Subclass]):
 
         return await self.exists_referencing(Character, "subclass_id", subclass_id)
 
-    async def list_for_class(self, class_id: int) -> list[Subclass]:
-        """Return all subclasses for ``class_id``, ordered by name."""
+    async def list_for_class(self, class_id: int) -> list[Any]:
+        """
+        Return brief ``(id, class_id, name, image_url)`` rows for ``class_id``, ordered by name.
 
-        return await self.get_all(filters={"class_id": class_id}, order_by=Subclass.name, limit=None)
+        Column-select on purpose: ``default_load_options`` eager-loads the
+        full feature effect tree (``feature_summary_loads``), which
+        ``SubclassGetAllResponse`` never uses — going through ``get_all``
+        here would pay for that tree on every row of every listing.
+        """
+
+        return await self.get_brief(
+            Subclass.id,
+            Subclass.class_id,
+            Subclass.name,
+            Subclass.image_url,
+            filters={"class_id": class_id},
+            order_by=Subclass.name,
+            limit=None,
+        )

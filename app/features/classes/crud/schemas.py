@@ -43,10 +43,7 @@ class ClassUpdate(BaseModel):
     skill_choice_count: int | None = None
     spellcasting_ability: AbilityScore | None = None
     description: str | None = None
-    image_url: str | None = None
     saving_throws: list[AbilityScore] | None = None
-    armor_proficiencies: list[ArmorProficiency] | None = None
-    weapon_proficiencies: list[WeaponProficiency] | None = None
 
     @field_validator("saving_throws")
     def validate_unique_saving_throws_update(cls, v):
@@ -56,24 +53,6 @@ class ClassUpdate(BaseModel):
             return v
 
         return _validate_unique_saving_throws(v)
-
-    @field_validator("armor_proficiencies")
-    def validate_unique_armor_proficiencies_update(cls, v):
-        """Reject duplicate armor proficiencies when set."""
-
-        if v is None:
-            return v
-
-        return _validate_unique_armor_proficiencies(v)
-
-    @field_validator("weapon_proficiencies")
-    def validate_unique_weapon_proficiencies_update(cls, v):
-        """Reject duplicate weapon proficiencies when set."""
-
-        if v is None:
-            return v
-
-        return _validate_unique_weapon_proficiencies(v)
 
 
 class ClassResponse(ClassBase):

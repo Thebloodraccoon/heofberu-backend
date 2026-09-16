@@ -95,21 +95,23 @@ class FakeRaceRepository(FakeRepository):
             await self.db.commit()
         return row
 
-    async def set_ability_bonuses(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> Race:
-        self.set_ability_bonuses_calls.append((race, bonuses, commit))
-        race.ability_bonuses = [
-            RaceAbilityBonus(race_id=race.id, ability=bonus["ability"], bonus=bonus["bonus"]) for bonus in bonuses
-        ]
+    async def set_ability_bonuses(self, race_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
+        self.set_ability_bonuses_calls.append((race_id, bonuses, commit))
+        race = self._rows.get(race_id)
+        if race is not None:
+            race.ability_bonuses = [
+                RaceAbilityBonus(race_id=race_id, ability=bonus["ability"], bonus=bonus["bonus"]) for bonus in bonuses
+            ]
         if commit:
             await self.db.commit()
-        return race
 
-    async def set_skills(self, race: Race, skills: list[Skill] | None, *, commit: bool = True) -> Race:
-        self.set_skills_calls.append((race, skills, commit))
-        race.granted_skills = list(skills or [])
+    async def set_skills(self, race_id: int, skills: list[Skill] | None, *, commit: bool = True) -> None:
+        self.set_skills_calls.append((race_id, skills, commit))
+        race = self._rows.get(race_id)
+        if race is not None:
+            race.granted_skills = list(skills or [])
         if commit:
             await self.db.commit()
-        return race
 
     async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         self.get_skills_calls.append(skill_ids)
@@ -249,7 +251,7 @@ class TestRaceAbilityBonusService:
 
         assert result.ability_bonuses[0].ability == AbilityScore.INT
         assert result.ability_bonuses[0].bonus == 1
-        assert service.repository.set_ability_bonuses_calls[0][0].id == 1
+        assert service.repository.set_ability_bonuses_calls[0][0] == 1
         assert service.repository.set_ability_bonuses_calls[0][1] == [{"ability": AbilityScore.INT, "bonus": 1}]
         assert service.repository.set_ability_bonuses_calls[0][2] is False
         assert db.commits == 1
@@ -271,7 +273,7 @@ class TestRaceAbilityBonusService:
         await service.set_ability_bonuses_for_race(race, [{"ability": AbilityScore.STR, "bonus": 1}], commit=False)
 
         assert service.repository.set_ability_bonuses_calls == [
-            (race, [{"ability": AbilityScore.STR, "bonus": 1}], False)
+            (race.id, [{"ability": AbilityScore.STR, "bonus": 1}], False)
         ]
         assert db.commits == 0
 
@@ -300,7 +302,7 @@ class TestRaceSkillService:
         result = await service.set_skills(1, SkillsUpdate(skill_ids=[1]))
 
         assert result.granted_skills[0].id == 1
-        assert service.repository.set_skills_calls == [(race, [race.granted_skills[0]], True)]
+        assert service.repository.set_skills_calls == [(race.id, [race.granted_skills[0]], True)]
         assert db.commits == 1
 
     async def test_set_skills_with_empty_ids_calls_repository_with_none(self):
@@ -310,7 +312,7 @@ class TestRaceSkillService:
         result = await service.set_skills(1, SkillsUpdate(skill_ids=[]))
 
         assert result.granted_skills == []
-        assert service.repository.set_skills_calls == [(race, None, True)]
+        assert service.repository.set_skills_calls == [(race.id, None, True)]
 
     async def test_set_skills_raises_when_race_missing(self):
         service, _ = make_skill_service(existing_by_id={})
@@ -325,7 +327,7 @@ class TestRaceSkillService:
 
         await service.set_skills_for_race(race, [skill], commit=False)
 
-        assert service.repository.set_skills_calls == [(race, [skill], False)]
+        assert service.repository.set_skills_calls == [(race.id, [skill], False)]
         assert db.commits == 0
 
 
@@ -353,11 +355,10 @@ class TestRaceRepository:
         repository = RaceRepository(session)
         race = make_race()
 
-        result = await repository.set_ability_bonuses(
-            race, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
+        await repository.set_ability_bonuses(
+            race.id, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
         )
 
-        assert result is race
         assert len(session.added) == 2
         assert all(isinstance(row, RaceAbilityBonus) for row in session.added)
         assert session.added[0].ability == AbilityScore.DEX
@@ -372,9 +373,8 @@ class TestRaceSkillsRepository:
         repository = RaceSkillsRepository(session)
         race = make_race()
 
-        result = await repository.set_skills(race, [make_skill(), make_skill(id=2, name="Acrobatics")])
+        await repository.set_skills(race.id, [make_skill(), make_skill(id=2, name="Acrobatics")])
 
-        assert result is race
         assert len(session.executes) == 2
         assert session.commits == 1
 
@@ -383,7 +383,7 @@ class TestRaceSkillsRepository:
         repository = RaceSkillsRepository(session)
         race = make_race()
 
-        await repository.set_skills(race, [], commit=False)
+        await repository.set_skills(race.id, [], commit=False)
 
         assert session.flushes == 1
         assert session.commits == 0
@@ -393,9 +393,8 @@ class TestRaceSkillsRepository:
         repository = RaceSkillsRepository(session)
         race = make_race()
 
-        result = await repository.set_skills(race, None)
+        await repository.set_skills(race.id, None)
 
-        assert result is race
         assert session.commits == 1
 
     async def test_get_skills_by_ids_looks_up_rows(self):

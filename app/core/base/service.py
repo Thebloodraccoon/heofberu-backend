@@ -265,6 +265,18 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         return item
 
+    async def _exists_or_404(self, item_id: int) -> None:
+        """
+        Raise ``RecordNotFoundError`` unless ``item_id`` exists.
+
+        A cheap presence-only check (``repository.exists_by_id``) for callers
+        that only need to 404-guard a parent id and don't use the fetched
+        record — use ``_get_or_404`` instead when the record itself is needed.
+        """
+
+        if not await self.repository.exists_by_id(item_id):
+            raise RecordNotFoundError(model_name=self.repository.model.__name__, model_id=str(item_id))
+
     async def _get_response(self, item_id: int) -> ResponseSchema:
         """Fetch a record by id, serialize it to ``response_schema``, or raise ``RecordNotFoundError``."""
 

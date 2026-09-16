@@ -70,13 +70,8 @@ class BackgroundCrudService(
             )
 
         await invalidate_background_cache()
-        response = await self._get_response(item.id)
 
-        # Warm the cache immediately: the write already paid for the transaction,
-        # so the next GET hits cache instead of racing the invalidation.
-        await self.get_by_id(item.id)
-
-        return response
+        return await self.get_by_id(item.id)
 
     @use_cache()
     async def get_by_id(self, item_id: int) -> BackgroundResponse:

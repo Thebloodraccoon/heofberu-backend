@@ -4,6 +4,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from fastapi import UploadFile
+from sqlalchemy import select
 
 from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordNotFoundError
@@ -70,9 +71,17 @@ class EntityImageService:
         await self._invalidate_cache(entity_id)
 
     async def _get_or_404(self, entity_id: int):
-        """Fetch the entity row or raise ``RecordNotFoundError``."""
+        """
+        Fetch the entity row (no eager-loaded relations) or raise ``RecordNotFoundError``.
 
-        row = await self._repository.get_by_id(entity_id)
+        Deliberately bypasses ``self._repository.get_by_id``: that applies
+        the catalog's full ``default_load_options`` (the heaviest eager-load
+        tree for some catalogs), which an image swap never touches — only
+        the row itself, for a single-column ``update()``.
+        """
+
+        model = self._repository.model
+        row = await self._repository.db.scalar(select(model).where(model.id == entity_id))
         if row is None:
             raise RecordNotFoundError(model_name=self._model_name, model_id=str(entity_id))
         return row

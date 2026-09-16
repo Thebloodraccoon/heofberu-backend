@@ -70,14 +70,13 @@ class FakeBackgroundRepository(FakeRepository):
             await self.db.commit()
         return row
 
-    async def set_skills(
-        self, background: Background, skills: list[Skill] | None, *, commit: bool = True
-    ) -> Background:
-        self.set_skills_calls.append((background, skills, commit))
-        background.granted_skills = list(skills or [])
+    async def set_skills(self, background_id: int, skills: list[Skill] | None, *, commit: bool = True) -> None:
+        self.set_skills_calls.append((background_id, skills, commit))
+        background = self._rows.get(background_id)
+        if background is not None:
+            background.granted_skills = list(skills or [])
         if commit:
             await self.db.commit()
-        return background
 
     async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         self.get_skills_calls.append(skill_ids)
@@ -276,7 +275,7 @@ class TestBackgroundSkillsService:
         result = await service.set_skills(1, SkillsUpdate(skill_ids=[1]))
 
         assert result.granted_skills[0].id == 1
-        assert service.repository.set_skills_calls == [(background, [skill], True)]
+        assert service.repository.set_skills_calls == [(background.id, [skill], True)]
         assert db.commits == 1
 
     async def test_set_skills_raises_when_background_missing(self):
@@ -292,7 +291,7 @@ class TestBackgroundSkillsService:
 
         await service.set_skills_for_background(background, [skill], commit=False)
 
-        assert service.repository.set_skills_calls == [(background, [skill], False)]
+        assert service.repository.set_skills_calls == [(background.id, [skill], False)]
         assert db.commits == 0
 
 
@@ -326,9 +325,8 @@ class TestBackgroundSkillsRepository:
         repository = BackgroundSkillsRepository(session)
         background = make_background()
 
-        result = await repository.set_skills(background, [make_skill()])
+        await repository.set_skills(background.id, [make_skill()])
 
-        assert result is background
         assert len(session.executes) == 2
         assert session.commits == 1
 
@@ -337,7 +335,7 @@ class TestBackgroundSkillsRepository:
         repository = BackgroundSkillsRepository(session)
         background = make_background()
 
-        await repository.set_skills(background, [], commit=False)
+        await repository.set_skills(background.id, [], commit=False)
 
         assert session.flushes == 1
         assert session.commits == 0

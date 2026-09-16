@@ -31,10 +31,10 @@ class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, Spel
     async def set_classes(self, spell_id: int, data: ClassAvailabilityUpdate) -> SpellResponse:
         """Fully replace the classes a spell is available to. Empty list = unrestricted."""
 
-        spell = await self._get_or_404(spell_id)
+        await self._exists_or_404(spell_id)
         classes = await self.resolve_ids(self.repository.get_classes_by_ids, data.class_ids, "Classes")
 
-        await self.repository.set_classes(spell, classes)
+        await self.repository.set_classes(spell_id, classes)
         await invalidate_spell_cache()
 
         return await self._get_response(spell_id)
@@ -42,10 +42,10 @@ class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, Spel
     async def set_subclasses(self, spell_id: int, data: SubclassAvailabilityUpdate) -> SpellResponse:
         """Fully replace the subclasses a spell is available to. Empty list = unrestricted."""
 
-        spell = await self._get_or_404(spell_id)
+        await self._exists_or_404(spell_id)
         subclasses = await self.resolve_ids(self.repository.get_subclasses_by_ids, data.subclass_ids, "Subclasses")
 
-        await self.repository.set_subclasses(spell, subclasses)
+        await self.repository.set_subclasses(spell_id, subclasses)
         await invalidate_spell_cache()
 
         return await self._get_response(spell_id)
@@ -53,10 +53,10 @@ class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, Spel
     async def set_races(self, spell_id: int, data: RaceAvailabilityUpdate) -> SpellResponse:
         """Fully replace the races a spell is available to. Empty list = unrestricted."""
 
-        spell = await self._get_or_404(spell_id)
+        await self._exists_or_404(spell_id)
         races = await self.resolve_ids(self.repository.get_races_by_ids, data.race_ids, "Races")
 
-        await self.repository.set_races(spell, races)
+        await self.repository.set_races(spell_id, races)
         await invalidate_spell_cache()
 
         return await self._get_response(spell_id)
@@ -64,10 +64,10 @@ class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, Spel
     async def set_subraces(self, spell_id: int, data: SubraceAvailabilityUpdate) -> SpellResponse:
         """Fully replace the subraces a spell is available to. Empty list = unrestricted."""
 
-        spell = await self._get_or_404(spell_id)
+        await self._exists_or_404(spell_id)
         subraces = await self.resolve_ids(self.repository.get_subraces_by_ids, data.subrace_ids, "Subraces")
 
-        await self.repository.set_subraces(spell, subraces)
+        await self.repository.set_subraces(spell_id, subraces)
         await invalidate_spell_cache()
 
         return await self._get_response(spell_id)
@@ -75,19 +75,19 @@ class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, Spel
     async def set_classes_for_spell(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> None:
         """Replace a spell's classes on an existing row (used by ``create_spell``)."""
 
-        await self.repository.set_classes(spell, classes, commit=commit)
+        await self.repository.set_classes(spell.id, classes, commit=commit)
 
     async def set_subclasses_for_spell(self, spell: Spell, subclasses: list[Subclass], *, commit: bool = True) -> None:
         """Replace a spell's subclasses on an existing row (used by ``create_spell``)."""
 
-        await self.repository.set_subclasses(spell, subclasses, commit=commit)
+        await self.repository.set_subclasses(spell.id, subclasses, commit=commit)
 
     async def set_races_for_spell(self, spell: Spell, races: list[Race], *, commit: bool = True) -> None:
         """Replace a spell's races on an existing row (used by ``create_spell``)."""
 
-        await self.repository.set_races(spell, races, commit=commit)
+        await self.repository.set_races(spell.id, races, commit=commit)
 
     async def set_subraces_for_spell(self, spell: Spell, subraces: list[Subrace], *, commit: bool = True) -> None:
         """Replace a spell's subraces on an existing row (used by ``create_spell``)."""
 
-        await self.repository.set_subraces(spell, subraces, commit=commit)
+        await self.repository.set_subraces(spell.id, subraces, commit=commit)

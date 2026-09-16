@@ -50,21 +50,9 @@ class BackgroundResponse(BackgroundBase):
 
 
 class BackgroundGetAllResponse(BaseModel):
-    """Lightweight listing row: no suggestion text/description, but includes granted_skills."""
+    """Lightweight listing row: id and name only, served via the column-select fast path."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
-    granted_skills: list[SkillResponse] = []
-
-
-class BackgroundFullResponse(BackgroundResponse):
-    """
-    Everything about a background in one payload.
-
-    Inherits the base fields, granted_skills, and starting_items from
-    ``BackgroundResponse``, plus its own BACKGROUND-source ``features``.
-    """
-
-    features: list[NestedFeatureResponse] = []

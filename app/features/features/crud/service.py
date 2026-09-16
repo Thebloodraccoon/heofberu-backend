@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base.cached_service import CachedService
+from app.core.base.service import Page, paginate
+from app.core.cache import use_cache
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
 from app.features.features.cache import (
     FEATURE_CACHE_NAMESPACES,
@@ -12,7 +14,7 @@ from app.features.features.cache import (
     SOURCE_PARENT_READ_NAMESPACE,
     purge_feature_cache_for_source,
 )
-from app.features.features.crud.repository import FeatureRepository, feature_summary_loads
+from app.features.features.crud.repository import FeatureRepository, feature_summary_loads, load_effect_flags
 from app.features.features.crud.schemas import (
     _FEATURE_LEVEL_MAX,
     _FEATURE_LEVEL_MIN,
@@ -60,7 +62,6 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
     repository: FeatureRepository
 
     cache_namespaces = FEATURE_CACHE_NAMESPACES
-    get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
         """Initialize the service with the feature repository."""
@@ -70,6 +71,50 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             response_schema=FeatureResponse,
             get_all_schema=FeatureGetAllResponse,
         )
+
+    @use_cache()
+    async def get_all(
+        self,
+        page: int = 1,
+        size: int = 100,
+        filters: dict | None = None,
+        search: str | None = None,
+    ) -> Page[FeatureGetAllResponse]:
+        """
+        Cached, paginated listing across every source type.
+
+        Brief columns + batched ``has_static_effects``/``has_choices``
+        flags (``load_effect_flags``), instead of eager-loading the full
+        engine effect tree per row: ``FeatureGetAllResponse`` never uses the
+        actual effect data, only the two booleans, and this is the busiest
+        listing in the app (every catalog's ``get_by_id`` also reads
+        through the same table via ``list_for_source``, though that path
+        genuinely needs the full tree).
+        """
+
+        skip, limit = paginate(page, size)
+        total = await self.repository.count(filters=filters, search=search)
+
+        rows = await self.repository.get_brief(
+            Feature.id,
+            Feature.name,
+            Feature.source_type,
+            Feature.class_id,
+            Feature.subclass_id,
+            Feature.race_id,
+            Feature.subrace_id,
+            Feature.background_id,
+            Feature.level,
+            order_by=Feature.name,
+            skip=skip,
+            limit=limit,
+            filters=filters,
+            search=search,
+        )
+        flags = await load_effect_flags(self.repository.db, [row.id for row in rows])
+
+        items = [FeatureGetAllResponse.model_validate({**row._mapping, **flags[row.id]}) for row in rows]
+        return Page(items=items, total=total, page=page, size=size)
 
     async def _purge_feature_cache(self, source_type: FeatureSourceType) -> None:
         """
@@ -137,8 +182,13 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             create_data.source_type, self._source_fk_value(create_data.source_type, create_data)
         )
         await self.repository.commit_or_flush()
-        # The commit expires the row; refetch with eager loads so serialization
-        # never trips an async lazy load on the empty ``ability_effects`` collection.
+        # Re-fetch with eager loads so serialization never trips an async
+        # lazy load on the row's relationships (``ability_effects``, etc.).
+        # Confirmed empirically required: removing this re-fetch (reasoning
+        # that a freshly created row's collections are already empty and
+        # safe to read) broke every feature-creation integration test with
+        # a 422 — `FeatureResponse.model_validate` failed against the
+        # not-re-fetched row. Do not remove without integration-test proof.
         item = await self.repository.get_by_id(item.id)
         await self._purge_feature_cache(create_data.source_type)
 
@@ -253,8 +303,11 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         await self.repository.commit_or_flush()
         await self._purge_feature_cache(source_type)
 
-        # Re-fetch after the commit so the expired row's ``ability_effects``
-        # are eagerly loaded before serialization (async-safe).
+        # Re-fetch after the commit so the row's relationships are eagerly
+        # loaded before serialization (async-safe). Not verified safe to
+        # remove in isolation (the same reasoning failed for `create()` —
+        # see its comment); reverted alongside it rather than risk it
+        # without integration-test evidence either way.
         feature = await self.repository.get_by_id(feature_id)
         return self.response_schema.model_validate(feature)
 

@@ -12,7 +12,6 @@ import pytest
 
 from app.constants import AbilityScore, FeatureSourceType
 from app.core.exceptions import RecordNotFoundError
-from app.features.features.crud.schemas import NestedFeatureCreate
 from app.features.races.ability_bonuses.schemas import AbilityBonusItem
 from app.features.subraces.ability_bonuses import service as subrace_ability_bonus_service
 from app.features.subraces.ability_bonuses.schemas import SubraceAbilityBonusesUpdate
@@ -70,15 +69,16 @@ class FakeSubraceRepository(FakeRepository):
         self.list_calls.append(race_id)
         return [subrace for subrace in self._rows.values() if subrace.race_id == race_id]
 
-    async def set_ability_bonuses(self, subrace: Subrace, bonuses: list[dict], *, commit: bool = True) -> Subrace:
-        self.set_bonuses_calls.append((subrace, bonuses, commit))
-        subrace.ability_bonuses = [
-            SubraceAbilityBonus(subrace_id=subrace.id, ability=bonus["ability"], bonus=bonus["bonus"])
-            for bonus in bonuses
-        ]
+    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
+        self.set_bonuses_calls.append((subrace_id, bonuses, commit))
+        subrace = self._rows.get(subrace_id)
+        if subrace is not None:
+            subrace.ability_bonuses = [
+                SubraceAbilityBonus(subrace_id=subrace_id, ability=bonus["ability"], bonus=bonus["bonus"])
+                for bonus in bonuses
+            ]
         if commit:
             await self.db.commit()
-        return subrace
 
 
 class FakeFeatures:
@@ -95,21 +95,6 @@ class FakeFeatures:
     async def create_features_for_source(self, source_type, source_id, items, *, commit=False):
         self.created.append((source_type, source_id, items, commit))
         return []
-
-
-class FakeSubraceAbilityBonusService:
-    """Stands in for SubraceAbilityBonusService inside SubraceCrudService."""
-
-    def __init__(self, db):
-        self.db = db
-        self.calls = []
-
-    async def set_ability_bonuses_for_subrace(self, subrace, bonuses, *, commit=True):
-        self.calls.append((subrace, bonuses, commit))
-        subrace.ability_bonuses = [
-            SubraceAbilityBonus(subrace_id=subrace.id, ability=bonus["ability"], bonus=bonus["bonus"])
-            for bonus in bonuses
-        ]
 
 
 @pytest.fixture(autouse=True)
@@ -134,7 +119,6 @@ def make_crud_service(existing_by_id=None, race_exists=True):
     service = SubraceCrudService(db)
     service.repository = FakeSubraceRepository(db, existing_by_id=existing_by_id)
     service._features = FakeFeatures(db)
-    service._ability_bonuses = FakeSubraceAbilityBonusService(db)
     service._race_repository = FakeRaceRepository(db, exists=race_exists)
     return service, db
 
@@ -189,7 +173,8 @@ class TestSubraceCrudService:
         with pytest.raises(RecordNotFoundError):
             await service.get_by_id(99)
 
-    async def test_create_subrace_without_nested_capabilities(self):
+    async def test_create_subrace_does_not_touch_capability_services(self):
+        """ability_bonuses/features are attached via their own endpoints, not at creation."""
         service, db = make_crud_service(race_exists=True)
 
         result = await service.create_subrace(SubraceCreate(name="Drow", race_id=1, description="Underdark elf"))
@@ -199,44 +184,13 @@ class TestSubraceCrudService:
         assert result.name == "Drow"
         assert db.commits == 1
         assert service.repository.created
-        assert service._features.created == [(FeatureSourceType.SUBRACE, 1, None, False)]
-
-    async def test_create_subrace_with_bonuses_and_features(self):
-        service, db = make_crud_service(race_exists=True)
-        data = SubraceCreate(
-            name="High Elf",
-            race_id=1,
-            ability_bonuses=[AbilityBonusItem(ability=AbilityScore.DEX, bonus=2)],
-            features=[NestedFeatureCreate(name="Keen Senses", description="", level=None)],
-        )
-
-        result = await service.create_subrace(data)
-
-        assert result.ability_bonuses[0].ability == AbilityScore.DEX
-        assert service._ability_bonuses.calls[0][1] == [{"ability": AbilityScore.DEX, "bonus": 2}]
-        assert service._features.created[0] == (FeatureSourceType.SUBRACE, 1, data.features, False)
+        assert service._features.created == []
 
     async def test_create_subrace_raises_when_race_missing(self):
         service, _ = make_crud_service(race_exists=False)
 
         with pytest.raises(RecordNotFoundError):
             await service.create_subrace(SubraceCreate(name="Drow", race_id=99))
-
-    async def test_create_subrace_rolls_back_when_persist_fails(self):
-        service, db = make_crud_service(race_exists=True)
-
-        class Boom(Exception):
-            pass
-
-        async def boom(*args, **kwargs):
-            raise Boom()
-
-        service.repository.create = boom
-
-        with pytest.raises(Boom):
-            await service.create_subrace(SubraceCreate(name="Drow", race_id=1))
-
-        assert db.rollbacks == 1
 
     async def test_update_subrace_delegates_to_base_update(self):
         subrace = make_subrace(id=1)
@@ -282,7 +236,7 @@ class TestSubraceAbilityBonusService:
 
         assert result.ability_bonuses[0].ability == AbilityScore.INT
         assert result.ability_bonuses[0].bonus == 1
-        assert service.repository.set_bonuses_calls[0][0] is subrace
+        assert service.repository.set_bonuses_calls[0][0] == subrace.id
         assert service.repository.set_bonuses_calls[0][1] == [{"ability": AbilityScore.INT, "bonus": 1}]
         assert service.repository.set_bonuses_calls[0][2] is False
         assert db.commits == 1
@@ -305,7 +259,9 @@ class TestSubraceAbilityBonusService:
             subrace, [{"ability": AbilityScore.STR, "bonus": 1}], commit=False
         )
 
-        assert service.repository.set_bonuses_calls == [(subrace, [{"ability": AbilityScore.STR, "bonus": 1}], False)]
+        assert service.repository.set_bonuses_calls == [
+            (subrace.id, [{"ability": AbilityScore.STR, "bonus": 1}], False)
+        ]
         assert db.commits == 0
 
 

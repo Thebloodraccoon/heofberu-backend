@@ -24,7 +24,12 @@ dependencies. Roles come from `app.constants.UserRole`:
 - `router.py` — thin endpoints; all logic delegates to `UserService`.
 - `service.py` — `UserService` (extends `BaseService`): password hashing on
   create, founder gate on every role assignment, default-admin protection,
-  self-deletion guard, lookup by email.
+  self-deletion guard, lookup by email. `get_user_by_email` is
+  `@use_cache(ttl=60)`'d under the `users` namespace (it's `CurrentUserDep`'s
+  per-request hop); every write that can change its result (role/email/
+  username update, delete) calls `_invalidate_cache()` explicitly since
+  `update_user`/`update_profile`/`delete_user` bypass `BaseService`'s
+  generic create/update/delete.
 - `repository.py` — `UserRepository` (extends `BaseRepository`): search on
   username/email, uniqueness on username/email, `get_by_email`,
   `get_by_username`, `update_last_login`.

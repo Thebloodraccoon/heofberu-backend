@@ -2,10 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, status
 
 from app.features.backgrounds.dependencies import BackgroundSuggestionsDep
-from app.features.backgrounds.suggestions.schemas import SuggestionResponse, SuggestionsUpdate
+from app.features.backgrounds.suggestions.schemas import SuggestionCreate, SuggestionResponse, SuggestionUpdate
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
@@ -23,36 +23,53 @@ async def list_background_suggestions(background_id: int, background_service: Ba
     return await background_service.list_suggestions(background_id)
 
 
-@router.put(
+@router.post(
     "/suggestions",
-    response_model=list[SuggestionResponse],
-    summary="Replace a background's suggestions",
+    response_model=SuggestionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a suggestion to a background",
     responses={404: {"description": "No background exists with the given ID."}},
 )
-async def set_background_suggestions(
+async def create_background_suggestion(
     background_id: int,
     data: Annotated[
-        SuggestionsUpdate,
+        SuggestionCreate,
         Body(
             openapi_examples={
-                "replace": {
-                    "summary": "Replace with a few suggestions",
+                "add": {
+                    "summary": "Add a personality trait suggestion",
                     "value": {
-                        "suggestions": [
-                            {
-                                "suggestion_type": "PERSONALITY_TRAIT",
-                                "text": "I idolize a particular hero of my faith.",
-                            },
-                            {
-                                "suggestion_type": "IDEAL",
-                                "text": "Tradition. The ancient traditions of worship and sacrifice must be preserved.",
-                            },
-                        ]
+                        "suggestion_type": "PERSONALITY_TRAIT",
+                        "text": "I idolize a particular hero of my faith.",
                     },
                 },
-                "clear": {
-                    "summary": "Clear all suggestions",
-                    "value": {"suggestions": []},
+            },
+        ),
+    ],
+    background_service: BackgroundSuggestionsDep,
+    _: GmUserDep,
+):
+    """Add a single suggestion to the background. **GM only.**"""
+
+    return await background_service.create_suggestion(background_id, data)
+
+
+@router.patch(
+    "/suggestions/{suggestion_id}",
+    response_model=SuggestionResponse,
+    summary="Update a background suggestion",
+    responses={404: {"description": "No background or suggestion exists with the given IDs."}},
+)
+async def update_background_suggestion(
+    background_id: int,
+    suggestion_id: int,
+    data: Annotated[
+        SuggestionUpdate,
+        Body(
+            openapi_examples={
+                "update": {
+                    "summary": "Change the suggestion's text",
+                    "value": {"text": "Tradition. The ancient traditions of worship and sacrifice must be preserved."},
                 },
             },
         ),
@@ -61,10 +78,28 @@ async def set_background_suggestions(
     _: GmUserDep,
 ):
     """
-    Replace all suggestions for a background. **GM only.**
+    Update an existing suggestion. **GM only.**
 
-    Full replace (not merge): the given `suggestions` become the complete
-    set; send an empty list to clear them all.
+    Only fields included in the request body are changed; omitted fields
+    are left as-is.
     """
 
-    return await background_service.set_suggestions(background_id, data)
+    return await background_service.update_suggestion(background_id, suggestion_id, data)
+
+
+@router.delete(
+    "/suggestions/{suggestion_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a background suggestion",
+    responses={404: {"description": "No background or suggestion exists with the given IDs."}},
+)
+async def delete_background_suggestion(
+    background_id: int,
+    suggestion_id: int,
+    background_service: BackgroundSuggestionsDep,
+    _: GmUserDep,
+):
+    """Remove a single suggestion from the background. **GM only.**"""
+
+    await background_service.delete_suggestion(background_id, suggestion_id)
+    return None
