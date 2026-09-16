@@ -133,7 +133,7 @@ class TestStaticEffectsSummary:
     def test_closed_spell_effect_links_to_spell_id(self):
         spell = SimpleNamespace(name="Огненный шар")
         text = render_effects_summary(_feature(spell_effects=[_spell(spell_id=9, spell=spell)]))
-        assert '<a href="/api/spells/9">Огненный шар</a>' in text
+        assert '<a href="/spells/9">Огненный шар</a>' in text
         assert "«Огненный шар»" not in text
 
     def test_open_spell_effect_with_no_filters(self):
