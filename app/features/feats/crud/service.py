@@ -5,40 +5,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.features.feats.cache import FEAT_CACHE_NAMESPACES, invalidate_feat_cache
-from app.features.feats.crud.repository import FeatRepository, feat_ability_score_effects
-from app.features.feats.crud.schemas import (
-    AbilityScoreIncreaseResponse,
-    FeatCreate,
-    FeatGetAllResponse,
-    FeatResponse,
-    FeatUpdate,
-)
+from app.features.feats.crud.repository import FeatRepository
+from app.features.feats.crud.schemas import FeatCreate, FeatGetAllResponse, FeatResponse, FeatUpdate
 from app.features.features.cache import invalidate_feature_cache
 from app.models.features.feature_model import Feature
-
-
-def _flatten_ability_score_increases(feature: Feature) -> list[AbilityScoreIncreaseResponse]:
-    """
-    Flatten a FEAT feature's engine ability-score effects into the response
-    shape the API has always returned. The item's ``id`` is the
-    ``feature_ability_score_effects`` row id (what a character grant's
-    ``ability_score_increase_id`` points at).
-    """
-
-    return [
-        AbilityScoreIncreaseResponse(id=effect.id, ability=effect.ability, amount=effect.amount)
-        for effect in feat_ability_score_effects(feature)
-    ]
 
 
 def _to_feat_response(feature: Feature) -> FeatResponse:
     """
     Build a ``FeatResponse`` from a FEAT-source ``Feature`` row.
 
-    The six typed effect lists and ``choice_groups`` come straight from the
-    eager-loaded engine relationships (same tree ``GET /features/{id}``
-    returns); ``ability_score_increases`` remains the legacy flattened ASI
-    view over ``feature_ability_score_effects``.
+    ``choice_groups``/``static_groups``/``has_static_effects``/``has_choices``/
+    ``effects_summary`` come straight off the ``Feature`` ORM row (same
+    properties ``GET /features/{id}`` serializes), off the eager-loaded
+    engine relationships.
     """
 
     return FeatResponse.model_validate(
@@ -50,14 +30,11 @@ def _to_feat_response(feature: Feature) -> FeatResponse:
             "prerequisite_minimum_score": feature.prerequisite_minimum_score,
             "prerequisite_description": feature.prerequisite_description,
             "min_level": feature.min_level,
-            "ability_score_increases": _flatten_ability_score_increases(feature),
             "choice_groups": feature.choice_groups,
-            "ability_effects": feature.ability_effects,
-            "skill_effects": feature.skill_effects,
-            "saving_throw_effects": feature.saving_throw_effects,
-            "armor_effects": feature.armor_effects,
-            "weapon_effects": feature.weapon_effects,
-            "spell_effects": feature.spell_effects,
+            "static_groups": feature.static_groups,
+            "has_static_effects": feature.has_static_effects,
+            "has_choices": feature.has_choices,
+            "effects_summary": feature.effects_summary,
         }
     )
 
@@ -69,7 +46,8 @@ def _to_feat_brief(feature: Feature) -> FeatGetAllResponse:
         id=feature.id,
         name=feature.name,
         min_level=feature.min_level,
-        ability_score_increases=_flatten_ability_score_increases(feature),
+        has_static_effects=feature.has_static_effects,
+        has_choices=feature.has_choices,
     )
 
 
@@ -77,14 +55,13 @@ class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse,
     """
     Feat catalog CRUD, built directly on ``Feature`` (``source_type=FEAT``).
 
-    Unlike most ``CachedService`` catalogs, ``get_all``/``get_by_id``/
-    ``update`` are overridden rather than inherited: the generic base
-    serializes straight off ORM attributes matching the schema's field
-    names, but a feat's ``ability_score_increases`` is a *computed*
-    flattening of the engine's choice-group tree (see
-    ``_flatten_ability_score_increases``), not a same-named relationship on
-    ``Feature``. Every write purges both the ``feats`` namespace and the
-    shared ``features`` namespace (``GET /features`` reads the same table).
+    ``get_all``/``get_by_id``/``update`` are overridden rather than
+    inherited so listing/detail rows can be scoped to FEAT-source ``Feature``
+    rows and serialized via the shared ``_to_feat_brief``/``_to_feat_response``
+    helpers (same ``has_static_effects``/``has_choices``/``static_groups``
+    shape ``GET /features`` exposes). Every write purges both the ``feats``
+    namespace and the shared ``features`` namespace (``GET /features`` reads
+    the same table).
     """
 
     repository: FeatRepository

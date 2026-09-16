@@ -95,11 +95,15 @@ class TestCharacterFeats:
         )
 
         assert grant_response.status_code == 201
-        assert grant_response.json()["ability_score_increase_id"] == asi_id
+        choices = grant_response.json()["choices"]
+        assert len(choices) == 1
+        assert choices[0]["ability_effects"][0]["id"] == asi_id
 
-    async def test_grant_feat_with_asi_options_without_choice_returns_422(
+    async def test_grant_feat_with_asi_options_without_choice_leaves_it_pending(
         self, client, gm, gm_token, create_class, create_character, create_feat
     ):
+        """A GM grant doesn't have to pick the ASI up front — it lands with the choice group left pending."""
+
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feat = await create_feat(name="Resilient")
@@ -124,7 +128,8 @@ class TestCharacterFeats:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        assert response.json()["choices"] == []
 
     async def test_grant_feat_with_asi_writes_audit_row(
         self, client, gm, gm_token, create_class, create_character, create_feat

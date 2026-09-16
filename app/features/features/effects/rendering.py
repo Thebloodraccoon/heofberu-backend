@@ -103,13 +103,8 @@ def _render_bundle(
         if effect.spell_id is not None:
             name = effect.spell.name if effect.spell is not None else f"заклинание #{effect.spell_id}"
             parts.append(f"заклинание «{name}»")
-            continue
-        filters = []
-        if effect.spell_school is not None:
-            filters.append(f"школы {effect.spell_school.value}")
-        if effect.spell_level_max is not None:
-            filters.append(f"не выше {effect.spell_level_max.value} уровня")
-        parts.append(" ".join(["любое заклинание", *filters]))
+        else:
+            parts.append("любое заклинание на выбор")
 
     return parts
 
@@ -166,20 +161,15 @@ def _render_weapon_short(effects) -> list[str]:
 
 
 def _render_spell_short(effects) -> list[str]:
-    """Spell names (linked to ``GET /api/spells/{id}``) / filters for the grouped "Заклинания" <li>."""
+    """Spell names (linked to ``GET /spells/{id}``) / filters for the grouped "Заклинания" <li>."""
 
     parts: list[str] = []
     for effect in effects:
         if effect.spell_id is not None:
             name = effect.spell.name if effect.spell is not None else f"заклинание #{effect.spell_id}"
-            parts.append(f'<a href="/api/spells/{effect.spell_id}">{name}</a>')
-            continue
-        filters = []
-        if effect.spell_school is not None:
-            filters.append(f"школы {effect.spell_school.value}")
-        if effect.spell_level_max is not None:
-            filters.append(f"не выше {effect.spell_level_max.value} уровня")
-        parts.append(" ".join(["любое", *filters]))
+            parts.append(f'<a href="/spells/{effect.spell_id}">{name}</a>')
+        else:
+            parts.append("любое на выбор")
     return parts
 
 

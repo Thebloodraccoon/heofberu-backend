@@ -43,11 +43,13 @@ own capability segment.
 ### `feats` — feat grants
 
 POST grants a reference feat outside any level-up flow (201); PATCH changes
-the grant's ability-score increase choice; DELETE revokes it (204). A feat
-offering ASI options MUST be granted with an explicit
-`ability_score_increase_id` — omitting it raises
-`FeatAsiChoiceRequiredException` (422), and clearing it via PATCH is likewise
-rejected. Every grant/update/remove refreshes the ability-score cache
+the grant's ability-score increase choice; DELETE revokes it (204). Unlike
+PATCH (which still rejects clearing an already-set choice —
+`FeatAsiChoiceRequiredException`, 422), POST no longer requires
+`ability_score_increase_id` up front even for a feat offering ASI options:
+omitting it leaves the feat's ASI choice group pending, like any other
+choice group, answerable later via PATCH or the generic
+choice-answering/pending-grant endpoints. Every grant/update/remove refreshes the ability-score cache
 (`CharacterStatsService`) and re-syncs auto-granted features
 (`sync_progression_features`). A grant carrying an ASI choice also writes an
 audit row into `character_asi_choices` (`class_level IS NULL`, choice type
@@ -55,7 +57,10 @@ FEAT) so the log shows where each stat point came from; the feat's stat
 effect reaches the ability-score cache through the granted feature's ASI
 effect (`feature_ability_score_effects`), materialized alongside the grant.
 The level-up endpoint (`CharacterProgressionService._apply_feat`) writes the
-same table through this repository with `source_type=ASI`.
+same table through this repository with `source_type=ASI`. The response
+carries no dedicated ASI field — a picked ASI option surfaces in the
+generic `choices` list (`ability_effects`), same as any other feature's
+choice group; `FeatBriefResponse` also carries `effects_summary`.
 
 ### `features` — feature grants
 
@@ -67,10 +72,12 @@ auto-grants can be removed here too.
 ### `items` — inventory
 
 The former standalone `characters/items/` subpackage. Each `character_items`
-row is an independent stack, so the same item may be owned several times;
-each POST creates its own stack row (`quantity` defaults to 1, 0 allowed).
-PATCH applies partial updates (`exclude_unset` semantics) to quantity; there
-is no way to change `item_id` — remove the stack and add a new one instead.
+row is a stack (`quantity` defaults to 1, 0 allowed). POST merges into the
+character's existing stack of that `item_id` (the earliest one, if somehow
+more than one exists) by adding the new quantity onto it; only when the
+character has no stack of that item yet does POST create a new row. PATCH
+applies partial updates (`exclude_unset` semantics) to quantity; there is no
+way to change `item_id` — remove the stack and add a new one instead.
 `CharacterItemNotFoundException` lives in the root `exceptions.py`.
 
 ### `asi` — free-form ±adjustments

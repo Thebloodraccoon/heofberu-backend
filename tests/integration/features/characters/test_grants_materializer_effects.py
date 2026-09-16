@@ -550,7 +550,7 @@ class TestSpellResolutionEdgeCases:
                         "pick_count": 1,
                         "choice_type": "SPELL",
                         "label": "Choose a spell",
-                        "options": [{"spell_effects": [{"spell_id": None, "spell_school": "EVOCATION"}]}],
+                        "options": [{"spell_effects": [{"spell_id": None}]}],
                     }
                 ]
             },

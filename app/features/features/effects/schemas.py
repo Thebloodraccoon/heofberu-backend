@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, SpellLevel, SpellSchool, WeaponProficiency
+from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
 
 # Which of a ``ChoiceOptionPayload``'s six effect-list fields a given
 # ``ChoiceType`` allows non-empty. Every other field must be empty — see
@@ -107,21 +107,16 @@ class WeaponEffectItem(BaseModel):
 
 
 class SpellEffectItem(BaseModel):
-    """A fixed/option spell-grant effect: a concrete spell OR an open filter. ``id``: see ``SkillEffectItem``."""
+    """
+    A fixed/option spell-grant effect: a concrete spell, or an open choice
+    (``spell_id`` unset) letting the player pick any spell from the catalog.
+    ``id``: see ``SkillEffectItem``.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int | None = None
     spell_id: int | None = None
-    spell_school: SpellSchool | None = None
-    spell_level_max: SpellLevel | None = None
-
-    @model_validator(mode="after")
-    def _guard_specific_or_filter(self):
-        """Guard: a concrete ``spell_id`` excludes a school/level filter."""
-        if self.spell_id is not None and (self.spell_school is not None or self.spell_level_max is not None):
-            raise ValueError("Set spell_id or a school/level filter, not both.")
-        return self
 
 
 class AbilityStaticEffectGroup(BaseModel):

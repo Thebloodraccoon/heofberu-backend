@@ -39,15 +39,31 @@ def make_character(**overrides) -> Character:
     return Character(**base)
 
 
+def make_choice(ability_score_increase_id: int) -> SimpleNamespace:
+    """A fake ``CharacterFeatureChoice`` row picking an ASI option, for ``build_chosen_options``."""
+
+    return SimpleNamespace(
+        choice_group_id=1,
+        choice_option_id=1,
+        choice_option=SimpleNamespace(
+            ability_effects=[SimpleNamespace(id=ability_score_increase_id, ability=AbilityScore.STR, amount=1)],
+            skill_effects=[],
+            saving_throw_effects=[],
+            armor_effects=[],
+            weapon_effects=[],
+            spell_effects=[],
+        ),
+    )
+
+
 def make_grant(grant_id: int, feat_id: int, ability_score_increase_id: int | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         id=grant_id,
         character_id=1,
         feature_id=feat_id,
-        ability_score_increase_id=ability_score_increase_id,
         grant_source=GrantSource.GM,
-        choices=None,
-        feature=SimpleNamespace(id=feat_id, name="Tough", description=""),
+        choices=[make_choice(ability_score_increase_id)] if ability_score_increase_id is not None else [],
+        feature=SimpleNamespace(id=feat_id, name="Tough", description="", effects_summary=""),
     )
 
 
@@ -101,19 +117,7 @@ class FakeFeatGrantRepository:
 
     async def set_character_feat_ability_score_increase(self, character, grant, ability_score_increase_id):
         self.set_calls.append((grant, ability_score_increase_id))
-        grant.ability_score_increase_id = ability_score_increase_id
-        if ability_score_increase_id is not None:
-            grant.choices = [
-                SimpleNamespace(
-                    choice_option=SimpleNamespace(
-                        ability_effects=[
-                            SimpleNamespace(id=ability_score_increase_id, ability=AbilityScore.STR, amount=1)
-                        ]
-                    )
-                )
-            ]
-        else:
-            grant.choices = []
+        grant.choices = [make_choice(ability_score_increase_id)] if ability_score_increase_id is not None else []
         return grant
 
     async def remove_character_feat(self, grant):
@@ -212,16 +216,18 @@ class TestAddFeat:
         assert service.asi_repository.add_calls[0]["ability_score_increase_id"] == 200
         assert stats.refresh_calls == [character]
 
-    async def test_asi_offering_feat_requires_explicit_choice(self):
+    async def test_asi_offering_feat_can_be_granted_without_a_choice(self):
+        """Unlike `update_feat`, a GM grant leaves the ASI choice group pending rather than requiring it up front."""
+
+        character = make_character()
         feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])
-        service = make_service(make_character(), feat=feat)
+        service = make_service(character, feat=feat)
 
-        with pytest.raises(FeatAsiChoiceRequiredException) as exc_info:
-            await service.add_feat(1, CharacterFeatAdd(feat_id=2), SimpleNamespace())
+        result = await service.add_feat(character.id, CharacterFeatAdd(feat_id=2), SimpleNamespace())
 
-        assert exc_info.value.status_code == 422
-        assert service.feat_grant_repository.add_calls == []
-        assert service.asi_repository.add_calls == []
+        assert result.id == 7
+        assert service.feat_grant_repository.add_calls == [(character, 2, None, GrantSource.GM, False)]
+        assert service.asi_repository.add_calls[0]["ability_score_increase_id"] is None
 
     async def test_cap_exceeded_does_not_reject_the_choice(self):
         feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])
@@ -271,7 +277,7 @@ class TestUpdateFeat:
 
         result = await service.update_feat(1, 3, CharacterFeatUpdate(ability_score_increase_id=201), SimpleNamespace())
 
-        assert result.ability_score_increase_id == 201
+        assert result.choices[0].ability_effects[0].id == 201
         assert service.feat_grant_repository.set_calls == [(grant, 201)]
         assert service.stats_service.refresh_calls == [character]
 

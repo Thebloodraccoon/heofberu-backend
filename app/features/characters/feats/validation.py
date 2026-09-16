@@ -30,8 +30,12 @@ def validate_ability_score_increase(feat: Feature, ability_score_increase_id: in
 
 def validate_asi_choice_required(feat: Feature, ability_score_increase_id: int | None) -> None:
     """
-    A feat offering ability-score increase options MUST be taken with an
-    explicit choice, so its points are never silently lost.
+    Raise unless an ASI-offering feat is given an explicit choice.
+
+    Only ``GmPanelFeatService.update_feat`` enforces this (an already-granted
+    feat's ASI choice must always resolve to one of its options, never back
+    to unset). A fresh grant (``add_feat``) does NOT call this — it may leave
+    the choice group pending, like any other feature choice group.
     """
 
     increases = feat_ability_score_effects(feat)

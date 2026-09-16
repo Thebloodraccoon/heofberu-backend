@@ -561,16 +561,10 @@ class TestOpenSpellResolution:
                     {
                         "pick_count": 1,
                         "choice_type": "SPELL",
-                        "label": "Any Evocation Spell (level 1)",
+                        "label": "Any Spell",
                         "options": [
                             {
-                                "spell_effects": [
-                                    {
-                                        "spell_id": None,
-                                        "spell_school": "EVOCATION",
-                                        "spell_level_max": "LEVEL_1",
-                                    }
-                                ],
+                                "spell_effects": [{"spell_id": None}],
                             }
                         ],
                     }
@@ -615,7 +609,7 @@ class TestOpenSpellResolution:
                         "label": "Choose a spell",
                         "options": [
                             {
-                                "spell_effects": [{"spell_id": None, "spell_school": "EVOCATION"}],
+                                "spell_effects": [{"spell_id": None}],
                             }
                         ],
                     }
@@ -642,114 +636,6 @@ class TestOpenSpellResolution:
         assert ans.status_code == 422
         assert "spell_id" in ans.json()["error"]["message"]
 
-    async def test_open_spell_wrong_school_returns_422(
-        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
-    ):
-        feature_class = await create_class(name="Wizard")
-        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        feature = await create_feature(name="Spell Pick", source_type="CLASS", level=None)
-
-        illusion_spell = await create_spell(name="Minor Illusion", school="ILLUSION", level="LEVEL_1")
-
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
-                "choice_groups": [
-                    {
-                        "pick_count": 1,
-                        "choice_type": "SPELL",
-                        "label": "Choose a spell",
-                        "options": [
-                            {
-                                "spell_effects": [{"spell_id": None, "spell_school": "EVOCATION"}],
-                            }
-                        ],
-                    }
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        group_id = cg_resp.json()[0]["id"]
-        option_id = cg_resp.json()[0]["options"][0]["id"]
-
-        grant_resp = await client.post(
-            f"/characters/{character.id}/gm-panel/features",
-            json={"feature_id": feature.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        cf_id = grant_resp.json()["id"]
-
-        ans = await client.patch(
-            f"/characters/{character.id}/features/{cf_id}/choices",
-            json={
-                "answers": [
-                    {
-                        "choice_group_id": group_id,
-                        "choice_option_id": option_id,
-                        "spell_id": illusion_spell.id,
-                    }
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        assert ans.status_code == 422
-        assert "school" in ans.json()["error"]["message"].lower()
-
-    async def test_open_spell_level_exceeds_max_returns_422(
-        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
-    ):
-        feature_class = await create_class(name="Wizard")
-        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        feature = await create_feature(name="Spell Pick", source_type="CLASS", level=None)
-
-        level3_spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
-
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
-                "choice_groups": [
-                    {
-                        "pick_count": 1,
-                        "choice_type": "SPELL",
-                        "label": "Choose a spell",
-                        "options": [
-                            {
-                                "spell_effects": [
-                                    {"spell_id": None, "spell_level_max": "LEVEL_1"}
-                                ],
-                            }
-                        ],
-                    }
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        group_id = cg_resp.json()[0]["id"]
-        option_id = cg_resp.json()[0]["options"][0]["id"]
-
-        grant_resp = await client.post(
-            f"/characters/{character.id}/gm-panel/features",
-            json={"feature_id": feature.id},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        cf_id = grant_resp.json()["id"]
-
-        ans = await client.patch(
-            f"/characters/{character.id}/features/{cf_id}/choices",
-            json={
-                "answers": [
-                    {
-                        "choice_group_id": group_id,
-                        "choice_option_id": option_id,
-                        "spell_id": level3_spell.id,
-                    }
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        assert ans.status_code == 422
-        assert "level" in ans.json()["error"]["message"].lower()
-
     async def test_open_spell_resolves_and_materializes_granted_spell(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
     ):
@@ -769,13 +655,7 @@ class TestOpenSpellResolution:
                         "label": "Choose a spell",
                         "options": [
                             {
-                                "spell_effects": [
-                                    {
-                                        "spell_id": None,
-                                        "spell_school": "EVOCATION",
-                                        "spell_level_max": "LEVEL_1",
-                                    }
-                                ],
+                                "spell_effects": [{"spell_id": None}],
                             }
                         ],
                     }

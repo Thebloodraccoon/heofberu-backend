@@ -4,7 +4,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.constants import SpellLevel
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.grants.effects import build_chosen_options
@@ -39,8 +38,6 @@ from app.models.character.character_feature_model import CharacterFeature
 from app.models.character.character_model import Character
 from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
 from app.models.features.feature_model import Feature
-
-_SPELL_LEVEL_RANK = {level: rank for rank, level in enumerate(SpellLevel)}
 
 _CHOICE_OPTION_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
 _ANSWERED_LOAD_OPTIONS = [
@@ -125,47 +122,24 @@ class FeatureGrantService:
 
     @staticmethod
     def _option_has_open_spell(option: FeatureChoiceOption) -> bool:
-        """Whether the option carries an open (school+level-filtered) spell effect."""
+        """Whether the option carries an open ("any spell") spell effect."""
 
         return any(effect.spell_id is None for effect in option.spell_effects)
 
-    async def _validate_open_spell_filters(self, answered_by_group: dict[int, list[tuple]]) -> None:
+    async def _validate_open_spell_choices(self, answered_by_group: dict[int, list[tuple]]) -> None:
         """
-        Validate every resolved open spell choice against its option's filter.
-
-        An open spell effect constrains the school and/or the maximum level
-        of the spell the player may pick; the chosen ``spell_id`` must exist
-        and satisfy those constraints — otherwise
-        ``SpellResolutionsError`` (422).
+        Validate every resolved open spell choice: the chosen ``spell_id``
+        must exist in the catalog — otherwise ``SpellResolutionsError`` (422).
         """
 
         for _, picked in answered_by_group.items():
             for option, _skill_id, spell_id in picked:
-                open_effects = [effect for effect in option.spell_effects if effect.spell_id is None]
-                if not open_effects:
+                if not any(effect.spell_id is None for effect in option.spell_effects):
                     continue
 
                 spell = await self.spell_repository.get_by_id(spell_id)
                 if spell is None:
                     raise SpellResolutionsError(option.id, "the chosen spell does not exist.")
-
-                for effect in open_effects:
-                    if (
-                        effect.spell_school is not None
-                        and spell.school.value != effect.spell_school.value
-                    ):
-                        raise SpellResolutionsError(
-                            option.id,
-                            f"the chosen spell's school does not match '{effect.spell_school.value}'.",
-                        )
-                    if (
-                        effect.spell_level_max is not None
-                        and _SPELL_LEVEL_RANK[spell.level] > _SPELL_LEVEL_RANK[effect.spell_level_max]
-                    ):
-                        raise SpellResolutionsError(
-                            option.id,
-                            f"the chosen spell's level exceeds the allowed maximum '{effect.spell_level_max.value}'.",
-                        )
 
     def _to_pending_response(self, grant: CharacterFeature, feature: Feature, pending: list[FeatureChoiceGroup]) -> PendingChoiceGroupsResponse:
         """Serialise the still-pending groups of a grant."""
@@ -408,7 +382,7 @@ class FeatureGrantService:
 
             answered_by_group.setdefault(group.id, []).append((option, item.skill_id, item.spell_id))
 
-        await self._validate_open_spell_filters(answered_by_group)
+        await self._validate_open_spell_choices(answered_by_group)
 
         for group in groups.values():
             chosen = answered_by_group.get(group.id, [])

@@ -22,8 +22,8 @@ feats/
 
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
-| GET | `/feats` | open | Cached paginated `Page[FeatGetAllResponse]` (id/name/min_level/`ability_score_increases`), ordered by name; `search` on name. |
-| GET | `/feats/{feat_id}` | open | Full `FeatResponse` — base + prerequisite fields + `ability_score_increases` (legacy flattened view) + `choice_groups` + all six effect lists. |
+| GET | `/feats` | open | Cached paginated `Page[FeatGetAllResponse]` (id/name/min_level/`has_static_effects`/`has_choices`), ordered by name; `search` on name. |
+| GET | `/feats/{feat_id}` | open | Full `FeatResponse` — base + prerequisite fields + `choice_groups` + `static_groups` + `has_static_effects`/`has_choices`/`effects_summary`, mirroring `FeatureResponse`. |
 | POST | `/feats` | GM | Top-level feat creation with optional embedded `ability_score_increases` (`{ability, amount}`); duplicate `name` → 409. Written as a FEAT-source `Feature`; the ASI list is seeded as one choice group (`pick_count=1`) with one option per alternative (each option carrying a `FeatureAbilityScoreEffect`), mirroring the legacy confirmed-pick semantics. |
 | PATCH | `/feats/{feat_id}` | GM | Update base/prerequisite fields only — see the dedicated note on ASI below. |
 | DELETE | `/feats/{feat_id}` | Founder | Blocked with 409 while any character still holds a grant of the feat. |
@@ -32,26 +32,34 @@ feats/
 
 ## How the ASI view works
 
-`feature_ability_score_effects` deserializes into the legacy
-`ability_score_increases` shape (`AbilityScoreIncreaseResponse`:
-id/ability/amount) that the API and character grants have always consumed.
-Rules that make this work:
+A feat's ASI alternatives are just a `choice_groups` entry like any other
+feature choice — there is no dedicated ASI response shape anymore. Rules
+that make this work:
 
 - A feat's ASI alternatives live in **at most one** choice group
   (`pick_count=1`) whose options each carry a single `AbilityEffectItem` —
   e.g. "+2 STR or +2 DEX" is ONE group with two options, and that guarantee is
   schema-enforced in the effect engine.
-- The flattened ordering is the engine's *display* order (`sort_order`,
-  then id), which is stable after a read-back.
-- A character grant's `ability_score_increase_id` points at the picked option's
-  `AbilityEffectItem` row id, so ASI row ids must never be rewritten.
+- `feat_ability_score_effects` (`app/features/feats/crud/repository.py`)
+  flattens that group's options into an ordered list of
+  `FeatureAbilityScoreEffect` rows for internal use — character-grant
+  validation (`app/features/characters/feats/validation.py`) and the
+  ASI-picked-on-grant response (`FeatAbilityScoreIncreaseResponse`) — but the
+  feat catalog response itself no longer exposes it as a flat field; read the
+  option's `ability_effects[0]` off `FeatResponse.choice_groups` instead.
+- A character grant's `ability_score_increase_id` points at the picked
+  option's `AbilityEffectItem` row id (`choice_groups[].options[].ability_effects[].id`),
+  so ASI row ids must never be rewritten.
 
 ## Write semantics & caches
 
 - `FeatCrudService` extends `BaseService` over `Feature`: `get_all` /
-  `get_by_id` / `update` are **overridden** (not inherited) because
-  `ability_score_increases` is a computed flattening, not a same-named ORM
-  relationship.
+  `get_by_id` / `update` are **overridden** (not inherited) to scope rows to
+  `source_type=FEAT` and serialize through the shared `_to_feat_brief`/
+  `_to_feat_response` helpers. `FeatRepository`'s eager loads are the full
+  engine effect tree (`feature_summary_loads()`) for both listing and detail,
+  since `has_static_effects`/`has_choices`/`static_groups` read every
+  fixed-effect relationship and the choice-group tree.
 - PATCH (`update_feat`) touches **base/prerequisite fields only** — it never
   edits ASI options. Change ability-score choices via
   `PUT /feats/{feat_id}/choice-groups` and fixed ASI via

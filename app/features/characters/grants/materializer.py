@@ -154,9 +154,9 @@ class FeatureGrantMaterializer:
             desired.weapons.append((effect.weapon_category, effect.item_id))
 
         # Fixed feature-level spell effects: only concrete ``spell_id`` grants
-        # materialize here — an open (school+level-filtered) fixed effect has
-        # no choice point to resolve it, so it is skipped (author open spells
-        # inside choice options instead).
+        # materialize here — an open ("any spell") fixed effect has no choice
+        # point to resolve it, so it is skipped (author open spells inside
+        # choice options instead).
         for effect in feature.spell_effects:
             if effect.spell_id is None:
                 continue

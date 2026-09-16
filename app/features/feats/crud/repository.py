@@ -10,7 +10,6 @@ class/subclass/race/subrace/background feature.
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.constants import ChoiceType, FeatureSourceType
 from app.core.base.repository import BaseRepository
@@ -24,15 +23,14 @@ from app.models.features.feature_engine_models import (
 )
 from app.models.features.feature_model import Feature
 
-# A feat's ASI options live under at most one choice group (pick_count=1);
-# fixed (feature_id-owned) ability effects are never used for FEAT rows —
-# even a single ASI option is modeled as a one-option group, since taking a
-# feat with any ASI option has always required an explicit, confirmed pick.
-_FEAT_LOAD_OPTIONS = [
-    selectinload(Feature.choice_groups)
-    .selectinload(FeatureChoiceGroup.options)
-    .selectinload(FeatureChoiceOption.ability_effects),
-]
+# Same full engine-effect-tree eager load ``/features`` uses: a feat's
+# ``FeatResponse``/``FeatGetAllResponse`` now expose ``has_static_effects``/
+# ``has_choices``/``static_groups`` (plain ``Feature`` properties reading
+# every fixed-effect relationship and the choice-group tree), so both
+# ``get_by_id`` and ``get_all`` need the whole tree loaded up front —
+# anything narrower lazy-loads during response serialization and 500s in
+# the async engine.
+_FEAT_LOAD_OPTIONS = feature_summary_loads()
 
 
 def feat_ability_score_effects(feature: Feature) -> list[FeatureAbilityScoreEffect]:

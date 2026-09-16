@@ -15,14 +15,12 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import CharacterFeatSource, FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
-from app.features.characters.feats.schemas import (
-    CharacterFeatResponse,
-    FeatAbilityScoreIncreaseResponse,
-    FeatBriefResponse,
-)
+from app.features.characters.feats.schemas import CharacterFeatResponse, FeatBriefResponse
+from app.features.characters.grants.effects import build_chosen_options
 from app.features.characters.grants.materializer import choice_option_effect_loads
 from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
 from app.features.characters.progression.feature_sync import materialize_grant
+from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.character.character_model import Character
@@ -37,7 +35,11 @@ _GRANT_SOURCE_TO_FEAT_SOURCE = {
 
 _CHOICE_OPTION_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
 _LOAD_OPTIONS = [
-    selectinload(CharacterFeature.feature),
+    # ``FeatBriefResponse.effects_summary`` reads the ``Feature`` ORM
+    # property of the same name, which touches every fixed-effect
+    # relationship and the choice-group tree — needs the full engine effect
+    # tree, not just the bare relationship (see ``feature_summary_loads``).
+    *feature_summary_loads(base=selectinload(CharacterFeature.feature)),
     _CHOICE_OPTION_LOADER,
     *choice_option_effect_loads(_CHOICE_OPTION_LOADER),
 ]
@@ -50,38 +52,33 @@ def to_character_feat_response(
 ) -> CharacterFeatResponse:
     """
     Build the stable ``CharacterFeatResponse`` shape from a FEAT-source
-    ``CharacterFeature`` grant. ``effects``/``choices`` default to empty —
-    callers that want the full materialized picture (the player-facing
-    listing) fetch them via ``app.features.characters.grants.effects``
-    and pass them in; a bare post-write response (GM add/update) doesn't.
+    ``CharacterFeature`` grant. ``effects`` defaults to empty — callers that
+    want the full materialized picture (the player-facing listing) fetch it
+    via ``app.features.characters.grants.effects`` and pass it in. ``choices``
+    defaults to ``build_chosen_options(grant)`` (cheap: ``grant.choices`` is
+    already eager-loaded for every read this repository serves) — a picked
+    ASI option surfaces there like any other resolved choice group, so even
+    a bare post-write response (GM add/update) shows it without a dedicated
+    ASI field.
     """
-
-    ability_score_increase_id: int | None = None
-    ability_score_increase: FeatAbilityScoreIncreaseResponse | None = None
-
-    if grant.choices:
-        option = grant.choices[0].choice_option
-        effect = option.ability_effects[0] if option is not None and option.ability_effects else None
-        if effect is not None:
-            ability_score_increase_id = effect.id
-            ability_score_increase = FeatAbilityScoreIncreaseResponse(
-                id=effect.id, ability=effect.ability, amount=effect.amount
-            )
 
     feat_brief = None
     if grant.feature is not None:
-        feat_brief = FeatBriefResponse(id=grant.feature.id, name=grant.feature.name, description=grant.feature.description)
+        feat_brief = FeatBriefResponse(
+            id=grant.feature.id,
+            name=grant.feature.name,
+            description=grant.feature.description,
+            effects_summary=grant.feature.effects_summary,
+        )
 
     return CharacterFeatResponse(
         id=grant.id,
         character_id=grant.character_id,
         feat_id=grant.feature_id,
-        ability_score_increase_id=ability_score_increase_id,
         source_type=_GRANT_SOURCE_TO_FEAT_SOURCE.get(grant.grant_source, CharacterFeatSource.GM),
         feat=feat_brief,
-        ability_score_increase=ability_score_increase,
         effects=effects if effects is not None else GrantEffectsResponse(),
-        choices=choices if choices is not None else [],
+        choices=choices if choices is not None else build_chosen_options(grant),
     )
 
 

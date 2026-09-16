@@ -7,12 +7,21 @@ from sqlalchemy.orm import selectinload
 from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
 from app.features.characters.grants.materializer import choice_option_effect_loads
+from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.features.feature_model import Feature
 
 _CHOICE_OPTION_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
 _WITH_CHOICES = [_CHOICE_OPTION_LOADER, *choice_option_effect_loads(_CHOICE_OPTION_LOADER)]
+
+# ``CharacterFeatureBriefResponse.effects_summary`` reads the ``Feature``
+# ORM property of the same name (``render_effects_summary``), which touches
+# every fixed-effect relationship and the choice-group tree — so
+# ``grant.feature`` needs the full engine effect tree eager-loaded wherever
+# a ``CharacterFeatureBriefResponse`` gets built from it, not just the bare
+# relationship.
+_WITH_FEATURE_SUMMARY = feature_summary_loads(base=selectinload(CharacterFeature.feature))
 
 
 class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
@@ -40,7 +49,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         result = await self.db.execute(
             select(CharacterFeature)
             .join(Feature, Feature.id == CharacterFeature.feature_id)
-            .options(selectinload(CharacterFeature.feature), *_WITH_CHOICES)
+            .options(*_WITH_FEATURE_SUMMARY, *_WITH_CHOICES)
             .where(CharacterFeature.character_id == character_id, Feature.source_type != FeatureSourceType.FEAT)
         )
         return list(result.scalars().unique().all())
@@ -100,9 +109,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         await self.commit_or_flush(commit=commit)
 
         result = await self.db.execute(
-            select(CharacterFeature)
-            .options(selectinload(CharacterFeature.feature))
-            .where(CharacterFeature.id == grant.id)
+            select(CharacterFeature).options(*_WITH_FEATURE_SUMMARY).where(CharacterFeature.id == grant.id)
         )
         return result.scalar_one()
 

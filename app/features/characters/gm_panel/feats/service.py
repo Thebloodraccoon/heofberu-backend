@@ -50,6 +50,10 @@ class GmPanelFeatService(CharacterSubDomainService):
         """
         Grant a feat outside any level-up flow, committing its
         ``character_asi_choices`` audit row and feature re-sync atomically.
+
+        ``ability_score_increase_id`` is optional even for a feat offering
+        ASI options — a GM can land the grant first and leave the ASI choice
+        group pending, to be answered later like any other choice group.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -62,7 +66,12 @@ class GmPanelFeatService(CharacterSubDomainService):
         if existing:
             raise CharacterFeatAlreadyKnownException(character_id=character_id, feat_id=data.feat_id)
 
-        self._validate_asi_choice(feat, data.ability_score_increase_id)
+        # Unlike ``update_feat``, a GM grant doesn't have to pick the ASI
+        # choice up front: an omitted one just leaves the feat's ASI choice
+        # group pending (see ``resolve_grant_choices(enforce=False)`` below),
+        # answerable later like any other choice group. A *given* id still
+        # has to belong to this feat.
+        validate_ability_score_increase(feat, data.ability_score_increase_id)
         await check_feat_prerequisite(character, feat, self.stats_service)
 
         async with self._atomic():

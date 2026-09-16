@@ -65,7 +65,8 @@ class TestFeatCrud:
         assert response.status_code == 200
 
         read_response = await client.get(f"/feats/{feat.id}")
-        assert {item["ability"]: item["amount"] for item in read_response.json()["ability_score_increases"]} == {
+        options = read_response.json()["choice_groups"][0]["options"]
+        assert {effect["ability"]: effect["amount"] for option in options for effect in option["ability_effects"]} == {
             "STR": 1
         }
 

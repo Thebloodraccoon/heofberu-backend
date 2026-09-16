@@ -136,8 +136,8 @@ async def get_answered_choices(
             "description": (
                 "A group was answered with the wrong number of options, an option "
                 "doesn't belong to its group, or an open skill/spell effect lacks "
-                "its resolution (skill_id/spell_id) or resolves to a spell that "
-                "violates the school/level filter."
+                "its resolution (skill_id/spell_id) or resolves to a spell_id that "
+                "doesn't exist."
             )
         },
     },
@@ -179,8 +179,8 @@ async def answer_choice_groups(
                         ]
                     },
                 },
-                "open-spell-filter": {
-                    "summary": "A feature whose option grants 'any 1st-level Evocation spell', resolved to spell 9",
+                "open-spell": {
+                    "summary": "A feature whose option grants 'any spell', resolved to spell 9",
                     "value": {
                         "answers": [
                             {
@@ -200,8 +200,8 @@ async def answer_choice_groups(
     answered groups' stored picks and re-materializes the grant's effect rows
     — skill/saving-throw/armor/weapon proficiencies and granted spells — in
     the same transaction. Options carrying an open ("any skill") effect need
-    ``skill_id``; options carrying an open (school+level-filtered) spell
-    effect need ``spell_id``. The response lists any groups still pending.
+    ``skill_id``; options carrying an open ("any spell") spell effect need
+    ``spell_id``. The response lists any groups still pending.
     """
 
     await get_character_for_user(character_service.repository, character_id, current_user)

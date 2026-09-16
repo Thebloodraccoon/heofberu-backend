@@ -212,7 +212,7 @@ class LevelUpFeatureChoiceAnswer(BaseModel):
     choice_option_id: int
     # Required iff the option carries an open ("any skill") skill effect.
     skill_id: int | None = None
-    # Required iff the option carries an open (school+level-filtered) spell effect.
+    # Required iff the option carries an open ("any spell") spell effect.
     spell_id: int | None = None
 
 

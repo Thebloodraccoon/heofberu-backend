@@ -22,8 +22,8 @@ class ChoiceAnswerItem(BaseModel):
     # Required iff the option carries an open ("any skill") skill effect:
     # the concrete skill the player resolved it to.
     skill_id: int | None = None
-    # Required iff the option carries an open (school+level-filtered) spell
-    # effect: the concrete spell the player resolved it to.
+    # Required iff the option carries an open ("any spell") spell effect:
+    # the concrete spell the player resolved it to.
     spell_id: int | None = None
 
 

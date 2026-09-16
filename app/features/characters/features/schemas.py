@@ -9,7 +9,9 @@ from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEf
 class CharacterFeatureBriefResponse(BaseModel):
     """
     Feature summary embedded in a character's feature grant row, carrying
-    ``description`` so the sheet renders details without a follow-up call.
+    ``description`` and ``effects_summary`` (the same human-readable effect
+    rendering ``FeatureResponse``/``NestedFeatureResponse`` expose) so the
+    sheet renders details without a follow-up call to ``/features/{id}``.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -19,6 +21,7 @@ class CharacterFeatureBriefResponse(BaseModel):
     source_type: FeatureSourceType
     level: int | None = None
     description: str = ""
+    effects_summary: str = ""
 
 
 class CharacterFeatureResponse(BaseModel):

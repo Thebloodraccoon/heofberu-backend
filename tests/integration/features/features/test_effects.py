@@ -213,34 +213,19 @@ class TestFeatureEffectsAllTypes:
         assert response.status_code == 200
         assert static_items(response.json(), "spell")[0]["spell_id"] == spell.id
 
-    async def test_spell_effect_with_open_filter(self, client, gm_token, create_feature):
-        feature = await create_feature(name="School Grant")
+    async def test_spell_effect_open_choice(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Any Spell Grant")
 
         response = await set_effects(
             client,
             gm_token,
             feature.id,
-            {"spell_effects": [{"spell_school": "EVOCATION", "spell_level_max": "LEVEL_3"}]},
+            {"spell_effects": [{}]},
         )
 
         assert response.status_code == 200
         effect = static_items(response.json(), "spell")[0]
         assert effect["spell_id"] is None
-        assert effect["spell_school"] == "EVOCATION"
-        assert effect["spell_level_max"] == "LEVEL_3"
-
-    async def test_spell_effect_mixed_returns_422(self, client, gm_token, create_feature, create_spell):
-        feature = await create_feature(name="Bad Spell Mix")
-        spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
-
-        response = await set_effects(
-            client,
-            gm_token,
-            feature.id,
-            {"spell_effects": [{"spell_id": spell.id, "spell_school": "EVOCATION"}]},
-        )
-
-        assert response.status_code == 422
 
 
 @pytest.mark.integration

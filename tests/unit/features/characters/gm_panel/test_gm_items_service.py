@@ -26,6 +26,10 @@ class FakeCharacterItemRepository:
     async def get_character_item_by_id(self, character_id, character_item_id):
         return self._by_id.get(character_item_id)
 
+    async def get_character_item_by_item_id(self, character_id, item_id):
+        matches = [stack for stack in self._by_id.values() if stack.item_id == item_id]
+        return min(matches, key=lambda stack: stack.id) if matches else None
+
     async def add_character_item(self, character_id, item_id, quantity):
         stack = SimpleNamespace(
             id=self._next_id,
@@ -107,6 +111,21 @@ class TestAddItem:
             await service.add_item(1, CharacterItemAdd(item_id=99), SimpleNamespace())
 
         assert service.character_item_repository.add_calls == []
+
+    async def test_merges_into_existing_stack_of_same_item(self):
+        stack = make_stack(stack_id=3, item_id=5, quantity=2)
+        service = make_service(item_exists=True, stacks={stack.id: stack})
+
+        result = await service.add_item(
+            1,
+            CharacterItemAdd(item_id=5, quantity=1),
+            SimpleNamespace(),
+        )
+
+        assert result.id == stack.id
+        assert result.quantity == 3
+        assert service.character_item_repository.add_calls == []
+        assert service.character_item_repository.update_calls == [(stack, {"quantity": 3})]
 
 
 @pytest.mark.unit

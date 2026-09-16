@@ -28,8 +28,6 @@ from app.models.enums import (
     AbilityScoreType,
     ArmorProficiencyType,
     ChoiceTypeType,
-    SpellLevelType,
-    SpellSchoolType,
     WeaponProficiencyType,
 )
 from app.settings import settings
@@ -320,9 +318,8 @@ class FeatureSpellGrantEffect(settings.Base):  # type: ignore
     """
     Grants a spell to the character.
 
-    ``spell_id`` NULL means an open choice filtered by ``spell_school`` /
-    ``spell_level_max``: the concrete options are computed at choice time
-    against the spell catalog instead of being denormalized into rows.
+    ``spell_id`` NULL means an open choice: the player may pick any spell
+    from the catalog at choice time, unconstrained.
     """
 
     __tablename__ = "feature_spell_grant_effects"
@@ -337,16 +334,8 @@ class FeatureSpellGrantEffect(settings.Base):  # type: ignore
     )
 
     spell_id = Column(Integer, ForeignKey("spells.id", ondelete="RESTRICT"), nullable=True, index=True)
-    spell_school = Column(SpellSchoolType, nullable=True)
-    spell_level_max = Column(SpellLevelType, nullable=True)
 
-    __table_args__ = (
-        CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_spell_grant_effect_parent"),
-        CheckConstraint(
-            "(spell_id IS NOT NULL AND spell_school IS NULL AND spell_level_max IS NULL) OR (spell_id IS NULL)",
-            name="ck_feature_spell_grant_effect_specific_or_filter",
-        ),
-    )
+    __table_args__ = (CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_spell_grant_effect_parent"),)
 
     feature = relationship("Feature", back_populates="spell_effects")
     choice_option = relationship("FeatureChoiceOption", back_populates="spell_effects")

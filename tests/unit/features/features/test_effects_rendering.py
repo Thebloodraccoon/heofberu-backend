@@ -1,16 +1,15 @@
 """
 Unit tests for ``render_effects_summary`` — pure text rendering, no DB.
 
-Covers every effect-type branch, including the two the integration suite
-never exercises: an open ("any skill") skill effect and an open
-(school/level-filtered) spell effect inside the summary text.
+Covers every effect-type branch, including the one the integration suite
+never exercises: an open ("any skill") skill effect inside the summary text.
 """
 
 from types import SimpleNamespace
 
 import pytest
 
-from app.constants import AbilityScore, ArmorProficiency, SpellLevel, SpellSchool, WeaponProficiency
+from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
 from app.features.features.effects.rendering import render_effects_summary
 
 
@@ -34,8 +33,8 @@ def _weapon(weapon_category=None, item_id=None, item=None):
     return SimpleNamespace(weapon_category=weapon_category, item_id=item_id, item=item)
 
 
-def _spell(spell_id=None, spell_school=None, spell_level_max=None, spell=None):
-    return SimpleNamespace(spell_id=spell_id, spell_school=spell_school, spell_level_max=spell_level_max, spell=spell)
+def _spell(spell_id=None, spell=None):
+    return SimpleNamespace(spell_id=spell_id, spell=spell)
 
 
 def _feature(
@@ -136,18 +135,6 @@ class TestStaticEffectsSummary:
         text = render_effects_summary(_feature(spell_effects=[_spell(spell_id=9, spell=spell)]))
         assert '<a href="/api/spells/9">Огненный шар</a>' in text
         assert "«Огненный шар»" not in text
-
-    def test_open_spell_effect_with_school_and_level_filter(self):
-        """The branch integration tests never reach: an open spell filter rendered as text."""
-        text = render_effects_summary(
-            _feature(
-                spell_effects=[
-                    _spell(spell_school=SpellSchool.EVOCATION, spell_level_max=SpellLevel.LEVEL_1)
-                ]
-            )
-        )
-        assert "школы EVOCATION" in text
-        assert "не выше LEVEL_1 уровня" in text
 
     def test_open_spell_effect_with_no_filters(self):
         text = render_effects_summary(_feature(spell_effects=[_spell()]))

@@ -69,8 +69,8 @@ Payload-item rules (schema-enforced, 422):
   `grants_expertise`.
 - `SavingThrowEffectItem`: `ability`. `ArmorEffectItem`: `armor_type`.
 - `WeaponEffectItem`: **exactly one** of `weapon_category` / `item_id`.
-- `SpellEffectItem`: a concrete `spell_id` **or** an open filter
-  (`spell_school` / `spell_level_max`) — never both.
+- `SpellEffectItem`: a concrete `spell_id`, or an open choice (`spell_id`
+  unset) — resolved to any spell in the catalog at answer time.
 - A feature may have **at most one** choice group offering ability-score
   effects (`feat_ability_score_effects` and every ASI answer path assumes this).
 
@@ -106,10 +106,11 @@ unified-feature migration (`c7c6838`) feats are ordinary `Feature` rows with
 (`FeatPrerequisiteFields`, re-used by `app/features/feats/crud/schemas.py`).
 They are managed through the dedicated `/feats` catalog — which is a thin
 FEAT-scoped view over this service — but the writable surface is identical:
-`POST /features` accepts them, and their effects live in the same effect engine
-(their ASI alternatives are flattened into the legacy `ability_score_increases`
-shape by the feats catalog). FEAT/OTHER rows are never auto-granted to
-characters, so they need no reconciliation.
+`POST /features` accepts them, and their effects live in the same effect
+engine (a feat's ASI alternatives are one `ABILITY_SCORE` choice group like
+any other feature choice — the feats catalog's response carries no separate
+ASI shape). FEAT/OTHER rows are never auto-granted to characters, so they
+need no reconciliation.
 
 ## FeatureEffectsService
 

@@ -43,8 +43,9 @@ async def add_character_item(
     current_user: GmUserDep,
 ):
     """
-    Add one item stack to a character's inventory (each POST creates its
-    own stack row). **GM only.**
+    Add an item to a character's inventory. If the character already has a
+    stack of this item, the quantity is merged into it; otherwise a new
+    stack is created. **GM only.**
     """
 
     return await item_service.add_item(character_id, data, current_user)

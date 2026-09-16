@@ -27,12 +27,6 @@ router = APIRouter()
         403: {"description": "You are not a GM."},
         404: {"description": "No character or feat exists with the given ID."},
         409: {"description": "The character already has this feat."},
-        422: {
-            "description": (
-                "The feat offers ability-score increase options but no "
-                "`ability_score_increase_id` was chosen — the choice is required."
-            )
-        },
     },
 )
 async def add_character_feat(
@@ -56,8 +50,10 @@ async def add_character_feat(
     current_user: GmUserDep,
 ):
     """
-    Grant a feat outside any level-up flow; a feat offering ASI options
-    requires an explicit ``ability_score_increase_id``. **GM only.**
+    Grant a feat outside any level-up flow. ``ability_score_increase_id`` is
+    optional even for a feat offering ASI options — omit it to leave the
+    choice pending, answerable later via `PATCH /gm-panel/feats` or the
+    generic choice-answering endpoints. **GM only.**
     """
 
     return await feat_service.add_feat(character_id, data, current_user)

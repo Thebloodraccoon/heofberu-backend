@@ -4,15 +4,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
 from app.features.features.crud.schemas import FeatPrerequisiteFields, FeatPrerequisiteFieldsUpdate
-from app.features.features.effects.schemas import (
-    AbilityEffectItem,
-    ArmorEffectItem,
-    ChoiceGroupResponse,
-    SavingThrowEffectItem,
-    SkillEffectItem,
-    SpellEffectItem,
-    WeaponEffectItem,
-)
+from app.features.features.effects.schemas import ChoiceGroupResponse, StaticEffectGroup
 
 
 class FeatBase(FeatPrerequisiteFields):
@@ -82,46 +74,38 @@ class FeatUpdate(FeatPrerequisiteFieldsUpdate):
     description: str | None = None
 
 
-class AbilityScoreIncreaseResponse(BaseModel):
-    """A feat's ASI choice as returned in responses."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    ability: AbilityScore
-    amount: int
-
-
 class FeatResponse(FeatBase):
     """
     Full feat representation returned by the API.
 
-    Besides the classic ``ability_score_increases`` (legacy, kept for
-    compatibility), the detail response carries the whole effect tree —
-    choice groups plus the six fixed-effect lists — mirroring the feature
-    endpoints. Feats currently have no write endpoints for effects, so these
-    are populated via the effect engine's reads only.
+    Mirrors ``FeatureResponse`` exactly: ``choice_groups`` plus the fixed
+    effects grouped by kind (``static_groups``), with ``has_static_effects``/
+    ``has_choices``/``effects_summary`` as plain ``Feature`` properties (a
+    feat IS a ``Feature``, ``source_type=FEAT``). An ASI choice (e.g.
+    Resilient's "+1 to an ability score") lives in ``choice_groups`` like any
+    other choice; a fixed ASI would show up under ``static_groups``. Feats
+    currently have no write endpoints for effects beyond ``POST``'s embedded
+    ``ability_score_increases``, so these are populated via the effect
+    engine's reads only.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    ability_score_increases: list[AbilityScoreIncreaseResponse] = []
     choice_groups: list[ChoiceGroupResponse] = []
-    ability_effects: list[AbilityEffectItem] = []
-    skill_effects: list[SkillEffectItem] = []
-    saving_throw_effects: list[SavingThrowEffectItem] = []
-    armor_effects: list[ArmorEffectItem] = []
-    weapon_effects: list[WeaponEffectItem] = []
-    spell_effects: list[SpellEffectItem] = []
+    static_groups: list[StaticEffectGroup] = []
+    has_static_effects: bool = False
+    has_choices: bool = False
+    effects_summary: str = ""
 
 
 class FeatGetAllResponse(BaseModel):
-    """Lightweight listing row: no description."""
+    """Lightweight listing row: no description, mirroring ``FeatureGetAllResponse``'s two effect flags."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
     min_level: int | None = None
-    ability_score_increases: list[AbilityScoreIncreaseResponse] = []
+    has_static_effects: bool = False
+    has_choices: bool = False

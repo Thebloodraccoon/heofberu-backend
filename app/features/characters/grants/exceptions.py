@@ -93,12 +93,12 @@ class GrantChoiceRequiredException(AppError):
 
 
 class SpellResolutionsError(AppError):
-    """Raised (422) when an open (school+level-filtered) spell option is answered without a spell id, or with one that violates the filter."""
+    """Raised (422) when an open ("any spell") spell option is answered without a spell id, or with one that doesn't exist."""
 
     status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def __init__(self, option_id: int, *detail_parts: str):
-        """Initialize with the offending option id and optional filter-violation detail."""
+        """Initialize with the offending option id and optional detail."""
         detail = f"Option {option_id} has an open spell effect — a spell_id must be provided for it."
         if detail_parts:
             detail = f"Option {option_id} has an open spell effect — {detail_parts[0]}"
