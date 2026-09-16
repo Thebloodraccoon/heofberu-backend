@@ -16,7 +16,7 @@ from app.features.spells.crud.schemas import (
     SpellUpdate,
 )
 from app.models import Class, Race, Spell, Subclass, Subrace
-from app.models.spell_association_models import spell_classes, spell_races, spell_subclasses, spell_subraces
+from app.models.spells.spell_association_models import spell_classes, spell_races, spell_subclasses, spell_subraces
 
 _EMPTY_AVAILABILITY = {
     "available_classes": [],

@@ -42,19 +42,22 @@ class TestRaceOpenRead:
     async def test_get_race_by_id_embeds_features(self, client, gm_token):
         created = await client.post(
             "/races",
-            json={
-                "name": "Drow",
-                "size": "MEDIUM",
-                "speed": 30,
-                "features": [
-                    {"name": "Darkvision", "description": "See in dim light within 60 ft."},
-                    {"name": "Sunlight Sensitivity", "description": "Disadvantage in direct sunlight."},
-                ],
-            },
+            json={"name": "Drow", "size": "MEDIUM", "speed": 30},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert created.status_code == 201
         race_id = created.json()["id"]
+
+        for feature in [
+            {"name": "Darkvision", "description": "See in dim light within 60 ft."},
+            {"name": "Sunlight Sensitivity", "description": "Disadvantage in direct sunlight."},
+        ]:
+            added = await client.post(
+                "/features",
+                json={**feature, "source_type": "RACE", "race_id": race_id},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            assert added.status_code == 201
 
         response = await client.get(f"/races/{race_id}")
 

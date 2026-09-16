@@ -5,19 +5,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models import (
-    CharacterAbilityScore,
-    Class,
-    Race,
-    Subrace,
+from app.models import CharacterAbilityScore, Class, Race, Subrace
+from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.features.feature_engine_models import (
+    FeatureAbilityScoreEffect,
+    FeatureChoiceGroup,
+    FeatureChoiceOption,
 )
-from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
-from app.models.character_association_models import CharacterFeat
-from app.models.character_feature_model import CharacterFeature
-from app.models.feat_model import FeatAbilityScoreIncrease
-from app.models.feature_model import FeatureAbilityIncrease
-from app.models.race_association_models import RaceAbilityBonus
-from app.models.subrace_association_models import SubraceAbilityBonus
+from app.models.races.race_association_models import RaceAbilityBonus
+from app.models.races.subrace_association_models import SubraceAbilityBonus
+
+
+def _label_for_effect_row(effect) -> str:
+    """
+    The feature-name label for an ability effect contribution: the fixed
+    row's ``feature``, or the chosen option's owning feature for an
+    option-effect row.
+    """
+
+    feature = getattr(effect, "feature", None)
+    if feature is not None:
+        return feature.name if feature.name else "Feature"
+
+    group = getattr(getattr(effect, "choice_option", None), "group", None)
+    feature = getattr(group, "feature", None)
+    return feature.name if feature is not None and feature.name else "Feature"
 
 
 class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
@@ -72,17 +86,6 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         result = await self.db.execute(select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id == subrace_id))
         return list(result.scalars().unique().all())
 
-    async def get_feat_increases(self, character_id: int) -> list[FeatAbilityScoreIncrease]:
-        """Fetch the ASI choices granted to a character via their feat grants."""
-
-        result = await self.db.execute(
-            select(FeatAbilityScoreIncrease)
-            .join(CharacterFeat, CharacterFeat.ability_score_increase_id == FeatAbilityScoreIncrease.id)
-            .where(CharacterFeat.character_id == character_id)
-            .options(selectinload(FeatAbilityScoreIncrease.feat))
-        )
-        return list(result.scalars().unique().all())
-
     async def get_asi_increases(self, character_id: int) -> list[CharacterASIChoiceIncrease]:
         """
         Fetch the counted increments of the character's ASI-choice log
@@ -101,20 +104,49 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         )
         return list(result.scalars().all())
 
-    async def get_feature_increases(self, character_id: int) -> list[FeatureAbilityIncrease]:
+    async def get_feature_increases(self, character_id: int) -> list:
         """
-        Fetch the fixed ability-score effects of every feature granted to
-        the character — e.g. Primal Champion's +4 STR/CON. They apply
-        automatically while the grant exists.
+        Fetch the ability-score effects of every feature granted to the
+        character — e.g. Primal Champion's +4 STR/CON. They apply
+        automatically while the grant exists: fixed rows plus the option
+        rows of the picks the player stored in ``character_feature_choices``.
         """
 
-        result = await self.db.execute(
-            select(FeatureAbilityIncrease)
-            .join(CharacterFeature, CharacterFeature.feature_id == FeatureAbilityIncrease.feature_id)
-            .where(CharacterFeature.character_id == character_id)
-            .options(selectinload(FeatureAbilityIncrease.feature))
+        fixed_result = await self.db.execute(
+            select(FeatureAbilityScoreEffect)
+            .join(CharacterFeature, CharacterFeature.feature_id == FeatureAbilityScoreEffect.feature_id)
+            .where(
+                CharacterFeature.character_id == character_id,
+                FeatureAbilityScoreEffect.feature_id.isnot(None),
+            )
+            .options(selectinload(FeatureAbilityScoreEffect.feature))
         )
-        return list(result.scalars().all())
+        fixed_rows = list(fixed_result.scalars().unique().all())
+
+        option_result = await self.db.execute(
+            select(FeatureAbilityScoreEffect)
+            .join(
+                FeatureChoiceOption,
+                FeatureChoiceOption.id == FeatureAbilityScoreEffect.choice_option_id,
+            )
+            .join(
+                CharacterFeatureChoice,
+                CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id,
+            )
+            .join(CharacterFeature, CharacterFeature.id == CharacterFeatureChoice.character_feature_id)
+            .where(
+                CharacterFeature.character_id == character_id,
+                FeatureAbilityScoreEffect.choice_option_id.isnot(None),
+            )
+            .options(
+                selectinload(FeatureAbilityScoreEffect.choice_option)
+                .selectinload(FeatureChoiceOption.group)
+                .selectinload(FeatureChoiceGroup.feature)
+            )
+        )
+        option_rows = list(option_result.scalars().unique().all())
+
+        return [*fixed_rows, *option_rows]
 
     async def upsert(self, character_id: int, totals: dict, *, commit: bool = True) -> CharacterAbilityScore:
         """

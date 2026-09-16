@@ -3,7 +3,7 @@
 from app.features.classes.crud.repository import ClassRepository
 from app.features.shared.skills.mixins import SkillLookupMixin
 from app.models import class_available_skills
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 from app.models.skill_model import Skill
 
 

@@ -5,8 +5,8 @@ from types import SimpleNamespace
 from pydantic import ValidationError
 import pytest
 
-from app.features.features.ability_increases.schemas import AbilityIncreaseItem
 from app.features.features.crud.schemas import FeatureCreate, FeatureResponse, NestedFeatureResponse
+from app.features.features.effects.schemas import AbilityEffectItem
 
 
 @pytest.mark.unit
@@ -44,28 +44,28 @@ class TestFeatureValidators:
 
 
 @pytest.mark.unit
-class TestAbilityIncreaseItemCap:
+class TestAbilityEffectItemCap:
     def test_new_cap_at_twenty_is_allowed(self):
-        assert AbilityIncreaseItem(ability="STR", amount=2, new_cap=20).new_cap == 20
+        assert AbilityEffectItem(ability="STR", amount=2, new_cap=20).new_cap == 20
 
     def test_new_cap_at_thirty_is_allowed(self):
-        assert AbilityIncreaseItem(ability="STR", amount=4, new_cap=30).new_cap == 30
+        assert AbilityEffectItem(ability="STR", amount=4, new_cap=30).new_cap == 30
 
     def test_new_cap_above_thirty_rejected(self):
         with pytest.raises(ValidationError, match="new_cap"):
-            AbilityIncreaseItem(ability="STR", amount=4, new_cap=31)
+            AbilityEffectItem(ability="STR", amount=4, new_cap=31)
 
     def test_new_cap_below_twenty_rejected(self):
         with pytest.raises(ValidationError, match="new_cap"):
-            AbilityIncreaseItem(ability="STR", amount=1, new_cap=19)
+            AbilityEffectItem(ability="STR", amount=1, new_cap=19)
 
     def test_new_cap_omitted_is_allowed(self):
-        assert AbilityIncreaseItem(ability="STR", amount=2).new_cap is None
+        assert AbilityEffectItem(ability="STR", amount=2).new_cap is None
 
 
 @pytest.mark.unit
-class TestFeatureResponsesEmbedAbilityIncreases:
-    def test_feature_response_embeds_ability_increases(self):
+class TestFeatureResponsesEmbedStaticEffectGroups:
+    def test_feature_response_embeds_static_effect_groups(self):
         source = type(
             "Feature",
             (),
@@ -80,18 +80,21 @@ class TestFeatureResponsesEmbedAbilityIncreases:
                 "background_id": None,
                 "level": None,
                 "description": "",
-                "ability_increases": [
-                    AbilityIncreaseItem(ability="STR", amount=4, new_cap=30),
+                "static_groups": [
+                    {"effect_type": "ability", "items": [AbilityEffectItem(ability="STR", amount=4, new_cap=30)]},
                 ],
+                "has_static_effects": True,
             },
         )()
 
         response = FeatureResponse.model_validate(source)
 
-        assert response.ability_increases[0].ability.value == "STR"
-        assert response.ability_increases[0].new_cap == 30
+        ability_group = response.static_groups[0]
+        assert ability_group.effect_type == "ability"
+        assert ability_group.items[0].ability.value == "STR"
+        assert ability_group.items[0].new_cap == 30
 
-    def test_nested_feature_response_embeds_ability_increases(self):
+    def test_nested_feature_response_embeds_static_effect_groups(self):
         source = type(
             "Feature",
             (),
@@ -100,17 +103,18 @@ class TestFeatureResponsesEmbedAbilityIncreases:
                 "name": "Keen Senses",
                 "description": "",
                 "level": None,
-                "ability_increases": [
-                    AbilityIncreaseItem(ability="WIS", amount=1, new_cap=None),
+                "static_groups": [
+                    {"effect_type": "ability", "items": [AbilityEffectItem(ability="WIS", amount=1)]},
                 ],
+                "has_static_effects": True,
             },
         )()
 
         response = NestedFeatureResponse.model_validate(source)
 
-        assert response.ability_increases[0].ability.value == "WIS"
+        assert response.static_groups[0].items[0].ability.value == "WIS"
 
-    def test_missing_ability_increases_defaults_to_empty(self):
+    def test_missing_static_groups_defaults_to_empty(self):
         source = SimpleNamespace(
             id=1,
             name="Plain",
@@ -118,4 +122,4 @@ class TestFeatureResponsesEmbedAbilityIncreases:
             level=None,
         )
 
-        assert NestedFeatureResponse.model_validate(source).ability_increases == []
+        assert NestedFeatureResponse.model_validate(source).static_groups == []

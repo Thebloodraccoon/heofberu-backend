@@ -29,10 +29,10 @@ from app.core.security.password import get_password_hash  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     Background,
+    BackgroundSuggestion,
     Character,
     CharacterMaxLevel,
     Class,
-    Feat,
     Feature,
     Item,
     Race,
@@ -115,8 +115,8 @@ async def founder(create_user):
 
 @pytest_asyncio.fixture
 async def create_skill(db_session):
-    async def _create_skill(key="PERCEPTION", name="Perception", ability="WIS", description=""):
-        skill = Skill(key=key, name=name, ability=ability, description=description)
+    async def _create_skill(key=None, name="Perception", ability="WIS", description=""):
+        skill = Skill(name=name, ability=ability, description=description)
         db_session.add(skill)
         await db_session.commit()
         await db_session.refresh(skill)
@@ -200,11 +200,25 @@ async def create_subclass(db_session):
 
 @pytest_asyncio.fixture
 async def create_background(db_session):
-    async def _create_background(name="Acolyte"):
+    async def _create_background(name="Acolyte", with_suggestions=True):
         background = Background(name=name)
         db_session.add(background)
         await db_session.commit()
         await db_session.refresh(background)
+
+        # Character creation requires one suggestion id per type when a
+        # background is chosen (see BackgroundSuggestionIdsRequiredException) —
+        # seed the standard 4 by default so callers can pass background.id
+        # straight into ``suggestion_ids`` without setting them up themselves.
+        if with_suggestions:
+            suggestions = [
+                BackgroundSuggestion(background_id=background.id, suggestion_type=suggestion_type, text=f"{suggestion_type} text")
+                for suggestion_type in ("PERSONALITY_TRAIT", "IDEAL", "BOND", "FLAW")
+            ]
+            db_session.add_all(suggestions)
+            await db_session.commit()
+            await db_session.refresh(background, attribute_names=["suggestions"])
+
         return background
 
     return _create_background
@@ -218,13 +232,17 @@ async def create_feat(db_session):
         prerequisite_ability=None,
         prerequisite_minimum_score=None,
         prerequisite_description="",
+        min_level=None,
     ):
-        feat = Feat(
+        # Feats live in the unified ``features`` table as ``source_type=FEAT`` rows.
+        feat = Feature(
             name=name,
+            source_type="FEAT",
             description=description,
             prerequisite_ability=prerequisite_ability,
             prerequisite_minimum_score=prerequisite_minimum_score,
             prerequisite_description=prerequisite_description,
+            min_level=min_level,
         )
         db_session.add(feat)
         await db_session.commit()

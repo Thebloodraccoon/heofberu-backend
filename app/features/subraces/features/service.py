@@ -9,7 +9,7 @@ from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
 from app.features.subraces.crud.repository import SubraceRepository
 from app.features.subraces.crud.schemas import SubraceCreate, SubraceResponse, SubraceUpdate
-from app.models.subrace_model import Subrace
+from app.models.races.subrace_model import Subrace
 
 
 class SubraceFeatureService(

@@ -23,7 +23,14 @@ class SubclassUpdate(BaseModel):
 
 
 class SubclassResponse(BaseModel):
-    """Full subclass representation returned by the API."""
+    """
+    Full subclass representation returned by the API.
+
+    Doubles as both the create/update response and the
+    ``GET /subclasses/{id}`` response: ``get_by_id`` folds the subclass's
+    own SUBCLASS-source ``features`` into it, while ``create``/``update``
+    return it with ``features`` at its empty default.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -32,10 +39,14 @@ class SubclassResponse(BaseModel):
     name: str
     description: str
     image_url: str | None = None
+    features: list[NestedFeatureResponse] = []
 
 
-class SubclassBriefResponse(BaseModel):
-    """Lightweight subclass row for listings."""
+class SubclassGetAllResponse(BaseModel):
+    """
+    Lightweight subclass row returned by ``GET /subclasses`` and embedded
+    in both ``ClassResponse.subclasses`` and ``ClassGetAllResponse.subclasses``.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,19 +54,3 @@ class SubclassBriefResponse(BaseModel):
     class_id: int
     name: str
     image_url: str | None = None
-
-
-class SubclassListResponse(BaseModel):
-    """Minimal subclass reference embedded in ``ClassGetAllResponse.subclasses``."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    image_url: str | None = None
-
-
-class SubclassFullResponse(SubclassResponse):
-    """A subclass plus its own SUBCLASS-source features, for the aggregate class view."""
-
-    features: list[NestedFeatureResponse] = []

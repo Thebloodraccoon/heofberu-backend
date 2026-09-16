@@ -6,7 +6,7 @@ import pytest
 
 from app.constants import AbilityScore
 from app.features.characters.ability_score.repository import CharacterStatsRepository
-from app.models.character_ability_score_model import CharacterAbilityScore
+from app.models.character.character_ability_score_model import CharacterAbilityScore
 from tests.unit.fakes import FakeAsyncSession, FakeResult
 
 
@@ -92,13 +92,27 @@ class TestCharacterStatsRepository:
 
         assert result == [row]
 
-    async def test_get_feat_increases_returns_rows(self):
-        row = SimpleNamespace(id=1, feat_id=3, ability=AbilityScore.STR, amount=1)
-        repository = CharacterStatsRepository(make_session([row]))
+    async def test_get_feature_increases_merges_fixed_and_option_rows(self):
+        """get_feature_increases returns both fixed (feature-owned) and option (choice-pick) effect rows."""
+        fixed_row = SimpleNamespace(id=10, ability=AbilityScore.STR, amount=2)
+        option_row = SimpleNamespace(id=20, ability=AbilityScore.DEX, amount=1)
+        # First execute returns fixed rows, second returns option rows
+        session = FakeAsyncSession(execute_results=[FakeResult([fixed_row]), FakeResult([option_row])])
+        repository = CharacterStatsRepository(session)
 
-        result = await repository.get_feat_increases(1)
+        result = await repository.get_feature_increases(1)
 
-        assert result == [row]
+        assert len(result) == 2
+        assert result[0] is fixed_row
+        assert result[1] is option_row
+
+    async def test_get_feature_increases_empty_when_no_grants(self):
+        session = FakeAsyncSession(execute_results=[FakeResult([]), FakeResult([])])
+        repository = CharacterStatsRepository(session)
+
+        result = await repository.get_feature_increases(1)
+
+        assert result == []
 
     async def test_get_asi_increases_returns_counted_rows(self):
         row = SimpleNamespace(id=1, character_asi_choice_id=9, ability=AbilityScore.STR, amount=2)

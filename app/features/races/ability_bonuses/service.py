@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
+from app.features.races.ability_bonuses.schemas import AbilityBonusesUpdate
 from app.features.races.cache import RACE_CACHE_NAMESPACES, invalidate_race_cache
 from app.features.races.crud.repository import RaceRepository
-from app.features.races.schemas import AbilityBonusesUpdate, RaceCreate, RaceResponse, RaceUpdate
-from app.models.race_model import Race
+from app.features.races.crud.schemas import RaceCreate, RaceResponse, RaceUpdate
+from app.models.races.race_model import Race
 
 
 class RaceAbilityBonusService(BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, None]):

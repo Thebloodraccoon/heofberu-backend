@@ -5,13 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
-from app.features.feats.dependencies import FeatCrudDep
-from app.features.feats.schemas import (
+from app.features.feats.crud.schemas import (
     FeatCreate,
     FeatGetAllResponse,
     FeatResponse,
     FeatUpdate,
 )
+from app.features.feats.dependencies import FeatCrudDep
 from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
@@ -32,9 +32,9 @@ async def get_feats(
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
-    Return a paginated list of feats with `id`, `name`, and the ASI choices
-    (`ability_score_increases`). `search` matches the name; response is
-    `{items, total, page, size}`.
+    Return a paginated list of feats with `id`, `name`, `min_level`, and two
+    flags — `has_static_effects` / `has_choices` — mirroring `/features`.
+    `search` matches the name; response is `{items, total, page, size}`.
     Open endpoint.
     """
 
@@ -51,8 +51,10 @@ async def get_feats(
 )
 async def get_feat(feat_id: int, feat_service: FeatCrudDep):
     """
-    Return a single feat by ID, with everything about it: base fields and
-    ability score increase choices. Cached as a single unit.
+    Return a single feat by ID, with everything about it: base fields plus
+    the full effect tree (`choice_groups`, `static_groups`,
+    `has_static_effects`, `has_choices`, `effects_summary`). Cached as a
+    single unit.
     Open endpoint.
     """
 

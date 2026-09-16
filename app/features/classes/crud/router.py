@@ -5,14 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
-from app.features.classes.dependencies import ClassCrudDep
-from app.features.classes.schemas import (
+from app.features.classes.crud.schemas import (
     ClassCreate,
-    ClassFullResponse,
     ClassGetAllResponse,
     ClassResponse,
     ClassUpdate,
 )
+from app.features.classes.dependencies import ClassCrudDep
 from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
@@ -47,7 +46,7 @@ async def get_classes(
 
 @router.get(
     "/{class_id:int}",
-    response_model=ClassFullResponse,
+    response_model=ClassResponse,
     summary="Get a class by ID",
     responses={
         404: {"description": "Class with id not found."},
@@ -74,7 +73,6 @@ async def get_class(class_id: int, class_service: ClassCrudDep):
     summary="Create a class",
     responses={
         409: {"description": "A class with this name already exists."},
-        400: {"description": "Invalid payload (unknown skill IDs, etc.)."},
     },
 )
 async def create_class(
@@ -83,22 +81,19 @@ async def create_class(
         Body(
             openapi_examples={
                 "fighter": {
-                    "summary": "Non-caster, base fields only",
+                    "summary": "Non-caster, minimal",
                     "value": {
                         "name": "Fighter",
                         "hit_dice": "D10",
                         "spellcasting_ability": None,
-                        "saving_throws": ["STR", "CON"],
                     },
                 },
                 "wizard": {
-                    "summary": "Full caster, base fields only",
+                    "summary": "Full caster, minimal",
                     "value": {
                         "name": "Wizard",
                         "hit_dice": "D6",
                         "spellcasting_ability": "INT",
-                        "saving_throws": ["INT", "WIS"],
-                        "available_skills": [3, 7],
                     },
                 },
             }
@@ -111,9 +106,12 @@ async def create_class(
     Create a new class. **GM only.**
 
     `spellcasting_ability` must be supplied explicitly (pass `null` for
-    a non-caster). The optional child lists are saved in the same
-    transaction. Features, subclasses, spell slots, and starting items
-    are intentionally NOT accepted here.
+    a non-caster). Base fields only — `saving_throws`, `armor_proficiencies`,
+    `weapon_proficiencies`, `available_skills`, features, subclasses, spell
+    slots, and starting items are all attached afterwards through their own
+    endpoints (`PUT /classes/{class_id}/saving-throws`,
+    `/armor-proficiencies`, `/weapon-proficiencies`, `/available-skills`,
+    `POST /features`, `POST /subclasses`, etc).
     """
 
     return await class_service.create_class(data)

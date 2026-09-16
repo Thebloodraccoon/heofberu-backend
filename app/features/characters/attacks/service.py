@@ -7,7 +7,7 @@ from app.features.characters.attacks.repository import CharacterAttackRepository
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.base import CharacterSubDomainService
 from app.features.users.schemas import UserResponse
-from app.models.attack_model import Attack
+from app.models.character.character_attack_model import Attack
 
 
 class CharacterAttackService(CharacterSubDomainService):

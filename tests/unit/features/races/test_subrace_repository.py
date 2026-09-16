@@ -5,8 +5,8 @@ import pytest
 from app.constants import AbilityScore
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.subraces.crud.repository import SubraceRepository
-from app.models.subrace_association_models import SubraceAbilityBonus
-from app.models.subrace_model import Subrace
+from app.models.races.subrace_association_models import SubraceAbilityBonus
+from app.models.races.subrace_model import Subrace
 from tests.unit.fakes import FakeAsyncSession, FakeResult
 
 

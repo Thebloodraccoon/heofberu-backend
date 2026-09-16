@@ -9,36 +9,42 @@ from app.features.characters.feats.exceptions import (
     InvalidAbilityScoreIncreaseException,
 )
 from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
-from app.models.character_model import Character
-from app.models.feat_model import Feat
+from app.features.feats.crud.repository import feat_ability_score_effects
+from app.models.character.character_model import Character
+from app.models.features.feature_model import Feature
 
 
-def validate_ability_score_increase(feat: Feat, ability_score_increase_id: int | None) -> None:
+def validate_ability_score_increase(feat: Feature, ability_score_increase_id: int | None) -> None:
     """
     Raise ``InvalidAbilityScoreIncreaseException`` unless the id is one of
-    ``feat``'s own ``ability_score_increases`` rows.  A ``None`` value is
+    ``feat``'s own ability-score-effect alternatives. A ``None`` value is
     silently accepted (the caller is responsible for requiring a choice).
     """
 
     if ability_score_increase_id is None:
         return
-    valid_ids = {increase.id for increase in feat.ability_score_increases}
+    valid_ids = {effect.id for effect in feat_ability_score_effects(feat)}
     if ability_score_increase_id not in valid_ids:
         raise InvalidAbilityScoreIncreaseException(feat_id=feat.id, ability_score_increase_id=ability_score_increase_id)
 
 
-def validate_asi_choice_required(feat: Feat, ability_score_increase_id: int | None) -> None:
+def validate_asi_choice_required(feat: Feature, ability_score_increase_id: int | None) -> None:
     """
-    A feat offering ability-score increase options MUST be taken with an
-    explicit choice, so its points are never silently lost.
+    Raise unless an ASI-offering feat is given an explicit choice.
+
+    Only ``GmPanelFeatService.update_feat`` enforces this (an already-granted
+    feat's ASI choice must always resolve to one of its options, never back
+    to unset). A fresh grant (``add_feat``) does NOT call this — it may leave
+    the choice group pending, like any other feature choice group.
     """
 
-    if ability_score_increase_id is None and feat.ability_score_increases:
-        raise FeatAsiChoiceRequiredException(feat_id=feat.id, choices=len(feat.ability_score_increases))
+    increases = feat_ability_score_effects(feat)
+    if ability_score_increase_id is None and increases:
+        raise FeatAsiChoiceRequiredException(feat_id=feat.id, choices=len(increases))
 
 
 async def validate_ability_score_increase_cap(
-    feat: Feat, ability_score_increase_id: int, character: Character, stats_service: CharacterStatsService
+    feat: Feature, ability_score_increase_id: int, character: Character, stats_service: CharacterStatsService
 ) -> None:
     """
     Raise ``AbilityScoreCapExceededException`` if the selected ASI choice
@@ -48,7 +54,7 @@ async def validate_ability_score_increase_cap(
     validates against effective totals computed fresh, not the cache.
     """
 
-    increase = next((i for i in feat.ability_score_increases if i.id == ability_score_increase_id), None)
+    increase = next((e for e in feat_ability_score_effects(feat) if e.id == ability_score_increase_id), None)
     if increase is None:
         return
 
@@ -65,7 +71,7 @@ async def validate_ability_score_increase_cap(
         )
 
 
-async def check_feat_prerequisite(character: Character, feat: Feat, stats_service: CharacterStatsService) -> None:
+async def check_feat_prerequisite(character: Character, feat: Feature, stats_service: CharacterStatsService) -> None:
     """
     Raise ``FeatPrerequisiteNotMetException`` if the feat has an
     ability-score prerequisite the character's current *effective* score

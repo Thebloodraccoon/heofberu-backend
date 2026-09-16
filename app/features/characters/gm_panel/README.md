@@ -32,46 +32,52 @@ own capability segment.
 | Capability | Endpoints | Access | Owns |
 |---|---|---|---|
 | `feats` | POST/PATCH/DELETE `/feats` | GM only | `CharacterFeatRepository` |
-| `features` | POST/PATCH/DELETE `/features` | GM only | `CharacterFeatureRepository` |
+| `features` | POST/DELETE `/features` | GM only | `CharacterFeatureRepository` |
 | `items` | GET/POST/PATCH/DELETE `/items` | reads GM/owner, writes GM only | `CharacterItemRepository` + own schemas |
 | `asi` | GET/POST/DELETE `/asi` | reads GM/owner, writes GM only | own schemas |
 | `hp` | PATCH `/max-hp` | GM only | — |
 | `level` | PATCH/GET `/max-level` | reads GM/owner, writes GM only | `CharacterMaxLevelRepository` |
-| `skills` | PATCH `/skills` | GM only | `CharacterSkillProficiencyRepository` |
+| `proficiencies` | POST/DELETE `/proficiencies/{skills,saving-throws,armor,weapons}`, PATCH `/proficiencies/skills/expertise` | GM only | 4 typed repos + `CharacterProficiencyAuditRepository` |
+| `spells` | POST/DELETE `/spells` | GM only | `CharacterGrantedSpellRepository` |
 
 ### `feats` — feat grants
 
 POST grants a reference feat outside any level-up flow (201); PATCH changes
-the grant's ability-score increase choice; DELETE revokes it (204). A feat
-offering ASI options MUST be granted with an explicit
-`ability_score_increase_id` — omitting it raises
-`FeatAsiChoiceRequiredException` (422), and clearing it via PATCH is likewise
-rejected. Every grant/update/remove refreshes the ability-score cache
+the grant's ability-score increase choice; DELETE revokes it (204). Unlike
+PATCH (which still rejects clearing an already-set choice —
+`FeatAsiChoiceRequiredException`, 422), POST no longer requires
+`ability_score_increase_id` up front even for a feat offering ASI options:
+omitting it leaves the feat's ASI choice group pending, like any other
+choice group, answerable later via PATCH or the generic
+choice-answering/pending-grant endpoints. Every grant/update/remove refreshes the ability-score cache
 (`CharacterStatsService`) and re-syncs auto-granted features
 (`sync_progression_features`). A grant carrying an ASI choice also writes an
 audit row into `character_asi_choices` (`class_level IS NULL`, choice type
-FEAT) so the log shows where each stat point came from; counting still flows
-through the `character_feats` row, which stays the source of truth. The
-level-up endpoint (`CharacterProgressionService._apply_feat`) writes the same
-table through this repository with `source_type=ASI`.
+FEAT) so the log shows where each stat point came from; the feat's stat
+effect reaches the ability-score cache through the granted feature's ASI
+effect (`feature_ability_score_effects`), materialized alongside the grant.
+The level-up endpoint (`CharacterProgressionService._apply_feat`) writes the
+same table through this repository with `source_type=ASI`. The response
+carries no dedicated ASI field — a picked ASI option surfaces in the
+generic `choices` list (`ability_effects`), same as any other feature's
+choice group; `FeatBriefResponse` also carries `effects_summary`.
 
 ### `features` — feature grants
 
-Records/removes reference features on a character (optionally with free-form
-per-character notes; PATCH replaces notes only — the referenced feature is
-immutable). Lightweight by design: no cache refresh on note updates, but
-add/remove DO refresh the ability-score cache because features can carry fixed
-`feature_ability_increases` effects. Progression auto-grants can be removed
-here too.
+Records/removes reference features on a character (the referenced feature
+itself is immutable). Add/remove refresh the ability-score cache because
+features can carry fixed `feature_ability_increases` effects. Progression
+auto-grants can be removed here too.
 
 ### `items` — inventory
 
 The former standalone `characters/items/` subpackage. Each `character_items`
-row is an independent stack, so the same item may be owned several times;
-each POST creates its own stack row (`quantity` defaults to 1, 0 allowed).
-PATCH applies partial updates (`exclude_unset` semantics) to
-quantity/equip/attunement/notes; there is no way to change `item_id` — remove
-the stack and add a new one instead.
+row is a stack (`quantity` defaults to 1, 0 allowed). POST merges into the
+character's existing stack of that `item_id` (the earliest one, if somehow
+more than one exists) by adding the new quantity onto it; only when the
+character has no stack of that item yet does POST create a new row. PATCH
+applies partial updates (`exclude_unset` semantics) to quantity; there is no
+way to change `item_id` — remove the stack and add a new one instead.
 `CharacterItemNotFoundException` lives in the root `exceptions.py`.
 
 ### `asi` — free-form ±adjustments
@@ -108,16 +114,22 @@ character's current level (`MaxLevelBelowCharacterLevelException`) is
 rejected, and the schema caps it at `CHARACTER_MAX_LEVEL`. The repository is
 imported by progression for the level-up gate.
 
-### `skills` — expertise toggle
+### `proficiencies` — add/remove/expertise across all four proficiency tables
 
-PATCH `/skills?character_id=...&skill_id=...` with `{is_expertise: bool}`:
-toggles expertise on an EXISTING proficiency row (rows are written once at
-creation from class choices + background/race grants; 404
-`SkillProficiencyNotFoundException` if not proficient — expertise requires and
-implies proficiency). Expertise is never derived automatically; clients read
-`is_expertise` off the proficiency row and double the proficiency bonus. The
-repository is a plain class (not `BaseRepository`) because the model has a
-composite PK `(character_id, skill_id)`.
+POST/DELETE `/proficiencies/skills`, `/saving-throws`, `/armor`, `/weapons`
+grant or revoke a free-form (no feature behind it) proficiency row directly;
+PATCH `/proficiencies/skills/expertise?skill_id=...` with `{is_expertise:
+bool}` toggles expertise on an EXISTING skill proficiency row (404
+`SkillProficiencyNotFoundException` if not proficient — expertise requires
+and implies proficiency). Expertise is never derived automatically; clients
+read `is_expertise` off the proficiency row and double the proficiency
+bonus. Weapon add/remove takes exactly one of `weapon_category`/`item_id`.
+Every write appends a row to `character_proficiency_audit_log` (who did
+what, when) — the proficiency tables themselves carry no history, so a
+removal or a revoked expertise flag would otherwise be silent. The four
+per-type repositories are plain classes (not `BaseRepository`) because
+skill proficiency has a composite PK `(character_id, skill_id)` and the
+others key on a per-character-per-value uniqueness instead of a surrogate id.
 
 Services extend `CharacterSubDomainService` (light character fetch for access
 control; `GmPanelHpService` overrides `_light_character_fetch = False` because

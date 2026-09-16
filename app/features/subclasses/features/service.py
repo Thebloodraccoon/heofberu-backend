@@ -9,7 +9,7 @@ from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
 from app.features.subclasses.crud.repository import SubclassRepository
 from app.features.subclasses.crud.schemas import SubclassCreate, SubclassResponse, SubclassUpdate
-from app.models.subclass_model import Subclass
+from app.models.classes.subclass_model import Subclass
 
 
 class SubclassFeatureService(

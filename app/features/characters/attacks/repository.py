@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
-from app.models.attack_model import Attack
+from app.models.character.character_attack_model import Attack
 
 
 class CharacterAttackRepository(BaseRepository[Attack]):

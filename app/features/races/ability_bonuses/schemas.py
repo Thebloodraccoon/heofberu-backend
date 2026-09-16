@@ -1,6 +1,6 @@
-"""Shared ability-bonus primitives for the race and subrace schemas."""
+"""Shared ability-bonus primitives for the race and subrace schemas, plus the race Update schema."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import AbilityScore
 
@@ -30,3 +30,15 @@ def _validate_unique_abilities(ability_bonuses: list[AbilityBonusItem]) -> list[
         raise ValueError(f"Duplicate ability score(s): {sorted(duplicates)}")
 
     return ability_bonuses
+
+
+class AbilityBonusesUpdate(BaseModel):
+    """Full replacement list of ability bonuses for a race."""
+
+    ability_bonuses: list[AbilityBonusItem]
+
+    @field_validator("ability_bonuses")
+    def validate_unique_abilities(cls, ability_bonuses):
+        """Reject bonus lists containing duplicate ability scores."""
+
+        return _validate_unique_abilities(ability_bonuses)

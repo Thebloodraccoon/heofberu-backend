@@ -2,26 +2,22 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import FeatureSourceType
 from app.core.base.cached_service import CachedService
-from app.features.features.crud.service import FeatureCrudService
-from app.features.races.ability_bonuses.service import RaceAbilityBonusService
 from app.features.races.cache import RACE_CACHE_NAMESPACES, invalidate_race_cache
 from app.features.races.crud.repository import RaceRepository
-from app.features.races.schemas import (
+from app.features.races.crud.schemas import (
     RaceCreate,
     RaceGetAllResponse,
     RaceResponse,
     RaceUpdate,
 )
-from app.features.races.skills.service import RaceSkillService
-from app.models.race_model import Race
+from app.models.races.race_model import Race
 
 
 class RaceCrudService(
     CachedService[Race, RaceCreate, RaceUpdate, RaceResponse, RaceGetAllResponse],
 ):
-    """Race catalog CRUD with composed capability reads."""
+    """Race catalog CRUD."""
 
     repository: RaceRepository
 
@@ -29,41 +25,24 @@ class RaceCrudService(
     get_all_order_by = "name"
 
     def __init__(self, db: AsyncSession):
-        """Initialize composed skill, ability-bonus, and feature services."""
+        """Initialize the race repository."""
 
         super().__init__(
             repository=RaceRepository(db),
             response_schema=RaceResponse,
             get_all_schema=RaceGetAllResponse,
         )
-        self._skills = RaceSkillService(db)
-        self._ability_bonuses = RaceAbilityBonusService(db)
-        self._features = FeatureCrudService(db)
 
     async def create_race(self, race_data: RaceCreate) -> RaceResponse:
-        """Create a race, optionally seeding ability bonuses, skills, and features in one transaction."""
+        """
+        Create a race (base fields only).
 
-        skills = await self._skills.resolve_skills(race_data.granted_skills)
+        ``ability_bonuses``, ``granted_skills``, and ``features`` are not
+        seeded here — each is attached afterwards through its own
+        capability endpoint.
+        """
 
-        payload = race_data.model_dump(exclude={"ability_bonuses", "granted_skills", "features"})
-
-        async with self._atomic():
-            item = await self.repository.create(payload, commit=False)
-
-            if race_data.ability_bonuses:
-                bonuses = [{"ability": b.ability, "bonus": b.bonus} for b in race_data.ability_bonuses]
-                await self._ability_bonuses.set_ability_bonuses_for_race(item, bonuses, commit=False)
-
-            if skills:
-                await self._skills.set_skills_for_race(item, skills, commit=False)
-
-            await self._features.create_features_for_source(
-                FeatureSourceType.RACE,
-                item.id,
-                race_data.features,
-                commit=False,
-            )
-
+        item = await self.repository.create(race_data.model_dump())
         await invalidate_race_cache()
 
         return await self._get_response(item.id)

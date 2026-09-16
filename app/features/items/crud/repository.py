@@ -6,10 +6,10 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.core.base.repository import BaseRepository
-from app.models.character_item_model import CharacterItem
-from app.models.item_model import Item
-from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
-from app.models.source_item_model import SourceItem
+from app.models.character.character_item_model import CharacterItem
+from app.models.items.item_model import Item
+from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
+from app.models.items.item_source_model import SourceItem
 
 SOURCE_ITEM_FK_BY_SOURCE_TYPE: dict[FeatureSourceType, str] = {
     FeatureSourceType.CLASS: "class_id",

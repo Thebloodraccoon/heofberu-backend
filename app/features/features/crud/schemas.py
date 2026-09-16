@@ -1,20 +1,21 @@
 """Request/response schemas for the feature endpoints and nested parent feature payloads."""
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.constants import FeatureSourceType
-from app.features.features.ability_increases.schemas import AbilityIncreaseItem
+from app.constants import AbilityScore, FeatureSourceType
+from app.features.features.effects.schemas import ChoiceGroupResponse, StaticEffectGroup
 
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS keys off subclass_id (not class_id — the old denorm approach).
-# OTHER requires none of the FKs; FEAT is no longer a valid source
-# (a feat is de facto its own feature).
+# FEAT and OTHER require none of the FKs; a FEAT row carries the feat
+# columns (min_level / prerequisite_*) instead.
 _REQUIRED_FK_BY_SOURCE_TYPE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.CLASS: "class_id",
     FeatureSourceType.SUBCLASS: "subclass_id",
     FeatureSourceType.RACE: "race_id",
     FeatureSourceType.SUBRACE: "subrace_id",
     FeatureSourceType.BACKGROUND: "background_id",
+    FeatureSourceType.FEAT: None,
     FeatureSourceType.OTHER: None,
 }
 _ALL_SOURCE_FKS = ("class_id", "subclass_id", "race_id", "subrace_id", "background_id")
@@ -57,11 +58,58 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
             )
 
 
-class FeatureBase(BaseModel):
+def _validate_min_level(value: int | None) -> int | None:
+    """Reject an out-of-range ``min_level`` when provided."""
+
+    if value is not None and not (_FEATURE_LEVEL_MIN <= value <= _FEATURE_LEVEL_MAX):
+        raise ValueError(f"min_level must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}.")
+
+    return value
+
+
+class FeatPrerequisiteFields(BaseModel):
+    """
+    Feat-only prerequisite/level-gate fields (only meaningful for
+    ``source_type=FEAT`` rows).
+
+    Factored out so the dedicated ``/feats`` catalog schemas
+    (``app/features/feats/crud/schemas.py``) can reuse this exact field set
+    instead of redeclaring it — both write the same underlying ``Feature``
+    columns.
+    """
+
+    prerequisite_ability: AbilityScore | None = None
+    prerequisite_minimum_score: int | None = None
+    prerequisite_description: str = ""
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject an out-of-range ``min_level`` when provided."""
+
+        return _validate_min_level(value)
+
+
+class FeatPrerequisiteFieldsUpdate(BaseModel):
+    """Same fields as :class:`FeatPrerequisiteFields`, all optional for PATCH semantics."""
+
+    prerequisite_ability: AbilityScore | None = None
+    prerequisite_minimum_score: int | None = None
+    prerequisite_description: str | None = None
+    min_level: int | None = None
+
+    @field_validator("min_level")
+    @classmethod
+    def validate_min_level(cls, value: int | None) -> int | None:
+        """Reject an out-of-range ``min_level`` when provided."""
+
+        return _validate_min_level(value)
+
+
+class FeatureBase(FeatPrerequisiteFields):
     """Base feature fields, including the source_type/FK/level consistency rules."""
 
-    # Stale/unknown keys (e.g. the removed FEAT source's feat_id) are rejected with 422,
-    # never silently dropped.
     model_config = ConfigDict(extra="forbid")
 
     name: str
@@ -80,10 +128,12 @@ class FeatureBase(BaseModel):
 
 class FeatureCreate(FeatureBase):
     """
-    Payload for ``POST /features`` — create a feature of ANY source type.
+    Payload for ``POST /features`` — create a feature of ANY source type,
+    including FEAT now.
 
     The parent FK is set directly for source-owned features; a standalone
-    ``OTHER`` feature needs no FK.
+    ``FEAT`` or ``OTHER`` feature needs no FK. Feat rows additionally carry
+    ``min_level`` / ``prerequisite_*``.
     """
 
     @model_validator(mode="after")
@@ -95,12 +145,18 @@ class FeatureCreate(FeatureBase):
 
 
 class FeatureResponse(FeatureBase):
-    """Full feature representation returned by the API."""
+    """Full feature representation returned by the API, with the complete effect tree."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    ability_increases: list[AbilityIncreaseItem] = []
+
+    choice_groups: list[ChoiceGroupResponse] = []
+    static_groups: list[StaticEffectGroup] = []
+
+    has_static_effects: bool = False
+    has_choices: bool = False
+    effects_summary: str = ""
 
 
 class FeatureGetAllResponse(BaseModel):
@@ -111,13 +167,16 @@ class FeatureGetAllResponse(BaseModel):
     id: int
     name: str
     source_type: FeatureSourceType
+
     class_id: int | None = None
     subclass_id: int | None = None
     race_id: int | None = None
     subrace_id: int | None = None
     background_id: int | None = None
+
     level: int | None = None
-    ability_increases: list[AbilityIncreaseItem] = []
+    has_static_effects: bool = False
+    has_choices: bool = False
 
 
 class NestedFeatureCreate(BaseModel):
@@ -135,7 +194,7 @@ class NestedFeatureCreate(BaseModel):
 
 
 class NestedFeatureResponse(BaseModel):
-    """Compact feature row for embedding inside a parent entity response."""
+    """Feature row for embedding inside a parent entity response, with the complete effect tree."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -143,17 +202,25 @@ class NestedFeatureResponse(BaseModel):
     name: str
     description: str
     level: int | None = None
-    ability_increases: list[AbilityIncreaseItem] = []
+
+    choice_groups: list[ChoiceGroupResponse] = []
+    static_groups: list[StaticEffectGroup] = []
+
+    has_static_effects: bool = False
+    has_choices: bool = False
+    effects_summary: str = ""
 
 
-class FeatureUpdate(BaseModel):
+class FeatureUpdate(FeatPrerequisiteFieldsUpdate):
     """
     All fields optional — PATCH semantics.
 
     ``source_type`` and its FK are immutable once a feature exists; only
-    ``name``, ``level`` and ``description`` are editable. A CLASS/SUBCLASS
-    feature's ``level`` can be changed but never cleared — the service
-    enforces this against the existing ``source_type``.
+    ``name``, ``level``, ``description`` are editable for source-owned
+    features, plus the feat columns (``min_level``, ``prerequisite_*``,
+    inherited from ``FeatPrerequisiteFieldsUpdate``) for FEAT rows. A
+    CLASS/SUBCLASS feature's ``level`` can be changed but never cleared —
+    the service enforces this against the existing ``source_type``.
     """
 
     model_config = ConfigDict(extra="forbid")

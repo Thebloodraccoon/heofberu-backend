@@ -8,8 +8,8 @@ from app.core.cache import use_cache
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
 from app.features.races.crud.repository import RaceRepository
-from app.features.races.schemas import RaceCreate, RaceResponse, RaceUpdate
-from app.models.race_model import Race
+from app.features.races.crud.schemas import RaceCreate, RaceResponse, RaceUpdate
+from app.models.races.race_model import Race
 
 
 class RaceFeatureService(

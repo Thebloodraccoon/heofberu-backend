@@ -5,9 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.features.subclasses.crud.schemas import (
-    SubclassBriefResponse,
     SubclassCreate,
-    SubclassFullResponse,
+    SubclassGetAllResponse,
     SubclassResponse,
     SubclassUpdate,
 )
@@ -19,7 +18,7 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=list[SubclassBriefResponse],
+    response_model=list[SubclassGetAllResponse],
     summary="List subclasses",
     responses={404: {"description": "No class exists with the given ID."}},
 )
@@ -34,7 +33,7 @@ async def list_subclasses(
 
 @router.get(
     "/{subclass_id:int}",
-    response_model=SubclassFullResponse,
+    response_model=SubclassResponse,
     summary="Get a subclass by ID",
     responses={404: {"description": "Subclass not found."}},
 )

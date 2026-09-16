@@ -64,6 +64,46 @@ class ItemChoiceNotAvailableException(AppError):
         super().__init__(f"Item choice option {option_id} is not available for this character's sources.")
 
 
+class BackgroundSuggestionIdsRequiredException(AppError):
+    """Raised when a background is chosen but suggestion_ids doesn't cover all 4 suggestion types exactly once."""
+
+    status_code = 400
+
+    def __init__(self, background_id: int, requested: int):
+        """Initialize with the background id and the number of ids requested."""
+
+        self.background_id = background_id
+        self.requested = requested
+        super().__init__(
+            f"Background {background_id} requires exactly one suggestion id per type "
+            f"(PERSONALITY_TRAIT, IDEAL, BOND, FLAW) — {requested} were provided."
+        )
+
+
+class InvalidBackgroundSuggestionException(AppError):
+    """Raised when a suggestion_id is not one of the chosen background's own suggestions."""
+
+    status_code = 400
+
+    def __init__(self, background_id: int, suggestion_id: int):
+        """Initialize with the background and suggestion ids."""
+
+        self.background_id = background_id
+        self.suggestion_id = suggestion_id
+        super().__init__(f"Suggestion {suggestion_id} does not belong to background {background_id}.")
+
+
+class SuggestionIdsWithoutBackgroundException(AppError):
+    """Raised when suggestion_ids are sent but no background_id was chosen."""
+
+    status_code = 400
+
+    def __init__(self):
+        """Initialize with the default message."""
+
+        super().__init__("suggestion_ids were provided, but no background_id was chosen.")
+
+
 class TooFewItemChoicesException(AppError):
     """Raised when fewer (or more) options than ``pick_count`` are chosen from a choice group."""
 

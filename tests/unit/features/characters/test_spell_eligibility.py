@@ -10,8 +10,8 @@ from app.features.characters.spells.exceptions import (
     NoSpellSlotAvailableException,
     SpellNotAvailableToCharacterException,
 )
-from app.models.character_model import Character
-from app.models.spell_model import Spell
+from app.models.character.character_model import Character
+from app.models.spells.spell_model import Spell
 
 
 class FakeSlotRepository:
@@ -69,7 +69,10 @@ def make_spell(
 
 
 def make_checker(slot=None, known_at_level=0) -> CharacterSpellEligibilityChecker:
-    return CharacterSpellEligibilityChecker(FakeSlotRepository(slot), FakeKnownSpellRepository(known_at_level))
+    return CharacterSpellEligibilityChecker(
+        FakeSlotRepository(slot),
+        FakeKnownSpellRepository(known_at_level),
+    )
 
 
 @pytest.mark.unit

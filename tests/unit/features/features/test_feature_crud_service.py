@@ -12,12 +12,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import FeatureSourceType
+from app.constants import AbilityScore, FeatureSourceType
 from app.core.exceptions import RecordNotFoundError
-from app.features.features.crud.schemas import FeatureCreate, FeatureUpdate
+from app.features.features.crud.schemas import FeatureCreate, FeatureResponse, FeatureUpdate
 from app.features.features.crud.service import SOURCE_FEATURE_LIST_NAMESPACE, FeatureCrudService
 from app.features.features.exceptions import InvalidFeatureSourceException
-from app.models.feature_model import Feature
+from app.models.features.feature_model import Feature
 from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
 
 _FK_BY_SOURCE = {
@@ -61,8 +61,8 @@ class FakeFeatureRepository(FakeRepository):
 def no_redis(monkeypatch):
     """Stop feature cache invalidation from touching Redis."""
 
-    monkeypatch.setattr("app.features.features.crud.service.invalidate_feature_cache", AsyncMock())
-    monkeypatch.setattr("app.features.features.crud.service.invalidate", AsyncMock())
+    monkeypatch.setattr("app.features.features.cache.invalidate_feature_cache", AsyncMock())
+    monkeypatch.setattr("app.features.features.cache.invalidate", AsyncMock())
     monkeypatch.setattr("app.core.cache.invalidation.invalidate", AsyncMock())
 
 
@@ -123,8 +123,8 @@ class TestFeatureCrudCreate:
     async def test_create_invalidates_owning_catalog_list_and_parent_only(self, monkeypatch):
         invalidate_feature = AsyncMock()
         invalidate = AsyncMock()
-        monkeypatch.setattr("app.features.features.crud.service.invalidate_feature_cache", invalidate_feature)
-        monkeypatch.setattr("app.features.features.crud.service.invalidate", invalidate)
+        monkeypatch.setattr("app.features.features.cache.invalidate_feature_cache", invalidate_feature)
+        monkeypatch.setattr("app.features.features.cache.invalidate", invalidate)
         service, _ = make_crud_service()
 
         await service.create(FeatureCreate(name="Fey", source_type=FeatureSourceType.SUBRACE, subrace_id=1, level=1))
@@ -231,3 +231,58 @@ class TestFeatureCrudDelete:
 
         with pytest.raises(RecordNotFoundError):
             await service.delete(99)
+
+
+@pytest.mark.unit
+class TestFeatureStaticEffectsSerialization:
+    """Verify that FeatureResponse serializes static_groups (the discriminated effect groups)."""
+
+    def test_feature_response_serializes_static_groups(self):
+        feature = SimpleNamespace(
+            id=1,
+            name="Primal Champion",
+            source_type=FeatureSourceType.CLASS,
+            class_id=1,
+            subclass_id=None,
+            race_id=None,
+            subrace_id=None,
+            background_id=None,
+            level=20,
+            description="You embrace the primal power.",
+            static_groups=[
+                {
+                    "effect_type": "ability",
+                    "items": [
+                        SimpleNamespace(ability=AbilityScore.STR, amount=4, new_cap=None),
+                        SimpleNamespace(ability=AbilityScore.CON, amount=4, new_cap=None),
+                    ],
+                }
+            ],
+        )
+
+        response = FeatureResponse.model_validate(feature)
+
+        items = response.static_groups[0].items
+        assert len(items) == 2
+        assert items[0].ability == AbilityScore.STR
+        assert items[0].amount == 4
+        assert items[1].ability == AbilityScore.CON
+        assert items[1].amount == 4
+
+    def test_feature_response_empty_static_groups_by_default(self):
+        feature = SimpleNamespace(
+            id=2,
+            name="Extra Attack",
+            source_type=FeatureSourceType.CLASS,
+            class_id=1,
+            subclass_id=None,
+            race_id=None,
+            subrace_id=None,
+            background_id=None,
+            level=5,
+            description="",
+        )
+
+        response = FeatureResponse.model_validate(feature)
+
+        assert response.static_groups == []

@@ -13,18 +13,20 @@ Reference catalog for the `Skill` entity: each skill has a stable `key`, a displ
 
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
-| GET | `/skills` | open | Paginated list (`Page[SkillGetAllResponse]`, no description). Filters: `search` (name/key, case-insensitive), repeatable `ability`. |
+| GET | `/skills` | open | Paginated list (`Page[SkillGetAllResponse]`, no description). Filters: `search` (name, case-insensitive), repeatable `ability`. |
 | GET | `/skills/{skill_id}` | open | Full `SkillResponse`. |
-| POST | `/skills` | GM | 409 on duplicate `key`. |
-| PATCH | `/skills/{skill_id}` | GM | Partial update; duplicate `key` → 409. |
+| POST | `/skills` | GM | 409 on duplicate `name`. |
+| PATCH | `/skills/{skill_id}` | GM | Partial update; duplicate `name` → 409. |
 | DELETE | `/skills/{skill_id}` | Founder | Blocked with 409 while referenced anywhere (see below). |
 
 ## Service composition
 
 The skills catalog is a simple catalog: one capability only. `SkillCrudService` extends `CachedService[...]` over `SkillRepository` and adds no composed sub-services — its extra behavior lives in two places:
 
-- Uniqueness on `key` before create/update (`unique_fields=["name", "key"]`) → 409 via the data layer.
-- A delete guard (`is_in_use`) checking every table whose FK is `ON DELETE RESTRICT`: `race_skills`, `class_available_skills`, `background_skills` M2M rows and `character_skill_proficiencies`. The base `CachedService.delete` triggers it through `check_in_use_on_delete=True`.
+- Uniqueness on `name` before create/update (`unique_fields=["name"]`) → 409 via the data layer.
+- A delete guard (`is_in_use`) checking every table whose FK is `ON DELETE RESTRICT`: the `race_skills`, `class_available_skills` and `background_skills` M2M rows, plus the unified `character_proficiencies` rows of type `SKILL` (which replaced the old per-kind `character_skill_proficiencies` table). The base `CachedService.delete` triggers it through `check_in_use_on_delete=True`.
+
+> Note: the router's OpenAPI description still says search matches name **and key**, but the repository's actual `search_fields=["name"]` only — keep that in mind if you extend the search.
 
 Note the catalog does NOT manage granted-skill lists themselves — those are owned by the parent catalogs (races/classes/backgrounds) via the shared `app/features/shared/skills/` mixins.
 

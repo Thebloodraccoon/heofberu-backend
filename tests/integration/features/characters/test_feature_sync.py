@@ -221,7 +221,10 @@ class TestRaceBackgroundFeatAutoGrant:
         )
         character_class = await create_class(name="Fighter")
         character, _ = await create_api_character(
-            class_id=character_class.id, owner=player, background_id=background.id
+            class_id=character_class.id,
+            owner=player,
+            background_id=background.id,
+            suggestion_ids=[s.id for s in background.suggestions],
         )
 
         assert await get_feature_ids(client, character["id"], player_token) == {shelter.id}
@@ -256,7 +259,7 @@ class TestRaceBackgroundFeatAutoGrant:
         create_feature,
         create_api_character,
     ):
-        """Feats grant no features (a feat is de facto its own feature): the FEAT source type is gone."""
+        """Feats auto-grant no features: `sync_progression_features` covers only CLASS/SUBCLASS/RACE/SUBRACE/BACKGROUND, never FEAT. A granting a feat surfaces it via feats, not features."""
         character_class = await create_class(name="Fighter")
         feat = await create_feat(name="Alert")
         character, _ = await create_api_character(class_id=character_class.id, owner=gm)
@@ -292,7 +295,11 @@ class TestRaceBackgroundFeatAutoGrant:
             name="Action Surge", source_type="CLASS", class_id=character_class.id, level=2
         )
         character, _ = await create_api_character(
-            class_id=character_class.id, owner=player, race_id=race.id, background_id=background.id
+            class_id=character_class.id,
+            owner=player,
+            race_id=race.id,
+            background_id=background.id,
+            suggestion_ids=[s.id for s in background.suggestions],
         )
         assert await get_feature_ids(client, character["id"], player_token) == {darkvision.id, shelter.id}
 

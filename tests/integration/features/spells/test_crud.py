@@ -184,7 +184,7 @@ class TestSpellCrud:
     async def test_delete_spell_known_by_character_returns_409(
         self, client, founder_token, db_session, create_spell, create_class, create_user, create_character
     ):
-        from app.models.character_spell_model import CharacterSpell
+        from app.models.character.character_spell_model import CharacterSpell
 
         spell = await create_spell(name="Cure Wounds")
         player = await create_user()

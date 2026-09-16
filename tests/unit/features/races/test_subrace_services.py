@@ -15,12 +15,13 @@ from app.core.exceptions import RecordNotFoundError
 from app.features.features.crud.schemas import NestedFeatureCreate
 from app.features.races.ability_bonuses.schemas import AbilityBonusItem
 from app.features.subraces.ability_bonuses import service as subrace_ability_bonus_service
+from app.features.subraces.ability_bonuses.schemas import SubraceAbilityBonusesUpdate
 from app.features.subraces.ability_bonuses.service import SubraceAbilityBonusService
-from app.features.subraces.crud.schemas import SubraceAbilityBonusesUpdate, SubraceCreate, SubraceUpdate
+from app.features.subraces.crud.schemas import SubraceCreate, SubraceUpdate
 from app.features.subraces.crud.service import SubraceCrudService
 from app.features.subraces.features.service import SubraceFeatureService
-from app.models.subrace_association_models import SubraceAbilityBonus
-from app.models.subrace_model import Subrace
+from app.models.races.subrace_association_models import SubraceAbilityBonus
+from app.models.races.subrace_model import Subrace
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 

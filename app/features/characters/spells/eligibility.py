@@ -16,7 +16,7 @@ class CharacterSpellEligibilityChecker:
     Pure(ish) rule-checker for whether a character may learn a spell:
     the class/race restriction check and the spell-slot capacity check,
     extracted out of ``CharacterSpellService`` for testability. Takes the
-    two spell sub-repositories since capacity needs both slots and known
+    two spell sub-repositories since capacity needs slots and known
     spells, but has no access-control or persistence responsibility.
     """
 
@@ -67,7 +67,7 @@ class CharacterSpellEligibilityChecker:
         """
         Raise ``NoSpellSlotAvailableException`` if the character already
         knows as many spells of ``spell.level`` as slots of that level
-        (``total`` minus known-at-level; a missing slot entry = 0).
+        (a missing slot entry = 0).
         """
 
         slot = await self.slot_repository.get_spell_slot(character_id, spell.level)

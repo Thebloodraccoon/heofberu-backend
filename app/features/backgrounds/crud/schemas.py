@@ -1,8 +1,9 @@
 """Request/response schemas for the background CRUD endpoints."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 
-from app.features.backgrounds.skills.schemas import SkillResponse, _validate_unique_skill_ids
+from app.features.backgrounds.skills.schemas import SkillResponse
+from app.features.backgrounds.suggestions.schemas import SuggestionResponse
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.shared.items.schemas import ChoiceGroupResponse, SourceItemResponse
 
@@ -11,44 +12,28 @@ class BackgroundBase(BaseModel):
     """Base background fields shared by create, update, and response schemas."""
 
     name: str
-
-    personality_traits_suggestions: str = ""
-    ideals_suggestions: str = ""
-    bonds_suggestions: str = ""
-    flaws_suggestions: str = ""
-
     description: str = ""
+    starting_gold: int = 0
 
 
 class BackgroundCreate(BackgroundBase):
-    """Create payload for a background."""
+    """
+    Create payload for a background: base fields only.
 
-    granted_skills: list[int] | None = None
-
-    @field_validator("granted_skills")
-    def validate_unique_skill_ids(cls, value):
-        """Reject lists containing duplicate skill IDs."""
-
-        if value is None:
-            return value
-
-        return _validate_unique_skill_ids(value)
+    ``granted_skills``/``suggestions`` (like ``features``/``starting_items``)
+    are deliberately not part of create — they're attached afterwards through
+    their own PUT full-replace endpoints.
+    """
 
 
 class BackgroundUpdate(BaseModel):
     """
     All fields optional — only provided fields are updated (PATCH semantics).
-
-    Excludes ``granted_skills`` so that list keeps its own PUT full-replace
-    endpoint.
     """
 
     name: str | None = None
-    personality_traits_suggestions: str | None = None
-    ideals_suggestions: str | None = None
-    bonds_suggestions: str | None = None
-    flaws_suggestions: str | None = None
     description: str | None = None
+    starting_gold: int | None = None
 
 
 class BackgroundResponse(BackgroundBase):
@@ -57,7 +42,9 @@ class BackgroundResponse(BackgroundBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    suggestions: list[SuggestionResponse] = []
     granted_skills: list[SkillResponse] = []
+    features: list[NestedFeatureResponse] = []
     starting_items: list[SourceItemResponse] = []
     starting_choice_groups: list[ChoiceGroupResponse] = []
 

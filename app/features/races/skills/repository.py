@@ -2,8 +2,8 @@
 
 from app.features.races.crud.repository import RaceRepository
 from app.features.shared.skills.mixins import SkillLookupMixin
-from app.models.race_association_models import race_skills
-from app.models.race_model import Race
+from app.models.races.race_association_models import race_skills
+from app.models.races.race_model import Race
 from app.models.skill_model import Skill
 
 

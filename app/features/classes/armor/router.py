@@ -4,8 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.classes.armor.schemas import ArmorProficienciesUpdate
+from app.features.classes.crud.schemas import ClassResponse
 from app.features.classes.dependencies import ClassArmorDep
-from app.features.classes.schemas import ArmorProficienciesUpdate, ClassResponse
 from app.features.users.security import GmUserDep
 
 router = APIRouter()

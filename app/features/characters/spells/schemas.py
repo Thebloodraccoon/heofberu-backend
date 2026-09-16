@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict
 
+from app.features.characters.grants.schemas import CharacterGrantedSpellResponse
 from app.features.spells.crud.schemas import SpellResponse
 
 
@@ -37,8 +38,10 @@ class CharacterSpellResponse(BaseModel):
 class CharacterSpellsResponse(BaseModel):
     """
     Combined read model behind ``GET /characters/{id}/spells``: slot
-    totals plus known spells in one response.
+    totals, free-form known spells, and feature-granted spells in one
+    response.
     """
 
     spell_slots: list[SpellSlotResponse] = []
     spells: list[CharacterSpellResponse] = []
+    granted_spells: list[CharacterGrantedSpellResponse] = []

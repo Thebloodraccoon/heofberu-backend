@@ -13,13 +13,12 @@ class TestCharacterFeatures:
 
         add_response = await client.post(
             f"/characters/{character.id}/gm-panel/features",
-            json={"feature_id": feature.id, "notes": "Two attacks"},
+            json={"feature_id": feature.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert add_response.status_code == 201
         assert add_response.json()["feature_id"] == feature.id
-        assert add_response.json()["notes"] == "Two attacks"
 
         list_response = await client.get(
             f"/characters/{character.id}/features",
@@ -37,7 +36,7 @@ class TestCharacterFeatures:
 
         add_response = await client.post(
             f"/characters/{character.id}/gm-panel/features",
-            json={"feature_id": feature.id, "notes": "Once per short rest"},
+            json={"feature_id": feature.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -81,27 +80,6 @@ class TestCharacterFeatures:
 
         assert response.status_code == 409
 
-    async def test_update_feature_notes(self, client, gm, gm_token, create_class, create_character, create_feature):
-        character_class = await create_class(name="Fighter")
-        character = await create_character(owner_id=gm.id, class_id=character_class.id)
-        feature = await create_feature(name="Fighting Style", source_type="OTHER")
-        add_response = await client.post(
-            f"/characters/{character.id}/gm-panel/features",
-            json={"feature_id": feature.id, "notes": "Defense"},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        character_feature_id = add_response.json()["id"]
-
-        response = await client.patch(
-            f"/characters/{character.id}/gm-panel/features",
-            params={"feature_id": character_feature_id},
-            json={"notes": "Dueling"},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 200
-        assert response.json()["notes"] == "Dueling"
-
     async def test_remove_feature(self, client, gm, gm_token, create_class, create_character, create_feature):
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
@@ -141,3 +119,36 @@ class TestCharacterFeatures:
         )
 
         assert response.status_code == 403
+
+    async def test_feats_do_not_leak_into_features(
+        self, client, gm, gm_token, create_class, create_api_character, create_feature, create_feat
+    ):
+        """A GM-granted feat is surfaced via /feats, never duplicated under /features (which excludes FEAT)."""
+        character_class = await create_class(name="Fighter")
+        second_wind = await create_feature(
+            name="Second Wind", source_type="CLASS", class_id=character_class.id, level=1
+        )
+        character, _ = await create_api_character(class_id=character_class.id, owner=gm)
+
+        feat = await create_feat(name="Alert")
+        grant = await client.post(
+            f"/characters/{character['id']}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert grant.status_code == 201
+
+        features_response = await client.get(
+            f"/characters/{character['id']}/features",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert features_response.status_code == 200
+        feature_ids = [item["feature_id"] for item in features_response.json()]
+        assert feature_ids == [second_wind.id]
+
+        feats_response = await client.get(
+            f"/characters/{character['id']}/feats",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert feats_response.status_code == 200
+        assert [item["feat_id"] for item in feats_response.json()] == [feat.id]

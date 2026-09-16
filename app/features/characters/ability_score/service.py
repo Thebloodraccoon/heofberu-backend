@@ -13,7 +13,7 @@ from app.features.characters.ability_score.calculator import (
     StatContribution,
     resolve_ability_caps,
 )
-from app.features.characters.ability_score.repository import CharacterStatsRepository
+from app.features.characters.ability_score.repository import CharacterStatsRepository, _label_for_effect_row
 from app.models import Character, CharacterAbilityScore
 
 
@@ -39,11 +39,10 @@ class CharacterStatsService:
 
         race_bonuses = await self.repository.get_race_bonuses(character.race_id)
         subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
-        feat_increases = await self.repository.get_feat_increases(character.id)
         asi_increases = await self.repository.get_asi_increases(character.id)
         feature_increases = await self.repository.get_feature_increases(character.id)
         return self.calculator.compute(
-            character, race_bonuses, subrace_bonuses, feat_increases, asi_increases, feature_increases
+            character, race_bonuses, subrace_bonuses, asi_increases, feature_increases
         )
 
     async def compute_breakdown(self, character: Character) -> dict[AbilityScore, AbilityBreakdown]:
@@ -54,12 +53,11 @@ class CharacterStatsService:
 
         race_bonuses = await self.repository.get_race_bonuses(character.race_id)
         subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
-        feat_increases = await self.repository.get_feat_increases(character.id)
         asi_increases = await self.repository.get_asi_increases(character.id)
         feature_increases = await self.repository.get_feature_increases(character.id)
 
         totals = self.calculator.compute(
-            character, race_bonuses, subrace_bonuses, feat_increases, asi_increases, feature_increases
+            character, race_bonuses, subrace_bonuses, asi_increases, feature_increases
         )
 
         contributions: dict[AbilityScore, list[StatContribution]] = {ability: [] for ability in AbilityScore}
@@ -79,14 +77,6 @@ class CharacterStatsService:
             contributions[bonus.ability].append(
                 StatContribution(source="subrace", label=subrace_name or "Subrace bonus", amount=bonus.bonus)
             )
-        for increase in feat_increases:
-            contributions[increase.ability].append(
-                StatContribution(
-                    source="feat",
-                    label=increase.feat.name if increase.feat is not None else "Feat",
-                    amount=increase.amount,
-                )
-            )
         for increase in asi_increases:
             choice = increase.choice
             if choice is not None and choice.class_level is not None:
@@ -99,7 +89,7 @@ class CharacterStatsService:
             contributions[increase.ability].append(
                 StatContribution(
                     source="feature",
-                    label=increase.feature.name if increase.feature is not None else "Feature",
+                    label=_label_for_effect_row(increase),
                     amount=increase.amount,
                 )
             )
@@ -115,9 +105,9 @@ class CharacterStatsService:
 
     async def resolve_ability_caps(self, character: Character) -> dict[AbilityScore, int]:
         """
-        Resolve each ability's maximum score for ``character``: the
-        standard 20 raised by any granted feature effect carrying a
-        ``new_cap``. Computed fresh from the current feature grants.
+        Resolve each ability's maximum score for ``character``: the standard
+        20 raised by any granted feature effect carrying a ``new_cap``.
+        Computed fresh from the current feature grants.
         """
 
         feature_increases = await self.repository.get_feature_increases(character.id)

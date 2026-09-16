@@ -2,31 +2,26 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.character_model import Character
-from app.models.class_model import Class
+from app.models.character.character_model import Character
 
 
 class CharacterRepository(BaseRepository[Character]):
     """
-    Repository for the ``Character`` model: inherits the full base CRUD,
-    eager-loads the relationships ``CharacterResponse`` serializes, and
-    pins ``search`` to ``name`` only.
+    Repository for the ``Character`` model: inherits the full base CRUD
+    and pins ``search`` to ``name`` only. Sub-domain collections
+    (proficiencies, spells, conditions, feats/features, items) are no
+    longer eager-loaded here — each is served by its own sub-domain
+    endpoint with its own repository.
     """
 
     def __init__(self, db: AsyncSession):
-        """Configure the repository's default load options and search fields."""
+        """Configure the repository's search fields."""
 
         super().__init__(
             Character,
             db,
-            default_load_options=[
-                selectinload(Character.skill_proficiencies),
-                selectinload(Character.character_class).selectinload(Class.saving_throws),
-                selectinload(Character.conditions),
-            ],
             search_fields=["name"],
         )
 

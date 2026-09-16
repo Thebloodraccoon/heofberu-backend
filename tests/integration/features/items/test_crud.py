@@ -3,7 +3,7 @@
 import pytest
 
 from app.constants import FeatureSourceType
-from app.models.source_item_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
+from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 
 
 @pytest.mark.integration

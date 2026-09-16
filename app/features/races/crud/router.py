@@ -6,8 +6,8 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.constants import RaceSize
 from app.core.base.service import Page
+from app.features.races.crud.schemas import RaceCreate, RaceGetAllResponse, RaceResponse, RaceUpdate
 from app.features.races.dependencies import RaceCrudDep
-from app.features.races.schemas import RaceCreate, RaceGetAllResponse, RaceResponse, RaceUpdate
 from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
@@ -54,7 +54,6 @@ async def get_race(race_id: int, race_service: RaceCrudDep):
     summary="Create a race",
     responses={
         409: {"description": "A race with this name already exists."},
-        400: {"description": "One or more `granted_skills` IDs don't correspond to an existing skill."},
     },
 )
 async def create_race(
@@ -63,21 +62,16 @@ async def create_race(
         Body(
             openapi_examples={
                 "minimal": {
-                    "summary": "Minimal — base fields only",
-                    "value": {
-                        "name": "Elf",
-                        "size": "MEDIUM",
-                        "speed": 30,
-                    },
+                    "summary": "Minimal — name only",
+                    "value": {"name": "Elf"},
                 },
-                "with_bonuses_and_skills": {
-                    "summary": "With ability bonuses and granted skills",
+                "with_base_fields": {
+                    "summary": "With size, speed, and description",
                     "value": {
                         "name": "Elf",
                         "size": "MEDIUM",
                         "speed": 30,
-                        "ability_bonuses": [{"ability": "DEX", "bonus": 2}],
-                        "granted_skills": [3, 7],
+                        "description": "Graceful and long-lived, with keen senses.",
                     },
                 },
             },
@@ -86,7 +80,14 @@ async def create_race(
     race_service: RaceCrudDep,
     _: GmUserDep,
 ):
-    """Create a new race. **GM only.**"""
+    """
+    Create a new race. **GM only.**
+
+    Base fields only — `ability_bonuses`, `granted_skills`, and `features`
+    are all attached afterwards through their own endpoints:
+    `PUT /races/{race_id}/ability-bonuses`, `PUT /races/{race_id}/skills`,
+    and `POST /features` (with `source_type=RACE`).
+    """
 
     return await race_service.create_race(data)
 

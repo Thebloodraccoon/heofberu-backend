@@ -5,13 +5,13 @@ character's effective ability scores (and the per-ability cap).
 
 import pytest
 
-from app.models.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
+from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 
 
-async def set_feature_effects(client, gm_token, feature_id, increases):
+async def set_feature_effects(client, gm_token, feature_id, ability_effects):
     response = await client.put(
-        f"/features/{feature_id}/ability-increases",
-        json={"ability_increases": increases},
+        f"/features/{feature_id}/effects",
+        json={"ability_effects": ability_effects},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
     assert response.status_code == 200, response.text
@@ -237,8 +237,8 @@ class TestPerAbilityCap:
         feature = await create_feature(name="Over 9000", source_type="OTHER")
 
         response = await client.put(
-            f"/features/{feature.id}/ability-increases",
-            json={"ability_increases": [{"ability": "STR", "amount": 4, "new_cap": 31}]},
+            f"/features/{feature.id}/effects",
+            json={"ability_effects": [{"ability": "STR", "amount": 4, "new_cap": 31}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -248,8 +248,8 @@ class TestPerAbilityCap:
         feature = await create_feature(name="Under Twenty", source_type="OTHER")
 
         response = await client.put(
-            f"/features/{feature.id}/ability-increases",
-            json={"ability_increases": [{"ability": "STR", "amount": 1, "new_cap": 19}]},
+            f"/features/{feature.id}/effects",
+            json={"ability_effects": [{"ability": "STR", "amount": 1, "new_cap": 19}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -322,11 +322,20 @@ class TestPerAbilityCap:
 
         feat = await create_feat(name="Mighty")
         asi_response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 2}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 2}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        feat_asi_id = asi_response.json()["ability_score_increases"][0]["id"]
+        feat_asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
 
         granted = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
@@ -345,11 +354,20 @@ class TestPerAbilityCap:
         # Feat with an ASI choice (+1 STR).
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        feat_asi_id = asi_response.json()["ability_score_increases"][0]["id"]
+        feat_asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
         grant_response = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
             json={"feat_id": feat.id, "ability_score_increase_id": feat_asi_id},

@@ -17,9 +17,13 @@ import pytest
 
 from app.constants import (
     AbilityScore,
+    ArmorProficiency,
     DiceType,
     FeatureSourceType,
+    ProficiencySourceType,
+    ProficiencyType,
     UserRole,
+    WeaponProficiency,
 )
 from app.features.characters.ability_score.calculator import DerivedStats
 from app.features.characters.crud import service as crud_service_module
@@ -36,8 +40,9 @@ from app.features.characters.schemas import CharacterCreate, CharacterUpdate
 from app.features.classes.exceptions import ClassNotFoundException
 from app.features.races.exceptions import RaceNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models import Character, CharacterSkillProficiency
-from app.models.character_item_model import CharacterItem
+from app.models import Character
+from app.models.character.character_item_model import CharacterItem
+from app.models.character.character_proficiency_model import CharacterProficiency
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 
@@ -68,9 +73,24 @@ def make_class(**overrides):
             SimpleNamespace(ability=AbilityScore.STR),
             SimpleNamespace(ability=AbilityScore.CON),
         ],
+        "armor_proficiencies": [
+            SimpleNamespace(armor_type=ArmorProficiency.LIGHT),
+            SimpleNamespace(armor_type=ArmorProficiency.MEDIUM),
+        ],
+        "weapon_proficiencies": [
+            SimpleNamespace(weapon_category=WeaponProficiency.SIMPLE),
+            SimpleNamespace(weapon_category=WeaponProficiency.MARTIAL),
+        ],
     }
     fields.update(overrides)
     return SimpleNamespace(**fields)
+
+
+def make_background_suggestions():
+    return [
+        SimpleNamespace(id=100 + i, suggestion_type=suggestion_type, text=f"{suggestion_type} text")
+        for i, suggestion_type in enumerate(("PERSONALITY_TRAIT", "IDEAL", "BOND", "FLAW"))
+    ]
 
 
 def make_background():
@@ -78,15 +98,14 @@ def make_background():
         id=3,
         granted_skills=[SimpleNamespace(id=2)],
         description="",
-        personality_traits_suggestions="",
-        ideals_suggestions="",
-        bonds_suggestions="",
-        flaws_suggestions="",
+        suggestions=make_background_suggestions(),
     )
 
 
-def make_race():
-    return SimpleNamespace(id=5, granted_skills=[SimpleNamespace(id=3)])
+def make_race(**overrides):
+    fields = {"id": 5, "granted_skills": [SimpleNamespace(id=3)], "speed": 30}
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
 
 
 def make_create_payload(**overrides):
@@ -95,6 +114,7 @@ def make_create_payload(**overrides):
         "class_id": 1,
         "race_id": 5,
         "background_id": 3,
+        "suggestion_ids": [100, 101, 102, 103],
         "skill_ids": [1],
         "strength": 14,
         "dexterity": 10,
@@ -167,6 +187,13 @@ class FakeCharacterRepository(FakeRepository):
         self.last_create_payload = dict(payload)
         row = await super().create(payload, commit=commit)
         row.character_class = self.character_class_on_create
+        # _to_response reads these feature-engine-materialized collections;
+        # the fake row is a bare SimpleNamespace, so default them to empty
+        # like a freshly-created (never-granted-anything) character has.
+        row.saving_throw_proficiencies = []
+        row.armor_proficiencies = []
+        row.weapon_proficiencies = []
+        row.granted_spells = []
         return row
 
     async def update(self, db_obj, update_data, *, refresh=False):
@@ -349,6 +376,7 @@ def make_service(
 
         async def fake_sync(db_arg, character):
             events.append("sync_features")
+            return []
 
         async def fake_invalidate(character_id):
             events.append("invalidate")
@@ -573,10 +601,42 @@ class TestCreateCharacterHappyPath:
         assert character.current_hp == 12
         assert character.max_hp == 12
 
-        proficiency_rows = [row for row in db.added if isinstance(row, CharacterSkillProficiency)]
+        proficiency_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL
+        ]
         assert sorted(row.skill_id for row in proficiency_rows) == [1, 2, 3]
         assert all(row.is_expertise is False for row in proficiency_rows)
         assert all(row.character_id == 1 for row in proficiency_rows)
+
+        saving_throw_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SAVING_THROW
+        ]
+        assert sorted(row.ability for row in saving_throw_rows) == sorted([AbilityScore.STR, AbilityScore.CON])
+        assert all(row.source_type == ProficiencySourceType.CLASS for row in saving_throw_rows)
+
+        armor_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.ARMOR
+        ]
+        assert sorted(row.armor_type for row in armor_rows) == sorted([ArmorProficiency.LIGHT, ArmorProficiency.MEDIUM])
+        assert all(row.source_type == ProficiencySourceType.CLASS for row in armor_rows)
+        assert all(row.character_id == 1 for row in armor_rows)
+
+        weapon_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.WEAPON
+        ]
+        assert sorted(row.weapon_category for row in weapon_rows) == sorted(
+            [WeaponProficiency.SIMPLE, WeaponProficiency.MARTIAL]
+        )
+        assert all(row.source_type == ProficiencySourceType.CLASS for row in weapon_rows)
+        assert all(row.character_id == 1 for row in weapon_rows)
 
         item_rows = [row for row in db.added if isinstance(row, CharacterItem)]
         assert sorted((row.item_id, row.quantity) for row in item_rows) == [(10, 3), (11, 1)]
@@ -591,15 +651,49 @@ class TestCreateCharacterHappyPath:
         assert service.asi_repository.calls == []
 
         assert db.commits == 1
-        assert db.flushes == 4
+        assert db.flushes == 6
         assert result.id == 1
         assert result.level == 1
         assert result.temp_hp == 0
         assert result.current_hp == 12
         assert result.max_hp == 12
-        assert [st.ability for st in result.saving_throw_proficiencies] == [AbilityScore.STR, AbilityScore.CON]
         assert result.hit_dice == "D10"
         assert result.speed == 30
+
+    async def test_speed_is_seeded_from_the_race(self, monkeypatch):
+        service, db = make_service(monkeypatch, [], race=make_race(speed=35))
+        user = make_user()
+
+        result = await service.create_character(make_create_payload(), user)
+
+        character = service.repository.created[0]
+        assert character.speed == 35
+        assert result.speed == 35
+
+    async def test_speed_falls_back_to_default_without_a_race(self, monkeypatch):
+        service, db = make_service(monkeypatch, [])
+        user = make_user()
+
+        result = await service.create_character(make_create_payload(race_id=None), user)
+
+        character = service.repository.created[0]
+        assert character.speed == 30
+        assert result.speed == 30
+
+    async def test_class_with_no_armor_or_weapon_proficiencies_writes_no_rows(self, monkeypatch):
+        klass = make_class(armor_proficiencies=[], weapon_proficiencies=[])
+        service, db = make_service(monkeypatch, [], character_class=klass)
+        user = make_user()
+
+        await service.create_character(make_create_payload(), user)
+
+        armor_or_weapon_rows = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency)
+            and row.proficiency_type in (ProficiencyType.ARMOR, ProficiencyType.WEAPON)
+        ]
+        assert armor_or_weapon_rows == []
 
     async def test_creation_grants_chosen_item_options_merged_with_guaranteed(self, monkeypatch):
         events = []
@@ -675,58 +769,6 @@ class TestCreateCharacterReferenceValidation:
 
         with pytest.raises(BackgroundNotFoundException):
             await service.create_character(make_create_payload(), make_user())
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-class TestToResponseSavingThrows:
-    async def test_saving_throws_derived_from_the_class_not_stored(self, monkeypatch):
-        service, _ = make_service(None, [])
-        character = SimpleNamespace(
-            id=1,
-            owner_id=7,
-            name="Grog",
-            class_id=1,
-            subclass_id=None,
-            race_id=5,
-            subrace_id=None,
-            background_id=3,
-            armor_class=10,
-            shield=0,
-            notes="",
-            personality_traits="",
-            ideals="",
-            bonds="",
-            flaws="",
-            money_gold=0,
-            money_silver=0,
-            money_copper=0,
-            level=1,
-            current_hp=12,
-            max_hp=12,
-            temp_hp=0,
-            character_class=make_class(saving_throws=[SimpleNamespace(ability=AbilityScore.WIS)]),
-        )
-        cache_row = SimpleNamespace(
-            strength_total=14,
-            dexterity_total=10,
-            constitution_total=12,
-            intelligence_total=10,
-            wisdom_total=11,
-            charisma_total=10,
-        )
-
-        result = await service._to_response(
-            character,
-            cache_row=cache_row,
-            derived=DerivedStats(hit_dice="D8", speed=25),
-        )
-
-        assert [st.ability for st in result.saving_throw_proficiencies] == [AbilityScore.WIS]
-        assert not hasattr(character, "saving_throw_proficiencies")
-        assert result.hit_dice == "D8"
-        assert result.speed == 25
-        assert result.ability_scores.wisdom_total == 11
 
 
 @pytest.mark.unit

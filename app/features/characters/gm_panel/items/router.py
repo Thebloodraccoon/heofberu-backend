@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.gm_panel.dependencies import GmPanelItemsDep
 from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
-from app.features.characters.schemas import CharacterItemResponse
+from app.features.characters.items.schemas import CharacterItemResponse
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
@@ -28,13 +28,13 @@ async def add_character_item(
         CharacterItemAdd,
         Body(
             openapi_examples={
-                "equipped": {
-                    "summary": "Add and equip a longsword",
-                    "value": {"item_id": 4, "quantity": 1, "is_equipped": True},
+                "weapon": {
+                    "summary": "Add a longsword",
+                    "value": {"item_id": 4, "quantity": 1},
                 },
                 "consumable-stack": {
-                    "summary": "Add a stack of ten healing potions with a note",
-                    "value": {"item_id": 17, "quantity": 10, "notes": "Bought in Harrowdale."},
+                    "summary": "Add a stack of ten healing potions",
+                    "value": {"item_id": 17, "quantity": 10},
                 },
             }
         ),
@@ -43,8 +43,9 @@ async def add_character_item(
     current_user: GmUserDep,
 ):
     """
-    Add one item stack to a character's inventory (each POST creates its
-    own stack row). **GM only.**
+    Add an item to a character's inventory. If the character already has a
+    stack of this item, the quantity is merged into it; otherwise a new
+    stack is created. **GM only.**
     """
 
     return await item_service.add_item(character_id, data, current_user)
@@ -68,10 +69,6 @@ async def update_character_item(
         CharacterItemUpdate,
         Body(
             openapi_examples={
-                "equip-and-attune": {
-                    "summary": "Equip and attune the item",
-                    "value": {"is_equipped": True, "is_attuned": True},
-                },
                 "quantity": {
                     "summary": "Spend five arrows from the stack",
                     "value": {"quantity": 15},
@@ -83,8 +80,8 @@ async def update_character_item(
     current_user: GmUserDep,
 ):
     """
-    Change an item stack's quantity, equip/attunement state, or notes;
-    the referenced item is immutable. **GM only.**
+    Change an item stack's quantity; the referenced item is immutable.
+    **GM only.**
     """
 
     return await item_service.update_item(character_id, item_id, data, current_user)

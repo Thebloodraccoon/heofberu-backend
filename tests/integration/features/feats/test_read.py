@@ -22,7 +22,12 @@ class TestFeatOpenRead:
         response = await client.get(f"/feats/{feat.id}")
 
         assert response.status_code == 200
-        assert response.json()["name"] == "Alert"
+        body = response.json()
+        assert body["name"] == "Alert"
+        assert body["choice_groups"] == []
+        assert body["static_groups"] == []
+        assert body["has_static_effects"] is False
+        assert body["has_choices"] is False
 
     async def test_get_feat_404(self, client):
         assert (await client.get("/feats/999999")).status_code == 404

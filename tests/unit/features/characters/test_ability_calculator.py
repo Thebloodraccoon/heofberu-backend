@@ -9,10 +9,9 @@ from app.features.characters.ability_score.calculator import (
     CharacterAbilityScoreCalculator,
     resolve_ability_caps,
 )
-from app.models.character_model import Character
-from app.models.feat_model import FeatAbilityScoreIncrease
-from app.models.race_association_models import RaceAbilityBonus
-from app.models.subrace_association_models import SubraceAbilityBonus
+from app.models.character.character_model import Character
+from app.models.races.race_association_models import RaceAbilityBonus
+from app.models.races.subrace_association_models import SubraceAbilityBonus
 
 
 def make_character(**overrides) -> Character:
@@ -39,16 +38,12 @@ def make_subrace_bonus(ability: AbilityScore, bonus: int, subrace_id: int = 7) -
     return SubraceAbilityBonus(subrace_id=subrace_id, ability=ability, bonus=bonus)
 
 
-def make_feat_increase(ability: AbilityScore, amount: int = 1) -> FeatAbilityScoreIncrease:
-    return FeatAbilityScoreIncrease(feat_id=1, ability=ability, amount=amount)
-
-
 @pytest.mark.unit
 class TestCharacterAbilityScoreCalculator:
     def test_no_bonuses_returns_base_scores(self):
         character = make_character()
 
-        totals = CharacterAbilityScoreCalculator().compute(character, [], [], [])
+        totals = CharacterAbilityScoreCalculator().compute(character, [], [])
 
         assert totals == {
             "strength_total": 14,
@@ -60,7 +55,7 @@ class TestCharacterAbilityScoreCalculator:
         }
 
     def test_result_has_only_the_six_total_keys(self):
-        totals = CharacterAbilityScoreCalculator().compute(make_character(), [], [], [])
+        totals = CharacterAbilityScoreCalculator().compute(make_character(), [], [])
 
         assert set(totals) == {
             "strength_total",
@@ -75,7 +70,7 @@ class TestCharacterAbilityScoreCalculator:
         character = make_character()
         race_bonuses = [make_race_bonus(AbilityScore.DEX, 2)]
 
-        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, [], [])
+        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, [])
 
         assert totals["dexterity_total"] == 12
         assert totals["strength_total"] == 14
@@ -84,7 +79,7 @@ class TestCharacterAbilityScoreCalculator:
         character = make_character()
         race_bonuses = [make_race_bonus(AbilityScore.DEX, 2), make_race_bonus(AbilityScore.CON, 1)]
 
-        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, [], [])
+        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, [])
 
         assert totals["dexterity_total"] == 12
         assert totals["constitution_total"] == 13
@@ -93,7 +88,7 @@ class TestCharacterAbilityScoreCalculator:
         character = make_character()
         subrace_bonuses = [make_subrace_bonus(AbilityScore.INT, 1)]
 
-        totals = CharacterAbilityScoreCalculator().compute(character, [], subrace_bonuses, [])
+        totals = CharacterAbilityScoreCalculator().compute(character, [], subrace_bonuses)
 
         assert totals["intelligence_total"] == 9
         assert totals["strength_total"] == 14
@@ -103,7 +98,7 @@ class TestCharacterAbilityScoreCalculator:
         race_bonuses = [make_race_bonus(AbilityScore.DEX, 2)]
         subrace_bonuses = [make_subrace_bonus(AbilityScore.DEX, 1)]
 
-        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses, [])
+        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses)
 
         assert totals["dexterity_total"] == 13
 
@@ -113,7 +108,7 @@ class TestCharacterAbilityScoreCalculator:
         race_bonuses = [make_race_bonus(AbilityScore.DEX, 2)]
         subrace_bonuses = [make_subrace_bonus(AbilityScore.DEX, 1)]
 
-        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses, [])
+        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses)
 
         assert totals["dexterity_total"] == 13  # 10 + 2 + 1, NOT 10 + 1
 
@@ -123,38 +118,10 @@ class TestCharacterAbilityScoreCalculator:
         race_bonuses = [make_race_bonus(AbilityScore.STR, 2)]
         subrace_bonuses = [make_subrace_bonus(AbilityScore.DEX, 1)]
 
-        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses, [])
+        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses)
 
         assert totals["strength_total"] == 12
         assert totals["dexterity_total"] == 11
-
-    def test_feat_increase_applied(self):
-        character = make_character()
-        feat_increases = [make_feat_increase(AbilityScore.STR)]
-
-        totals = CharacterAbilityScoreCalculator().compute(character, [], [], feat_increases)
-
-        assert totals["strength_total"] == 15
-
-    def test_race_subrace_and_feat_bonuses_stack(self):
-        character = make_character()
-        race_bonuses = [make_race_bonus(AbilityScore.DEX, 2)]
-        subrace_bonuses = [make_subrace_bonus(AbilityScore.CON, 1)]
-        feat_increases = [make_feat_increase(AbilityScore.STR), make_feat_increase(AbilityScore.CON)]
-
-        totals = CharacterAbilityScoreCalculator().compute(character, race_bonuses, subrace_bonuses, feat_increases)
-
-        assert totals["strength_total"] == 15
-        assert totals["dexterity_total"] == 12
-        assert totals["constitution_total"] == 14
-
-    def test_multiple_increases_on_same_ability_stack(self):
-        character = make_character(strength=10)
-        feat_increases = [make_feat_increase(AbilityScore.STR), make_feat_increase(AbilityScore.STR)]
-
-        totals = CharacterAbilityScoreCalculator().compute(character, [], [], feat_increases)
-
-        assert totals["strength_total"] == 12
 
 
 def make_feature_increase(ability: AbilityScore, amount: int, new_cap: int | None = None):
@@ -167,20 +134,19 @@ def make_asi_log_increase(ability: AbilityScore, amount: int):
 
 @pytest.mark.unit
 class TestFeatureEffectAndAsiLogCounting:
-    def test_all_five_sources_stack_into_one_total(self):
-        """Race + subrace + feat ASI + counted log + feature effect all apply to one total."""
+    def test_all_four_sources_stack_into_one_total(self):
+        """Race + subrace + counted log + feature effect all apply to one total."""
         character = make_character(strength=10)
         race_bonuses = [make_race_bonus(AbilityScore.STR, 1)]
         subrace_bonuses = [make_subrace_bonus(AbilityScore.STR, 1)]
-        feat_increases = [make_feat_increase(AbilityScore.STR, amount=1)]
         asi_log = [make_asi_log_increase(AbilityScore.STR, 2)]
         feature_effects = [make_feature_increase(AbilityScore.STR, amount=4)]
 
         totals = CharacterAbilityScoreCalculator().compute(
-            character, race_bonuses, subrace_bonuses, feat_increases, asi_log, feature_effects
+            character, race_bonuses, subrace_bonuses, asi_log, feature_effects
         )
 
-        assert totals["strength_total"] == 19
+        assert totals["strength_total"] == 18
 
     def test_negative_feature_effect_lowers_total_but_floors_at_one(self):
         character = make_character(charisma=3)
@@ -189,13 +155,13 @@ class TestFeatureEffectAndAsiLogCounting:
             make_feature_increase(AbilityScore.INT, amount=-20),
         ]
 
-        totals = CharacterAbilityScoreCalculator().compute(character, [], [], [], [], feature_effects)
+        totals = CharacterAbilityScoreCalculator().compute(character, [], [], [], feature_effects)
 
         assert totals["charisma_total"] == 1
         assert totals["intelligence_total"] == 1
 
     def test_normal_totals_are_not_affected_by_the_floor(self):
-        totals = CharacterAbilityScoreCalculator().compute(make_character(), [], [], [])
+        totals = CharacterAbilityScoreCalculator().compute(make_character(), [], [])
 
         assert totals == {
             "strength_total": 14,

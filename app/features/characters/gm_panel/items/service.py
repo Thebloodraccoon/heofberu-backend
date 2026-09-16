@@ -7,18 +7,18 @@ from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.exceptions import CharacterItemNotFoundException
 from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.items.repository import CharacterItemRepository
-from app.features.characters.schemas import CharacterItemResponse
+from app.features.characters.items.schemas import CharacterItemResponse
 from app.features.items.crud.repository import ItemRepository
 from app.features.items.exceptions import ItemNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_item_model import CharacterItem
+from app.models.character.character_item_model import CharacterItem
 
 
 class GmPanelItemService(CharacterSubDomainService):
     """
-    Manage the items a character owns (``character_items``), each an
-    independent stack of an item. All writes are GM-only; the inventory
-    listing is served by character CRUD.
+    Manage the items a character owns (``character_items``), one stack row
+    per distinct item. All writes are GM-only; the inventory listing is
+    served by character CRUD.
     """
 
     def __init__(self, db: AsyncSession):
@@ -31,21 +31,35 @@ class GmPanelItemService(CharacterSubDomainService):
     async def add_item(
         self, character_id: int, data: CharacterItemAdd, current_user: UserResponse
     ) -> CharacterItemResponse:
-        """Add one item stack to a character's inventory. GM-only."""
+        """
+        Add an item to a character's inventory. GM-only.
+
+        If the character already has a stack of this item, the added
+        quantity is merged into that stack (the earliest one, if somehow more
+        than one exists) instead of creating a duplicate stack row; otherwise
+        a new stack is created.
+        """
 
         await self.get_character_for_user(character_id, current_user)
 
         if not await self.item_repository.exists_by_id(data.item_id):
             raise ItemNotFoundException(item_id=data.item_id)
 
-        stack = await self.character_item_repository.add_character_item(
-            character_id,
-            item_id=data.item_id,
-            quantity=data.quantity,
-            is_equipped=data.is_equipped,
-            is_attuned=data.is_attuned,
-            notes=data.notes,
+        existing_stack = await self.character_item_repository.get_character_item_by_item_id(
+            character_id, data.item_id
         )
+
+        if existing_stack is not None:
+            stack = await self.character_item_repository.update_character_item(
+                existing_stack, {"quantity": existing_stack.quantity + data.quantity}
+            )
+        else:
+            stack = await self.character_item_repository.add_character_item(
+                character_id,
+                item_id=data.item_id,
+                quantity=data.quantity,
+            )
+
         await invalidate_character_cache(character_id)
 
         return CharacterItemResponse.model_validate(stack)
@@ -53,7 +67,7 @@ class GmPanelItemService(CharacterSubDomainService):
     async def update_item(
         self, character_id: int, character_item_id: int, data: CharacterItemUpdate, current_user: UserResponse
     ) -> CharacterItemResponse:
-        """Change a stack's quantity/equip/attunement/notes. GM-only. PATCH semantics."""
+        """Change a stack's quantity. GM-only. PATCH semantics."""
 
         await self.get_character_for_user(character_id, current_user)
 

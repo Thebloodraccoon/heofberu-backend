@@ -5,14 +5,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
-from app.models.character_item_model import CharacterItem
+from app.models.character.character_item_model import CharacterItem
 
 
 class CharacterItemRepository(BaseRepository[CharacterItem]):
     """
     Repository for the items owned by a character (``character_items``).
-    Each row is an independent stack, so the same item may be owned
-    several times. Every read eager-loads the referenced ``Item``.
+    Each row is its own stack — the model allows a character to own several
+    stacks of the same item, though ``GmPanelItemService.add_item`` now
+    merges a new add into an existing stack rather than creating another.
+    Every read eager-loads the referenced ``Item``.
     """
 
     def __init__(self, db: AsyncSession):
@@ -20,7 +22,8 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
 
         super().__init__(CharacterItem, db)
 
-    def _stack_with_item(self, statement):
+    @staticmethod
+    def _stack_with_item(statement):
         """Return the query with the ``Item`` eager-loaded."""
 
         return statement.options(selectinload(CharacterItem.item))
@@ -46,24 +49,36 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         )
         return result.scalar_one_or_none()
 
+    async def get_character_item_by_item_id(self, character_id: int, item_id: int) -> CharacterItem | None:
+        """
+        Fetch the character's existing stack of a given catalog item, if any.
+
+        A character may still end up with more than one stack of the same
+        item (this returns the earliest by id); ``add_character_item`` uses
+        this to merge a new add into that stack instead of creating another.
+        """
+
+        result = await self.db.execute(
+            self._stack_with_item(
+                select(CharacterItem)
+                .where(CharacterItem.character_id == character_id, CharacterItem.item_id == item_id)
+                .order_by(CharacterItem.id)
+            )
+        )
+        return result.scalars().first()
+
     async def add_character_item(
         self,
         character_id: int,
         item_id: int,
         quantity: int,
-        is_equipped: bool,
-        is_attuned: bool,
-        notes: str,
     ) -> CharacterItem:
-        """Add an item stack to a character."""
+        """Add a new item stack to a character (see ``GmPanelItemService.add_item`` for the merge-into-existing-stack check)."""
 
         stack = CharacterItem(
             character_id=character_id,
             item_id=item_id,
             quantity=quantity,
-            is_equipped=is_equipped,
-            is_attuned=is_attuned,
-            notes=notes,
         )
 
         self.db.add(stack)

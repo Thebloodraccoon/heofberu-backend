@@ -15,15 +15,13 @@ class TestCharacterItems:
 
         add_response = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "quantity": 2, "is_equipped": True, "notes": "Primary"},
+            json={"item_id": item.id, "quantity": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert add_response.status_code == 201
         assert add_response.json()["item_id"] == item.id
         assert add_response.json()["quantity"] == 2
-        assert add_response.json()["is_equipped"] is True
-        assert add_response.json()["notes"] == "Primary"
 
         list_response = await client.get(
             f"/characters/{character.id}/items",
@@ -60,14 +58,12 @@ class TestCharacterItems:
         response = await client.patch(
             f"/characters/{character.id}/gm-panel/items",
             params={"item_id": character_item_id},
-            json={"quantity": 3, "is_attuned": True},
+            json={"quantity": 3},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
         assert response.json()["quantity"] == 3
-        assert response.json()["is_attuned"] is True
-        assert response.json()["is_equipped"] is False
 
     async def test_remove_item(
         self, client, gm_token, player, player_token, create_class, create_character, create_item
@@ -96,7 +92,7 @@ class TestCharacterItems:
             )
         ).json() == []
 
-    async def test_same_item_can_be_added_as_multiple_stacks(
+    async def test_adding_same_item_again_merges_into_existing_stack(
         self, client, gm_token, player, player_token, create_class, create_character, create_item
     ):
         character_class = await create_class(name="Fighter")
@@ -105,22 +101,26 @@ class TestCharacterItems:
 
         first = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "is_equipped": True},
+            json={"item_id": item.id, "quantity": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         second = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "is_equipped": False},
+            json={"item_id": item.id, "quantity": 3},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert first.status_code == 201
         assert second.status_code == 201
+        assert second.json()["id"] == first.json()["id"]
+        assert second.json()["quantity"] == 5
+
         list_response = await client.get(
             f"/characters/{character.id}/items",
             headers={"Authorization": f"Bearer {player_token}"},
         )
-        assert len(list_response.json()) == 2
+        assert len(list_response.json()) == 1
+        assert list_response.json()[0]["quantity"] == 5
 
     async def test_player_cannot_manage_inventory_even_own_character(
         self, client, player, player_token, create_class, create_character, create_item
@@ -148,7 +148,7 @@ class TestCharacterItems:
 
         add_response = await client.post(
             f"/characters/{character.id}/gm-panel/items",
-            json={"item_id": item.id, "quantity": 2, "is_equipped": True},
+            json={"item_id": item.id, "quantity": 2},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert add_response.status_code == 201
@@ -163,7 +163,6 @@ class TestCharacterItems:
         assert len(entries) == 1
         assert entries[0]["item_id"] == item.id
         assert entries[0]["quantity"] == 2
-        assert entries[0]["is_equipped"] is True
 
     async def test_gm_can_list_any_characters_items(
         self, client, gm_token, player, create_class, create_character, create_item

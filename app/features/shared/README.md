@@ -17,7 +17,7 @@ Two subpackages, each holding ONLY the pieces other catalogs build on:
 > `NestedFeatureCreate` / `NestedFeatureResponse`, `FeatureUpdate`, and the
 > consistency helpers `_REQUIRED_FK_BY_SOURCE_TYPE` / `_validate_source_fk_consistency`)
 > now lives in the `features` catalog under `crud/`. See `app/features/features/README.md`
-> and the Source-Owned Features section of `.opencode/rules/architecture.md`.
+> and the Source-Owned Features section of `.rules/architecture.md`.
 
 ## Who composes them
 

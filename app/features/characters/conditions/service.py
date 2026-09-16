@@ -17,7 +17,7 @@ from app.features.characters.conditions.schemas import (
     CharacterConditionUpdate,
 )
 from app.features.users.schemas import UserResponse
-from app.models.character_condition_model import CharacterCondition
+from app.models.character.character_condition_model import CharacterCondition
 
 
 class CharacterConditionService(CharacterSubDomainService):

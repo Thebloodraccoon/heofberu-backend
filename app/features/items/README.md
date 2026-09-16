@@ -26,7 +26,7 @@ Simple catalog: one capability. `ItemCrudService` extends `CachedService[...]` o
 
 - Uniqueness on `name` before create/update (`unique_fields=["name"]`) → 409.
 - `create_item` is the only custom write (uniqueness check + explicit `invalidate_item_cache()`); reads and delete are inherited unchanged from `CachedService`.
-- Delete guard (`check_in_use_on_delete=True` → `ItemRepository.is_in_use`) blocks removal while any `character_items` row (inventory) or `source_items` row (class/background starting equipment) references the item — both FKs are `ON DELETE RESTRICT`.
+- Delete guard (`check_in_use_on_delete=True` → `ItemRepository.is_in_use`) blocks removal while any `character_items` row (inventory), `source_items` row (class/background starting equipment) or `source_item_choice_options` row (an item offered inside a starting-equipment choice group) references the item — all FKs are `ON DELETE RESTRICT`.
 - `SOURCE_ITEM_FK_BY_SOURCE_TYPE` at the repository maps CLASS/BACKGROUND source types to their `source_items` FK column; OTHER/feat-style sources have none.
 
 ## Cache

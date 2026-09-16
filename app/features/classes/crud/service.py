@@ -7,19 +7,17 @@ from app.core.cache import use_cache
 from app.features.classes.armor.service import ClassArmorService
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES, invalidate_class_cache
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.features.service import ClassFeatureService
-from app.features.classes.schemas import (
+from app.features.classes.crud.schemas import (
     ClassCreate,
-    ClassFullResponse,
     ClassGetAllResponse,
     ClassResponse,
     ClassUpdate,
 )
-from app.features.classes.skills.service import ClassSkillService
+from app.features.classes.features.service import ClassFeatureService
 from app.features.classes.throws.service import ClassThrowsService
 from app.features.classes.weapons.service import ClassWeaponService
 from app.features.subclasses.crud.service import SubclassCrudService
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 
 
 class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassResponse, ClassGetAllResponse]):
@@ -27,10 +25,11 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
     Class catalog CRUD built on :class:`CachedService`.
 
     Capability services are composed in ``__init__``: ``get_by_id`` reads
-    CLASS-source ``features`` and a brief subclass reference;
-    ``create_class`` seeds throws/proficiencies/skills in the same
-    ``_atomic()`` transaction; subclass CRUD and subclass-feature
-    endpoints delegate to ``self.subclasses``.
+    CLASS-source ``features`` and a brief subclass reference; ``_throws``/
+    ``_armor``/``_weapons`` back ``update_class``'s full-replace PATCH
+    fields; subclass CRUD and subclass-feature endpoints delegate to
+    ``self.subclasses``. ``create_class`` writes base fields only — skills
+    and proficiency lists are not seeded at create, see below.
     """
 
     repository: ClassRepository
@@ -47,7 +46,6 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
             get_all_schema=ClassGetAllResponse,
         )
         self._features = ClassFeatureService(db)
-        self._skills = ClassSkillService(db)
         self._throws = ClassThrowsService(db)
         self._armor = ClassArmorService(db)
         self._weapons = ClassWeaponService(db)
@@ -55,40 +53,15 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
 
     async def create_class(self, class_data: ClassCreate) -> ClassResponse:
         """
-        Create a class with its scalar fields and simple child rows, atomically.
+        Create a class (base fields only).
 
-        Features, subclasses, spell slots, and starting items are NOT
-        created here — attach them through their dedicated endpoints.
+        ``saving_throws``, ``armor_proficiencies``, ``weapon_proficiencies``,
+        ``available_skills``, features, subclasses, spell slots, and
+        starting items are not seeded here — each is attached afterwards
+        through its own dedicated endpoint.
         """
 
-        skills = await self._skills.resolve_skills(class_data.available_skills)
-
-        payload = class_data.model_dump(
-            exclude={
-                "saving_throws",
-                "armor_proficiencies",
-                "weapon_proficiencies",
-                "available_skills",
-            }
-        )
-
-        async with self._atomic():
-            item = await self.repository.create(payload, commit=False)
-
-            if class_data.saving_throws:
-                await self._throws.set_saving_throws_for_class(item, class_data.saving_throws, commit=False)
-
-            if class_data.armor_proficiencies:
-                await self._armor.set_armor_proficiencies_for_class(item, class_data.armor_proficiencies, commit=False)
-
-            if class_data.weapon_proficiencies:
-                await self._weapons.set_weapon_proficiencies_for_class(
-                    item, class_data.weapon_proficiencies, commit=False
-                )
-
-            if skills:
-                await self._skills.set_skills_for_class(item, skills, commit=False)
-
+        item = await self.repository.create(class_data.model_dump())
         await invalidate_class_cache()
         response = await self._get_response(item.id)
 
@@ -128,7 +101,7 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
         return response
 
     @use_cache()
-    async def get_by_id(self, item_id: int) -> ClassFullResponse:
+    async def get_by_id(self, item_id: int) -> ClassResponse:
         """
         Return everything about a class in one payload: base fields,
         child rows, CLASS-source ``features``, and a brief reference to
@@ -143,7 +116,7 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
         class_features = await self._features.list_features(item_id)
         subclasses = await self.subclasses.list_for_class(item_id)
 
-        return ClassFullResponse.model_validate(
+        return ClassResponse.model_validate(
             {
                 **ClassResponse.model_validate(character_class).model_dump(),
                 "features": class_features,

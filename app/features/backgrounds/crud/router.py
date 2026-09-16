@@ -7,7 +7,6 @@ from fastapi import APIRouter, Body, Query, status
 from app.core.base.service import Page
 from app.features.backgrounds.crud.schemas import (
     BackgroundCreate,
-    BackgroundFullResponse,
     BackgroundGetAllResponse,
     BackgroundResponse,
     BackgroundUpdate,
@@ -43,7 +42,7 @@ async def get_backgrounds(
 
 @router.get(
     "/{background_id:int}",
-    response_model=BackgroundFullResponse,
+    response_model=BackgroundResponse,
     summary="Get a background by ID",
     responses={
         404: {"description": "Background with id not found."},
@@ -66,7 +65,6 @@ async def get_background(background_id: int, background_service: BackgroundCrudD
     summary="Create a background",
     responses={
         409: {"description": "A background with this name already exists."},
-        400: {"description": "One or more `granted_skills` IDs don't correspond to an existing skill."},
     },
 )
 async def create_background(
@@ -75,19 +73,15 @@ async def create_background(
         Body(
             openapi_examples={
                 "minimal": {
-                    "summary": "Minimal — base fields only",
+                    "summary": "Minimal — name only",
                     "value": {"name": "Acolyte"},
                 },
-                "with_skills": {
-                    "summary": "With granted skills",
+                "with_description": {
+                    "summary": "With description and starting gold",
                     "value": {
                         "name": "Acolyte",
-                        "personality_traits_suggestions": "I idolize a particular hero of my faith.\nI can find common ground between the fiercest enemies.",
-                        "ideals_suggestions": "Tradition. The ancient traditions of worship and sacrifice must be preserved.",
-                        "bonds_suggestions": "I would die to recover an ancient relic of my faith.",
-                        "flaws_suggestions": "I judge others harshly, and myself even more severely.",
                         "description": "You have spent your life in the service of a temple.",
-                        "granted_skills": [4, 9],
+                        "starting_gold": 15,
                     },
                 },
             },
@@ -99,8 +93,8 @@ async def create_background(
     """
     Create a new background. **GM only.**
 
-    `granted_skills` is optional and saved with the background in a single
-    transaction. Does not accept `features` or `starting_items`.
+    Base fields only — `granted_skills`, `suggestions`, `features`, and
+    `starting_items` are all attached afterwards through their own endpoints.
     """
 
     return await background_service.create_background(data)
@@ -138,7 +132,8 @@ async def update_background(
     Partially update a background's base fields. **GM only.**
 
     Only fields included in the request body are changed; use
-    `PUT /backgrounds/{background_id}/skills` for granted skills.
+    `PUT /backgrounds/{background_id}/skills` for granted skills and
+    `PUT /backgrounds/{background_id}/suggestions` for suggestions.
     """
 
     return await background_service.update(background_id, data)

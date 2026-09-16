@@ -5,15 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
+from app.features.subraces.ability_bonuses.schemas import SubraceAbilityBonusesUpdate
 from app.features.subraces.cache import invalidate_subrace_cache
 from app.features.subraces.crud.repository import SubraceRepository
-from app.features.subraces.crud.schemas import (
-    SubraceAbilityBonusesUpdate,
-    SubraceCreate,
-    SubraceResponse,
-    SubraceUpdate,
-)
-from app.models.subrace_model import Subrace
+from app.features.subraces.crud.schemas import SubraceCreate, SubraceResponse, SubraceUpdate
+from app.models.races.subrace_model import Subrace
 
 
 class SubraceAbilityBonusService(

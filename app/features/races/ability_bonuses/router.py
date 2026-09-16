@@ -4,8 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.races.ability_bonuses.schemas import AbilityBonusesUpdate
+from app.features.races.crud.schemas import RaceResponse
 from app.features.races.dependencies import RaceAbilityBonusesDep
-from app.features.races.schemas import AbilityBonusesUpdate, RaceResponse
 from app.features.users.security import GmUserDep
 
 router = APIRouter()

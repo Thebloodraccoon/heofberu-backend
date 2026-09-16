@@ -13,13 +13,12 @@ from app.features.subraces.ability_bonuses.service import SubraceAbilityBonusSer
 from app.features.subraces.cache import SUBRACE_CACHE_NAMESPACES, invalidate_subrace_cache
 from app.features.subraces.crud.repository import SubraceRepository
 from app.features.subraces.crud.schemas import (
-    SubraceBriefResponse,
     SubraceCreate,
-    SubraceFullResponse,
+    SubraceGetAllResponse,
     SubraceResponse,
     SubraceUpdate,
 )
-from app.models.subrace_model import Subrace
+from app.models.races.subrace_model import Subrace
 
 
 class SubraceCrudService(
@@ -42,22 +41,22 @@ class SubraceCrudService(
         self._ability_bonuses = SubraceAbilityBonusService(db)
         self._race_repository = RaceRepository(db)
 
-    async def list_for_race(self, race_id: int) -> list[SubraceBriefResponse]:
+    async def list_for_race(self, race_id: int) -> list[SubraceGetAllResponse]:
         """Return every subrace belonging to ``race_id``, without their ability bonuses."""
 
         await self._ensure_race_exists(race_id)
         return [
-            SubraceBriefResponse.model_validate(subrace) for subrace in await self.repository.list_for_race(race_id)
+            SubraceGetAllResponse.model_validate(subrace) for subrace in await self.repository.list_for_race(race_id)
         ]
 
     @use_cache(key_builder=lambda self, item_id: f"{cache_prefix()}:races:subrace:get_by_id:{item_id}")
-    async def get_by_id(self, item_id: int) -> SubraceFullResponse:
+    async def get_by_id(self, item_id: int) -> SubraceResponse:
         """Return a subrace with its ability bonuses and SUBRACE-source features (cached)."""
 
         subrace = await self._get_or_404(item_id)
         features = await self._features.list_for_source(FeatureSourceType.SUBRACE, item_id)
 
-        return SubraceFullResponse.model_validate(
+        return SubraceResponse.model_validate(
             {**SubraceResponse.model_validate(subrace).model_dump(), "features": features}
         )
 

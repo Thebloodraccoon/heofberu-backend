@@ -24,7 +24,7 @@ from app.features.spells.availability.schemas import (
 from app.features.spells.availability.service import SpellAvailabilityService
 from app.features.spells.crud.schemas import SpellCreate
 from app.features.spells.crud.service import SpellCrudService
-from app.models.spell_model import Spell
+from app.models.spells.spell_model import Spell
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 DIMENSIONS = (

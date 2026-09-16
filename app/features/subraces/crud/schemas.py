@@ -43,30 +43,26 @@ class SubraceUpdate(BaseModel):
     image_url: str | None = None
 
 
-class SubraceAbilityBonusesUpdate(BaseModel):
-    """Full replacement list of ability bonuses for a subrace."""
-
-    ability_bonuses: list[AbilityBonusItem]
-
-    @field_validator("ability_bonuses")
-    def validate_unique_abilities(cls, ability_bonuses):
-        """Reject bonus lists containing duplicate ability scores."""
-
-        return _validate_unique_abilities(ability_bonuses)
-
-
 class SubraceResponse(SubraceBase):
-    """Full subrace representation returned by the API."""
+    """
+    Full subrace representation returned by the API.
+
+    Doubles as both the create/update response and the
+    ``GET /subraces/{id}`` response: ``get_by_id`` folds the subrace's own
+    SUBRACE-source ``features`` into it, while ``create``/``update`` return
+    it with ``features`` at its empty default.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     race_id: int
     ability_bonuses: list[AbilityBonusResponse] = []
+    features: list[NestedFeatureResponse] = []
 
 
-class SubraceBriefResponse(BaseModel):
-    """Compact subrace row for embedding inside race responses."""
+class SubraceGetAllResponse(BaseModel):
+    """Lightweight subrace row returned by ``GET /subraces`` and embedded in ``RaceResponse.subraces``."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -74,9 +70,3 @@ class SubraceBriefResponse(BaseModel):
     race_id: int
     name: str
     image_url: str | None = None
-
-
-class SubraceFullResponse(SubraceResponse):
-    """A subrace plus its own SUBRACE-source features, for the single-subrace view."""
-
-    features: list[NestedFeatureResponse] = []

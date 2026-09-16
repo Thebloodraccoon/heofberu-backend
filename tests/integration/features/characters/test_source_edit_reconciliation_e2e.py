@@ -99,8 +99,8 @@ class TestSourceEditReconciliation:
         feature_id = add_response.json()["id"]
 
         increases_response = await client.put(
-            f"/features/{feature_id}/ability-increases",
-            json={"ability_increases": [{"ability": "INT", "amount": 2}]},
+            f"/features/{feature_id}/effects",
+            json={"ability_effects": [{"ability": "INT", "amount": 2}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert increases_response.status_code == 200, increases_response.text

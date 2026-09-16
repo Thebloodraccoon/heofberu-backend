@@ -1,93 +1,112 @@
-# Classes catalog (`app/features/classes/`)
+# Classes Catalog (`app/features/classes/`)
 
-Capability-oriented reference catalog for character classes, laid out as a set of
-per-capability mini-features instead of one God-Object service. The request/response
-schemas live together in `schemas.py` (class-level only — subclass schemas are in
-`../subclasses/crud/schemas.py`).
+Capability-oriented reference catalog for character classes, laid out as a set
+of per-capability mini-features instead of one God-Object service. There is no
+top-level `schemas.py` — each capability owns its own `schemas.py` (its
+Update/Response types, plus any private `_validate_unique_*` helper its
+validators need), mirroring `backgrounds/`. `crud/schemas.py` holds only the
+class-identity schemas (`ClassBase`/`Create`/`Update`/`Response`/`GetAllResponse`)
+and assembles `ClassResponse` by importing each capability's own Response type
+(`SavingThrowResponse` from `throws/schemas.py`, `ArmorProficiencyResponse`
+from `armor/schemas.py`, etc). Subclass schemas live in the separate
+`app/features/subclasses/` catalog — subclasses are NOT a subdomain of this
+package anymore.
 
 ## Layout
 
 | Path | Capability | Endpoints |
 | --- | --- | --- |
-| `crud/` | Class CRUD + composed full read | `GET/POST /classes`, `GET/PATCH/DELETE /classes/{class_id}` |
-| `features/` | CLASS-source feature list (read-only) | `GET /classes/features?class_id=...` |
-| `skills/` | Available-skills replacement | `PUT /classes/available-skills?class_id=...` |
-| `items/` | Starting-equipment list/replace | `GET/PUT /classes/items?class_id=...` |
-| `armor/` | Armor proficiencies replace | `PUT /classes/armor-proficiencies?class_id=...` |
-| `throws/` | Saving throws replace | `PUT /classes/saving-throws?class_id=...` |
-| `weapons/` | Weapon proficiencies replace | `PUT /classes/weapon-proficiencies?class_id=...` |
-| `progression/` | Spell-slot table + full 1–20 progression view | `PUT /classes/spell-slots`, `GET /classes/progression` |
-| `../subclasses/` | Nested subdomain (see below) | `/classes/subclasses/...` |
+| `crud/` | Class identity schemas + CRUD + composed full read | `GET/POST /classes`, `GET/PATCH/DELETE /classes/{class_id}` |
+| `features/` | CLASS-source feature list (read-only) | `GET /classes/{class_id}/features` |
+| `skills/` | Available-skills replacement | `PUT /classes/{class_id}/available-skills` |
+| `items/` | Starting-equipment list/replace + choice groups | `GET/PUT /classes/{class_id}/items`, `GET/PUT /classes/{class_id}/choice-groups` |
+| `armor/` | Armor proficiencies replace | `PUT /classes/{class_id}/armor-proficiencies` |
+| `throws/` | Saving throws replace | `PUT /classes/{class_id}/saving-throws` |
+| `weapons/` | Weapon proficiencies replace | `PUT /classes/{class_id}/weapon-proficiencies` |
+| `progression/` | Spell-slot table + full 1–20 progression view | `PUT /classes/{class_id}/spell-slots?class_level=`, `GET /classes/{class_id}/progression` |
+| `image/` | Class catalog image | `PUT/DELETE /classes/{class_id}/image` |
 
 Root files: `router.py` (assembles all sub-routers under the static `/classes`
 prefix), `dependencies.py` (one `Dep` alias per capability: `ClassCrudDep`,
-`ClassFeaturesDep`, ...), `cache.py` (`CLASS_CACHE_NAMESPACES` +
-`invalidate_class_cache()`), `exceptions.py`, `schemas.py`.
+`ClassFeaturesDep`, ..., `ClassImageDep`), `cache.py` (`CLASS_CACHE_NAMESPACES`
++ `invalidate_class_cache()`), `exceptions.py`. No root `schemas.py` — see above.
+
+## Endpoints
+
+| Method | Path | Access | Notes |
+| ------ | ---- | ------ | ----- |
+| GET | `/classes` | open | Paginated `Page[ClassGetAllResponse]` (id/name/hit_dice/image_url + embedded `subclasses`), ordered by name; `search` on name. |
+| GET | `/classes/{class_id}` | open | Full `ClassResponse` — base fields + saving throws/armor/weapon proficiencies + available skills + starting items + choice groups + spell-slot rows + CLASS-source `features` + brief `subclasses`; cached as one unit. |
+| POST | `/classes` | GM | Base fields only (`name`, `hit_dice`, `skill_choice_count`, `spellcasting_ability` required — `null` for non-casters, `description`, `image_url`); duplicate `name` → 409. |
+| PATCH | `/classes/{class_id}` | GM | Base fields + optional full-replace `saving_throws`/`armor_proficiencies`/`weapon_proficiencies` lists; duplicate `name` → 409. |
+| DELETE | `/classes/{class_id}` | Founder | Removes child rows; blocked with 409 while characters still reference the class. |
+| PUT | `/classes/{class_id}/available-skills` | GM | Full replace; duplicate/unknown ids → 400/422; duplicates rejected at schema layer. |
+| GET/PUT | `/classes/{class_id}/items` | open / GM | List / full-replace starting equipment (`{items: [{item_id, quantity}]}`); unknown ids → 400. |
+| GET/PUT | `/classes/{class_id}/choice-groups` | open / GM | List / full-replace starting-equipment choice-group tree (`{choice_groups: [{pick_count, sort_order, options: [{item_id, quantity}]}]}`). |
+| PUT | `/classes/{class_id}/armor-proficiencies` | GM | Full replace. |
+| PUT | `/classes/{class_id}/saving-throws` | GM | Full replace. |
+| PUT | `/classes/{class_id}/weapon-proficiencies` | GM | Full replace. |
+| PUT | `/classes/{class_id}/spell-slots?class_level=` | GM | Full replace of one level's slot rows. |
+| GET | `/classes/{class_id}/progression` | open | Derived 1–20 table (proficiency bonus, slots, class + subclass features per level). |
+| PUT | `/classes/{class_id}/image` | GM | Multipart upload/replace (JPEG/PNG/WebP/GIF, max 5 MB) → `{"image_url"}`. |
+| DELETE | `/classes/{class_id}/image` | GM | Clears `image_url` and removes the stored object. |
+
+All capability routers identify the owning class by a **path** parameter
+(`/{class_id}/...`), consistent with races/backgrounds.
 
 ## Conventions
 
-- **Composition over mixins.** `ClassCrudService` extends `CachedService` and composes
-  every capability service explicitly in `__init__` (no mixin MRO). `get_by_id`
-  returns `ClassFullResponse` — base fields, saving throws/proficiencies/available
-  skills/starting items/spell slots, CLASS-source `features`, plus a brief reference to
-  each subclass. `create_class` seeds only the simple child rows (saving throws,
-  armor/weapon proficiencies, available skills) inside one `_atomic()` transaction;
-  features, subclasses, starting items and spell slots are attached afterwards via
-  their dedicated endpoints.
-- **Shared engine.** The feature write endpoints (POST/PATCH/DELETE) have been removed
-  from per-catalog surfaces — features are managed centrally through the features
-  catalog. `ClassFeatureService` now provides read-only listing via `list_features`.
-  Starting items use `ClassItemsService(SourceItemManagerMixin)`, and available skills
-  use `ClassSkillService(SkillsManagerMixin)`.
-- **Cache.** Every write calls `cache.py:invalidate_class_cache()` after its commit; it
-  purges all of `CLASS_CACHE_NAMESPACES = ("classes", "class_features", "features",
-  "nested_items", "characters")` — `class_features` is the class's own feature-list
-  cache (also purged directly by the central `FeatureCrudService`), `features` the
-  central by-id feature cache, and `characters` because character payloads derive
-  saves/hit dice from the class live at response time.
-- **Query-style IDs.** All per-capability endpoints identify the owning class
-  by a required `class_id` query parameter; routers are bare `APIRouter()`s assembled by
-  the catalog `router.py`.
+- **Composition over mixins.** `ClassCrudService` extends `CachedService` and
+  composes the capability services `update_class`/`get_by_id` need explicitly
+  in `__init__` (no mixin MRO): `_throws`/`_armor`/`_weapons` back
+  `update_class`'s full-replace PATCH fields; `_features` + `self.subclasses`
+  (a `SubclassCrudService` from the separate subclasses catalog) back
+  `get_by_id`. `create_class` writes base fields only — saving throws,
+  armor/weapon proficiencies, available skills, features, subclasses, starting
+  items, choice groups, and spell slots are all attached afterwards via their
+  own dedicated endpoints (mirrors races/backgrounds).
+- **Shared engine.** Feature write endpoints (POST/PATCH/DELETE) live only on
+  the central `/features` catalog. `ClassFeatureService` is a read-only cached
+  listing. Starting items use `ClassItemsService(SourceItemManagerMixin)`
+  (delegating to the shared `NestedSourceItemService`, which also owns the
+  choice-group tree writes), and available skills use
+  `ClassSkillService(SkillsManagerMixin)`.
+- **Cache.** Every write calls `cache.py:invalidate_class_cache()` after its
+  commit; it purges all of `CLASS_CACHE_NAMESPACES = ("classes",
+  "class_features", "features", "nested_items", "characters")` — `class_features`
+  is the class's own feature-list cache (also purged directly by the central
+  `FeatureCrudService`), `features` the central by-id feature cache,
+  `nested_items` the shared starting-equipment listings, and `characters`
+  because character payloads derive saves/hit dice from the class live at
+  response time.
 
 ## Spell-slot progression (and the CANTRIP row)
 
 `progression/service.py` owns two things:
 
-1. **`PUT /classes/spell-slots?class_id=...&class_level=...`** — full replace of one
-   level's slot rows (`{slots: [{spell_level, slots}]}`); any `spell_level` omitted is
-   reset to 0. `class_level` must be within 1–20 (400 otherwise). Character slot totals
-   are derived ONLY from this table (`ClassSpellSlotProgression`) — they are applied on
-   character creation and re-applied on level-up, never client-writable.
-2. **`GET /classes/progression?class_id=...`** — the derived 1–20 table: per level the
-   proficiency bonus, `{spell_level: slots}`, CLASS-source features gained, and
-   SUBCLASS-source features gained (aggregated across subclasses).
+1. **`PUT /classes/{class_id}/spell-slots?class_level=...`** — full replace of
+   one level's slot rows (`{slots: [{spell_level, slots}]}`); any `spell_level`
+   omitted is reset to 0. `class_level` must be within 1–20 (400 otherwise).
+   Character slot totals are derived ONLY from this table
+   (`ClassSpellSlotProgression`) — they are applied on character creation and
+   re-applied on level-up, never client-writable.
+2. **`GET /classes/{class_id}/progression`** — the derived 1–20 table: per
+   level the proficiency bonus, `{spell_level: slots}`, CLASS-source features
+   gained, and SUBCLASS-source features gained (aggregated across the
+   subclasses catalog's rows).
 
-**CANTRIP is just another row:** a class's known-cantrip cap is a `"CANTRIP"` entry in
-the same spell-slot progression table (e.g. `PUT /classes/spell-slots?class_id=...&class_level=3`
-with `{"slots": [{"spell_level": "CANTRIP", "slots": 2}]}`). Without a CANTRIP row at a
-given class level, no character of that class can learn any cantrip at that level.
+**CANTRIP is just another row:** a class's known-cantrip cap is a `"CANTRIP"`
+entry in the same spell-slot progression table (e.g.
+`PUT /classes/{class_id}/spell-slots?class_level=3` with
+`{"slots": [{"spell_level": "CANTRIP", "slots": 2}]}`). Without a CANTRIP row
+at a given class level, no character of that class can learn any cantrip at
+that level.
 
-## Subclasses subdomain conventions (`../subclasses/`)
+## Subclasses
 
-Self-contained capability-oriented subpackage mounted under the static prefix
-`/classes/subclasses`:
-
-- `base.py` — `SubclassScopedMixin._get_or_404_for_class`: fetches the raw `Subclass`
-  and translates any miss/wrong-class into the parent-scoped `SubclassNotFoundException`
-  (404) from the catalog's `exceptions.py`; the subdomain has no `exceptions.py` of its own.
-- `crud/` — `SubclassCrudService.get_by_id` returns `SubclassFullResponse` (base fields
-  + SUBCLASS-source `features`).
-- `features/` — read-only feature listing for SUBCLASS-source features.
-- `cache.py` — `invalidate_subclass_cache()` purges
-  `("classes", "subclass_features", "features")`, since subclasses and
-  their features are embedded in cached class responses.
-- `dependencies.py` / `router.py` — `SubclassCrudDep` / `SubclassFeaturesDep`; the
-  aggregating router applies `/subclasses` once.
-- **URL convention:** every endpoint carries the owning class as the required `class_id`
-  query parameter; mutations additionally take `subclass_id` as a query parameter; only
-  the detail read keeps the child in the path (`GET /classes/subclasses/{subclass_id}?class_id=...`)
-  to avoid colliding with the listing.
-
-The parent's crud service composes the subdomain directly
-(`ClassCrudService.subclasses = SubclassCrudService(db)`) for full responses and
-create-time wiring.
+Subclasses are a **separate catalog** mounted at `/subclasses` with an optional
+`class_id` filter — see `app/features/subclasses/README.md`.
+`ClassResponse.subclasses` (and the listing's `ClassGetAllResponse.subclasses`)
+embed `SubclassGetAllResponse` rows, so class reads (and the shared `classes`
+cache namespace) are invalidated by every subclass write too
+(`SUBCLASS_CACHE_NAMESPACES` includes `"classes"`).

@@ -4,6 +4,11 @@ Shared enums and helper constants used across the application.
 Contains the canonical domain enumerations (roles, dice, spell and item
 metadata, conditions, ...) together with backward-compatible string lists
 and helpers that build raw SQL check constraints.
+
+This is the Feature/Feat engine revision: ``FeatureSourceType`` regains the
+``FEAT`` value (it was always reserved in the Postgres ENUM), a new
+``GrantSource`` enum models where a character's feature grant came from, and
+the plain string lists are kept in sync.
 """
 
 from enum import Enum
@@ -188,12 +193,15 @@ class ItemRarity(str, Enum):
 
 class FeatureSourceType(str, Enum):
     """
-    Origin of a feature: class, subclass, race, subrace, background, other.
+    Origin of a feature: class, subclass, race, subrace, background, feat, other.
 
-    FEAT was removed as a feature source — a feat is de facto its own
-    feature (the content lives in the feat's description), so features can
-    no longer be attached to feats. The value remains in the Postgres ENUM
-    type (Postgres cannot drop enum values); it is simply never written.
+    ``FEAT`` was briefly removed as a feature source (a feat used to be "de
+    facto its own feature" living in a parallel ``feats`` table). Under the
+    unified Feature/Feat engine it is a real source again: a row with
+    ``source_type=FEAT`` carries no source FK, instead holding the
+    feat-specific ``min_level`` / ``prerequisite_*`` columns. The value has
+    always remained in the Postgres ENUM type (Postgres cannot drop enum
+    values), so no DB enum surgery is needed.
     """
 
     CLASS = "CLASS"
@@ -201,7 +209,27 @@ class FeatureSourceType(str, Enum):
     RACE = "RACE"
     SUBRACE = "SUBRACE"
     BACKGROUND = "BACKGROUND"
+    FEAT = "FEAT"
     OTHER = "OTHER"
+
+
+class GrantSource(str, Enum):
+    """
+    Where a character's feature grant came from.
+
+    Replaces ``CharacterFeatSource`` and the old implicit
+    "``source_type`` in ``_AUTO_SOURCE_TYPES``" derivation with one explicit
+    axis on ``character_features``:
+
+    - ``AUTO`` — synchronized automatically from ownership of a
+      class/subclass/race/subrace/background (progression sync).
+    - ``GM`` — manual grant from the GM panel.
+    - ``ASI`` — taken instead of an Ability Score Improvement at level-up.
+    """
+
+    AUTO = "AUTO"
+    GM = "GM"
+    ASI = "ASI"
 
 
 class ArmorProficiency(str, Enum):
@@ -220,6 +248,89 @@ class WeaponProficiency(str, Enum):
     MARTIAL = "MARTIAL"
 
 
+class ProficiencyType(str, Enum):
+    """Which of a character's four proficiency kinds a row concerns — the discriminator on ``character_proficiencies``."""
+
+    SKILL = "SKILL"
+    SAVING_THROW = "SAVING_THROW"
+    ARMOR = "ARMOR"
+    WEAPON = "WEAPON"
+
+
+class ChoiceType(str, Enum):
+    """
+    What kind of effect a ``FeatureChoiceGroup``'s options carry — fixed at
+    the group, and enforced on every option in it: an option in a ``SKILL``
+    group may only populate ``skill_effects``, an ``ABILITY_SCORE`` group
+    only ``ability_effects``, and so on. One effect type per group, no mixed
+    bundles.
+    """
+
+    SKILL = "SKILL"
+    SPELL = "SPELL"
+    ABILITY_SCORE = "ABILITY_SCORE"
+    SAVING_THROW = "SAVING_THROW"
+    ARMOR = "ARMOR"
+    WEAPON = "WEAPON"
+
+
+class ProficiencySourceType(str, Enum):
+    """
+    How a ``character_proficiencies`` row came to exist — a second axis
+    alongside ``proficiency_type``.
+
+    - ``CLASS`` — auto-granted by the class (e.g. its fixed saving throws),
+      no choice involved. Distinct from ``CLASS_CHOICE``: this is for the
+      class's own non-choice grants, not yet routed through the feature
+      engine (``class_saving_throws`` isn't itself a Feature source).
+    - ``CLASS_CHOICE`` — the player's skill pick at character creation from
+      the class's ``available_skills``.
+    - ``RACE`` — auto-granted by the race's ``granted_skills`` (no choice).
+    - ``BACKGROUND`` — auto-granted by the background's granted skills.
+    - ``FEATURE`` — a fixed (non-choice) effect of a granted feature/feat.
+    - ``FEATURE_CHOICE`` — the player resolved a choice group inside a
+      granted feature/feat.
+    - ``GM`` — a manual GM-panel add/remove/expertise edit. At most one
+      ``GM`` row exists per (character, proficiency) — see
+      :class:`ProficiencyAction`.
+    """
+
+    CLASS = "CLASS"
+    CLASS_CHOICE = "CLASS_CHOICE"
+    RACE = "RACE"
+    BACKGROUND = "BACKGROUND"
+    FEATURE = "FEATURE"
+    FEATURE_CHOICE = "FEATURE_CHOICE"
+    GM = "GM"
+
+
+class ProficiencyAction(str, Enum):
+    """
+    What a ``character_proficiencies`` row does — only meaningful for
+    ``source_type=GM`` rows (every other source only ever grants). A GM row
+    is upserted in place, never appended, so exactly one reflects the GM's
+    latest decision for a given (character, proficiency).
+
+    - ``GRANT`` — the GM hands the character this proficiency outright,
+      independent of any other source.
+    - ``REVOKE`` — the GM vetoes this proficiency even though another
+      source (class/race/background/feature) would otherwise grant it;
+      wins over every other source when resolving current state.
+    """
+
+    GRANT = "GRANT"
+    REVOKE = "REVOKE"
+
+
+class ProficiencyAuditAction(str, Enum):
+    """What a GM did to a character's proficiency row, for ``character_proficiency_audit_log``."""
+
+    ADD = "ADD"
+    REMOVE = "REMOVE"
+    EXPERTISE_GRANTED = "EXPERTISE_GRANTED"
+    EXPERTISE_REVOKED = "EXPERTISE_REVOKED"
+
+
 class ASILevelChoice(str, Enum):
     """What a character chose at a class level that grants an Ability Score Improvement."""
 
@@ -228,7 +339,12 @@ class ASILevelChoice(str, Enum):
 
 
 class CharacterFeatSource(str, Enum):
-    """Where a character's feat grant came from: a GM panel grant or an ASI-level choice."""
+    """
+    Where a character's feat grant came from: a GM panel grant or an ASI-level choice.
+
+    Retained for the response shape (``CharacterFeatResponse.source_type``);
+    new code uses :class:`GrantSource`.
+    """
 
     GM = "GM"
     ORIGIN = "ORIGIN"
@@ -255,6 +371,15 @@ class ConditionType(str, Enum):
     EXHAUSTION = "EXHAUSTION"
 
 
+class BackgroundSuggestionType(str, Enum):
+    """Which personality-card field a ``background_suggestions`` row is a suggested entry for."""
+
+    PERSONALITY_TRAIT = "PERSONALITY_TRAIT"
+    IDEAL = "IDEAL"
+    BOND = "BOND"
+    FLAW = "FLAW"
+
+
 # Kept as plain lists for backward compatibility with existing CheckConstraints
 # and any code still importing the raw string lists.
 USER_ROLES = [role.value for role in UserRole]
@@ -269,6 +394,7 @@ HEALING_TARGETS = [target.value for target in HealingTarget]
 ITEM_TYPES = [item_type.value for item_type in ItemType]
 ITEM_RARITIES = [rarity.value for rarity in ItemRarity]
 FEATURE_SOURCE_TYPES = [source_type.value for source_type in FeatureSourceType]
+GRANT_SOURCES = [source.value for source in GrantSource]
 ASI_LEVEL_CHOICES = [choice.value for choice in ASILevelChoice]
 CHARACTER_FEAT_SOURCES = [source.value for source in CharacterFeatSource]
 CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
@@ -297,6 +423,15 @@ CHARACTER_MAX_LEVEL = 20
 # Word text. Enforced by both the backstory schema (422) and a DB check
 # constraint on ``character_backstories.content``.
 BACKSTORY_MAX_LENGTH = 12000
+
+# Minimum character level for a FEAT-source feature to be selectable. Mirror
+# of the old ``Feat.min_level`` (NULL = no level requirement).
+FEAT_MIN_LEVEL_MIN = 1
+FEAT_MIN_LEVEL_MAX = 20
+
+# ``new_cap`` validation range on a feature's ability-score effects.
+FEATURE_NEW_CAP_MIN = ABILITY_SCORE_CAP
+FEATURE_NEW_CAP_MAX = MAX_ABILITY_SCORE_CAP
 
 ON_DELETE_SET_NULL = "SET NULL"
 ON_DELETE_CASCADE = "CASCADE"

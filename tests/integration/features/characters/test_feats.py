@@ -72,12 +72,21 @@ class TestCharacterFeats:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert asi_response.status_code == 200
-        asi_id = asi_response.json()["ability_score_increases"][0]["id"]
+        asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
 
         grant_response = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
@@ -86,17 +95,30 @@ class TestCharacterFeats:
         )
 
         assert grant_response.status_code == 201
-        assert grant_response.json()["ability_score_increase_id"] == asi_id
+        choices = grant_response.json()["choices"]
+        assert len(choices) == 1
+        assert choices[0]["ability_effects"][0]["id"] == asi_id
 
-    async def test_grant_feat_with_asi_options_without_choice_returns_422(
+    async def test_grant_feat_with_asi_options_without_choice_leaves_it_pending(
         self, client, gm, gm_token, create_class, create_character, create_feat
     ):
+        """A GM grant doesn't have to pick the ASI up front — it lands with the choice group left pending."""
+
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feat = await create_feat(name="Resilient")
         await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -106,7 +128,8 @@ class TestCharacterFeats:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 201
+        assert response.json()["choices"] == []
 
     async def test_grant_feat_with_asi_writes_audit_row(
         self, client, gm, gm_token, create_class, create_character, create_feat
@@ -115,11 +138,20 @@ class TestCharacterFeats:
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
         feat = await create_feat(name="Resilient")
         asi_response = await client.put(
-            f"/feats/{feat.id}/ability-score-increases",
-            json={"ability_score_increases": [{"ability": "STR", "amount": 1}]},
+            f"/feats/{feat.id}/choice-groups",
+            json={
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Ability Score Increase",
+                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                    }
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        asi_id = asi_response.json()["ability_score_increases"][0]["id"]
+        asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
 
         await client.post(
             f"/characters/{character.id}/gm-panel/feats",

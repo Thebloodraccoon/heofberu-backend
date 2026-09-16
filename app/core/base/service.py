@@ -137,11 +137,13 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         lightweight listing: rows are fetched through the column-select path
         (``BaseRepository.get_brief``) using the schema's field names as
         columns, so heavy full records with eager-loaded relationships are
-        never materialized. If the schema contains relationship fields
-        (which the column-select path cannot load, e.g. a spell's
-        ``available_classes``), the listing falls back to the eager-loaded
-        ``repository.get_all`` (via the repository's ``default_load_options``)
-        instead. ``total`` always comes from ``repository.count``.
+        never materialized. If the schema contains fields that aren't plain
+        mapped columns (relationships, e.g. a spell's ``available_classes``,
+        or Python ``@property`` attributes like ``has_choices``), the
+        column-select path can't resolve them, so the listing falls back to
+        the eager-loaded ``repository.get_all`` (via the repository's
+        ``default_load_options``) instead. ``total`` always comes from
+        ``repository.count``.
 
         When ``get_all_schema`` is ``None`` (e.g. users/characters), full
         records are fetched and serialized to ``ResponseSchema``.
@@ -167,11 +169,11 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         model = self.repository.model
         mapper = inspect(model)
-        relationship_fields = [name for name in self.get_all_schema.model_fields if name in mapper.relationships]
+        non_column_fields = [name for name in self.get_all_schema.model_fields if name not in mapper.columns]
 
         order_by = getattr(model, self.get_all_order_by) if self.get_all_order_by else None
 
-        if not relationship_fields:
+        if not non_column_fields:
             columns = [getattr(model, field_name) for field_name in self.get_all_schema.model_fields]
             rows = await self.repository.get_brief(
                 *columns,

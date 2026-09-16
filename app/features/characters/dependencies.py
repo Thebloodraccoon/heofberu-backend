@@ -9,6 +9,11 @@ from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.backstory.service import CharacterBackstoryService
 from app.features.characters.conditions.service import CharacterConditionService
 from app.features.characters.crud.service import CharacterService
+from app.features.characters.feats.service import CharacterFeatService
+from app.features.characters.features.service import CharacterFeatureService
+from app.features.characters.grants.service import FeatureGrantService
+from app.features.characters.items.service import CharacterItemService
+from app.features.characters.proficiencies.service import CharacterProficiencyService
 from app.features.characters.progression.service import CharacterProgressionService
 from app.features.characters.spells.service import CharacterSpellService
 
@@ -65,3 +70,50 @@ def get_character_progression_service(db: DatabaseDep) -> CharacterProgressionSe
 
 
 CharacterProgressionServiceDep = Annotated[CharacterProgressionService, Depends(get_character_progression_service)]
+
+
+def get_feature_grant_service(db: DatabaseDep) -> FeatureGrantService:
+    """Get the feature grant service instance."""
+
+    return FeatureGrantService(db)
+
+
+FeatureGrantServiceDep = Annotated[FeatureGrantService, Depends(get_feature_grant_service)]
+
+
+def get_character_proficiency_service(db: DatabaseDep) -> CharacterProficiencyService:
+    """Get the character proficiency service instance."""
+
+    return CharacterProficiencyService(db)
+
+
+CharacterProficiencyServiceDep = Annotated[
+    CharacterProficiencyService, Depends(get_character_proficiency_service)
+]
+
+
+def get_character_item_service(db: DatabaseDep) -> CharacterItemService:
+    """Get the character item service instance."""
+
+    return CharacterItemService(db)
+
+
+CharacterItemServiceDep = Annotated[CharacterItemService, Depends(get_character_item_service)]
+
+
+def get_character_feat_service(db: DatabaseDep) -> CharacterFeatService:
+    """Get the character feat service instance."""
+
+    return CharacterFeatService(db)
+
+
+CharacterFeatServiceDep = Annotated[CharacterFeatService, Depends(get_character_feat_service)]
+
+
+def get_character_feature_service(db: DatabaseDep) -> CharacterFeatureService:
+    """Get the character feature service instance."""
+
+    return CharacterFeatureService(db)
+
+
+CharacterFeatureServiceDep = Annotated[CharacterFeatureService, Depends(get_character_feature_service)]

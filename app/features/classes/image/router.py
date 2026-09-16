@@ -30,17 +30,7 @@ async def upload_class_image(
     **GM only.**
     """
 
-    content = await image.read()
-    try:
-        url = await image_service.upload_image(
-            class_id,
-            content,
-            image.content_type or "",
-        )
-    finally:
-        await image.close()
-
-    return {"image_url": url}
+    return {"image_url": await image_service.upload(class_id, image)}
 
 
 @router.delete(

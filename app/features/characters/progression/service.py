@@ -3,7 +3,15 @@
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ABILITY_SCORE_CAP, ASI_LEVELS, ASILevelChoice, CharacterFeatSource, FeatureSourceType
+from app.constants import (
+    ABILITY_SCORE_CAP,
+    ASI_LEVELS,
+    ASILevelChoice,
+    FeatureSourceType,
+    GrantSource,
+    ProficiencySourceType,
+    ProficiencyType,
+)
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
@@ -17,7 +25,10 @@ from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
 )
+from app.features.characters.grants.schemas import ChoiceAnswerItem
+from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.level.repository import CharacterMaxLevelRepository
+from app.features.characters.proficiencies.writer import add_skill_proficiencies
 from app.features.characters.progression.exceptions import (
     AbilityScoreCapExceededException,
     BackgroundAlreadySetException,
@@ -38,6 +49,7 @@ from app.features.characters.progression.schemas import (
     CharacterASIChoiceResponse,
     CharacterRebuildRequest,
     FeatChoice,
+    LevelUpFeatureChoiceAnswer,
     LevelUpRequest,
     RebuildASIChoice,
     SubclassChange,
@@ -53,9 +65,10 @@ from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models import Class
-from app.models.character_association_models import CharacterSkillProficiency
-from app.models.character_item_model import CharacterItem
-from app.models.character_model import Character
+from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_item_model import CharacterItem
+from app.models.character.character_model import Character
+from app.models.character.character_proficiency_model import CharacterProficiency
 
 
 class CharacterProgressionService(CharacterSubDomainService):
@@ -71,8 +84,12 @@ class CharacterProgressionService(CharacterSubDomainService):
     source of the points (the base columns stay untouched) and the audit
     trail that makes a future level-down a plain row deletion. Source-owned
     feature grants are reconciled automatically against the class, subclass,
-    race/subrace, background, and feat grants; writes are transactional
-    (one commit via :meth:`_atomic`, rolled back on validation failure).
+    race/subrace, and background (their engine effect rows are materialized
+    by the sync); ASI-level feat choices grant through the same engine
+    (``grant_source=ASI`` on ``character_features`` — a feat is a Feature),
+    materializing whatever effects the feat carries. Writes are transactional
+    (one commit via ``_atomic``,
+    rolled back on validation failure).
     """
 
     def __init__(self, db: AsyncSession):
@@ -141,8 +158,8 @@ class CharacterProgressionService(CharacterSubDomainService):
         """
         Set a character's background — only while it has none. In one
         transaction it grants the background's features
-        (``sync_progression_features``), its skills (deduped against current
-        proficiencies), and its starting equipment (merged into stacks). A
+        (``sync_progression_features``), its skills as BACKGROUND-sourced
+        proficiency rows, and its starting equipment (merged into stacks). A
         background whose equipment is built on "pick N of M" choice groups
         is rejected up front (no late-choice surface). Re-choosing is only
         possible through :meth:`rebuild_character`.
@@ -185,13 +202,17 @@ class CharacterProgressionService(CharacterSubDomainService):
         class skill choices, then recompute everything that derives from
         them in one transaction:
 
-        - Skill proficiencies are wiped and rebuilt from scratch (the
-          validated new class choices plus the new background's/race's
-          granted skills) — there is no per-row "source" to reconcile
-          against, so expertise flags reset, same as a fresh character.
+        - Skill proficiencies are reconciled source-aware: only rows owned
+          by the feature engine (``source_character_feature_id`` set) are
+          wiped and rebuilt; legacy free-form rows (NULL source, GM-set)
+          are left untouched. The validated new class choices plus the new
+          background's/race's granted skills are re-added as free-form rows
+          during the transition (post-migration these come solely from the
+          engine materialization).
         - Source-owned features are reconciled to the new
           class/subclass/race/subrace/background via
-          ``sync_progression_features``.
+          ``sync_progression_features`` (which also materializes their
+          engine effect rows).
         - Every ASI level (see ``ASI_LEVELS``) at or below the character's
           current level is re-resolved from ``data.asi_choices`` (required,
           one per reached level): prior ASI-sourced feat grants and the
@@ -242,10 +263,10 @@ class CharacterProgressionService(CharacterSubDomainService):
             character.wisdom = data.wisdom
             character.charisma = data.charisma
 
-            # Features are reconciled BEFORE the ASI/HP math so fixed
-            # ability effects (e.g. +4 CON) from newly granted features
-            # are included in the effective CON modifier, mirroring
-            # character creation.
+            # Features are reconciled (and their engine effect rows
+            # materialized) BEFORE the ASI/HP math so fixed ability effects
+            # (e.g. +4 CON) from newly granted features are included in the
+            # effective CON modifier, mirroring character creation.
             await sync_progression_features(self.repository.db, character)
             await self.repository.db.flush()
 
@@ -257,7 +278,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             # against a build (class/ability scores) that no longer exists,
             # so they are cleared and re-applied fresh, in level order, so
             # each choice's ability-cap check sees its own predecessors.
-            await self.feat_grant_repository.remove_feats_by_source(character.id, CharacterFeatSource.ASI, commit=False)
+            await self.feat_grant_repository.remove_feats_by_source(character.id, GrantSource.ASI, commit=False)
             await self.asi_repository.clear_character_choices(character.id, commit=False)
             for asi_choice in sorted(data.asi_choices, key=lambda item: item.class_level):
                 if asi_choice.choice.type == ASILevelChoice.ASI:
@@ -332,20 +353,32 @@ class CharacterProgressionService(CharacterSubDomainService):
         race_skill_ids: list[int],
     ) -> None:
         """
-        Wipe the character's skill proficiencies and rebuild them from the
-        new choices/sources (merged and deduplicated, same as character
-        creation), all starting with ``is_expertise=False``.
+        Wipe ONLY the character's CLASS_CHOICE/RACE/BACKGROUND skill
+        proficiency rows and rebuild them from the new choices/sources,
+        each re-tagged with its actual source.
+
+        FEATURE/FEATURE_CHOICE rows (owned by the feature engine, reconciled
+        separately via ``sync_progression_features``) and GM rows (a durable
+        override) are left untouched.
         """
 
         await self.repository.db.execute(
-            delete(CharacterSkillProficiency).where(CharacterSkillProficiency.character_id == character.id)
+            delete(CharacterProficiency).where(
+                CharacterProficiency.character_id == character.id,
+                CharacterProficiency.proficiency_type == ProficiencyType.SKILL,
+                CharacterProficiency.source_type.in_(
+                    [
+                        ProficiencySourceType.CLASS_CHOICE,
+                        ProficiencySourceType.RACE,
+                        ProficiencySourceType.BACKGROUND,
+                    ]
+                ),
+            )
         )
 
-        merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
-        for skill_id in merged_skill_ids:
-            self.repository.db.add(
-                CharacterSkillProficiency(character_id=character.id, skill_id=skill_id, is_expertise=False)
-            )
+        add_skill_proficiencies(self.repository.db, character.id, chosen_skill_ids, ProficiencySourceType.CLASS_CHOICE)
+        add_skill_proficiencies(self.repository.db, character.id, background_skill_ids, ProficiencySourceType.BACKGROUND)
+        add_skill_proficiencies(self.repository.db, character.id, race_skill_ids, ProficiencySourceType.RACE)
 
         await self.repository.db.flush()
 
@@ -373,23 +406,11 @@ class CharacterProgressionService(CharacterSubDomainService):
         return level_1_hp + levels_above_one, level_1_hp + levels_above_one * max_gain
 
     async def _grant_background_skills(self, character: Character, granted_skills) -> None:
-        """Add the background's granted skills as proficiency rows, skipping skills the character already has."""
+        """Add the background's granted skills as BACKGROUND-sourced proficiency rows."""
 
-        existing_result = await self.repository.db.execute(
-            select(CharacterSkillProficiency.skill_id).where(CharacterSkillProficiency.character_id == character.id)
+        add_skill_proficiencies(
+            self.repository.db, character.id, [skill.id for skill in granted_skills], ProficiencySourceType.BACKGROUND
         )
-        existing_ids = {skill_id for (skill_id,) in existing_result.all()}
-
-        for skill in granted_skills:
-            if skill.id not in existing_ids:
-                self.repository.db.add(
-                    CharacterSkillProficiency(
-                        character_id=character.id,
-                        skill_id=skill.id,
-                        is_expertise=False,
-                    )
-                )
-
         await self.repository.db.flush()
 
     async def _grant_background_equipment(self, character: Character) -> None:
@@ -434,7 +455,14 @@ class CharacterProgressionService(CharacterSubDomainService):
         rejected. HP defaults to the class's standard average (half hit
         die + 1 + CON) unless ``hit_points_gained`` is given (bounded by
         the hit die + CON). Features unlocked by the new level are granted
-        and spell slots re-applied. Leveling up fully heals the character:
+        and their effect rows materialized; a chosen feat's own choice
+        groups (beyond its ASI pick) count too. Any of them still left with
+        an unanswered "pick N of M" choice group after applying
+        ``data.feature_choices`` aborts the whole level-up
+        (``GrantChoiceRequiredException`` — see
+        :meth:`_resolve_new_feature_choices`), so a level-up never leaves a
+        newly-unlocked proficiency/spell choice silently unmade. Spell
+        slots are re-applied. Leveling up fully heals the character:
         ``current_hp`` is set to the new ``max_hp`` and ``temp_hp`` clears.
         """
 
@@ -456,11 +484,12 @@ class CharacterProgressionService(CharacterSubDomainService):
         async with self._atomic():
             character.level = new_level
 
+            feat_grant: CharacterFeature | None = None
             if data.choice is not None:
                 if data.choice.type == ASILevelChoice.ASI:
                     await self._apply_asi(character, data.choice.increases, new_level)
                 else:
-                    await self._apply_feat(character, data.choice, new_level)
+                    feat_grant = await self._apply_feat(character, data.choice, new_level)
 
             hp_gain = await self._resolve_hp_gain(character, data.hit_points_gained)
             character.max_hp += hp_gain
@@ -469,12 +498,56 @@ class CharacterProgressionService(CharacterSubDomainService):
             character.current_hp = character.max_hp
             character.temp_hp = 0
 
-            # Grant any class/subclass features unlocked by the new level.
-            await sync_progression_features(self.repository.db, character)
+            # Grant any class/subclass features unlocked by the new level,
+            # plus the chosen feat's own grant (its non-ASI choice groups,
+            # if any, are enforced the same way).
+            new_grants = await sync_progression_features(self.repository.db, character)
+            if feat_grant is not None:
+                new_grants.append(feat_grant)
+            await self._resolve_new_feature_choices(character, new_grants, data.feature_choices)
             await self.character_service.reapply_spell_slot_progression(character, commit=False)
 
         await self.stats_service.refresh(character)
         await invalidate_character_cache(character_id)
+
+    async def _resolve_new_feature_choices(
+        self,
+        character: Character,
+        new_grants: list[CharacterFeature],
+        answers: list[LevelUpFeatureChoiceAnswer],
+    ) -> None:
+        """
+        Apply ``answers`` to the choice groups of features this level-up just
+        granted (including the chosen feat's own grant), then raise
+        ``GrantChoiceRequiredException`` if any of them still has an
+        unresolved group afterward — a level-up never silently leaves a
+        newly-unlocked "pick N of M" unmade, exactly like a missing ASI
+        ``choice`` is rejected rather than defaulted. Runs inside the
+        caller's ``_atomic()``; the actual check is shared with GM-panel
+        grants via ``FeatureGrantService.resolve_grant_choices``.
+        """
+
+        answers_by_feature: dict[int, list[LevelUpFeatureChoiceAnswer]] = {}
+        for answer in answers:
+            answers_by_feature.setdefault(answer.feature_id, []).append(answer)
+
+        grant_service = FeatureGrantService(self.repository.db)
+
+        for grant in new_grants:
+            feature_answers = answers_by_feature.get(grant.feature_id, [])
+            await grant_service.resolve_grant_choices(
+                character,
+                grant,
+                [
+                    ChoiceAnswerItem(
+                        choice_group_id=item.choice_group_id,
+                        choice_option_id=item.choice_option_id,
+                        skill_id=item.skill_id,
+                        spell_id=item.spell_id,
+                    )
+                    for item in feature_answers
+                ],
+            )
 
     async def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
         """Return the character's resolved ASI-level choices, for audit."""
@@ -543,11 +616,14 @@ class CharacterProgressionService(CharacterSubDomainService):
             commit=False,
         )
 
-    async def _apply_feat(self, character: Character, choice: FeatChoice, class_level: int) -> None:
+    async def _apply_feat(self, character: Character, choice: FeatChoice, class_level: int) -> CharacterFeature:
         """
         Apply a feat-as-ASI: validate the feat exists, isn't already
         known, has a valid ASI pick (if any) and the prerequisite is met,
-        then grant it (source ``ASI``) and record the choice.
+        then grant it (``grant_source=ASI``, materializing any effects it
+        carries), record the choice in the ASI-level audit log, and return
+        the grant so the caller can enforce any of its OTHER choice groups
+        (beyond the ASI pick) the same way a newly-unlocked feature's are.
         """
 
         feat = await self.feat_repository.get_by_id(choice.feat_id)
@@ -561,11 +637,11 @@ class CharacterProgressionService(CharacterSubDomainService):
         validate_ability_score_increase(feat, choice.ability_score_increase_id)
         await check_feat_prerequisite(character, feat, self.stats_service)
 
-        await self.feat_grant_repository.add_character_feat(
-            character.id,
+        grant = await self.feat_grant_repository.add_character_feat(
+            character,
             choice.feat_id,
             choice.ability_score_increase_id,
-            source_type=CharacterFeatSource.ASI,
+            source_type=GrantSource.ASI,
             commit=False,
         )
         await self.asi_repository.add(
@@ -576,6 +652,8 @@ class CharacterProgressionService(CharacterSubDomainService):
             ability_score_increase_id=choice.ability_score_increase_id,
             commit=False,
         )
+
+        return grant
 
     async def _resolve_hp_gain(self, character: Character, requested: int | None) -> int:
         """

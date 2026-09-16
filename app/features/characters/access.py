@@ -4,7 +4,7 @@ from app.constants import UserRole
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.exceptions import CharacterAccessDeniedException, CharacterNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models.character_model import Character
+from app.models.character.character_model import Character
 
 
 async def get_character_or_404(repository: CharacterRepository, character_id: int, *, light: bool = False) -> Character:

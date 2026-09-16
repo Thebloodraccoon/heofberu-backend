@@ -5,8 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.models import Class, Race, Spell, Subclass, Subrace
-from app.models.character_spell_model import CharacterSpell
-from app.models.spell_association_models import (
+from app.models.character.character_spell_model import CharacterSpell
+from app.models.spells.spell_association_models import (
     spell_classes,
     spell_races,
     spell_subclasses,

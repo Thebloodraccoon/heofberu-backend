@@ -7,9 +7,9 @@ import pytest
 
 from app.constants import ArmorProficiency, DiceType
 from app.core.exceptions import RecordNotFoundError
+from app.features.classes.armor.schemas import ArmorProficienciesUpdate
 from app.features.classes.armor.service import ClassArmorService
-from app.features.classes.schemas import ArmorProficienciesUpdate
-from app.models.class_model import Class
+from app.models.classes.class_model import Class
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 

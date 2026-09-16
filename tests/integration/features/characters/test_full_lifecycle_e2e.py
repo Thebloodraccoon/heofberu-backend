@@ -50,19 +50,36 @@ class TestFullCharacterLifecycle:
         gm_headers = {"Authorization": f"Bearer {gm_token}"}
         class_response = await client.post(
             "/classes",
-            json={
-                "name": "Battle Mage",
-                "hit_dice": "D10",
-                "spellcasting_ability": "INT",
-                "saving_throws": ["STR", "CON"],
-                "armor_proficiencies": ["LIGHT"],
-                "weapon_proficiencies": ["MARTIAL"],
-                "available_skills": [skill.id],
-            },
+            json={"name": "Battle Mage", "hit_dice": "D10", "spellcasting_ability": "INT"},
             headers=gm_headers,
         )
         assert class_response.status_code == 201, class_response.text
         battle_mage = class_response.json()
+
+        throws_response = await client.put(
+            f"/classes/{battle_mage['id']}/saving-throws",
+            json={"saving_throws": ["STR", "CON"]},
+            headers=gm_headers,
+        )
+        assert throws_response.status_code == 200, throws_response.text
+        armor_response = await client.put(
+            f"/classes/{battle_mage['id']}/armor-proficiencies",
+            json={"armor_proficiencies": ["LIGHT"]},
+            headers=gm_headers,
+        )
+        assert armor_response.status_code == 200, armor_response.text
+        weapons_response = await client.put(
+            f"/classes/{battle_mage['id']}/weapon-proficiencies",
+            json={"weapon_proficiencies": ["MARTIAL"]},
+            headers=gm_headers,
+        )
+        assert weapons_response.status_code == 200, weapons_response.text
+        skills_response = await client.put(
+            f"/classes/{battle_mage['id']}/available-skills",
+            json={"skill_ids": [skill.id]},
+            headers=gm_headers,
+        )
+        assert skills_response.status_code == 200, skills_response.text
 
         for class_level in (1, 8):
             slots_response = await client.put(
@@ -83,7 +100,7 @@ class TestFullCharacterLifecycle:
         assert resilient_response.status_code == 201
         feat_choice = feat_choice_response.json()
         resilient = resilient_response.json()
-        resilient_asi_id = resilient["ability_score_increases"][0]["id"]
+        resilient_asi_id = resilient["choice_groups"][0]["options"][0]["ability_effects"][0]["id"]
 
         fire_bolt = await create_spell(name="Fire Bolt", school="EVOCATION", level="CANTRIP")
         light = await create_spell(name="Light", school="ILLUSION", level="CANTRIP")
@@ -94,7 +111,7 @@ class TestFullCharacterLifecycle:
             json={"name": "War Magic", "class_id": battle_mage["id"]},
             headers=gm_headers,
         )
-        assert subclass_response.status_code == 201
+        assert subclass_response.status_code == 201, subclass_response.text
         war_magic = subclass_response.json()
 
         create_response = await client.post(
@@ -133,9 +150,13 @@ class TestFullCharacterLifecycle:
         assert character["background_id"] is None
         assert character["ability_scores"]["strength_total"] == 16
         assert character["ability_scores"]["constitution_total"] == 14
-        assert {item["ability"] for item in character["saving_throw_proficiencies"]} == {"STR", "CON"}
-        assert [item["skill_id"] for item in character["skill_proficiencies"]] == [skill.id]
-        assert all(item["is_expertise"] is False for item in character["skill_proficiencies"])
+
+        proficiencies_response = await client.get(f"/characters/{character_id}/proficiencies", headers=player_headers)
+        assert proficiencies_response.status_code == 200
+        proficiencies = proficiencies_response.json()
+        assert {item["ability"] for item in proficiencies["saving_throws"]} == {"STR", "CON"}
+        assert [item["skill_id"] for item in proficiencies["skills"]] == [skill.id]
+        assert all(item["is_expertise"] is False for item in proficiencies["skills"])
 
         for spell in (fire_bolt, light, shield_spell):
             learn_response = await client.post(
@@ -282,7 +303,7 @@ class TestFullCharacterLifecycle:
 
         equip_sword = await client.post(
             f"/characters/{character_id}/gm-panel/items",
-            json={"item_id": longsword.id, "quantity": 1, "is_equipped": True},
+            json={"item_id": longsword.id, "quantity": 1},
             headers=gm_headers,
         )
         add_potions = await client.post(
@@ -291,12 +312,12 @@ class TestFullCharacterLifecycle:
             headers=gm_headers,
         )
         assert equip_sword.status_code == 201
-        assert equip_sword.json()["is_equipped"] is True
+        assert equip_sword.json()["item_id"] == longsword.id
         assert add_potions.status_code == 201
         assert add_potions.json()["quantity"] == 5
 
         expertise_on = await client.patch(
-            f"/characters/{character_id}/gm-panel/skills",
+            f"/characters/{character_id}/gm-panel/proficiencies/skills/expertise",
             params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers=gm_headers,
@@ -322,7 +343,11 @@ class TestFullCharacterLifecycle:
         assert scores["wisdom_total"] == 9
         assert scores["charisma_total"] == 10
 
-        proficiencies = {item["skill_id"]: item for item in final["skill_proficiencies"]}
+        final_proficiencies_response = await client.get(
+            f"/characters/{character_id}/proficiencies", headers=player_headers
+        )
+        assert final_proficiencies_response.status_code == 200
+        proficiencies = {item["skill_id"]: item for item in final_proficiencies_response.json()["skills"]}
         assert proficiencies[skill.id]["is_expertise"] is True
 
         stats_response = await client.get(f"/characters/{character_id}/stats", headers=gm_headers)
@@ -347,5 +372,5 @@ class TestFullCharacterLifecycle:
         items_response = await client.get(f"/characters/{character_id}/items", headers=gm_headers)
         assert items_response.status_code == 200
         stacks = {entry["item_id"]: entry for entry in items_response.json()}
-        assert stacks[longsword.id]["is_equipped"] is True
+        assert stacks[longsword.id]["quantity"] == 1
         assert stacks[potion.id]["quantity"] == 5

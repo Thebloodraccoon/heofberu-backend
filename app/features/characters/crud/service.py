@@ -4,44 +4,48 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import FeatureSourceType, UserRole
+from app.constants import (
+    BackgroundSuggestionType,
+    FeatureSourceType,
+    ProficiencyAction,
+    ProficiencySourceType,
+    ProficiencyType,
+    UserRole,
+)
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
 from app.core.exceptions import GmAccessException
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, DerivedStats
+from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY, DEFAULT_SPEED, DerivedStats
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import get_character_for_user, get_character_or_404
 from app.features.characters.cache import CHARACTER_CACHE_NAMESPACE, invalidate_character_cache
 from app.features.characters.crud.exceptions import (
+    BackgroundSuggestionIdsRequiredException,
+    InvalidBackgroundSuggestionException,
     InvalidHpUpdateException,
     ItemChoiceNotAvailableException,
     ItemChoicesWithoutGroupsException,
     SkillNotAvailableForClassException,
+    SuggestionIdsWithoutBackgroundException,
     TooFewItemChoicesException,
     TooManySkillChoicesException,
 )
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.feats.repository import CharacterFeatRepository
-from app.features.characters.features.repository import CharacterFeatureRepository
-from app.features.characters.items.repository import CharacterItemRepository
 from app.features.characters.level.repository import CharacterMaxLevelRepository
+from app.features.characters.proficiencies.writer import add_skill_proficiencies
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.repository import CharacterASIChoiceRepository
 from app.features.characters.schemas import (
     AbilityScoresResponse,
     AbilityStatsView,
     CharacterCreate,
-    CharacterFeatResponse,
-    CharacterFeatureResponse,
-    CharacterItemResponse,
     CharacterResponse,
     CharacterStatsResponse,
     CharacterUpdate,
-    SavingThrowProficiencyResponse,
 )
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
 from app.features.classes.crud.repository import ClassRepository
@@ -50,11 +54,13 @@ from app.features.items.crud.repository import ItemRepository
 from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models import CharacterAbilityScore, CharacterSkillProficiency, Class
-from app.models.character_backstory_model import CharacterBackstory
-from app.models.character_item_model import CharacterItem
-from app.models.character_model import Character
-from app.models.source_item_choice_model import SourceItemChoiceOption
+from app.models import CharacterAbilityScore, Class
+from app.models.backgrounds.background_model import Background
+from app.models.character.character_backstory_model import CharacterBackstory
+from app.models.character.character_item_model import CharacterItem
+from app.models.character.character_model import Character
+from app.models.character.character_proficiency_model import CharacterProficiency
+from app.models.items.item_source_choice_model import SourceItemChoiceOption
 
 
 class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, CharacterResponse]):
@@ -79,9 +85,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         self.race_repository = RaceRepository(db)
         self.background_repository = BackgroundRepository(db)
         self.item_repository = ItemRepository(db)
-        self.feat_grant_repository = CharacterFeatRepository(db)
-        self.feature_grant_repository = CharacterFeatureRepository(db)
-        self.character_item_repository = CharacterItemRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.asi_repository = CharacterASIChoiceRepository(db)
         self.stats_service = CharacterStatsService(db)
@@ -192,14 +195,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         await get_character_for_user(self.repository, character_id, current_user)
         return await self._get_character_response(character_id)
 
-    async def get_feats(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatResponse]:
-        """List every feat granted to a character (level-up choices and GM grants alike)."""
-
-        await get_character_for_user(self.repository, character_id, current_user)
-
-        grants = await self.feat_grant_repository.get_character_feats(character_id)
-        return [CharacterFeatResponse.model_validate(grant) for grant in grants]
-
     async def get_stats(self, character_id: int, current_user: UserResponse) -> CharacterStatsResponse:
         """
         Return each ability's ORIGINAL base value next to its COMPUTED
@@ -222,22 +217,6 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             }
         )
 
-    async def get_features(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatureResponse]:
-        """List every feature recorded on a character (progression auto-grants plus GM records)."""
-
-        await get_character_for_user(self.repository, character_id, current_user)
-
-        grants = await self.feature_grant_repository.get_character_features(character_id)
-        return [CharacterFeatureResponse.model_validate(grant) for grant in grants]
-
-    async def get_items(self, character_id: int, current_user: UserResponse) -> list[CharacterItemResponse]:
-        """List every item stack a character owns (GM/owner readable)."""
-
-        await get_character_for_user(self.repository, character_id, current_user)
-
-        stacks = await self.character_item_repository.get_character_items(character_id)
-        return [CharacterItemResponse.model_validate(stack) for stack in stacks]
-
     @use_cache(
         key_builder=lambda self, character_id, **_: f"{cache_prefix()}:{CHARACTER_CACHE_NAMESPACE}:{character_id}",
     )
@@ -255,8 +234,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         background must belong and exist), the skill choices against the
         class + background + race grants, and the starting-equipment "pick
         N of M" choices. Character row, proficiencies, slot rows, feature
-        grants (via ``sync_progression_features``), backstory, and starting
-        items are written in one transaction.
+        grants (via ``sync_progression_features`` — which also materializes
+        the engine effect rows and the ability bonuses), backstory, and
+        starting items are written in one transaction.
         """
 
         await self._validate_references(
@@ -279,6 +259,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             character_data.class_id, character_data.background_id, character_data.item_choice_ids
         )
 
+        if character_data.background_id is None and character_data.suggestion_ids:
+            raise SuggestionIdsWithoutBackgroundException()
+
         background_skill_ids: list[int] = []
         background_personality = {
             "personality_traits": "",
@@ -291,15 +274,14 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             background = await self.background_repository.get_by_id(character_data.background_id)
             if background is not None:
                 background_skill_ids = [skill.id for skill in background.granted_skills]
-                # Always take the personality card from the background when one
-                # is chosen (the player's own values are replaced with the
-                # background's suggestions).
-                background_personality = {
-                    "personality_traits": background.personality_traits_suggestions,
-                    "ideals": background.ideals_suggestions,
-                    "bonds": background.bonds_suggestions,
-                    "flaws": background.flaws_suggestions,
-                }
+                # The player picks exactly one suggestion per personality-card
+                # field from the background's own suggestions (see
+                # ``_resolve_background_suggestions``); the player's own
+                # personality_traits/ideals/bonds/flaws values are replaced
+                # with the chosen suggestions' text.
+                background_personality = self._resolve_background_suggestions(
+                    background, character_data.suggestion_ids
+                )
                 # The backstory is written from the background's description —
                 # the client does not send backstory at creation.
                 background_description = background.description
@@ -307,15 +289,21 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         # Same pattern as the background: get_by_id eager-loads granted_skills,
         # so no extra query is needed to collect them.
         race_skill_ids: list[int] = []
+        race_speed = DEFAULT_SPEED
         if character_data.race_id is not None:
             race = await self.race_repository.get_by_id(character_data.race_id)
             if race is not None:
                 race_skill_ids = [skill.id for skill in race.granted_skills]
+                race_speed = race.speed
 
-        payload = character_data.model_dump(exclude={"skill_ids", "item_choice_ids"})
+        payload = character_data.model_dump(exclude={"skill_ids", "item_choice_ids", "suggestion_ids"})
         payload["owner_id"] = current_user.id
         payload["level"] = 1
         payload["temp_hp"] = 0
+        # Seeded from the race at creation, same as any other combat stat —
+        # from here on it's plain editable state (see CharacterUpdate.speed),
+        # not recomputed from the race on every read.
+        payload["speed"] = race_speed
         if character_data.background_id is not None:
             payload.update(background_personality)
 
@@ -336,14 +324,18 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
             await self._apply_skill_proficiencies(
                 character, chosen_skill_ids, background_skill_ids, race_skill_ids, commit=False
             )
+            await self._apply_class_saving_throws(character, character_class, commit=False)
+            await self._apply_class_armor_and_weapon_proficiencies(character, character_class, commit=False)
             await self._apply_spell_slot_progression(character, commit=False)
 
-            # Features are granted BEFORE the starting-HP math so their
-            # fixed ability effects (e.g. +4 CON) are included in the
-            # effective CON modifier from the very first hit point.
+            # Features are granted (and their engine effect rows materialized)
+            # BEFORE the starting-HP math so their fixed ability effects (e.g.
+            # +4 CON) are included in the effective CON modifier from the very
+            # first hit point.
             await sync_progression_features(self.repository.db, character)
             # The session runs with autoflush=False — flush the pending
-            # grant rows so the stats computation below can read them.
+            # grant/materialized rows so the stats computation below can read
+            # them.
             await self.repository.db.flush()
 
             max_hp = await self._compute_starting_max_hp(character, character_class)
@@ -379,6 +371,42 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
                 raise SkillNotAvailableForClassException(class_id=character_class.id, skill_id=skill_id)
 
         return skill_ids
+
+    @staticmethod
+    def _resolve_background_suggestions(background: Background, suggestion_ids: list[int]) -> dict[str, str]:
+        """
+        Resolve the player's picked suggestion ids into the personality-card
+        payload: exactly one id per :class:`BackgroundSuggestionType`
+        (PERSONALITY_TRAIT, IDEAL, BOND, FLAW), each belonging to this
+        background.
+        """
+
+        if len(suggestion_ids) != len(BackgroundSuggestionType):
+            raise BackgroundSuggestionIdsRequiredException(background_id=background.id, requested=len(suggestion_ids))
+
+        suggestions_by_id = {suggestion.id: suggestion for suggestion in background.suggestions}
+        chosen_by_type: dict[BackgroundSuggestionType, str] = {}
+        for suggestion_id in suggestion_ids:
+            suggestion = suggestions_by_id.get(suggestion_id)
+            if suggestion is None:
+                raise InvalidBackgroundSuggestionException(background_id=background.id, suggestion_id=suggestion_id)
+
+            suggestion_type = BackgroundSuggestionType(suggestion.suggestion_type)
+            if suggestion_type in chosen_by_type:
+                raise BackgroundSuggestionIdsRequiredException(
+                    background_id=background.id, requested=len(suggestion_ids)
+                )
+            chosen_by_type[suggestion_type] = suggestion.text
+
+        if set(chosen_by_type) != set(BackgroundSuggestionType):
+            raise BackgroundSuggestionIdsRequiredException(background_id=background.id, requested=len(suggestion_ids))
+
+        return {
+            "personality_traits": chosen_by_type[BackgroundSuggestionType.PERSONALITY_TRAIT],
+            "ideals": chosen_by_type[BackgroundSuggestionType.IDEAL],
+            "bonds": chosen_by_type[BackgroundSuggestionType.BOND],
+            "flaws": chosen_by_type[BackgroundSuggestionType.FLAW],
+        }
 
     async def _resolve_item_choices(
         self,
@@ -455,15 +483,83 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         commit: bool = True,
     ) -> None:
         """
-        Write the starting skill proficiencies: the validated class choices
-        plus the background's and race's granted skills, deduplicated, all
-        starting with ``is_expertise=False``.
+        Write the starting skill proficiencies as ``CharacterProficiency``
+        rows, each tagged with its actual source: the validated class
+        choices as ``CLASS_CHOICE``, the background's granted skills as
+        ``BACKGROUND``, the race's as ``RACE``. A skill reachable from more
+        than one source is written once per source (not deduplicated across
+        them — see ``CharacterProficiency`` for why).
         """
 
-        merged_skill_ids = list(dict.fromkeys([*chosen_skill_ids, *background_skill_ids, *race_skill_ids]))
-        for skill_id in merged_skill_ids:
+        add_skill_proficiencies(self.repository.db, character.id, chosen_skill_ids, ProficiencySourceType.CLASS_CHOICE)
+        add_skill_proficiencies(self.repository.db, character.id, background_skill_ids, ProficiencySourceType.BACKGROUND)
+        add_skill_proficiencies(self.repository.db, character.id, race_skill_ids, ProficiencySourceType.RACE)
+
+        if commit:
+            await self.repository.db.commit()
+        else:
+            await self.repository.db.flush()
+
+    async def _apply_class_saving_throws(self, character: Character, character_class: Class, *, commit: bool = True) -> None:
+        """
+        Write the character's starting saving-throw proficiencies from the
+        class's default saves (e.g. Fighter -> STR, CON), as
+        ``CharacterProficiency`` rows with ``source_type=CLASS``.
+
+        Not yet routed through the feature engine — ``class_saving_throws``
+        isn't itself a Feature source, so nothing else would ever
+        materialize these onto the character.
+        """
+
+        for throw in character_class.saving_throws:
             self.repository.db.add(
-                CharacterSkillProficiency(character_id=character.id, skill_id=skill_id, is_expertise=False)
+                CharacterProficiency(
+                    character_id=character.id,
+                    proficiency_type=ProficiencyType.SAVING_THROW,
+                    ability=throw.ability,
+                    source_type=ProficiencySourceType.CLASS,
+                    action=ProficiencyAction.GRANT,
+                )
+            )
+
+        if commit:
+            await self.repository.db.commit()
+        else:
+            await self.repository.db.flush()
+
+    async def _apply_class_armor_and_weapon_proficiencies(
+        self, character: Character, character_class: Class, *, commit: bool = True
+    ) -> None:
+        """
+        Write the character's starting armor and weapon proficiencies from
+        the class's grants (e.g. Fighter -> LIGHT/MEDIUM/HEAVY armor,
+        SIMPLE/MARTIAL weapons), as ``CharacterProficiency`` rows with
+        ``source_type=CLASS``.
+
+        Not yet routed through the feature engine — same reasoning as
+        ``_apply_class_saving_throws``.
+        """
+
+        for armor_proficiency in character_class.armor_proficiencies:
+            self.repository.db.add(
+                CharacterProficiency(
+                    character_id=character.id,
+                    proficiency_type=ProficiencyType.ARMOR,
+                    armor_type=armor_proficiency.armor_type,
+                    source_type=ProficiencySourceType.CLASS,
+                    action=ProficiencyAction.GRANT,
+                )
+            )
+
+        for weapon_proficiency in character_class.weapon_proficiencies:
+            self.repository.db.add(
+                CharacterProficiency(
+                    character_id=character.id,
+                    proficiency_type=ProficiencyType.WEAPON,
+                    weapon_category=weapon_proficiency.weapon_category,
+                    source_type=ProficiencySourceType.CLASS,
+                    action=ProficiencyAction.GRANT,
+                )
             )
 
         if commit:
@@ -661,9 +757,9 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
     ) -> CharacterResponse:
         """
         Serialize a character to ``CharacterResponse``, attaching the
-        ability-score cache row (or a fresh one when ``refresh``), the
-        derived combat stats, and the class-derived saving throws (the
-        class owns them; there is no per-character storage).
+        ability-score cache row (or a fresh one when ``refresh``) and the
+        derived combat stats. Proficiencies and granted spells are served
+        by their own sub-domain endpoints, not assembled here.
         """
 
         if cache_row is None:
@@ -675,10 +771,5 @@ class CharacterService(BaseService[Character, CharacterCreate, CharacterUpdate, 
         response = CharacterResponse.model_validate(character)
         response.ability_scores = AbilityScoresResponse.model_validate(cache_row) if cache_row is not None else None
         response.hit_dice = derived.hit_dice
-        response.speed = derived.speed
-        response.saving_throw_proficiencies = [
-            SavingThrowProficiencyResponse.model_validate(saving_throw)
-            for saving_throw in (character.character_class.saving_throws if character.character_class else [])
-        ]
 
         return response

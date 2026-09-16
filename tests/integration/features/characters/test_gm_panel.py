@@ -2,7 +2,8 @@
 
 import pytest
 
-from app.models.character_association_models import CharacterSkillProficiency
+from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
+from app.models.character.character_proficiency_model import CharacterProficiency
 
 
 @pytest.mark.integration
@@ -226,11 +227,20 @@ class TestGmPanelSkillExpertise:
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
-        db_session.add(CharacterSkillProficiency(character_id=character.id, skill_id=skill.id, is_expertise=False))
+        db_session.add(
+            CharacterProficiency(
+                character_id=character.id,
+                proficiency_type=ProficiencyType.SKILL,
+                skill_id=skill.id,
+                source_type=ProficiencySourceType.CLASS_CHOICE,
+                action=ProficiencyAction.GRANT,
+                is_expertise=False,
+            )
+        )
         await db_session.commit()
 
         on_response = await client.patch(
-            f"/characters/{character.id}/gm-panel/skills",
+            f"/characters/{character.id}/gm-panel/proficiencies/skills/expertise",
             params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -240,14 +250,14 @@ class TestGmPanelSkillExpertise:
         assert on_response.json() == {"skill_id": skill.id, "is_expertise": True}
 
         read_response = await client.get(
-            f"/characters/{character.id}",
+            f"/characters/{character.id}/proficiencies",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        proficiencies = {item["skill_id"]: item for item in read_response.json()["skill_proficiencies"]}
+        proficiencies = {item["skill_id"]: item for item in read_response.json()["skills"]}
         assert proficiencies[skill.id]["is_expertise"] is True
 
         off_response = await client.patch(
-            f"/characters/{character.id}/gm-panel/skills",
+            f"/characters/{character.id}/gm-panel/proficiencies/skills/expertise",
             params={"skill_id": skill.id},
             json={"is_expertise": False},
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -261,11 +271,20 @@ class TestGmPanelSkillExpertise:
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
         skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
-        db_session.add(CharacterSkillProficiency(character_id=character.id, skill_id=skill.id, is_expertise=False))
+        db_session.add(
+            CharacterProficiency(
+                character_id=character.id,
+                proficiency_type=ProficiencyType.SKILL,
+                skill_id=skill.id,
+                source_type=ProficiencySourceType.CLASS_CHOICE,
+                action=ProficiencyAction.GRANT,
+                is_expertise=False,
+            )
+        )
         await db_session.commit()
 
         response = await client.patch(
-            f"/characters/{character.id}/gm-panel/skills",
+            f"/characters/{character.id}/gm-panel/proficiencies/skills/expertise",
             params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {player_token}"},
@@ -282,7 +301,7 @@ class TestGmPanelSkillExpertise:
         skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
 
         response = await client.patch(
-            f"/characters/{character.id}/gm-panel/skills",
+            f"/characters/{character.id}/gm-panel/proficiencies/skills/expertise",
             params={"skill_id": skill.id},
             json={"is_expertise": True},
             headers={"Authorization": f"Bearer {gm_token}"},

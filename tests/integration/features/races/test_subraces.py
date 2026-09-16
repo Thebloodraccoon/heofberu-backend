@@ -37,22 +37,33 @@ class TestSubraceCrud:
 
         response = await client.post(
             "/subraces",
+            json={"name": "High Elf", "race_id": race.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 201
+        subrace_id = response.json()["id"]
+
+        bonuses_response = await client.put(
+            f"/subraces/{subrace_id}/ability-bonuses",
+            json={"ability_bonuses": [{"ability": "INT", "bonus": 1}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert bonuses_response.status_code == 200
+        assert bonuses_response.json()["ability_bonuses"] == [{"ability": "INT", "bonus": 1}]
+
+        added = await client.post(
+            "/features",
             json={
-                "name": "High Elf",
-                "race_id": race.id,
-                "ability_bonuses": [{"ability": "INT", "bonus": 1}],
-                "features": [
-                    {"name": "Elf Weapon Training", "description": "Proficiency with longswords and shortswords."},
-                ],
+                "name": "Elf Weapon Training",
+                "description": "Proficiency with longswords and shortswords.",
+                "source_type": "SUBRACE",
+                "subrace_id": subrace_id,
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
+        assert added.status_code == 201
 
-        assert response.status_code == 201
-        body = response.json()
-        assert body["ability_bonuses"] == [{"ability": "INT", "bonus": 1}]
-
-        fetched = await client.get(f"/subraces/{body['id']}/features")
+        fetched = await client.get(f"/subraces/{subrace_id}/features")
         assert fetched.status_code == 200
         assert [item["name"] for item in fetched.json()] == ["Elf Weapon Training"]
 

@@ -16,10 +16,9 @@ class Skill(settings.Base):  # type: ignore
 
     id = Column(Integer, primary_key=True)
 
-    key = Column(String(50), nullable=False, unique=True, index=True)  # e.g. "PERCEPTION"
-    name = Column(String(100), nullable=False)  # display name, e.g. "Perception"
+    name = Column(String(100), nullable=False, unique=True, index=True)  # e.g. "Perception"
     ability = Column(AbilityScoreType, nullable=False)  # governing ability score
     description = Column(Text, nullable=False, default="")
 
     def __repr__(self):
-        return f"<Skill(id={self.id}, key='{self.key}')>"
+        return f"<Skill(id={self.id}, name='{self.name}')>"

@@ -31,8 +31,9 @@ class TestSpellsPayloadShape:
 
         assert response.status_code == 200
         body = response.json()
-        assert set(body) == {"spell_slots", "spells"}
+        assert set(body) == {"spell_slots", "spells", "granted_spells"}
         assert body["spells"] == []
+        assert body["granted_spells"] == []
         assert len(body["spell_slots"]) == 1
         assert set(body["spell_slots"][0]) == {"spell_level", "total"}
         assert body["spell_slots"][0] == {"spell_level": "CANTRIP", "total": 2}
