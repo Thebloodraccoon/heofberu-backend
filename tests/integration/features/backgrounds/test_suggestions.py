@@ -1,4 +1,4 @@
-"""Background suggestion pool endpoints: GET/PUT /backgrounds/{id}/suggestions."""
+"""Background suggestion pool endpoints: GET /suggestions, POST/PATCH/DELETE /suggestions/{id}."""
 
 import pytest
 
@@ -31,76 +31,59 @@ class TestListBackgroundSuggestions:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestSetBackgroundSuggestions:
-    async def test_gm_can_replace_suggestions(self, client, gm_token, create_background):
+class TestCreateBackgroundSuggestion:
+    async def test_gm_can_add_a_suggestion(self, client, gm_token, create_background):
         background = await create_background(name="Outlander", with_suggestions=False)
 
-        response = await client.put(
+        response = await client.post(
             f"/backgrounds/{background.id}/suggestions",
-            json={
-                "suggestions": [
-                    {"suggestion_type": "PERSONALITY_TRAIT", "text": "I feel far more comfortable around animals."},
-                    {"suggestion_type": "IDEAL", "text": "Change. Life is like the seasons, in constant change."},
-                ]
-            },
+            json={"suggestion_type": "PERSONALITY_TRAIT", "text": "I feel far more comfortable around animals."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         body = response.json()
-        assert len(body) == 2
-        assert {item["suggestion_type"] for item in body} == {"PERSONALITY_TRAIT", "IDEAL"}
+        assert body["suggestion_type"] == "PERSONALITY_TRAIT"
+        assert body["text"] == "I feel far more comfortable around animals."
 
         listed = await client.get(f"/backgrounds/{background.id}/suggestions")
-        assert len(listed.json()) == 2
+        assert len(listed.json()) == 1
 
-    async def test_put_is_a_full_replace_not_a_merge(self, client, gm_token, create_background):
+    async def test_add_appends_without_removing_existing(self, client, gm_token, create_background):
         background = await create_background(name="Outlander", with_suggestions=False)
 
-        first = await client.put(
+        first = await client.post(
             f"/backgrounds/{background.id}/suggestions",
-            json={"suggestions": [{"suggestion_type": "BOND", "text": "An injury I received was caused by cruelty."}]},
+            json={"suggestion_type": "BOND", "text": "An injury I received was caused by cruelty."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert first.status_code == 200
-        assert len(first.json()) == 1
+        assert first.status_code == 201
 
-        second = await client.put(
+        second = await client.post(
             f"/backgrounds/{background.id}/suggestions",
-            json={"suggestions": [{"suggestion_type": "FLAW", "text": "I am too enamored of ale."}]},
+            json={"suggestion_type": "FLAW", "text": "I am too enamored of ale."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert second.status_code == 200
-        assert len(second.json()) == 1
-        assert second.json()[0]["suggestion_type"] == "FLAW"
+        assert second.status_code == 201
 
-    async def test_gm_can_clear_all_suggestions(self, client, gm_token, create_background):
-        background = await create_background(name="Sage")
+        listed = await client.get(f"/backgrounds/{background.id}/suggestions")
+        assert {item["suggestion_type"] for item in listed.json()} == {"BOND", "FLAW"}
 
-        response = await client.put(
-            f"/backgrounds/{background.id}/suggestions",
-            json={"suggestions": []},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 200
-        assert response.json() == []
-
-    async def test_set_for_missing_background_returns_404(self, client, gm_token):
-        response = await client.put(
+    async def test_create_for_missing_background_returns_404(self, client, gm_token):
+        response = await client.post(
             "/backgrounds/99999/suggestions",
-            json={"suggestions": []},
+            json={"suggestion_type": "IDEAL", "text": "Some ideal."},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 404
 
-    async def test_player_cannot_replace_suggestions(self, client, player_token, create_background):
+    async def test_player_cannot_add_a_suggestion(self, client, player_token, create_background):
         background = await create_background(name="Sage")
 
-        response = await client.put(
+        response = await client.post(
             f"/backgrounds/{background.id}/suggestions",
-            json={"suggestions": []},
+            json={"suggestion_type": "IDEAL", "text": "Some ideal."},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -109,10 +92,152 @@ class TestSetBackgroundSuggestions:
     async def test_rejects_empty_text(self, client, gm_token, create_background):
         background = await create_background(name="Sage")
 
-        response = await client.put(
+        response = await client.post(
             f"/backgrounds/{background.id}/suggestions",
-            json={"suggestions": [{"suggestion_type": "IDEAL", "text": ""}]},
+            json={"suggestion_type": "IDEAL", "text": ""},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 422
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestUpdateBackgroundSuggestion:
+    async def test_gm_can_update_text(self, client, gm_token, create_background):
+        background = await create_background(name="Outlander", with_suggestions=False)
+        created = await client.post(
+            f"/backgrounds/{background.id}/suggestions",
+            json={"suggestion_type": "IDEAL", "text": "Original text."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        suggestion_id = created.json()["id"]
+
+        response = await client.patch(
+            f"/backgrounds/{background.id}/suggestions/{suggestion_id}",
+            json={"text": "Change. Life is like the seasons, in constant change."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == suggestion_id
+        assert body["suggestion_type"] == "IDEAL"
+        assert body["text"] == "Change. Life is like the seasons, in constant change."
+
+    async def test_omitted_fields_are_left_as_is(self, client, gm_token, create_background):
+        background = await create_background(name="Outlander", with_suggestions=False)
+        created = await client.post(
+            f"/backgrounds/{background.id}/suggestions",
+            json={"suggestion_type": "BOND", "text": "Original text."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        suggestion_id = created.json()["id"]
+
+        response = await client.patch(
+            f"/backgrounds/{background.id}/suggestions/{suggestion_id}",
+            json={"text": "Updated text."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["suggestion_type"] == "BOND"
+
+    async def test_update_for_missing_suggestion_returns_404(self, client, gm_token, create_background):
+        background = await create_background(name="Sage")
+
+        response = await client.patch(
+            f"/backgrounds/{background.id}/suggestions/99999",
+            json={"text": "Updated text."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404
+
+    async def test_update_for_missing_background_returns_404(self, client, gm_token):
+        response = await client.patch(
+            "/backgrounds/99999/suggestions/1",
+            json={"text": "Updated text."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404
+
+    async def test_player_cannot_update_a_suggestion(self, client, player_token, gm_token, create_background):
+        background = await create_background(name="Sage")
+        existing = await client.get(f"/backgrounds/{background.id}/suggestions")
+        suggestion_id = existing.json()[0]["id"]
+
+        response = await client.patch(
+            f"/backgrounds/{background.id}/suggestions/{suggestion_id}",
+            json={"text": "Updated text."},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+    async def test_rejects_empty_text(self, client, gm_token, create_background):
+        background = await create_background(name="Sage")
+        existing = await client.get(f"/backgrounds/{background.id}/suggestions")
+        suggestion_id = existing.json()[0]["id"]
+
+        response = await client.patch(
+            f"/backgrounds/{background.id}/suggestions/{suggestion_id}",
+            json={"text": ""},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 422
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestDeleteBackgroundSuggestion:
+    async def test_gm_can_delete_a_suggestion(self, client, gm_token, create_background):
+        background = await create_background(name="Outlander", with_suggestions=False)
+        created = await client.post(
+            f"/backgrounds/{background.id}/suggestions",
+            json={"suggestion_type": "FLAW", "text": "I am too enamored of ale."},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        suggestion_id = created.json()["id"]
+
+        response = await client.delete(
+            f"/backgrounds/{background.id}/suggestions/{suggestion_id}",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 204
+
+        listed = await client.get(f"/backgrounds/{background.id}/suggestions")
+        assert listed.json() == []
+
+    async def test_delete_for_missing_suggestion_returns_404(self, client, gm_token, create_background):
+        background = await create_background(name="Sage")
+
+        response = await client.delete(
+            f"/backgrounds/{background.id}/suggestions/99999",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404
+
+    async def test_delete_for_missing_background_returns_404(self, client, gm_token):
+        response = await client.delete(
+            "/backgrounds/99999/suggestions/1",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404
+
+    async def test_player_cannot_delete_a_suggestion(self, client, player_token, create_background):
+        background = await create_background(name="Sage")
+        existing = await client.get(f"/backgrounds/{background.id}/suggestions")
+        suggestion_id = existing.json()[0]["id"]
+
+        response = await client.delete(
+            f"/backgrounds/{background.id}/suggestions/{suggestion_id}",
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403

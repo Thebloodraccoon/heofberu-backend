@@ -55,4 +55,4 @@ class ClassSkillService(
     async def set_skills_for_class(self, character_class: Class, skills: list[Skill], *, commit: bool = True) -> None:
         """Attach ``skills`` to an existing ``class`` row."""
 
-        await self.repository.set_available_skills(character_class, skills, commit=commit)
+        await self.repository.set_available_skills(character_class.id, skills, commit=commit)

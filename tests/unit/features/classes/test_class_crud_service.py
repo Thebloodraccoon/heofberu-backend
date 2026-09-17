@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import AbilityScore, ArmorProficiency, DiceType, WeaponProficiency
+from app.constants import AbilityScore, DiceType
 from app.core.exceptions import RecordNotFoundError
 from app.features.classes.cache import CLASS_CACHE_NAMESPACES
 from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
@@ -216,21 +216,17 @@ class TestClassCrudServiceGetById:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestClassCrudServiceUpdate:
-    async def test_update_class_full_replaces_proficiencies(self, invalidated):
+    async def test_update_class_full_replaces_saving_throws(self, invalidated):
         class_row = make_class_row()
         service, _ = make_crud_service(existing_by_id={1: class_row})
-        data = ClassUpdate(
-            saving_throws=[AbilityScore.STR],
-            armor_proficiencies=[ArmorProficiency.HEAVY],
-            weapon_proficiencies=[WeaponProficiency.MARTIAL],
-        )
+        data = ClassUpdate(saving_throws=[AbilityScore.STR])
 
         await service.update_class(1, data)
 
         assert service._throws.set_calls[0][1] == [AbilityScore.STR]
-        assert service._armor.set_calls[0][1] == [ArmorProficiency.HEAVY]
-        assert service._weapons.set_calls[0][1] == [WeaponProficiency.MARTIAL]
         assert all(call[2] is True for call in service._throws.set_calls)
+        assert service._armor.set_calls == []
+        assert service._weapons.set_calls == []
         assert invalidated.await_count == 1
 
     async def test_update_class_scalar_only_patches_through_repository(self, invalidated):

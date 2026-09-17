@@ -79,9 +79,10 @@ class FeatResponse(FeatBase):
     Full feat representation returned by the API.
 
     Mirrors ``FeatureResponse`` exactly: ``choice_groups`` plus the fixed
-    effects grouped by kind (``static_groups``), with ``has_static_effects``/
-    ``has_choices``/``effects_summary`` as plain ``Feature`` properties (a
-    feat IS a ``Feature``, ``source_type=FEAT``). An ASI choice (e.g.
+    effects grouped by kind (``static_groups``), ``effects_summary`` as a
+    plain ``Feature`` property, and ``has_static_effects``/``has_choices``
+    as real denormalized columns (a feat IS a ``Feature``,
+    ``source_type=FEAT``). An ASI choice (e.g.
     Resilient's "+1 to an ability score") lives in ``choice_groups`` like any
     other choice; a fixed ASI would show up under ``static_groups``. Feats
     currently have no write endpoints for effects beyond ``POST``'s embedded

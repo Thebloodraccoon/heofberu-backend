@@ -18,7 +18,7 @@ from sqlalchemy.orm import declarative_base
 
 from app.core.base.cached_service import CachedService
 from app.core.base.service import Page
-from app.core.cache import invalidate, use_cache
+from app.core.cache import invalidate, invalidate_many, use_cache
 import app.core.cache.client as cache_client
 from app.settings import settings
 
@@ -311,6 +311,50 @@ class TestInvalidation:
 
         await other.get()
         assert other.calls == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestInvalidateMany:
+    async def test_purges_every_given_namespace_and_extra_key_in_one_call(self, fake_redis):
+        greeter = Greeter()
+        await greeter.greet("Alice")
+        other = Other()
+        await other.get()
+
+        await invalidate_many(["greetings"], ["cache:other:get"])
+
+        assert fake_redis.data == {}
+
+        await greeter.greet("Alice")
+        await other.get()
+        assert greeter.calls == 2
+        assert other.calls == 2
+
+    async def test_leaves_untouched_namespaces_alone(self, fake_redis):
+        greeter = Greeter()
+        await greeter.greet("Alice")
+        other = Other()
+        await other.get()
+
+        await invalidate_many(["greetings"])
+
+        assert fake_redis.data == {"cache:other:get": "7"}
+
+    async def test_with_nothing_to_delete_is_a_noop(self, fake_redis):
+        await invalidate_many([], [])
+
+        assert fake_redis.data == {}
+
+    async def test_redis_down_does_not_break_invalidate_many(self, fake_redis, monkeypatch):
+        @asynccontextmanager
+        async def broken_redis():
+            raise ConnectionError("down")
+            yield
+
+        monkeypatch.setattr(cache_client, "_redis_provider", lambda: broken_redis)
+
+        await invalidate_many(["greetings"], ["cache:other:get"])
 
 
 @pytest.mark.unit

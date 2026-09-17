@@ -108,6 +108,41 @@ async def cache_delete_prefix(namespace: str) -> None:
     await cache_delete_pattern(f"{cache_prefix()}:{namespace}:*")
 
 
+async def cache_delete_many(namespaces: list[str], keys: list[str] | None = None) -> None:
+    """
+    Delete every key under several ``<prefix>:<namespace>:*`` patterns, plus
+    any extra exact ``keys``, in one Redis connection and one final ``DEL``.
+
+    Redis glob patterns can't be OR'd, so this still issues one ``SCAN`` per
+    namespace — but reuses a single connection for all of them instead of
+    opening one per namespace (as looping ``cache_delete_prefix`` would),
+    and collapses every matched key plus the exact ``keys`` into a single
+    ``DEL`` call instead of one per namespace/key. Use this instead of
+    looping the single-item helpers when invalidating many entities from
+    one write (e.g. every character affected by a GM feature edit).
+    """
+
+    if not cache_enabled():
+        return
+
+    if not namespaces and not keys:
+        return
+
+    try:
+        async with _redis_provider()() as redis:
+            to_delete: set[str] = set(keys or [])
+            for namespace in namespaces:
+                pattern = f"{cache_prefix()}:{namespace}:*"
+                async for key in redis.scan_iter(match=pattern, count=500):
+                    to_delete.add(key)
+
+            if to_delete:
+                await redis.delete(*to_delete)
+
+    except Exception:
+        logger.warning("Batch cache invalidation failed for %d namespaces", len(namespaces), exc_info=True)
+
+
 async def cache_flush_all() -> None:
     """
     Delete every cached entry (all namespaces) under ``<prefix>:*``.

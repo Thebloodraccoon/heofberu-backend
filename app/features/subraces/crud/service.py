@@ -9,7 +9,6 @@ from app.core.cache.client import cache_prefix
 from app.core.exceptions import RecordNotFoundError
 from app.features.features.crud.service import FeatureCrudService
 from app.features.races.crud.repository import RaceRepository
-from app.features.subraces.ability_bonuses.service import SubraceAbilityBonusService
 from app.features.subraces.cache import SUBRACE_CACHE_NAMESPACES, invalidate_subrace_cache
 from app.features.subraces.crud.repository import SubraceRepository
 from app.features.subraces.crud.schemas import (
@@ -24,21 +23,20 @@ from app.models.races.subrace_model import Subrace
 class SubraceCrudService(
     BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
 ):
-    """Subrace catalog CRUD with race-scoped lookups and atomic nested creation."""
+    """Subrace catalog CRUD with race-scoped lookups."""
 
     repository: SubraceRepository
 
     cache_namespaces = SUBRACE_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
-        """Initialize composed feature, ability-bonus, and race-repository services."""
+        """Initialize composed feature and race-repository services."""
 
         super().__init__(
             repository=SubraceRepository(db),
             response_schema=SubraceResponse,
         )
         self._features = FeatureCrudService(db)
-        self._ability_bonuses = SubraceAbilityBonusService(db)
         self._race_repository = RaceRepository(db)
 
     async def list_for_race(self, race_id: int) -> list[SubraceGetAllResponse]:
@@ -61,28 +59,19 @@ class SubraceCrudService(
         )
 
     async def create_subrace(self, data: SubraceCreate) -> SubraceResponse:
-        """Create a subrace under ``race_id``, optionally seeding bonuses and features in one transaction."""
+        """
+        Create a subrace under ``race_id`` (base fields only).
+
+        ``ability_bonuses`` and ``features`` are not seeded here — each is
+        attached afterwards through its own capability endpoint.
+        """
 
         await self._ensure_race_exists(data.race_id)
-        payload = data.model_dump(exclude={"ability_bonuses", "features"})
 
-        async with self._atomic():
-            item = await self.repository.create(payload, commit=False)
-
-            if data.ability_bonuses:
-                bonuses = [{"ability": b.ability, "bonus": b.bonus} for b in data.ability_bonuses]
-                await self._ability_bonuses.set_ability_bonuses_for_subrace(item, bonuses, commit=False)
-
-            await self._features.create_features_for_source(
-                FeatureSourceType.SUBRACE,
-                item.id,
-                data.features,
-                commit=False,
-            )
-
+        item = await self.repository.create(data.model_dump())
         await invalidate_subrace_cache()
 
-        return SubraceResponse.model_validate(await self._get_or_404(item.id))
+        return await self._get_response(item.id)
 
     async def _ensure_race_exists(self, race_id: int) -> None:
         """Raise ``RecordNotFoundError`` when no race with ``race_id`` exists."""

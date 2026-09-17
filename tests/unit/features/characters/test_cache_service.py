@@ -59,6 +59,11 @@ class FakeCacheRepository:
         self.upsert_calls = []
         self.get_classes_calls = []
         self.get_races_calls = []
+        self.get_race_bonuses_many_calls = []
+        self.get_subrace_bonuses_many_calls = []
+        self.get_asi_increases_many_calls = []
+        self.get_feature_increases_many_calls = []
+        self.upsert_many_calls = []
 
     async def get_by_character_id(self, character_id):
         self.get_by_calls.append(character_id)
@@ -96,6 +101,26 @@ class FakeCacheRepository:
     async def get_races(self, race_ids):
         self.get_races_calls.append(race_ids)
         return {rid: self.races[rid] for rid in race_ids if rid in self.races}
+
+    async def get_race_bonuses_many(self, race_ids):
+        self.get_race_bonuses_many_calls.append(list(race_ids))
+        return {race_id: self.race_bonuses for race_id in race_ids if race_id is not None}
+
+    async def get_subrace_bonuses_many(self, subrace_ids):
+        self.get_subrace_bonuses_many_calls.append(list(subrace_ids))
+        return {subrace_id: self.subrace_bonuses for subrace_id in subrace_ids if subrace_id is not None}
+
+    async def get_asi_increases_many(self, character_ids):
+        self.get_asi_increases_many_calls.append(list(character_ids))
+        return {character_id: self.asi_increases for character_id in character_ids}
+
+    async def get_feature_increases_many(self, character_ids):
+        self.get_feature_increases_many_calls.append(list(character_ids))
+        return {character_id: self.feature_increases for character_id in character_ids}
+
+    async def upsert_many(self, totals_by_character_id, *, commit=True):
+        self.upsert_many_calls.append((dict(totals_by_character_id), commit))
+        return {character_id: self.cache_row for character_id in totals_by_character_id}
 
 
 def make_service(**fake_kwargs) -> tuple[CharacterStatsService, FakeCacheRepository]:
@@ -251,3 +276,52 @@ class TestCharacterStatsService:
         assert fake.get_classes_calls == [[]]
         assert fake.get_races_calls == [[]]
         assert result == {7: DerivedStats(hit_dice="", speed=30)}
+
+    async def test_compute_many_batches_bonus_lookups_across_characters(self):
+        fake_kwargs = {
+            "race_bonuses": [RaceAbilityBonus(race_id=5, ability=AbilityScore.DEX, bonus=2)],
+            "subrace_bonuses": [SubraceAbilityBonus(subrace_id=7, ability=AbilityScore.INT, bonus=1)],
+        }
+        service, fake = make_service(**fake_kwargs)
+        character_a = make_character(id=1, subrace_id=7)
+        character_b = make_character(id=2, race_id=5, subrace_id=None)
+
+        totals_by_character = await service.compute_many([character_a, character_b])
+
+        assert set(totals_by_character) == {1, 2}
+        assert totals_by_character[1]["dexterity_total"] == 12
+        assert totals_by_character[1]["intelligence_total"] == 9
+        assert totals_by_character[2]["dexterity_total"] == 12
+        # One call per dimension for the whole batch, not one per character.
+        assert fake.get_race_bonuses_many_calls == [[5, 5]]
+        assert fake.get_subrace_bonuses_many_calls == [[7]]
+        assert fake.get_asi_increases_many_calls == [[1, 2]]
+        assert fake.get_feature_increases_many_calls == [[1, 2]]
+
+    async def test_compute_many_empty_list_returns_empty(self):
+        service, fake = make_service()
+
+        result = await service.compute_many([])
+
+        assert result == {}
+        assert fake.get_race_bonuses_many_calls == [[]]
+
+    async def test_refresh_many_persists_batched_totals(self):
+        service, fake = make_service()
+        character_a = make_character(id=1)
+        character_b = make_character(id=2, race_id=None)
+
+        result = await service.refresh_many([character_a, character_b], commit=False)
+
+        assert set(result) == {1, 2}
+        totals_by_character, commit = fake.upsert_many_calls[0]
+        assert set(totals_by_character) == {1, 2}
+        assert commit is False
+
+    async def test_refresh_many_with_empty_list_skips_repository(self):
+        service, fake = make_service()
+
+        result = await service.refresh_many([])
+
+        assert result == {}
+        assert fake.upsert_many_calls == []

@@ -12,10 +12,15 @@ class SuggestionEntry(BaseModel):
     text: str = Field(min_length=1)
 
 
-class SuggestionsUpdate(BaseModel):
-    """Full replacement list of a background's suggestions."""
+class SuggestionCreate(SuggestionEntry):
+    """Payload to add one suggestion to a background."""
 
-    suggestions: list[SuggestionEntry]
+
+class SuggestionUpdate(BaseModel):
+    """Payload to edit one existing suggestion. Only set fields are changed."""
+
+    suggestion_type: BackgroundSuggestionType | None = None
+    text: str | None = Field(default=None, min_length=1)
 
 
 class SuggestionResponse(BaseModel):

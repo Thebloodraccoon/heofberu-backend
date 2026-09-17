@@ -24,12 +24,13 @@ from app.models.features.feature_engine_models import (
 from app.models.features.feature_model import Feature
 
 # Same full engine-effect-tree eager load ``/features`` uses: a feat's
-# ``FeatResponse``/``FeatGetAllResponse`` now expose ``has_static_effects``/
-# ``has_choices``/``static_groups`` (plain ``Feature`` properties reading
-# every fixed-effect relationship and the choice-group tree), so both
-# ``get_by_id`` and ``get_all`` need the whole tree loaded up front —
-# anything narrower lazy-loads during response serialization and 500s in
-# the async engine.
+# ``FeatResponse`` exposes ``static_groups``/``effects_summary`` (plain
+# ``Feature`` properties reading every fixed-effect relationship and the
+# choice-group tree), so ``get_by_id`` needs the whole tree loaded up
+# front — anything narrower lazy-loads during response serialization and
+# 500s in the async engine. ``FeatGetAllResponse`` no longer needs this:
+# ``has_static_effects``/``has_choices`` are real columns, column-selected
+# directly by ``FeatCrudService.get_all``.
 _FEAT_LOAD_OPTIONS = feature_summary_loads()
 
 
@@ -134,9 +135,15 @@ class FeatRepository(BaseRepository[Feature]):
         required an explicit ``ability_score_increase_id`` whenever a feat
         offers any ASI choice (see ``validate_asi_choice_required``), so a
         lone option is still a confirmed pick, never auto-applied.
+
+        This is the feat's own choice-group table (not shared with fixed
+        effects), so it also maintains ``feat.has_choices`` directly here —
+        ``has_static_effects`` is untouched: ASI options never carry a fixed
+        effect, only a per-option one.
         """
 
         await self.db.execute(delete(FeatureChoiceGroup).where(FeatureChoiceGroup.feature_id == feat.id))
+        feat.has_choices = bool(increases)
 
         if increases:
             group = FeatureChoiceGroup(

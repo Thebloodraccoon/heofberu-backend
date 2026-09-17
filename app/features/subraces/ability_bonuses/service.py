@@ -35,11 +35,11 @@ class SubraceAbilityBonusService(
     async def set_ability_bonuses(self, subrace_id: int, data: SubraceAbilityBonusesUpdate) -> SubraceResponse:
         """Fully replace a subrace's ability score bonuses and refresh affected characters' stats."""
 
-        subrace = await self._get_or_404(subrace_id)
+        await self._exists_or_404(subrace_id)
 
         bonuses = [{"ability": item.ability, "bonus": item.bonus} for item in data.ability_bonuses]
         async with self._atomic():
-            await self.repository.set_ability_bonuses(subrace, bonuses, commit=False)
+            await self.repository.set_ability_bonuses(subrace_id, bonuses, commit=False)
             await reconcile_characters_for_source(self.repository.db, FeatureSourceType.SUBRACE, subrace_id)
         await invalidate_subrace_cache()
 
@@ -50,4 +50,4 @@ class SubraceAbilityBonusService(
     ) -> None:
         """Replace a subrace's bonuses on an existing ``subrace`` row (used by ``create_subrace``)."""
 
-        await self.repository.set_ability_bonuses(subrace, bonuses, commit=commit)
+        await self.repository.set_ability_bonuses(subrace.id, bonuses, commit=commit)

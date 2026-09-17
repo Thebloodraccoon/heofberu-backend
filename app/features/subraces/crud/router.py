@@ -44,22 +44,18 @@ async def create_subrace(
         Body(
             openapi_examples={
                 "minimal": {
-                    "summary": "Minimal — base fields only",
+                    "summary": "Minimal — name only",
                     "value": {
                         "name": "High Elf",
+                        "race_id": 1,
                     },
                 },
-                "with_bonuses_and_features": {
-                    "summary": "With ability bonuses and features",
+                "with_description": {
+                    "summary": "With a description",
                     "value": {
                         "name": "High Elf",
-                        "ability_bonuses": [{"ability": "INT", "bonus": 1}],
-                        "features": [
-                            {
-                                "name": "Elf Weapon Training",
-                                "description": "Proficiency with longswords, shortswords, longbows and shortbows.",
-                            }
-                        ],
+                        "race_id": 1,
+                        "description": "Graceful and quick-witted, with a mastery of magic.",
                     },
                 },
             },
@@ -68,7 +64,13 @@ async def create_subrace(
     race_service: SubraceCrudDep,
     _: GmUserDep,
 ):
-    """Create a subrace under the given race. **GM only.**"""
+    """
+    Create a subrace under the given race. **GM only.**
+
+    Base fields only: ``ability_bonuses`` and ``features`` are attached
+    afterwards through their own capability endpoints, and ``image_url``
+    only via ``PUT /subraces/{id}/image``.
+    """
 
     return await race_service.create_subrace(data)
 

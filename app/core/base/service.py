@@ -139,7 +139,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         columns, so heavy full records with eager-loaded relationships are
         never materialized. If the schema contains fields that aren't plain
         mapped columns (relationships, e.g. a spell's ``available_classes``,
-        or Python ``@property`` attributes like ``has_choices``), the
+        or Python ``@property`` attributes like a feature's ``effects_summary``), the
         column-select path can't resolve them, so the listing falls back to
         the eager-loaded ``repository.get_all`` (via the repository's
         ``default_load_options``) instead. ``total`` always comes from
@@ -264,6 +264,18 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
             raise RecordNotFoundError(model_name=self.repository.model.__name__, model_id=str(item_id))
 
         return item
+
+    async def _exists_or_404(self, item_id: int) -> None:
+        """
+        Raise ``RecordNotFoundError`` unless ``item_id`` exists.
+
+        A cheap presence-only check (``repository.exists_by_id``) for callers
+        that only need to 404-guard a parent id and don't use the fetched
+        record — use ``_get_or_404`` instead when the record itself is needed.
+        """
+
+        if not await self.repository.exists_by_id(item_id):
+            raise RecordNotFoundError(model_name=self.repository.model.__name__, model_id=str(item_id))
 
     async def _get_response(self, item_id: int) -> ResponseSchema:
         """Fetch a record by id, serialize it to ``response_schema``, or raise ``RecordNotFoundError``."""

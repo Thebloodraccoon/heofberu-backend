@@ -10,7 +10,7 @@ from app.models.skill_model import Skill
 class ClassSkillsRepository(SkillLookupMixin, ClassRepository):
     """Class repository extended with available-skill management."""
 
-    async def set_available_skills(self, character_class: Class, skills: list[Skill], *, commit: bool = True) -> Class:
+    async def set_available_skills(self, class_id: int, skills: list[Skill], *, commit: bool = True) -> None:
         """
         Replace all skills a class may choose proficiencies from.
 
@@ -21,11 +21,9 @@ class ClassSkillsRepository(SkillLookupMixin, ClassRepository):
 
         await self.replace_association(
             class_available_skills,
-            character_class,
+            Class(id=class_id),
             "class_id",
             "skill_id",
             [skill.id for skill in (skills or [])],
             commit=commit,
         )
-
-        return character_class

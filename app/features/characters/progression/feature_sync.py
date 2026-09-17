@@ -19,6 +19,14 @@ sources, GM free-form proficiency rows with a NULL source) are left
 untouched. Re-materialization only ever touches rows whose
 ``source_character_feature_id`` is set, and preserves skill ``is_expertise``
 upgrades.
+
+``sync_progression_features`` materializes every one of a character's
+auto-grants in one batched pass (Variant A of the
+``characters-grant-materialization-batching-plan``: one query per
+proficiency-type dimension across the whole grant batch, not one per grant)
+— see ``FeatureGrantMaterializer.reconcile_many``. Other callers
+(``refresh_feature_effect_caches``, the GM panel, feat grants) still
+materialize one grant at a time via ``materialize_grant``/``reconcile``.
 """
 
 from sqlalchemy import or_, select
@@ -26,11 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType, GrantSource
 from app.features.characters.ability_score.service import CharacterStatsService
-from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.cache import invalidate_characters_cache
 from app.features.characters.grants.materializer import (
     FeatureGrantMaterializer,
     ResolvedOption,
     load_feature_effect_tree,
+    load_feature_effect_trees,
 )
 from app.models import CharacterFeature, Feature
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
@@ -112,14 +121,65 @@ async def _grant_choice_map(db: AsyncSession, feature: Feature, grant: Character
     return choice_map
 
 
-async def materialize_grant(db: AsyncSession, character: Character, grant: CharacterFeature) -> None:
+async def _grant_choice_maps(
+    db: AsyncSession, feature_by_id: dict[int, Feature], grants: list[CharacterFeature]
+) -> dict[int, dict[int, list[ResolvedOption]]]:
+    """
+    Batched ``_grant_choice_map``: one query for every grant's stored choice
+    rows in ``grants`` instead of one per grant, grouped by
+    ``character_feature_id`` before being resolved against each grant's own
+    (already batch-loaded) feature tree. A grant whose feature is missing
+    from ``feature_by_id`` (vanished reference row) is simply skipped, same
+    as ``materialize_grant``'s single-grant behavior.
+    """
+
+    grant_ids = [grant.id for grant in grants]
+    if not grant_ids:
+        return {}
+
+    result = await db.execute(
+        select(CharacterFeatureChoice).where(CharacterFeatureChoice.character_feature_id.in_(grant_ids))
+    )
+    stored_by_grant: dict[int, list[CharacterFeatureChoice]] = {grant_id: [] for grant_id in grant_ids}
+    for choice in result.scalars().unique().all():
+        stored_by_grant[choice.character_feature_id].append(choice)
+
+    choice_maps: dict[int, dict[int, list[ResolvedOption]]] = {}
+    for grant in grants:
+        feature = feature_by_id.get(grant.feature_id)
+        if feature is None:
+            continue
+
+        option_by_id = {option.id: option for group in feature.choice_groups for option in group.options}
+        choice_map: dict[int, list[ResolvedOption]] = {}
+        for choice in stored_by_grant[grant.id]:
+            option = option_by_id.get(choice.choice_option_id)
+            if option is None:
+                continue
+            choice_map.setdefault(choice.choice_group_id, []).append(ResolvedOption(option=option))
+        choice_maps[grant.id] = choice_map
+
+    return choice_maps
+
+
+async def materialize_grant(
+    db: AsyncSession, character: Character, grant: CharacterFeature, *, feature: Feature | None = None
+) -> None:
     """
     Re-materialize one grant's effect rows (fixed effects + stored picks).
     A grant whose feature vanished is left hanging — the level sync removes
     auto-grants, and GM grants are the GM's to clean up.
+
+    ``feature`` lets a caller that already loaded the effect tree (e.g.
+    ``refresh_feature_effect_caches``, where every grant in the batch is for
+    the SAME feature) pass it in instead of this function reloading the
+    identical ~14-query tree once per grant/character; omit it to load fresh
+    (the ``sync_progression_features`` case, where each grant is a different
+    feature).
     """
 
-    feature = await load_feature_effect_tree(db, grant.feature_id)
+    if feature is None:
+        feature = await load_feature_effect_tree(db, grant.feature_id)
     if feature is None:
         return
 
@@ -180,8 +240,22 @@ async def sync_progression_features(db: AsyncSession, character: Character) -> l
         )
     )
     all_auto_grants = list(grants.scalars().unique().all())
-    for grant in all_auto_grants:
-        await materialize_grant(db, character, grant)
+
+    # Variant A batching (see the grant-materialization-batching plan):
+    # load every grant's feature tree and stored choice picks in one pass
+    # each, instead of once per grant, then run one materializer pass per
+    # proficiency-type dimension across the whole batch instead of once per
+    # grant. Per-grant diff semantics (dedup across grants, is_expertise
+    # monotonicity) are unchanged — see ``FeatureGrantMaterializer.reconcile_many``.
+    feature_by_id = await load_feature_effect_trees(db, [grant.feature_id for grant in all_auto_grants])
+    choice_maps = await _grant_choice_maps(db, feature_by_id, all_auto_grants)
+
+    entries = [
+        (grant, feature_by_id[grant.feature_id], choice_maps.get(grant.id, {}))
+        for grant in all_auto_grants
+        if grant.feature_id in feature_by_id
+    ]
+    await FeatureGrantMaterializer().reconcile_many(db, character.id, entries)
 
     return [grant for grant in all_auto_grants if grant.feature_id in new_feature_ids]
 
@@ -205,14 +279,21 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
 
     result = await db.execute(select(Character).where(source_filter(source_id)))
     characters = list(result.scalars().unique().all())
+    if not characters:
+        return
 
-    stats_service = CharacterStatsService(db)
     for character in characters:
         await sync_progression_features(db, character)
-        # Feature grants can carry fixed ability effects — refresh the
-        # stat cache in the caller's transaction (never commits here).
-        await stats_service.refresh(character, commit=False)
-        await invalidate_character_cache(character.id)
+
+    # Feature grants can carry fixed ability effects — refresh every
+    # affected character's stat cache in the caller's transaction (never
+    # commits here). Batched: one query per bonus/increase dimension across
+    # the whole list instead of 4 per character (see
+    # CharacterStatsService.compute_many), and one Redis round trip instead
+    # of one per character (see invalidate_characters_cache).
+    stats_service = CharacterStatsService(db)
+    await stats_service.refresh_many(characters, commit=False)
+    await invalidate_characters_cache(character.id for character in characters)
 
 
 async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> None:
@@ -237,14 +318,24 @@ async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> No
     ).scalars().unique().all()
     character_by_id = {character.id: character for character in characters}
 
-    stats_service = CharacterStatsService(db)
+    # Every grant here is for the SAME feature (the one the GM just edited)
+    # — load its effect tree once instead of once per grant/character (see
+    # ``materialize_grant``'s ``feature`` param).
+    feature = await load_feature_effect_tree(db, feature_id)
+    if feature is None:
+        return
+
     for grant in grants:
         character = character_by_id.get(grant.character_id)
         if character is None:
             continue
-        await materialize_grant(db, character, grant)
-        await stats_service.refresh(character, commit=False)
-        # The DB cache row was just refreshed, but ``GET /characters/{id}``
-        # serves its ability scores from a Redis-cached CharacterResponse —
-        # purge it so the new totals are visible immediately.
-        await invalidate_character_cache(character.id)
+        await materialize_grant(db, character, grant, feature=feature)
+
+    # The DB cache row was just refreshed, but ``GET /characters/{id}``
+    # serves its ability scores from a Redis-cached CharacterResponse —
+    # purge it so the new totals are visible immediately. Batched across
+    # every affected character (see reconcile_characters_for_source).
+    affected_characters = list(character_by_id.values())
+    stats_service = CharacterStatsService(db)
+    await stats_service.refresh_many(affected_characters, commit=False)
+    await invalidate_characters_cache(character.id for character in affected_characters)

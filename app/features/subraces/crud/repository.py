@@ -58,20 +58,34 @@ class SubraceRepository(BaseRepository[Subrace]):
 
         return await self.exists_referencing(Character, "subrace_id", subrace_id)
 
-    async def list_for_race(self, race_id: int) -> list[Subrace]:
-        """Return all subraces for ``race_id``, ordered by name."""
+    async def list_for_race(self, race_id: int) -> list[Any]:
+        """
+        Return brief ``(id, race_id, name, image_url)`` rows for ``race_id``, ordered by name.
 
-        return await self.get_all(filters={"race_id": race_id}, order_by=Subrace.name, limit=None)
+        Column-select on purpose: ``default_load_options`` eager-loads
+        ``ability_bonuses`` plus the full feature effect tree
+        (``feature_summary_loads``), which ``SubraceGetAllResponse`` never
+        uses — going through ``get_all`` here would pay for both on every
+        row of every listing.
+        """
 
-    async def set_ability_bonuses(self, subrace: Subrace, bonuses: list[dict], *, commit: bool = True) -> Subrace:
+        return await self.get_brief(
+            Subrace.id,
+            Subrace.race_id,
+            Subrace.name,
+            Subrace.image_url,
+            filters={"race_id": race_id},
+            order_by=Subrace.name,
+            limit=None,
+        )
+
+    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
         """Replace all ability bonuses for a subrace with the given list."""
 
         await self.replace_child_rows(
             SubraceAbilityBonus,
-            subrace,
+            Subrace(id=subrace_id),
             "subrace_id",
             bonuses,
             commit=commit,
         )
-
-        return subrace

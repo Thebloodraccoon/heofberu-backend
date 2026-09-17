@@ -13,7 +13,7 @@ class BackgroundSkillsRepository(SkillLookupMixin, BackgroundRepository):
     from :class:`SkillLookupMixin`.
     """
 
-    async def set_skills(self, background: Background, skills: list[Skill], *, commit: bool = True) -> Background:
+    async def set_skills(self, background_id: int, skills: list[Skill], *, commit: bool = True) -> None:
         """
         Replace all granted skills for a background.
 
@@ -24,11 +24,9 @@ class BackgroundSkillsRepository(SkillLookupMixin, BackgroundRepository):
 
         await self.replace_association(
             background_skills,
-            background,
+            Background(id=background_id),
             "background_id",
             "skill_id",
             [skill.id for skill in (skills or [])],
             commit=commit,
         )
-
-        return background

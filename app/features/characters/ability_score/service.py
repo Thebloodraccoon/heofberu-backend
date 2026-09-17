@@ -119,6 +119,46 @@ class CharacterStatsService:
         totals = await self.compute(character)
         return await self.repository.upsert(character.id, totals, commit=commit)
 
+    async def compute_many(self, characters: list[Character]) -> dict[int, dict[str, int]]:
+        """
+        Batched counterpart to :meth:`compute`: 4 queries total for the
+        whole list (race/subrace bonuses grouped by the distinct ids
+        actually used, ASI/feature increases grouped by character id),
+        instead of 4 queries per character. Used when a single write
+        affects many characters at once (e.g. a GM feature/bonus edit).
+        """
+
+        race_ids = [character.race_id for character in characters if character.race_id is not None]
+        subrace_ids = [character.subrace_id for character in characters if character.subrace_id is not None]
+        character_ids = [character.id for character in characters]
+
+        race_bonuses_by_race = await self.repository.get_race_bonuses_many(race_ids)
+        subrace_bonuses_by_subrace = await self.repository.get_subrace_bonuses_many(subrace_ids)
+        asi_increases_by_character = await self.repository.get_asi_increases_many(character_ids)
+        feature_increases_by_character = await self.repository.get_feature_increases_many(character_ids)
+
+        return {
+            character.id: self.calculator.compute(
+                character,
+                race_bonuses_by_race.get(character.race_id, []),
+                subrace_bonuses_by_subrace.get(character.subrace_id, []),
+                asi_increases_by_character.get(character.id, []),
+                feature_increases_by_character.get(character.id, []),
+            )
+            for character in characters
+        }
+
+    async def refresh_many(
+        self, characters: list[Character], *, commit: bool = True
+    ) -> dict[int, CharacterAbilityScore]:
+        """Batched counterpart to :meth:`refresh` — see :meth:`compute_many`."""
+
+        if not characters:
+            return {}
+
+        totals_by_character = await self.compute_many(characters)
+        return await self.repository.upsert_many(totals_by_character, commit=commit)
+
     async def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
         """
         Return the existing cache row as-is, without recomputing, or

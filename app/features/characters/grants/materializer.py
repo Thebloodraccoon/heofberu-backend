@@ -93,6 +93,24 @@ async def load_feature_effect_tree(db: AsyncSession, feature_id: int) -> Feature
     return result.scalars().first()
 
 
+async def load_feature_effect_trees(db: AsyncSession, feature_ids: list[int]) -> dict[int, Feature]:
+    """
+    Batched ``load_feature_effect_tree``: one query per relationship across
+    every id in ``feature_ids`` (``selectinload`` already batches this way
+    given a multi-row ``WHERE ... IN``), instead of the whole ~14-query tree
+    once per id. Used by ``sync_progression_features`` to load every one of
+    a character's auto-grants' features in one pass. Missing ids are simply
+    absent from the returned dict.
+    """
+
+    ids = set(feature_ids)
+    if not ids:
+        return {}
+
+    result = await db.execute(select(Feature).where(Feature.id.in_(ids)).options(*engine_effect_loads()))
+    return {feature.id: feature for feature in result.scalars().unique().all()}
+
+
 @dataclass
 class ResolvedOption:
     """One picked option inside a choice group, with the concrete skill/spell it resolved any open effect to."""
@@ -219,6 +237,40 @@ class FeatureGrantMaterializer:
         await self._reconcile_weapons(db, character_id, grant, feature, desired)
         await self._reconcile_spells(db, character_id, grant, desired)
 
+    async def reconcile_many(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        entries: list[tuple[CharacterFeature, "Feature", dict[int, list[ResolvedOption]]]],
+    ) -> None:
+        """
+        Batched counterpart to ``reconcile`` for every auto-grant of ONE
+        character at once (used by ``sync_progression_features``): each
+        proficiency-type dimension is fetched in one query across every
+        entry instead of one query per grant per type — cuts the roughly
+        ``5xG`` queries ``reconcile`` would cost for G grants down to ~5
+        for the whole batch.
+
+        Per-grant diff semantics are unchanged: rows are fetched once (via
+        the ``*_many`` fetch helpers), partitioned per grant, then
+        ``_apply_keyed_diff`` runs the exact same per-grant algorithm
+        ``reconcile`` uses — see the class docstring on why two grants
+        owning the same skill/save/armor/weapon is legitimate and must
+        never collapse to one row, and why ``is_expertise`` upgrades are
+        monotonic per row, never merged across grants. Never commits.
+        """
+
+        if not entries:
+            return
+
+        desired_by_grant = {grant.id: await self.build_desired(feature, choices) for grant, feature, choices in entries}
+
+        await self._reconcile_skills_many(db, character_id, entries, desired_by_grant)
+        await self._reconcile_saves_many(db, character_id, entries, desired_by_grant)
+        await self._reconcile_armor_many(db, character_id, entries, desired_by_grant)
+        await self._reconcile_weapons_many(db, character_id, entries, desired_by_grant)
+        await self._reconcile_spells_many(db, character_id, entries, desired_by_grant)
+
     @staticmethod
     def _new_proficiency(
         character_id: int,
@@ -255,7 +307,33 @@ class FeatureGrantMaterializer:
         )
         return list(result.scalars().unique().all())
 
-    async def _reconcile_by_key(
+    async def _own_rows_many(
+        self, db: AsyncSession, character_id: int, grant_ids: list[int], proficiency_type: ProficiencyType
+    ) -> dict[int, list[CharacterProficiency]]:
+        """
+        Batched ``_own_rows``: one query across every grant id in
+        ``grant_ids``, grouped by ``source_character_feature_id`` — the
+        multi-grant counterpart used by ``reconcile_many`` so a character
+        with G auto-grants pays one query per proficiency-type dimension
+        for the whole batch instead of one per grant.
+        """
+
+        if not grant_ids:
+            return {}
+
+        result = await db.execute(
+            select(CharacterProficiency).where(
+                CharacterProficiency.character_id == character_id,
+                CharacterProficiency.proficiency_type == proficiency_type,
+                CharacterProficiency.source_character_feature_id.in_(grant_ids),
+            )
+        )
+        by_grant: dict[int, list[CharacterProficiency]] = {grant_id: [] for grant_id in grant_ids}
+        for row in result.scalars().unique().all():
+            by_grant[row.source_character_feature_id].append(row)
+        return by_grant
+
+    async def _apply_keyed_diff(
         self,
         db: AsyncSession,
         character_id: int,
@@ -265,17 +343,25 @@ class FeatureGrantMaterializer:
         desired_keys,
         key_of,
         build_kwargs,
+        own_rows: list[CharacterProficiency],
         on_keep=None,
     ) -> None:
         """
-        Generic keyed diff: delete this grant's own rows of ``proficiency_type``
+        The pure diff step of ``_reconcile_by_key``, decoupled from fetching
+        ``own_rows`` — delete this grant's own rows of ``proficiency_type``
         whose ``key_of`` isn't in ``desired_keys``, insert the missing ones
         (built via ``build_kwargs``). ``on_keep``, if given, runs on every
         already-present row whose key is still desired (used by skills to
         upgrade ``is_expertise`` without ever downgrading it).
+
+        Shared by ``_reconcile_by_key`` (single grant, fetches its own
+        rows) and every ``*_many`` batched counterpart (rows pre-fetched
+        for the whole grant batch, pre-partitioned per grant by the
+        caller) — the per-grant diff semantics are identical either way,
+        since ``own_rows`` here is always already scoped to one grant.
         """
 
-        own = {key_of(row): row for row in await self._own_rows(db, character_id, grant, proficiency_type)}
+        own = {key_of(row): row for row in own_rows}
 
         for key, row in own.items():
             if key not in desired_keys:
@@ -289,6 +375,25 @@ class FeatureGrantMaterializer:
                 continue
 
             db.add(self._new_proficiency(character_id, grant, feature, proficiency_type, **build_kwargs(key)))
+
+    async def _reconcile_by_key(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        grant: CharacterFeature,
+        feature,
+        proficiency_type: ProficiencyType,
+        desired_keys,
+        key_of,
+        build_kwargs,
+        on_keep=None,
+    ) -> None:
+        """Single-grant keyed diff: fetch this grant's own rows, then apply the diff (see ``_apply_keyed_diff``)."""
+
+        own_rows = await self._own_rows(db, character_id, grant, proficiency_type)
+        await self._apply_keyed_diff(
+            db, character_id, grant, feature, proficiency_type, desired_keys, key_of, build_kwargs, own_rows, on_keep
+        )
 
     async def _reconcile_skills(
         self,
@@ -316,6 +421,41 @@ class FeatureGrantMaterializer:
             on_keep=on_keep,
         )
 
+    async def _reconcile_skills_many(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        entries: list[tuple[CharacterFeature, "Feature", dict]],
+        desired_by_grant: dict[int, DesiredEffects],
+    ) -> None:
+        """Batched ``_reconcile_skills``: one query for every entry's skill rows, then diffed per grant."""
+
+        grant_ids = [grant.id for grant, _, _ in entries]
+        own_by_grant = await self._own_rows_many(db, character_id, grant_ids, ProficiencyType.SKILL)
+
+        for grant, feature, _ in entries:
+            desired = desired_by_grant[grant.id]
+
+            def on_keep(row: CharacterProficiency, skill_id: int, desired: DesiredEffects = desired) -> None:
+                if desired.skills[skill_id] and not row.is_expertise:
+                    row.is_expertise = True
+
+            await self._apply_keyed_diff(
+                db,
+                character_id,
+                grant,
+                feature,
+                ProficiencyType.SKILL,
+                desired_keys=set(desired.skills),
+                key_of=lambda row: row.skill_id,
+                build_kwargs=lambda skill_id, desired=desired: {
+                    "skill_id": skill_id,
+                    "is_expertise": desired.skills[skill_id],
+                },
+                own_rows=own_by_grant[grant.id],
+                on_keep=on_keep,
+            )
+
     async def _reconcile_saves(
         self,
         db: AsyncSession,
@@ -337,6 +477,32 @@ class FeatureGrantMaterializer:
             build_kwargs=lambda ability: {"ability": ability},
         )
 
+    async def _reconcile_saves_many(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        entries: list[tuple[CharacterFeature, "Feature", dict]],
+        desired_by_grant: dict[int, DesiredEffects],
+    ) -> None:
+        """Batched ``_reconcile_saves``: one query for every entry's saving-throw rows, then diffed per grant."""
+
+        grant_ids = [grant.id for grant, _, _ in entries]
+        own_by_grant = await self._own_rows_many(db, character_id, grant_ids, ProficiencyType.SAVING_THROW)
+
+        for grant, feature, _ in entries:
+            desired = desired_by_grant[grant.id]
+            await self._apply_keyed_diff(
+                db,
+                character_id,
+                grant,
+                feature,
+                ProficiencyType.SAVING_THROW,
+                desired_keys=desired.saving_throws,
+                key_of=lambda row: row.ability,
+                build_kwargs=lambda ability: {"ability": ability},
+                own_rows=own_by_grant[grant.id],
+            )
+
     async def _reconcile_armor(
         self,
         db: AsyncSession,
@@ -357,6 +523,32 @@ class FeatureGrantMaterializer:
             key_of=lambda row: row.armor_type,
             build_kwargs=lambda armor_type: {"armor_type": armor_type},
         )
+
+    async def _reconcile_armor_many(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        entries: list[tuple[CharacterFeature, "Feature", dict]],
+        desired_by_grant: dict[int, DesiredEffects],
+    ) -> None:
+        """Batched ``_reconcile_armor``: one query for every entry's armor rows, then diffed per grant."""
+
+        grant_ids = [grant.id for grant, _, _ in entries]
+        own_by_grant = await self._own_rows_many(db, character_id, grant_ids, ProficiencyType.ARMOR)
+
+        for grant, feature, _ in entries:
+            desired = desired_by_grant[grant.id]
+            await self._apply_keyed_diff(
+                db,
+                character_id,
+                grant,
+                feature,
+                ProficiencyType.ARMOR,
+                desired_keys=desired.armor,
+                key_of=lambda row: row.armor_type,
+                build_kwargs=lambda armor_type: {"armor_type": armor_type},
+                own_rows=own_by_grant[grant.id],
+            )
 
     async def _reconcile_weapons(
         self,
@@ -380,6 +572,32 @@ class FeatureGrantMaterializer:
                 {"weapon_category": key[0]} if key[0] is not None else {"item_id": key[1]}
             ),
         )
+
+    async def _reconcile_weapons_many(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        entries: list[tuple[CharacterFeature, "Feature", dict]],
+        desired_by_grant: dict[int, DesiredEffects],
+    ) -> None:
+        """Batched ``_reconcile_weapons``: one query for every entry's weapon rows, then diffed per grant."""
+
+        grant_ids = [grant.id for grant, _, _ in entries]
+        own_by_grant = await self._own_rows_many(db, character_id, grant_ids, ProficiencyType.WEAPON)
+
+        for grant, feature, _ in entries:
+            desired = desired_by_grant[grant.id]
+            await self._apply_keyed_diff(
+                db,
+                character_id,
+                grant,
+                feature,
+                ProficiencyType.WEAPON,
+                desired_keys=set(desired.weapons),
+                key_of=lambda row: (row.weapon_category, row.item_id),
+                build_kwargs=lambda key: ({"weapon_category": key[0]} if key[0] is not None else {"item_id": key[1]}),
+                own_rows=own_by_grant[grant.id],
+            )
 
     async def _reconcile_spells(
         self,
@@ -414,6 +632,48 @@ class FeatureGrantMaterializer:
                     )
                 )
 
+    async def _reconcile_spells_many(
+        self,
+        db: AsyncSession,
+        character_id: int,
+        entries: list[tuple[CharacterFeature, "Feature", dict]],
+        desired_by_grant: dict[int, DesiredEffects],
+    ) -> None:
+        """Batched ``_reconcile_spells``: one query for every entry's granted-spell rows, then diffed per grant."""
+
+        grant_ids = [grant.id for grant, _, _ in entries]
+        if not grant_ids:
+            return
+
+        result = await db.execute(
+            select(CharacterGrantedSpell).where(
+                CharacterGrantedSpell.character_id == character_id,
+                CharacterGrantedSpell.source_character_feature_id.in_(grant_ids),
+            )
+        )
+        existing_by_grant: dict[int, list[CharacterGrantedSpell]] = {grant_id: [] for grant_id in grant_ids}
+        for row in result.scalars().unique().all():
+            existing_by_grant[row.source_character_feature_id].append(row)
+
+        for grant, _, _ in entries:
+            desired = desired_by_grant[grant.id]
+            existing = existing_by_grant[grant.id]
+            stored = {row.spell_id for row in existing}
+
+            for row in existing:
+                if row.spell_id not in desired.spells:
+                    await db.delete(row)
+
+            for spell_id in desired.spells:
+                if spell_id not in stored:
+                    db.add(
+                        CharacterGrantedSpell(
+                            character_id=character_id,
+                            spell_id=spell_id,
+                            source_character_feature_id=grant.id,
+                        )
+                    )
+
     @staticmethod
     def pending_groups(feature, stored_choices: list[CharacterFeatureChoice]) -> list[FeatureChoiceGroup]:
         """Return the grant's choice groups that still need picks (stored count < pick_count)."""
@@ -432,4 +692,5 @@ __all__ = [
     "choice_option_effect_loads",
     "engine_effect_loads",
     "load_feature_effect_tree",
+    "load_feature_effect_trees",
 ]

@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import FeatureSourceType
 from app.core.base.service import BaseService, Page, paginate
 from app.core.cache import use_cache
 from app.features.feats.cache import FEAT_CACHE_NAMESPACES, invalidate_feat_cache
@@ -39,29 +40,18 @@ def _to_feat_response(feature: Feature) -> FeatResponse:
     )
 
 
-def _to_feat_brief(feature: Feature) -> FeatGetAllResponse:
-    """Build a ``FeatGetAllResponse`` (listing row) from a FEAT-source ``Feature`` row."""
-
-    return FeatGetAllResponse(
-        id=feature.id,
-        name=feature.name,
-        min_level=feature.min_level,
-        has_static_effects=feature.has_static_effects,
-        has_choices=feature.has_choices,
-    )
-
-
 class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse, FeatGetAllResponse]):
     """
     Feat catalog CRUD, built directly on ``Feature`` (``source_type=FEAT``).
 
     ``get_all``/``get_by_id``/``update`` are overridden rather than
     inherited so listing/detail rows can be scoped to FEAT-source ``Feature``
-    rows and serialized via the shared ``_to_feat_brief``/``_to_feat_response``
-    helpers (same ``has_static_effects``/``has_choices``/``static_groups``
-    shape ``GET /features`` exposes). Every write purges both the ``feats``
-    namespace and the shared ``features`` namespace (``GET /features`` reads
-    the same table).
+    rows: ``get_all`` builds ``FeatGetAllResponse`` from brief columns plus
+    batched effect flags (``load_effect_flags``); ``get_by_id``/``update``
+    serialize via ``_to_feat_response`` (same ``has_static_effects``/
+    ``has_choices``/``static_groups`` shape ``GET /features`` exposes).
+    Every write purges both the ``feats`` namespace and the shared
+    ``features`` namespace (``GET /features`` reads the same table).
     """
 
     repository: FeatRepository
@@ -100,14 +90,33 @@ class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse,
     async def get_all(
         self, page: int = 1, size: int = 100, filters: dict | None = None, search: str | None = None
     ) -> Page[FeatGetAllResponse]:
-        """Cached, paginated feat listing."""
+        """
+        Cached, paginated feat listing.
+
+        Brief columns, including the denormalized ``has_static_effects``/
+        ``has_choices`` flags, instead of eager-loading the full engine
+        effect tree per row (``FeatGetAllResponse`` never uses the actual
+        effect data, only the two booleans).
+        """
 
         skip, limit = paginate(page, size)
         total = await self.repository.count(filters=filters, search=search)
-        items = await self.repository.get_all(
-            skip=skip, limit=limit, filters=filters, search=search, order_by=Feature.name
+
+        rows = await self.repository.get_brief(
+            Feature.id,
+            Feature.name,
+            Feature.min_level,
+            Feature.has_static_effects,
+            Feature.has_choices,
+            order_by=Feature.name,
+            skip=skip,
+            limit=limit,
+            filters={**(filters or {}), "source_type": FeatureSourceType.FEAT},
+            search=search,
         )
-        return Page(items=[_to_feat_brief(item) for item in items], total=total, page=page, size=size)
+
+        items = [FeatGetAllResponse.model_validate(row._mapping) for row in rows]
+        return Page(items=items, total=total, page=page, size=size)
 
     @use_cache()
     async def get_by_id(self, item_id: int) -> FeatResponse:
@@ -124,6 +133,12 @@ class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse,
         updated_item = await self.repository.update(item, fields)
         await self._invalidate_all()
 
+        # Re-fetch, not just serialize `updated_item` directly: the same
+        # "no relationship touched, expire_on_commit=False" reasoning was
+        # tried on FeatureCrudService.update_feature()/create() and broke
+        # every feature-creation integration test with a 422 (see the
+        # comments there) — not trusting it here without feats-specific
+        # integration-test proof either.
         return await self._get_response_for(updated_item.id)
 
     async def delete(self, item_id: int) -> bool:

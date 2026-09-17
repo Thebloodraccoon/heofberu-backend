@@ -12,7 +12,7 @@ subraces/
 ├── router.py            # assembles /subraces (one include_router per capability)
 ├── dependencies.py      # SubraceCrudDep, SubraceFeaturesDep, SubraceAbilityBonusesDep, SubraceImageDep
 ├── cache.py             # SUBRACE_CACHE_NAMESPACES + invalidate_subrace_cache()
-├── crud/                # subrace CRUD, race-scoped listing/lookup, atomic nested creation
+├── crud/                # subrace CRUD, race-scoped listing/lookup
 ├── features/            # read-only cached SUBRACE-source feature list
 ├── ability_bonuses/     # ability-bonus full replacement (primitives shared with races)
 └── image/               # catalog image upload/delete
@@ -23,7 +23,7 @@ subraces/
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
 | GET | `/subraces?race_id=` | open | Every subrace of the race as light `SubraceGetAllResponse` rows (id/race_id/name/image_url), ordered by name. Missing race → 404. |
-| POST | `/subraces` | GM | Body carries `race_id` (the owning race); optionally seeds `ability_bonuses` + nested `features` atomically. Duplicate name within the race → 409. |
+| POST | `/subraces` | GM | Base fields only (`race_id` + `name`/`description`); `ability_bonuses` and `features` are attached afterwards through their own endpoints, `image_url` through `PUT .../image`. Duplicate name within the race → 409. |
 | GET | `/subraces/{subrace_id}` | open | Full `SubraceResponse` — base fields + `ability_bonuses` + SUBRACE-source `features`; cached as one unit under the `races` namespace. |
 | PATCH | `/subraces/{subrace_id}` | GM | Base fields only (`race_id` is immutable, not in the Update schema); 409 on name clash within the race. |
 | DELETE | `/subraces/{subrace_id}` | Founder | Blocked with 409 while any character still references the subrace (`is_in_use` on `Character.subrace_id`). |
@@ -40,15 +40,19 @@ explicitly in `__init__`:
 
 - `self._features = FeatureCrudService(db)` — `get_by_id` folds the subrace's
   own SUBRACE-source `features` into `SubraceResponse` (cached under
-  `races:subrace:get_by_id`); `create_subrace` seeds nested features through
-  `create_features_for_source(commit=False)`.
-- `self._ability_bonuses = SubraceAbilityBonusService(db)` — full-replace
-  write; a bonus edit also refreshes every existing character of that subrace's
-  stat cache in the same transaction via `reconcile_characters_for_source`
-  (the known one-way `characters.progression.feature_sync` import).
+  `races:subrace:get_by_id`). Not used by `create_subrace`, which no longer
+  seeds anything nested — features are attached afterwards through the
+  `features/` capability endpoint.
 - `self._race_repository = RaceRepository(db)` — `list_for_race` / `create`
   `_ensure_race_exists`, translating a missing race into `RecordNotFoundError`
   (404).
+
+Ability bonuses are managed entirely through the separate
+`SubraceAbilityBonusService` (`ability_bonuses/`, its own `PUT` endpoint) —
+`SubraceCrudService` doesn't compose it; a bonus edit refreshes every
+existing character of that subrace's stat cache in the same transaction via
+`reconcile_characters_for_source` (the known one-way
+`characters.progression.feature_sync` import).
 
 Name uniqueness is **race-scoped** (`SubraceRepository._check_uniqueness`
 filters on `race_id`), and deletion runs the generic

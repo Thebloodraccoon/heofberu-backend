@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
 from app.core.base.service import BaseService
+from app.core.cache import use_cache
 from app.core.exceptions import FoundFatherAccessException
 from app.core.security.password import get_password_hash_async
 from app.features.users.exceptions import (
@@ -20,11 +21,25 @@ from app.settings import settings
 class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
     """
     User CRUD built on :class:`BaseService`, adding password hashing on
-    create, protection of the seeded default admin, a self-deletion guard,
-    and lookup by email.
+    create, protection of the seeded default admin, and lookup by email.
+
+    ``get_user_by_email`` is cached with a long TTL — it's the per-request
+    hop ``CurrentUserDep`` takes to resolve a bearer token to a user, so
+    every authenticated request would otherwise pay for a fresh DB round
+    trip. Correctness comes from explicit invalidation, not the TTL: any
+    write that can change what the lookup returns (role, email, username,
+    deletion) calls ``_invalidate_cache()`` immediately, so a demoted/
+    deleted user loses access on their very next request regardless of TTL.
+    The TTL is sized to outlast a play session (a D&D session runs ~6h) so a
+    long-running game doesn't keep re-fetching the same row every request;
+    it's a cap on unreachable/orphaned entries, not the invalidation path.
     """
 
     repository: UserRepository
+
+    cache_namespaces = ("users",)
+
+    _USER_CACHE_TTL_SECONDS = 6 * 60 * 60
 
     def __init__(self, db: AsyncSession):
         """Wire up the user repository and response schema."""
@@ -34,6 +49,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
             response_schema=UserResponse,
         )
 
+    @use_cache(ttl=_USER_CACHE_TTL_SECONDS)
     async def get_user_by_email(self, email: str) -> UserResponse:
         """Return a single user by email, or raise ``UserNotFoundException``."""
 
@@ -72,6 +88,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         fields["updated_at"] = settings.utcnow()
         updated_user = await self.repository.update(user, fields)
+        await self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_user)
 
     async def update_profile(self, user_id: int, data: UserProfileUpdate) -> UserResponse:
@@ -85,6 +103,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         fields["updated_at"] = settings.utcnow()
 
         updated_user = await self.repository.update(user, fields)
+        await self._invalidate_cache()
+
         return self.response_schema.model_validate(updated_user)
 
     async def delete_user(self, user_id: int, current_user_id: int) -> bool:
@@ -98,7 +118,10 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
             raise SelfDeletionException()
 
         self._ensure_not_default_user(user)
-        return await self.repository.delete(user)
+        deleted = await self.repository.delete(user)
+        await self._invalidate_cache()
+
+        return deleted
 
     @staticmethod
     def _ensure_role_change_allowed(changes_role: bool, current_role: UserRole) -> None:

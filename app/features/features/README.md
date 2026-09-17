@@ -54,9 +54,10 @@ and is served as three things:
   keyed by `effect_type` (`"ability"` / `"skill"` / `"saving_throw"` / `"armor"`
   / `"weapon"` / `"spell"`) carrying that type's `items` list. `FeatureResponse`,
   `NestedFeatureResponse` and `FeatureEffectsResponse` all expose
-  `static_groups` this way, plus the derived `has_static_effects` / `has_choices`
-  booleans and rendered `effects_summary` string (all three are `Feature`
-  `@property`s, not columns).
+  `static_groups` this way, plus `has_static_effects` / `has_choices`
+  (denormalized `Feature` columns, maintained by every effect/choice-group
+  write — see `FeatureEffectsService._refresh_effect_flags`) and a rendered
+  `effects_summary` string (still a `Feature` `@property`, not a column).
 - **`FeatureEffectsResponse`** aggregates `choice_groups` + `static_groups` and
   is what `GET /features/{feature_id}/effects` returns (`GET /features/{feature_id}`
   embeds the same shape inline via `FeatureResponse`).

@@ -35,11 +35,11 @@ class RaceAbilityBonusService(BaseService[Race, RaceCreate, RaceUpdate, RaceResp
     async def set_ability_bonuses(self, race_id: int, data: AbilityBonusesUpdate) -> RaceResponse:
         """Fully replace a race's ability score bonuses and refresh affected characters' stats."""
 
-        race = await self._get_or_404(race_id)
+        await self._exists_or_404(race_id)
 
         bonuses = [{"ability": item.ability, "bonus": item.bonus} for item in data.ability_bonuses]
         async with self._atomic():
-            await self.repository.set_ability_bonuses(race, bonuses, commit=False)
+            await self.repository.set_ability_bonuses(race_id, bonuses, commit=False)
             await reconcile_characters_for_source(self.repository.db, FeatureSourceType.RACE, race_id)
         await invalidate_race_cache()
 
@@ -48,4 +48,4 @@ class RaceAbilityBonusService(BaseService[Race, RaceCreate, RaceUpdate, RaceResp
     async def set_ability_bonuses_for_race(self, race: Race, bonuses: list[dict], *, commit: bool = True) -> None:
         """Replace a race's ability bonuses on an existing ``race`` row (used by ``create_race``)."""
 
-        await self.repository.set_ability_bonuses(race, bonuses, commit=commit)
+        await self.repository.set_ability_bonuses(race.id, bonuses, commit=commit)

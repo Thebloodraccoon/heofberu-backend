@@ -9,7 +9,7 @@ from app.core.base.service import BaseService
 from app.core.exceptions import RecordInUseError
 from app.features.characters.progression.feature_sync import refresh_feature_effect_caches
 from app.features.features.cache import FEATURE_CACHE_NAMESPACES, purge_feature_cache_for_source
-from app.features.features.crud.repository import FeatureRepository
+from app.features.features.crud.repository import FeatureRepository, load_effect_flags
 from app.features.features.crud.schemas import FeatureResponse
 from app.features.features.effects.exceptions import InvalidFeatureEffectDataError
 from app.features.features.effects.schemas import (
@@ -112,6 +112,22 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
             response_schema=FeatureResponse,
         )
 
+    async def _refresh_effect_flags(self, feature: Feature) -> None:
+        """
+        Recompute and persist ``feature.has_static_effects``/``has_choices``
+        after a fixed-effect or choice-group diff.
+
+        Must run after the diff's ``db.flush()`` (so the existence queries
+        in ``load_effect_flags`` see the rows just inserted/deleted) and
+        before the transaction commits — these two columns are the single
+        source of truth ``GET /features``/``GET /feats`` listings read
+        directly, so they must never fall behind the actual effect tree.
+        """
+
+        flags = await load_effect_flags(self.repository.db, [feature.id])
+        feature.has_static_effects = flags[feature.id]["has_static_effects"]
+        feature.has_choices = flags[feature.id]["has_choices"]
+
     async def _feature_with_effects(self, feature_id: int) -> Feature:
         """Fetch the feature with its whole engine effect tree eagerly loaded."""
 
@@ -145,6 +161,36 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         owner_col = getattr(model, owner_field)
         existing = (await db.execute(select(model).where(owner_col == owner_id))).scalars().all()
         existing_by_id = {row.id: row for row in existing}
+
+        await self._apply_owned_rows_diff(model, owner_field, owner_id, payload_items, existing_by_id)
+
+    async def _load_owned_rows_by_owner(self, model, owner_field: str, owner_ids: set[int]) -> dict[int, dict]:
+        """
+        One batched query for ``model`` rows across every id in ``owner_ids``,
+        grouped by owner id — the multi-owner counterpart to the single-owner
+        query inside ``_diff_owned_rows``, used to diff many choice options'
+        effect rows without a query per option.
+        """
+
+        if not owner_ids:
+            return {}
+
+        db = self.repository.db
+        owner_col = getattr(model, owner_field)
+        existing = (await db.execute(select(model).where(owner_col.in_(owner_ids)))).scalars().all()
+
+        by_owner: dict[int, dict] = {}
+        for row in existing:
+            by_owner.setdefault(getattr(row, owner_field), {})[row.id] = row
+
+        return by_owner
+
+    async def _apply_owned_rows_diff(
+        self, model, owner_field: str, owner_id: int, payload_items: list, existing_by_id: dict
+    ) -> None:
+        """Apply the insert/update/delete diff for one owner against pre-fetched ``existing_by_id`` rows."""
+
+        db = self.repository.db
         seen_ids: set[int] = set()
 
         for item in payload_items:
@@ -187,6 +233,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         # refresh_feature_effect_caches's SELECT-based recomputation
         # (get_feature_increases et al.) actually sees them.
         await self.repository.db.flush()
+        await self._refresh_effect_flags(feature)
 
         await refresh_feature_effect_caches(self.repository.db, feature_id)
         await self.repository.db.commit()
@@ -228,6 +275,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
 
         db = self.repository.db
         seen_option_ids: set[int] = set()
+        resolved: list[tuple[FeatureChoiceOption, ChoiceOptionPayload]] = []
 
         for payload in option_payloads:
             if payload.id is not None:
@@ -243,20 +291,29 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
                 db.add(option)
                 await db.flush()  # need option.id before diffing its effect rows
 
-            await self._diff_owned_rows(
-                FeatureAbilityScoreEffect, "choice_option_id", option.id, payload.ability_effects
-            )
-            await self._diff_owned_rows(FeatureSkillProficiencyEffect, "choice_option_id", option.id, payload.skill_effects)
-            await self._diff_owned_rows(
-                FeatureSavingThrowEffect, "choice_option_id", option.id, payload.saving_throw_effects
-            )
-            await self._diff_owned_rows(
-                FeatureArmorProficiencyEffect, "choice_option_id", option.id, payload.armor_effects
-            )
-            await self._diff_owned_rows(
-                FeatureWeaponProficiencyEffect, "choice_option_id", option.id, payload.weapon_effects
-            )
-            await self._diff_owned_rows(FeatureSpellGrantEffect, "choice_option_id", option.id, payload.spell_effects)
+            resolved.append((option, payload))
+
+        # One batched query per effect type across every surviving option in
+        # the group, instead of one query per (option, effect type) pair —
+        # a group with N options previously ran 6xN SELECTs here.
+        effect_dimensions = (
+            (FeatureAbilityScoreEffect, "ability_effects"),
+            (FeatureSkillProficiencyEffect, "skill_effects"),
+            (FeatureSavingThrowEffect, "saving_throw_effects"),
+            (FeatureArmorProficiencyEffect, "armor_effects"),
+            (FeatureWeaponProficiencyEffect, "weapon_effects"),
+            (FeatureSpellGrantEffect, "spell_effects"),
+        )
+        for model, attr in effect_dimensions:
+            existing_by_option = await self._load_owned_rows_by_owner(model, "choice_option_id", seen_option_ids)
+            for option, payload in resolved:
+                await self._apply_owned_rows_diff(
+                    model,
+                    "choice_option_id",
+                    option.id,
+                    getattr(payload, attr),
+                    existing_by_option.get(option.id, {}),
+                )
 
         removed_option_ids = [option_id for option_id in existing_options if option_id not in seen_option_ids]
         if removed_option_ids:
@@ -328,6 +385,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         # surfaced as a clean 409 instead of a raw IntegrityError.
         try:
             await db.flush()
+            await self._refresh_effect_flags(feature)
             await refresh_feature_effect_caches(self.repository.db, feature_id)
             await db.commit()
         except IntegrityError as exc:

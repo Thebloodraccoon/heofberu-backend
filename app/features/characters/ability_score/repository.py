@@ -86,6 +86,35 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         result = await self.db.execute(select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id == subrace_id))
         return list(result.scalars().unique().all())
 
+    async def get_race_bonuses_many(self, race_ids: list[int]) -> dict[int, list[RaceAbilityBonus]]:
+        """
+        Batched counterpart to :meth:`get_race_bonuses`: one query for every
+        distinct race id (instead of one query per character sharing a race).
+        """
+
+        ids = {race_id for race_id in race_ids if race_id is not None}
+        if not ids:
+            return {}
+
+        result = await self.db.execute(select(RaceAbilityBonus).where(RaceAbilityBonus.race_id.in_(ids)))
+        grouped: dict[int, list[RaceAbilityBonus]] = {}
+        for row in result.scalars().unique().all():
+            grouped.setdefault(row.race_id, []).append(row)
+        return grouped
+
+    async def get_subrace_bonuses_many(self, subrace_ids: list[int]) -> dict[int, list[SubraceAbilityBonus]]:
+        """Batched counterpart to :meth:`get_subrace_bonuses`."""
+
+        ids = {subrace_id for subrace_id in subrace_ids if subrace_id is not None}
+        if not ids:
+            return {}
+
+        result = await self.db.execute(select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id.in_(ids)))
+        grouped: dict[int, list[SubraceAbilityBonus]] = {}
+        for row in result.scalars().unique().all():
+            grouped.setdefault(row.subrace_id, []).append(row)
+        return grouped
+
     async def get_asi_increases(self, character_id: int) -> list[CharacterASIChoiceIncrease]:
         """
         Fetch the counted increments of the character's ASI-choice log
@@ -148,6 +177,71 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
 
         return [*fixed_rows, *option_rows]
 
+    async def get_asi_increases_many(self, character_ids: list[int]) -> dict[int, list[CharacterASIChoiceIncrease]]:
+        """Batched counterpart to :meth:`get_asi_increases`: one query for every character id."""
+
+        if not character_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(CharacterASIChoiceIncrease, CharacterASIChoice.character_id)
+            .join(CharacterASIChoice, CharacterASIChoice.id == CharacterASIChoiceIncrease.character_asi_choice_id)
+            .where(
+                CharacterASIChoice.character_id.in_(character_ids),
+                CharacterASIChoice.applied_to_base.is_(False),
+            )
+            .options(selectinload(CharacterASIChoiceIncrease.choice))
+        )
+        grouped: dict[int, list[CharacterASIChoiceIncrease]] = {}
+        for increase, character_id in result.unique().all():
+            grouped.setdefault(character_id, []).append(increase)
+        return grouped
+
+    async def get_feature_increases_many(self, character_ids: list[int]) -> dict[int, list]:
+        """Batched counterpart to :meth:`get_feature_increases`: two queries total, not two per character."""
+
+        grouped: dict[int, list] = {character_id: [] for character_id in character_ids}
+        if not character_ids:
+            return grouped
+
+        fixed_result = await self.db.execute(
+            select(FeatureAbilityScoreEffect, CharacterFeature.character_id)
+            .join(CharacterFeature, CharacterFeature.feature_id == FeatureAbilityScoreEffect.feature_id)
+            .where(
+                CharacterFeature.character_id.in_(character_ids),
+                FeatureAbilityScoreEffect.feature_id.isnot(None),
+            )
+            .options(selectinload(FeatureAbilityScoreEffect.feature))
+        )
+        for effect, character_id in fixed_result.unique().all():
+            grouped[character_id].append(effect)
+
+        option_result = await self.db.execute(
+            select(FeatureAbilityScoreEffect, CharacterFeature.character_id)
+            .join(
+                FeatureChoiceOption,
+                FeatureChoiceOption.id == FeatureAbilityScoreEffect.choice_option_id,
+            )
+            .join(
+                CharacterFeatureChoice,
+                CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id,
+            )
+            .join(CharacterFeature, CharacterFeature.id == CharacterFeatureChoice.character_feature_id)
+            .where(
+                CharacterFeature.character_id.in_(character_ids),
+                FeatureAbilityScoreEffect.choice_option_id.isnot(None),
+            )
+            .options(
+                selectinload(FeatureAbilityScoreEffect.choice_option)
+                .selectinload(FeatureChoiceOption.group)
+                .selectinload(FeatureChoiceGroup.feature)
+            )
+        )
+        for effect, character_id in option_result.unique().all():
+            grouped[character_id].append(effect)
+
+        return grouped
+
     async def upsert(self, character_id: int, totals: dict, *, commit: bool = True) -> CharacterAbilityScore:
         """
         Create or update the cached effective ability scores for a
@@ -169,6 +263,40 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             await self.db.flush()
 
         return cache
+
+    async def upsert_many(
+        self, totals_by_character_id: dict[int, dict], *, commit: bool = True
+    ) -> dict[int, CharacterAbilityScore]:
+        """
+        Batched counterpart to :meth:`upsert`: one query for the existing
+        cache rows (instead of one per character) and one flush/commit for
+        the whole batch.
+        """
+
+        if not totals_by_character_id:
+            return {}
+
+        existing = await self.get_many_by_character_ids(list(totals_by_character_id.keys()))
+
+        result: dict[int, CharacterAbilityScore] = {}
+        for character_id, totals in totals_by_character_id.items():
+            cache = existing.get(character_id)
+            if cache is None:
+                cache = CharacterAbilityScore(character_id=character_id, **totals)
+                self.db.add(cache)
+            else:
+                for field, value in totals.items():
+                    setattr(cache, field, value)
+            result[character_id] = cache
+
+        if commit:
+            await self.commit_or_flush()
+            for cache in result.values():
+                await self.db.refresh(cache)
+        else:
+            await self.db.flush()
+
+        return result
 
     async def get_classes(self, class_ids: list[int]) -> dict[int, Class]:
         """Return ``{id: Class}`` for the given class ids (missing ids are absent)."""

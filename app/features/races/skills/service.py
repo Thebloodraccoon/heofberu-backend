@@ -37,4 +37,4 @@ class RaceSkillService(
     async def set_skills_for_race(self, race: Race, skills: list[Skill], *, commit: bool = True) -> None:
         """Attach ``skills`` to an existing ``race`` row (used by ``create_race``)."""
 
-        await self.repository.set_skills(race, skills, commit=commit)
+        await self.repository.set_skills(race.id, skills, commit=commit)

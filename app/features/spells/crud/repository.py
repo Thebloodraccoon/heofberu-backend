@@ -59,58 +59,50 @@ class SpellRepository(BaseRepository[Spell]):
 
         return await self.get_many_by_ids(Subrace, subrace_ids)
 
-    async def set_classes(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> Spell:
+    async def set_classes(self, spell_id: int, classes: list[Class], *, commit: bool = True) -> None:
         """Replace all classes a spell is available to, via the association table to avoid a lazy load."""
 
         await self.replace_association(
             spell_classes,
-            spell,
+            Spell(id=spell_id),
             "spell_id",
             "class_id",
             [class_.id for class_ in classes],
             commit=commit,
         )
 
-        return spell
-
-    async def set_subclasses(self, spell: Spell, subclasses: list[Subclass], *, commit: bool = True) -> Spell:
+    async def set_subclasses(self, spell_id: int, subclasses: list[Subclass], *, commit: bool = True) -> None:
         """Replace all subclasses a spell is available to."""
 
         await self.replace_association(
             spell_subclasses,
-            spell,
+            Spell(id=spell_id),
             "spell_id",
             "subclass_id",
             [subclass.id for subclass in subclasses],
             commit=commit,
         )
 
-        return spell
-
-    async def set_races(self, spell: Spell, races: list[Race], *, commit: bool = True) -> Spell:
+    async def set_races(self, spell_id: int, races: list[Race], *, commit: bool = True) -> None:
         """Replace all races a spell is available to."""
 
         await self.replace_association(
             spell_races,
-            spell,
+            Spell(id=spell_id),
             "spell_id",
             "race_id",
             [race_.id for race_ in races],
             commit=commit,
         )
 
-        return spell
-
-    async def set_subraces(self, spell: Spell, subraces: list[Subrace], *, commit: bool = True) -> Spell:
+    async def set_subraces(self, spell_id: int, subraces: list[Subrace], *, commit: bool = True) -> None:
         """Replace all subraces a spell is available to."""
 
         await self.replace_association(
             spell_subraces,
-            spell,
+            Spell(id=spell_id),
             "spell_id",
             "subrace_id",
             [subrace.id for subrace in subraces],
             commit=commit,
         )
-
-        return spell

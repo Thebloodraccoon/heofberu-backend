@@ -39,11 +39,10 @@ class TestSubraceRepository:
         repository = SubraceRepository(session)
         subrace = make_subrace(id=1)
 
-        result = await repository.set_ability_bonuses(
-            subrace, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
+        await repository.set_ability_bonuses(
+            subrace.id, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
         )
 
-        assert result is subrace
         assert len(session.added) == 2
         assert all(isinstance(row, SubraceAbilityBonus) for row in session.added)
         assert session.added[0].subrace_id == 1
@@ -55,7 +54,7 @@ class TestSubraceRepository:
         repository = SubraceRepository(session)
         subrace = make_subrace(id=1)
 
-        await repository.set_ability_bonuses(subrace, [], commit=False)
+        await repository.set_ability_bonuses(subrace.id, [], commit=False)
 
         assert session.flushes == 1
         assert session.commits == 0

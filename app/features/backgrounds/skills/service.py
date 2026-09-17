@@ -43,4 +43,4 @@ class BackgroundSkillsService(
     ) -> None:
         """Attach ``skills`` to an existing ``background`` row (used by ``create_background``)."""
 
-        await self.repository.set_skills(background, skills, commit=commit)
+        await self.repository.set_skills(background.id, skills, commit=commit)

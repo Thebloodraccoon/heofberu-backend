@@ -1,13 +1,9 @@
 """Request/response schemas for the subrace CRUD endpoints."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 
-from app.features.features.crud.schemas import NestedFeatureCreate, NestedFeatureResponse
-from app.features.races.ability_bonuses.schemas import (
-    AbilityBonusItem,
-    AbilityBonusResponse,
-    _validate_unique_abilities,
-)
+from app.features.features.crud.schemas import NestedFeatureResponse
+from app.features.races.ability_bonuses.schemas import AbilityBonusResponse
 
 
 class SubraceBase(BaseModel):
@@ -16,31 +12,24 @@ class SubraceBase(BaseModel):
     name: str
     race_id: int
     description: str = ""
-    image_url: str | None = None
 
 
 class SubraceCreate(SubraceBase):
-    """Create payload for a subrace (nested under a race)."""
+    """
+    Create payload for a subrace (nested under a race): base fields only.
 
-    ability_bonuses: list[AbilityBonusItem] | None = None
-    features: list[NestedFeatureCreate] | None = None
-
-    @field_validator("ability_bonuses")
-    def validate_unique_abilities(cls, value):
-        """Reject bonus lists containing duplicate ability scores."""
-
-        if value is None:
-            return value
-
-        return _validate_unique_abilities(value)
+    ``ability_bonuses`` and ``features`` are deliberately not part of
+    create — each is attached afterwards through its own capability
+    endpoint (mirroring races). ``image_url`` is set only via
+    ``PUT /subraces/{id}/image``.
+    """
 
 
 class SubraceUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics)."""
+    """All fields optional — only provided fields are updated (PATCH semantics). ``image_url`` is set via its own image endpoint."""
 
     name: str | None = None
     description: str | None = None
-    image_url: str | None = None
 
 
 class SubraceResponse(SubraceBase):
@@ -57,6 +46,7 @@ class SubraceResponse(SubraceBase):
 
     id: int
     race_id: int
+    image_url: str | None = None
     ability_bonuses: list[AbilityBonusResponse] = []
     features: list[NestedFeatureResponse] = []
 

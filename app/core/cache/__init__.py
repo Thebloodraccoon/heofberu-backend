@@ -8,6 +8,6 @@ per-call with ``@use_cache(skip_if=...)``.
 """
 
 from app.core.cache.decorator import use_cache
-from app.core.cache.invalidation import flush_all, invalidate
+from app.core.cache.invalidation import flush_all, invalidate, invalidate_many
 
-__all__ = ["use_cache", "invalidate", "flush_all"]
+__all__ = ["use_cache", "invalidate", "invalidate_many", "flush_all"]

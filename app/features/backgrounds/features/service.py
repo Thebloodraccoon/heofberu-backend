@@ -39,5 +39,5 @@ class BackgroundFeatureService(
     async def list_features(self, source_id: int) -> list[NestedFeatureResponse]:
         """Return every BACKGROUND-source feature of the background (cached)."""
 
-        await self._get_or_404(source_id)
+        await self._exists_or_404(source_id)
         return await self._features.list_for_source(FeatureSourceType.BACKGROUND, source_id)

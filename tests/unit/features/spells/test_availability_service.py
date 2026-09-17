@@ -103,25 +103,27 @@ class FakeSpellRepository(FakeRepository):
     async def get_subraces_by_ids(self, subrace_ids):
         return await self._lookup("subraces", subrace_ids)
 
-    async def _set(self, dimension, spell, rows, *, commit):
-        self.set_calls.append((dimension, spell, rows, commit))
-        setattr(spell, f"available_{dimension}", list(rows))
+    async def _set(self, dimension, spell_id, rows, *, commit):
+        self.set_calls.append((dimension, spell_id, rows, commit))
+        spell = self._rows.get(spell_id)
+        if spell is not None:
+            setattr(spell, f"available_{dimension}", list(rows))
         if commit:
             await self.db.commit()
         else:
             await self.db.flush()
 
-    async def set_classes(self, spell, classes, *, commit=True):
-        return await self._set("classes", spell, classes, commit=commit)
+    async def set_classes(self, spell_id, classes, *, commit=True):
+        return await self._set("classes", spell_id, classes, commit=commit)
 
-    async def set_subclasses(self, spell, subclasses, *, commit=True):
-        return await self._set("subclasses", spell, subclasses, commit=commit)
+    async def set_subclasses(self, spell_id, subclasses, *, commit=True):
+        return await self._set("subclasses", spell_id, subclasses, commit=commit)
 
-    async def set_races(self, spell, races, *, commit=True):
-        return await self._set("races", spell, races, commit=commit)
+    async def set_races(self, spell_id, races, *, commit=True):
+        return await self._set("races", spell_id, races, commit=commit)
 
-    async def set_subraces(self, spell, subraces, *, commit=True):
-        return await self._set("subraces", spell, subraces, commit=commit)
+    async def set_subraces(self, spell_id, subraces, *, commit=True):
+        return await self._set("subraces", spell_id, subraces, commit=commit)
 
 
 @pytest.fixture(autouse=True)
@@ -188,7 +190,7 @@ class TestSpellAvailabilityService:
 
         result = await getattr(service, f"set_{dimension}")(1, data)
 
-        assert service.repository.set_calls == [(dimension, service.repository._rows[1], [child], True)]
+        assert service.repository.set_calls == [(dimension, 1, [child], True)]
         assert invalidated.await_count == 1
         assert db.commits == 1
         assert getattr(result, f"available_{dimension}")[0].id == 5
@@ -200,7 +202,7 @@ class TestSpellAvailabilityService:
 
         result = await getattr(service, f"set_{dimension}")(1, data)
 
-        assert service.repository.set_calls == [(dimension, service.repository._rows[1], [], True)]
+        assert service.repository.set_calls == [(dimension, 1, [], True)]
         assert service.repository.lookup_calls == []
         assert invalidated.await_count == 1
         assert getattr(result, f"available_{dimension}") == []
@@ -233,7 +235,7 @@ class TestSpellAvailabilityService:
 
         await getattr(service, f"set_{dimension}_for_spell")(spell, [child], commit=False)
 
-        assert service.repository.set_calls == [(dimension, spell, [child], False)]
+        assert service.repository.set_calls == [(dimension, spell.id, [child], False)]
         assert db.commits == 0
         assert invalidated.await_count == 0
 
