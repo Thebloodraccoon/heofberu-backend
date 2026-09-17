@@ -26,6 +26,7 @@ class Background(settings.Base):  # type: ignore
         back_populates="background",
         cascade="all, delete-orphan",
         passive_deletes=True,
+        order_by="BackgroundSuggestion.suggestion_type, BackgroundSuggestion.id",
     )
     features = relationship(
         "Feature",

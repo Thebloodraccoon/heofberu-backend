@@ -11,12 +11,12 @@ class BackgroundSuggestionsRepository(BackgroundRepository):
     """Suggestion persistence for backgrounds, layered on :class:`BackgroundRepository`."""
 
     async def list_suggestions(self, background_id: int) -> list[BackgroundSuggestion]:
-        """Return every suggestion row owned by the background, ordered by id."""
+        """Return every suggestion row owned by the background, ordered by type then id."""
 
         result = await self.db.execute(
             select(BackgroundSuggestion)
             .where(BackgroundSuggestion.background_id == background_id)
-            .order_by(BackgroundSuggestion.id)
+            .order_by(BackgroundSuggestion.suggestion_type, BackgroundSuggestion.id)
         )
         return list(result.scalars().all())
 
