@@ -97,10 +97,12 @@ def feature_summary_loads(base=None) -> list:
     Full eager-load set for a ``Feature``'s engine effect tree — fixed
     effects, choice groups/options with their own effects, and the
     skill/spell/item relationships those effects need to render a NAME
-    (not just an id). Every response exposing ``has_static_effects``/
-    ``has_choices``/``effects_summary`` needs this: they're plain
-    ``Feature`` properties, populated by ``from_attributes`` off whatever's
-    eager-loaded here — nothing async happens at serialization time.
+    (not just an id). Every response exposing ``static_groups``/
+    ``effects_summary`` needs this: they're plain ``Feature`` properties,
+    populated by ``from_attributes`` off whatever's eager-loaded here —
+    nothing async happens at serialization time. ``has_static_effects``/
+    ``has_choices`` are real columns now and don't need this eager-load at
+    all (see ``load_effect_flags`` for how they're kept in sync on write).
 
     Pass a ``base`` loader (a ``selectinload`` for a ``Feature``-valued
     relationship, e.g. ``selectinload(Background.features)``) to chain onto
@@ -132,18 +134,18 @@ def feature_summary_loads(base=None) -> list:
 
 async def load_effect_flags(db, feature_ids: list[int]) -> dict[int, dict[str, bool]]:
     """
-    Batched ``has_static_effects``/``has_choices`` flags for every id in
-    ``feature_ids`` — 7 cheap ``SELECT DISTINCT feature_id`` queries total
-    (one per fixed-effect type, one for choice groups), regardless of page
-    size, instead of eager-loading the full effect tree
-    (``feature_summary_loads`` — fixed effects, choice groups, their
-    options, and the skill/spell/item name joins those need) just to
-    compute two booleans per row.
+    Recompute ``has_static_effects``/``has_choices`` for every id in
+    ``feature_ids`` straight from the effect/choice-group tables — 7 cheap
+    ``SELECT DISTINCT feature_id`` queries total (one per fixed-effect
+    type, one for choice groups), regardless of how many ids are passed.
 
-    Only valid for listings whose response schema doesn't need the actual
-    effect data — ``FeatGetAllResponse``/``FeatureGetAllResponse``. Detail
-    reads (``FeatResponse``, ``NestedFeatureResponse``) still need the full
-    tree via ``feature_summary_loads``.
+    ``Feature.has_static_effects``/``has_choices`` are real columns now
+    (denormalized, not computed on read) — this is the write-side source of
+    truth every effect/choice-group mutation calls to refresh them
+    (``FeatureEffectsService._refresh_effect_flags``), not a listing-time
+    fallback. Detail reads (``FeatResponse``, ``NestedFeatureResponse``)
+    still need the full tree via ``feature_summary_loads`` for
+    ``static_groups``/``effects_summary``, independent of these two flags.
     """
 
     flags = {feature_id: {"has_static_effects": False, "has_choices": False} for feature_id in feature_ids}

@@ -88,7 +88,7 @@ async def create_background(
         ),
     ],
     background_service: BackgroundCrudDep,
-    current_user: GmUserDep,
+    _: GmUserDep,
 ):
     """
     Create a new background. **GM only.**

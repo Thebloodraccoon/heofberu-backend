@@ -56,10 +56,14 @@ that make this work:
 - `FeatCrudService` extends `BaseService` over `Feature`: `get_all` /
   `get_by_id` / `update` are **overridden** (not inherited) to scope rows to
   `source_type=FEAT` and serialize through the shared `_to_feat_brief`/
-  `_to_feat_response` helpers. `FeatRepository`'s eager loads are the full
-  engine effect tree (`feature_summary_loads()`) for both listing and detail,
-  since `has_static_effects`/`has_choices`/`static_groups` read every
-  fixed-effect relationship and the choice-group tree.
+  `_to_feat_response` helpers. `get_all` column-selects brief fields plus
+  the denormalized `has_static_effects`/`has_choices` (real `Feature`
+  columns, kept in sync by every effect/choice-group write — see
+  `FeatureEffectsService._refresh_effect_flags` and
+  `FeatRepository.set_ability_score_increases`); `FeatRepository`'s eager
+  loads (`feature_summary_loads()`) are only needed for detail reads, since
+  `static_groups`/`effects_summary` still read every fixed-effect
+  relationship and the choice-group tree.
 - PATCH (`update_feat`) touches **base/prerequisite fields only** — it never
   edits ASI options. Change ability-score choices via
   `PUT /feats/{feat_id}/choice-groups` and fixed ASI via

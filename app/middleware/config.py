@@ -9,20 +9,19 @@ class MiddlewareConfig:
     """Configuration class for middleware components."""
 
     @staticmethod
-    def get_timing_config() -> dict[str, Any]:
-        """Get configuration for TimingMiddleware."""
-        return {
-            "log_slow_requests": settings.STAGE != "prod",
-            "slow_threshold": 1.0 if settings.STAGE == "prod" else 0.5,
-        }
-
-    @staticmethod
-    def get_logging_config() -> dict[str, Any]:
-        """Get configuration for LoggingMiddleware."""
+    def get_observability_config() -> dict[str, Any]:
+        """
+        Get configuration for ``ObservabilityMiddleware`` (request-id tagging +
+        request/response logging + processing-time header — merged from the
+        former ``RequestIDMiddleware``/``LoggingMiddleware``/``TimingMiddleware``
+        into one layer; see that module's docstring for why).
+        """
         return {
             "log_requests": settings.STAGE != "prod",
             "log_responses": settings.STAGE != "prod",
-            "skip_paths": ["/ping", "/health", "/docs", "/openapi.json", "/redoc"],
+            "log_skip_paths": ["/ping", "/health", "/docs", "/openapi.json", "/redoc"],
+            "log_slow_requests": settings.STAGE != "prod",
+            "slow_threshold": 1.0 if settings.STAGE == "prod" else 0.5,
         }
 
     @staticmethod
@@ -185,12 +184,10 @@ class MiddlewareConfig:
     def should_enable_middleware(middleware_name: str) -> bool:
         """Determine if a middleware should be enabled based on environment."""
         middleware_settings = {
-            "timing": True,
-            "logging": settings.STAGE != "prod",
+            "observability": True,
             "rate_limit": settings.STAGE in ("prod", "staging", "dev"),
             "body_limit": True,
             "security": settings.STAGE in ("prod", "staging"),
-            "request_id": True,
             "token_refresh": True,
             "gzip": True,
             "trusted_host": settings.STAGE in ("prod", "staging"),

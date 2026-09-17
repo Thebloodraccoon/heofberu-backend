@@ -9,7 +9,6 @@ from app.features.feats.cache import FEAT_CACHE_NAMESPACES, invalidate_feat_cach
 from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.crud.schemas import FeatCreate, FeatGetAllResponse, FeatResponse, FeatUpdate
 from app.features.features.cache import invalidate_feature_cache
-from app.features.features.crud.repository import load_effect_flags
 from app.models.features.feature_model import Feature
 
 
@@ -94,10 +93,10 @@ class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse,
         """
         Cached, paginated feat listing.
 
-        Brief columns + batched ``has_static_effects``/``has_choices``
-        flags (``load_effect_flags``), instead of eager-loading the full
-        engine effect tree per row (``FeatGetAllResponse`` never uses the
-        actual effect data, only the two booleans).
+        Brief columns, including the denormalized ``has_static_effects``/
+        ``has_choices`` flags, instead of eager-loading the full engine
+        effect tree per row (``FeatGetAllResponse`` never uses the actual
+        effect data, only the two booleans).
         """
 
         skip, limit = paginate(page, size)
@@ -107,23 +106,16 @@ class FeatCrudService(BaseService[Feature, FeatCreate, FeatUpdate, FeatResponse,
             Feature.id,
             Feature.name,
             Feature.min_level,
+            Feature.has_static_effects,
+            Feature.has_choices,
             order_by=Feature.name,
             skip=skip,
             limit=limit,
             filters={**(filters or {}), "source_type": FeatureSourceType.FEAT},
             search=search,
         )
-        flags = await load_effect_flags(self.repository.db, [row.id for row in rows])
 
-        items = [
-            FeatGetAllResponse(
-                id=row.id,
-                name=row.name,
-                min_level=row.min_level,
-                **flags[row.id],
-            )
-            for row in rows
-        ]
+        items = [FeatGetAllResponse.model_validate(row._mapping) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
     @use_cache()

@@ -1,6 +1,6 @@
 """ORM models for the reference table of discrete rules features."""
 
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.features.features.effects.rendering import render_effects_summary
@@ -59,6 +59,16 @@ class Feature(settings.Base):  # type: ignore
     # modeled, e.g. "The ability to cast at least one spell".
     prerequisite_description = Column(Text, nullable=False, default="")
 
+    # Denormalized off the effect/choice-group tables — maintained by every
+    # write path that touches them (``FeatureEffectsService.set_fixed_effects``
+    # / ``set_choice_groups``, ``FeatRepository.set_ability_score_increases``),
+    # never computed on read. Exists so ``GET /features``/``GET /feats``
+    # listings can column-select these two flags directly instead of
+    # eager-loading the whole effect tree or running the batched
+    # ``load_effect_flags`` existence queries per page.
+    has_static_effects = Column(Boolean, nullable=False, default=False, server_default="false")
+    has_choices = Column(Boolean, nullable=False, default=False, server_default="false")
+
     character_class = relationship("Class")
     subclass = relationship("Subclass", back_populates="features")
     race = relationship("Race", back_populates="features")
@@ -114,25 +124,6 @@ class Feature(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-
-    @property
-    def has_static_effects(self) -> bool:
-        """Whether this feature applies any fixed (non-choice) effect automatically."""
-
-        return bool(
-            self.ability_effects
-            or self.skill_effects
-            or self.saving_throw_effects
-            or self.armor_effects
-            or self.weapon_effects
-            or self.spell_effects
-        )
-
-    @property
-    def has_choices(self) -> bool:
-        """Whether this feature has any "pick N of M" choice group."""
-
-        return bool(self.choice_groups)
 
     @property
     def static_groups(self) -> list[dict]:

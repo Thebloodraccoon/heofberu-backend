@@ -9,7 +9,7 @@ from app.core.base.service import BaseService
 from app.core.exceptions import RecordInUseError
 from app.features.characters.progression.feature_sync import refresh_feature_effect_caches
 from app.features.features.cache import FEATURE_CACHE_NAMESPACES, purge_feature_cache_for_source
-from app.features.features.crud.repository import FeatureRepository
+from app.features.features.crud.repository import FeatureRepository, load_effect_flags
 from app.features.features.crud.schemas import FeatureResponse
 from app.features.features.effects.exceptions import InvalidFeatureEffectDataError
 from app.features.features.effects.schemas import (
@@ -111,6 +111,22 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
             repository=FeatureRepository(db),
             response_schema=FeatureResponse,
         )
+
+    async def _refresh_effect_flags(self, feature: Feature) -> None:
+        """
+        Recompute and persist ``feature.has_static_effects``/``has_choices``
+        after a fixed-effect or choice-group diff.
+
+        Must run after the diff's ``db.flush()`` (so the existence queries
+        in ``load_effect_flags`` see the rows just inserted/deleted) and
+        before the transaction commits — these two columns are the single
+        source of truth ``GET /features``/``GET /feats`` listings read
+        directly, so they must never fall behind the actual effect tree.
+        """
+
+        flags = await load_effect_flags(self.repository.db, [feature.id])
+        feature.has_static_effects = flags[feature.id]["has_static_effects"]
+        feature.has_choices = flags[feature.id]["has_choices"]
 
     async def _feature_with_effects(self, feature_id: int) -> Feature:
         """Fetch the feature with its whole engine effect tree eagerly loaded."""
@@ -217,6 +233,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         # refresh_feature_effect_caches's SELECT-based recomputation
         # (get_feature_increases et al.) actually sees them.
         await self.repository.db.flush()
+        await self._refresh_effect_flags(feature)
 
         await refresh_feature_effect_caches(self.repository.db, feature_id)
         await self.repository.db.commit()
@@ -368,6 +385,7 @@ class FeatureEffectsService(BaseService[Feature, None, None, FeatureResponse, No
         # surfaced as a clean 409 instead of a raw IntegrityError.
         try:
             await db.flush()
+            await self._refresh_effect_flags(feature)
             await refresh_feature_effect_caches(self.repository.db, feature_id)
             await db.commit()
         except IntegrityError as exc:

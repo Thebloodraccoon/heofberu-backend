@@ -139,7 +139,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         columns, so heavy full records with eager-loaded relationships are
         never materialized. If the schema contains fields that aren't plain
         mapped columns (relationships, e.g. a spell's ``available_classes``,
-        or Python ``@property`` attributes like ``has_choices``), the
+        or Python ``@property`` attributes like a feature's ``effects_summary``), the
         column-select path can't resolve them, so the listing falls back to
         the eager-loaded ``repository.get_all`` (via the repository's
         ``default_load_options``) instead. ``total`` always comes from

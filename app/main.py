@@ -16,16 +16,27 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 
 from app.middleware import (
-    LoggingMiddleware,
     MiddlewareConfig,
+    ObservabilityMiddleware,
     RateLimitMiddleware,
     RequestBodyLimitMiddleware,
-    RequestIDMiddleware,
-    TimingMiddleware,
 )
 from app.middleware.error_handler import setup_error_handlers
 from app.router import api_router
 from app.settings import settings
+
+# No handler was ever attached to the root logger, so every ``app.*``
+# ``logging.getLogger(__name__).info(...)`` call (middleware, cache
+# decorator, etc.) was silently dropped — Python's fallback ``lastResort``
+# handler only prints WARNING+. SQLAlchemy's own logs were visible only
+# because ``echo=True`` makes it attach its own private handler directly to
+# the ``sqlalchemy.engine.Engine`` logger when it finds the root has none;
+# uvicorn's request logs work because uvicorn configures its own loggers.
+# This makes every ``app.*`` logger actually emit.
+logging.basicConfig(
+    level=logging.INFO if settings.STAGE != "prod" else logging.WARNING,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,16 +81,9 @@ def setup_middleware(app: FastAPI) -> None:
         rate_limit_config = MiddlewareConfig.get_rate_limit_config()
         app.add_middleware(RateLimitMiddleware, **rate_limit_config)
 
-    if MiddlewareConfig.should_enable_middleware("request_id"):
-        app.add_middleware(RequestIDMiddleware)
-
-    if MiddlewareConfig.should_enable_middleware("logging"):
-        logging_config = MiddlewareConfig.get_logging_config()
-        app.add_middleware(LoggingMiddleware, **logging_config)
-
-    if MiddlewareConfig.should_enable_middleware("timing"):
-        timing_config = MiddlewareConfig.get_timing_config()
-        app.add_middleware(TimingMiddleware, **timing_config)
+    if MiddlewareConfig.should_enable_middleware("observability"):
+        observability_config = MiddlewareConfig.get_observability_config()
+        app.add_middleware(ObservabilityMiddleware, **observability_config)
 
     cors_config = MiddlewareConfig.get_cors_config()
     app.add_middleware(CORSMiddleware, **cors_config)

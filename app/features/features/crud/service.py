@@ -14,7 +14,7 @@ from app.features.features.cache import (
     SOURCE_PARENT_READ_NAMESPACE,
     purge_feature_cache_for_source,
 )
-from app.features.features.crud.repository import FeatureRepository, feature_summary_loads, load_effect_flags
+from app.features.features.crud.repository import FeatureRepository, feature_summary_loads
 from app.features.features.crud.schemas import (
     _FEATURE_LEVEL_MAX,
     _FEATURE_LEVEL_MIN,
@@ -83,9 +83,9 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         """
         Cached, paginated listing across every source type.
 
-        Brief columns + batched ``has_static_effects``/``has_choices``
-        flags (``load_effect_flags``), instead of eager-loading the full
-        engine effect tree per row: ``FeatureGetAllResponse`` never uses the
+        Brief columns, including the denormalized ``has_static_effects``/
+        ``has_choices`` flags, instead of eager-loading the full engine
+        effect tree per row: ``FeatureGetAllResponse`` never uses the
         actual effect data, only the two booleans, and this is the busiest
         listing in the app (every catalog's ``get_by_id`` also reads
         through the same table via ``list_for_source``, though that path
@@ -105,15 +105,16 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             Feature.subrace_id,
             Feature.background_id,
             Feature.level,
+            Feature.has_static_effects,
+            Feature.has_choices,
             order_by=Feature.name,
             skip=skip,
             limit=limit,
             filters=filters,
             search=search,
         )
-        flags = await load_effect_flags(self.repository.db, [row.id for row in rows])
 
-        items = [FeatureGetAllResponse.model_validate({**row._mapping, **flags[row.id]}) for row in rows]
+        items = [FeatureGetAllResponse.model_validate(row._mapping) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
     async def _purge_feature_cache(self, source_type: FeatureSourceType) -> None:
