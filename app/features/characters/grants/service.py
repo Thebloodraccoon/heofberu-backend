@@ -32,7 +32,6 @@ from app.features.characters.grants.schemas import (
     PendingChoiceGroupsResponse,
     PendingChoiceOption,
 )
-from app.features.spells.crud.repository import SpellRepository
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.character.character_model import Character
@@ -61,12 +60,11 @@ class FeatureGrantService:
     """
 
     def __init__(self, db: AsyncSession):
-        """Create the service with the materializer, the stats service, and the spell lookup."""
+        """Create the service with the materializer and the stats service."""
 
         self.db = db
         self.materializer = FeatureGrantMaterializer()
         self.stats_service = CharacterStatsService(db)
-        self.spell_repository = SpellRepository(db)
 
     async def _load_grant(self, character_id: int, grant_id: int) -> CharacterFeature:
         """Fetch the grant scoped to the character, or raise ``GrantNotFoundError``."""
@@ -125,21 +123,6 @@ class FeatureGrantService:
         """Whether the option carries an open ("any spell") spell effect."""
 
         return any(effect.spell_id is None for effect in option.spell_effects)
-
-    async def _validate_open_spell_choices(self, answered_by_group: dict[int, list[tuple]]) -> None:
-        """
-        Validate every resolved open spell choice: the chosen ``spell_id``
-        must exist in the catalog — otherwise ``SpellResolutionsError`` (422).
-        """
-
-        for _, picked in answered_by_group.items():
-            for option, _skill_id, spell_id in picked:
-                if not any(effect.spell_id is None for effect in option.spell_effects):
-                    continue
-
-                spell = await self.spell_repository.get_by_id(spell_id)
-                if spell is None:
-                    raise SpellResolutionsError(option.id, "the chosen spell does not exist.")
 
     def _to_pending_response(self, grant: CharacterFeature, feature: Feature, pending: list[FeatureChoiceGroup]) -> PendingChoiceGroupsResponse:
         """Serialise the still-pending groups of a grant."""
@@ -347,9 +330,10 @@ class FeatureGrantService:
 
         Validates the request against the feature's groups/options (wrong
         group, unknown or foreign option, duplicate pick, wrong pick count,
-        missing skill resolution), replaces each answered group's stored
-        picks, and re-materializes the grant's effect rows from the full
-        stored choice set in the same transaction.
+        or an option carrying an open skill/spell effect — not resolvable
+        yet), replaces each answered group's stored picks, and
+        re-materializes the grant's effect rows from the full stored choice
+        set in the same transaction.
         """
 
         grant = await self._load_grant(character_id, grant_id)
@@ -360,7 +344,7 @@ class FeatureGrantService:
         options = self._index_options(groups)
 
         # --- Validate the request -------------------------------------------
-        answered_by_group: dict[int, list[tuple[FeatureChoiceOption, int | None, int | None]]] = {}
+        answered_by_group: dict[int, list[FeatureChoiceOption]] = {}
 
         for item in data.answers:
             group = groups.get(item.choice_group_id)
@@ -371,18 +355,20 @@ class FeatureGrantService:
             if option is None or option.group_id != group.id:
                 raise ChoiceOptionNotFoundError(group_id=group.id, option_id=item.choice_option_id)
 
-            if item.choice_option_id in {o.id for o, *_ in answered_by_group.get(group.id, [])}:
+            if item.choice_option_id in {o.id for o in answered_by_group.get(group.id, [])}:
                 raise ChoiceOptionAlreadyPickedError(group_id=group.id, option_id=item.choice_option_id)
 
-            if self._group_has_open_skill(option) and item.skill_id is None:
+            # An open ("any skill"/"any spell") option can no longer be
+            # answered through the API — the system doesn't yet support
+            # resolving it end to end. Existing catalog data may still carry
+            # one; it's simply unpickable until that support lands.
+            if self._group_has_open_skill(option):
                 raise SkillResolutionsError(option_id=option.id)
 
-            if self._option_has_open_spell(option) and item.spell_id is None:
+            if self._option_has_open_spell(option):
                 raise SpellResolutionsError(option_id=option.id)
 
-            answered_by_group.setdefault(group.id, []).append((option, item.skill_id, item.spell_id))
-
-        await self._validate_open_spell_choices(answered_by_group)
+            answered_by_group.setdefault(group.id, []).append(option)
 
         for group in groups.values():
             chosen = answered_by_group.get(group.id, [])
@@ -401,7 +387,7 @@ class FeatureGrantService:
             await self.db.flush()
 
         for group_id, picked in answered_by_group.items():
-            for option, _skill_id, _spell_id in picked:
+            for option in picked:
                 self.db.add(
                     CharacterFeatureChoice(
                         character_feature_id=grant.id,
@@ -414,27 +400,16 @@ class FeatureGrantService:
         await self.db.flush()
         stored = await self._load_stored_choices(grant_id)
 
+        # No option reaching here carries an open skill/spell effect (such
+        # picks are rejected above), so ResolvedOption's skill_id/spell_id
+        # stay at their None default — nothing to resolve.
         choice_map: dict[int, list[ResolvedOption]] = {}
-        skill_resolution = {
-            option.id: skill_id
-            for _, picked in answered_by_group.items()
-            for option, skill_id, _spell_id in picked
-        }
-        spell_resolution = {
-            option.id: spell_id
-            for _, picked in answered_by_group.items()
-            for option, _skill_id, spell_id in picked
-        }
         for choice in stored:
             option = options.get(choice.choice_option_id)
             if option is None:
                 continue
             choice_map.setdefault(choice.choice_group_id, []).append(
-                ResolvedOption(
-                    option=option,
-                    skill_id=skill_resolution.get(option.id),
-                    spell_id=spell_resolution.get(option.id),
-                )
+                ResolvedOption(option=option)
             )
 
         await self.materializer.reconcile(self.db, character_id, grant, feature, choice_map)

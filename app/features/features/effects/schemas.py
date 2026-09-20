@@ -56,7 +56,13 @@ class AbilityEffectItem(BaseModel):
 
 class SkillEffectItem(BaseModel):
     """
-    A fixed/option skill-proficiency effect. ``skill_id`` None = "any skill" (choice only).
+    A fixed/option skill-proficiency effect: a concrete ``skill_id``.
+
+    ``skill_id=None`` ("any skill", choice options only) can no longer be
+    WRITTEN — ``ChoiceGroupPayload.validate_options_match_choice_type``
+    rejects it on a SKILL-type choice group, since the system doesn't yet
+    support resolving an open skill pick end to end. Reads may still show
+    ``None`` on a pre-existing catalog row.
 
     ``id`` is the DB row id — absent (or omitted) on a write payload means
     "create"; set it to an existing row's id to update that row in place
@@ -108,8 +114,13 @@ class WeaponEffectItem(BaseModel):
 
 class SpellEffectItem(BaseModel):
     """
-    A fixed/option spell-grant effect: a concrete spell, or an open choice
-    (``spell_id`` unset) letting the player pick any spell from the catalog.
+    A fixed/option spell-grant effect: a concrete ``spell_id``.
+
+    An open choice (``spell_id`` unset, letting the player pick any spell
+    from the catalog) can no longer be WRITTEN — same restriction as
+    ``SkillEffectItem``'s open skill, and for the same reason. Reads may
+    still show ``None`` on a pre-existing catalog row.
+
     ``id``: see ``SkillEffectItem``.
     """
 
@@ -251,6 +262,35 @@ class ChoiceGroupPayload(BaseModel):
                         f"Option {index} in a '{self.choice_type.value}' group may not set "
                         f"'{field_name}' — only '{allowed_field}' is allowed here."
                     )
+        return self
+
+    @model_validator(mode="after")
+    def validate_no_open_picks(self):
+        """
+        Reject a new/updated SKILL or SPELL option left "open" (``skill_id``/
+        ``spell_id`` unset) — the system doesn't yet support resolving an
+        open pick end to end, so authoring one is disallowed until it does.
+        Pre-existing catalog rows with an open effect are untouched by this
+        (only reachable by re-submitting the same option unchanged, which
+        would fail here too — an open option must be given a concrete id to
+        pass through an update).
+        """
+
+        for index, option in enumerate(self.options):
+            if self.choice_type == ChoiceType.SKILL:
+                for effect in option.skill_effects:
+                    if effect.skill_id is None:
+                        raise ValueError(
+                            f"Option {index}: an open ('any skill') skill_effects entry is not "
+                            "supported — skill_id is required."
+                        )
+            elif self.choice_type == ChoiceType.SPELL:
+                for effect in option.spell_effects:
+                    if effect.spell_id is None:
+                        raise ValueError(
+                            f"Option {index}: an open ('any spell') spell_effects entry is not "
+                            "supported — spell_id is required."
+                        )
         return self
 
 

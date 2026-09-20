@@ -228,6 +228,14 @@ async def rebuild_character(
         403: {"description": "You do not have access to this character."},
         404: {"description": "Character or feat not found."},
         409: {"description": "The character already has the feat chosen by the ASI option."},
+        422: {
+            "description": (
+                "A feature newly unlocked by this level (class/subclass feature or the "
+                "chosen feat itself) still has an unresolved 'pick N of M' choice group "
+                "after applying feature_choices, or one of the picked options carries an "
+                "open ('any skill'/'any spell') effect — not resolvable via the API yet."
+            )
+        },
     },
 )
 async def level_up(
@@ -251,6 +259,14 @@ async def level_up(
                     "summary": "Level up taking a feat instead of the ASI",
                     "value": {"choice": {"type": "FEAT", "feat_id": 12}},
                 },
+                "feature-choice": {
+                    "summary": "Level up resolving a newly unlocked feature's pick-N-of-M choice group",
+                    "value": {
+                        "feature_choices": [
+                            {"feature_id": 8, "choice_group_id": 21, "choice_option_id": 55}
+                        ]
+                    },
+                },
             }
         ),
     ],
@@ -262,6 +278,14 @@ async def level_up(
     Advances the character one level. At ASI levels (4/8/12/16/19) a
     ``choice`` (ASI increments or a feat) is required and is recorded in
     ``character_asi_choices``.
+
+    Any OTHER feature this level unlocks (a class/subclass feature or the
+    chosen feat's own grant) that carries a "pick N of M" choice group —
+    e.g. a bonus proficiency — must be resolved via ``feature_choices``; an
+    option carrying an open ("any skill"/"any spell") effect can't be
+    picked yet (422). A feature with no choice groups needs no entry there.
+    A newly unlocked feature left with an unanswered group aborts the
+    whole level-up (422), the same way a missing ASI ``choice`` does.
     """
 
     await progression_service.level_up(character_id, data, current_user)

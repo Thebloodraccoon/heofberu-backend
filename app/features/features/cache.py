@@ -30,7 +30,7 @@ SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
     FeatureSourceType.RACE: "races",
     FeatureSourceType.SUBRACE: "races",
     FeatureSourceType.BACKGROUND: "backgrounds",
-    FeatureSourceType.FEAT: None,
+    FeatureSourceType.FEAT: "feats",
     FeatureSourceType.OTHER: None,
 }
 

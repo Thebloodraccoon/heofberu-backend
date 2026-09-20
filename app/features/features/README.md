@@ -66,12 +66,15 @@ Payload-item rules (schema-enforced, 422):
 - `AbilityEffectItem`: `ability` + `amount`, plus optional `new_cap` — **20–30
   range** (mirrors the legacy ASI validation). Fixed `ability_effects` must not
   repeat an ability.
-- `SkillEffectItem`: `skill_id` (`None` = "any skill", choice options only) and
-  `grants_expertise`.
+- `SkillEffectItem`: a concrete `skill_id` and `grants_expertise`. An open
+  ("any skill", `skill_id` unset) option can no longer be authored on a
+  SKILL choice group (`ChoiceGroupPayload.validate_no_open_picks`) —
+  open picks aren't resolvable via the API yet. Legacy rows may still read
+  back with `skill_id=None`.
 - `SavingThrowEffectItem`: `ability`. `ArmorEffectItem`: `armor_type`.
 - `WeaponEffectItem`: **exactly one** of `weapon_category` / `item_id`.
-- `SpellEffectItem`: a concrete `spell_id`, or an open choice (`spell_id`
-  unset) — resolved to any spell in the catalog at answer time.
+- `SpellEffectItem`: a concrete `spell_id`. Same open-pick restriction as
+  `SkillEffectItem` applies to SPELL choice groups.
 - A feature may have **at most one** choice group offering ability-score
   effects (`feat_ability_score_effects` and every ASI answer path assumes this).
 

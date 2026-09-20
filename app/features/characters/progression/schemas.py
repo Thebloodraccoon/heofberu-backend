@@ -205,15 +205,15 @@ class LevelUpFeatureChoiceAnswer(BaseModel):
     creates it — since ``choice_group_id``/``choice_option_id`` are reference
     data, fetchable ahead of time from ``GET /classes/{id}/features`` (or the
     equivalent for the granting source) before submitting the level-up.
+
+    No ``skill_id``/``spell_id`` field: picking an option that carries an
+    open ("any skill"/"any spell") effect isn't supported yet — the whole
+    level-up is rejected (422) if one is picked.
     """
 
     feature_id: int
     choice_group_id: int
     choice_option_id: int
-    # Required iff the option carries an open ("any skill") skill effect.
-    skill_id: int | None = None
-    # Required iff the option carries an open ("any spell") spell effect.
-    spell_id: int | None = None
 
 
 class LevelUpRequest(BaseModel):
@@ -232,7 +232,7 @@ class LevelUpRequest(BaseModel):
     armor/weapon proficiency or a bonus spell, a subclass trait, ...) —
     unrelated to the ASI-vs-feat ``choice`` above. A newly unlocked feature
     with a still-unanswered group after applying these aborts the whole
-    level-up with ``LevelUpFeatureChoiceRequiredException`` naming what's
+    level-up with ``GrantChoiceRequiredException`` (422) naming what's
     missing, exactly like a missing ASI ``choice`` does — the grant is never
     left silently half-resolved. A feature with no choice groups needs no
     entry here; its fixed effects apply automatically.

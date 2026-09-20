@@ -15,16 +15,17 @@ from app.features.spells.crud.schemas import SpellResponse
 
 
 class ChoiceAnswerItem(BaseModel):
-    """One picked option inside one answered choice group."""
+    """
+    One picked option inside one answered choice group.
+
+    No ``skill_id``/``spell_id`` field: picking an option that carries an
+    open ("any skill"/"any spell") effect isn't supported yet — the answer
+    is rejected (``SkillResolutionsError``/``SpellResolutionsError``, 422)
+    regardless of what's requested.
+    """
 
     choice_group_id: int
     choice_option_id: int
-    # Required iff the option carries an open ("any skill") skill effect:
-    # the concrete skill the player resolved it to.
-    skill_id: int | None = None
-    # Required iff the option carries an open ("any spell") spell effect:
-    # the concrete spell the player resolved it to.
-    spell_id: int | None = None
 
 
 class GrantChoicesUpdate(BaseModel):

@@ -542,8 +542,6 @@ class CharacterProgressionService(CharacterSubDomainService):
                     ChoiceAnswerItem(
                         choice_group_id=item.choice_group_id,
                         choice_option_id=item.choice_option_id,
-                        skill_id=item.skill_id,
-                        spell_id=item.spell_id,
                     )
                     for item in feature_answers
                 ],

@@ -135,9 +135,8 @@ async def get_answered_choices(
         422: {
             "description": (
                 "A group was answered with the wrong number of options, an option "
-                "doesn't belong to its group, or an open skill/spell effect lacks "
-                "its resolution (skill_id/spell_id) or resolves to a spell_id that "
-                "doesn't exist."
+                "doesn't belong to its group, or the picked option carries an open "
+                "('any skill'/'any spell') effect — not resolvable via the API yet."
             )
         },
     },
@@ -163,8 +162,8 @@ async def answer_choice_groups(
                         ]
                     },
                 },
-                "martial-weapon-skill": {
-                    "summary": "A feat choosing proficiency in two skills, one resolved from 'any skill'",
+                "two-groups": {
+                    "summary": "A feat with two independent choice groups, one option each",
                     "value": {
                         "answers": [
                             {
@@ -174,20 +173,7 @@ async def answer_choice_groups(
                             {
                                 "choice_group_id": 3,
                                 "choice_option_id": 41,
-                                "skill_id": 7,
                             },
-                        ]
-                    },
-                },
-                "open-spell": {
-                    "summary": "A feature whose option grants 'any spell', resolved to spell 9",
-                    "value": {
-                        "answers": [
-                            {
-                                "choice_group_id": 4,
-                                "choice_option_id": 52,
-                                "spell_id": 9,
-                            }
                         ]
                     },
                 },
@@ -199,9 +185,9 @@ async def answer_choice_groups(
     Answer (or re-answer) a granted feature's choice groups. Replaces the
     answered groups' stored picks and re-materializes the grant's effect rows
     — skill/saving-throw/armor/weapon proficiencies and granted spells — in
-    the same transaction. Options carrying an open ("any skill") effect need
-    ``skill_id``; options carrying an open ("any spell") spell effect need
-    ``spell_id``. The response lists any groups still pending.
+    the same transaction. An option carrying an open ("any skill"/"any
+    spell") effect can't be picked yet — the request is rejected (422). The
+    response lists any groups still pending.
     """
 
     await get_character_for_user(character_service.repository, character_id, current_user)
