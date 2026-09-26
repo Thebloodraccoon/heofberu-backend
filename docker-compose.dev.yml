@@ -15,7 +15,7 @@ services:
     env_file:
       - .env.dev
     volumes:
-      - .:/app                         # hot-reload: код монтируется внутрь
+      - .:/app
     depends_on:
       heof-db:
         condition: service_healthy

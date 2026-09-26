@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.races.ability_bonuses.schemas import AbilityBonusResponse
+from app.features.shared.tags.schemas import TagBrief
 
 
 class SubraceBase(BaseModel):
@@ -18,9 +19,9 @@ class SubraceCreate(SubraceBase):
     """
     Create payload for a subrace (nested under a race): base fields only.
 
-    ``ability_bonuses`` and ``features`` are deliberately not part of
-    create — each is attached afterwards through its own capability
-    endpoint (mirroring races). ``image_url`` is set only via
+    ``ability_bonuses``, ``tags``, and ``features`` are deliberately not
+    part of create — each is attached afterwards through its own
+    capability endpoint (mirroring races). ``image_url`` is set only via
     ``PUT /subraces/{id}/image``.
     """
 
@@ -49,6 +50,7 @@ class SubraceResponse(SubraceBase):
     image_url: str | None = None
     ability_bonuses: list[AbilityBonusResponse] = []
     features: list[NestedFeatureResponse] = []
+    tags: list[TagBrief] = []
 
 
 class SubraceGetAllResponse(BaseModel):

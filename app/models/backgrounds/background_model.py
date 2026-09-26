@@ -3,7 +3,7 @@
 from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
-from app.models.backgrounds.background_association_models import background_skills
+from app.models.backgrounds.background_association_models import background_skills, background_tags
 from app.settings import settings
 
 
@@ -55,6 +55,12 @@ class Background(settings.Base):  # type: ignore
         order_by="SourceItemChoiceGroup.sort_order",
     )
     characters = relationship("Character", back_populates="background")
+    tags = relationship(
+        "Tag",
+        secondary=background_tags,
+        back_populates="backgrounds",
+        order_by="Tag.name",
+    )
 
     def __repr__(self):
         return f"<Background(id={self.id}, name='{self.name}')>"

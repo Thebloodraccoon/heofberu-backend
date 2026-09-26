@@ -10,6 +10,8 @@ from sqlalchemy import Enum as SAEnum
 from app.constants import (
     AbilityScore,
     ArmorProficiency,
+    ArticleStatus,
+    ArticleVisibility,
     ASILevelChoice,
     AttackType,
     BackgroundSuggestionType,
@@ -69,3 +71,5 @@ ProficiencyActionType = SAEnum(ProficiencyAction, name="proficiency_action", cre
 ProficiencyAuditActionType = SAEnum(ProficiencyAuditAction, name="proficiency_audit_action", create_type=False)
 BackgroundSuggestionTypeType = SAEnum(BackgroundSuggestionType, name="background_suggestion_type", create_type=False)
 ChoiceTypeType = SAEnum(ChoiceType, name="choice_type", create_type=False)
+ArticleStatusType = SAEnum(ArticleStatus, name="article_status", create_type=False)
+ArticleVisibilityType = SAEnum(ArticleVisibility, name="article_visibility", create_type=False)

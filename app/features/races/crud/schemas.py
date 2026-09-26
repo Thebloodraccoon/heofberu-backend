@@ -6,6 +6,7 @@ from app.constants import RaceSize
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.races.ability_bonuses.schemas import AbilityBonusResponse
 from app.features.races.skills.schemas import SkillResponse
+from app.features.shared.tags.schemas import TagBrief
 from app.features.subraces.crud.schemas import SubraceGetAllResponse
 
 
@@ -23,7 +24,7 @@ class RaceCreate(RaceBase):
     """
     Create payload for a race: base fields only.
 
-    ``ability_bonuses``, ``granted_skills``, and ``features`` are
+    ``ability_bonuses``, ``granted_skills``, ``tags``, and ``features`` are
     deliberately not part of create — each is attached afterwards through
     its own capability endpoint (a lightweight create, mirroring backgrounds).
     """
@@ -49,6 +50,7 @@ class RaceResponse(RaceBase):
     granted_skills: list[SkillResponse] = []
     features: list[NestedFeatureResponse] = []
     subraces: list[SubraceGetAllResponse] = []
+    tags: list[TagBrief] = []
 
 
 class RaceGetAllResponse(BaseModel):

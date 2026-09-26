@@ -15,16 +15,17 @@ from app.models.races.subrace_model import Subrace
 
 
 class SubraceRepository(BaseRepository[Subrace]):
-    """Repository for ``Subrace`` rows with eager-loaded ability bonuses."""
+    """Repository for ``Subrace`` rows with eager-loaded ability bonuses and tags."""
 
     def __init__(self, db: AsyncSession):
-        """Initialize the repository with eager-loaded ability bonuses."""
+        """Initialize the repository with eager-loaded ability bonuses and tags."""
 
         super().__init__(
             Subrace,
             db,
             default_load_options=[
                 selectinload(Subrace.ability_bonuses),
+                selectinload(Subrace.tags),
                 *feature_summary_loads(selectinload(Subrace.features)),
             ],
             search_fields=["name"],

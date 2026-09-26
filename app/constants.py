@@ -380,6 +380,67 @@ class BackgroundSuggestionType(str, Enum):
     FLAW = "FLAW"
 
 
+class ArticleStatus(str, Enum):
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class ArticleVisibility(str, Enum):
+    """Who may read an article: everyone (once published) or only GMs (spoilers, prep notes)."""
+
+    PUBLIC = "public"
+    GM_ONLY = "gm_only"
+
+
+def is_article_publicly_visible(status: "ArticleStatus | str", visibility: "ArticleVisibility | str") -> bool:
+    """
+    Canonical non-GM visibility predicate, in value form so it applies equally to an
+    ORM ``Article``, a cached ``ArticleResponse``, or raw SQL (see
+    ``ArticleRepository._visibility_conditions`` for the row-filter equivalent).
+    """
+
+    return status == ArticleStatus.PUBLISHED and visibility == ArticleVisibility.PUBLIC
+
+
+ARTICLE_TYPES = (
+    "lore",
+    "region",
+    "location",
+    "faction",
+    "npc",
+    "event",
+    "artifact",
+    "deity",
+    "religion",
+    "creature",
+    "culture",
+    "language",
+    "document",
+    "condition",
+    "quest",
+    "session",
+)
+
+#: Postgres ARE for a GM-only block in ``body_markdown``: ``:::gm`` ... ``:::``. An unclosed
+#: block hides everything to the end of the text (fail closed). Must stay equivalent to
+#: ``GM_BLOCK_RE`` in ``app/features/articles/secrets.py``.
+ARTICLE_GM_BLOCK_SQL_PATTERN = ":::gm.*?(:::|$)"
+RELATION_TYPES = (
+    "LOCATED_IN",
+    "MEMBER_OF",
+    "RULES",
+    "PARENT_FACTION",
+    "ALLY_OF",
+    "ENEMY_OF",
+    "RELATIVE_OF",
+    "MENTIONS",
+    "SEE_ALSO",
+    "PARTICIPATED_IN",
+)
+
+
 # Kept as plain lists for backward compatibility with existing CheckConstraints
 # and any code still importing the raw string lists.
 USER_ROLES = [role.value for role in UserRole]

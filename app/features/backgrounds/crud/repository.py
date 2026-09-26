@@ -26,6 +26,7 @@ class BackgroundRepository(BaseRepository[Background]):
                 .selectinload(SourceItemChoiceGroup.options)
                 .selectinload(SourceItemChoiceOption.item),
                 selectinload(Background.suggestions),
+                selectinload(Background.tags),
                 *feature_summary_loads(selectinload(Background.features)),
             ],
             search_fields=["name"],

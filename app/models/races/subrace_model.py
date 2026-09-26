@@ -39,10 +39,10 @@ class Subrace(settings.Base):  # type: ignore
         order_by="Feature.id",
     )
     tags = relationship(
-        "SubraceTag",
-        secondary="subrace_tag_links",
+        "Tag",
+        secondary="subrace_tags",
         back_populates="subraces",
-        order_by="SubraceTag.name",
+        order_by="Tag.name",
     )
 
     def __repr__(self):

@@ -401,3 +401,53 @@ async def gm_token(gm, login_as):
 @pytest_asyncio.fixture
 async def founder_token(founder, login_as):
     return await login_as(founder)
+
+
+@pytest_asyncio.fixture
+async def create_article(client, gm_token):
+    """
+    Create an article through the real API (GM-only) — slug/path generation stays
+    server-side instead of being re-implemented here. Optionally publishes and/or
+    sets ``visibility`` via a follow-up PATCH, since both start out at their
+    ``ArticleCreate``/``draft`` defaults on create.
+    """
+
+    async def _create_article(
+        title="Khazad-dum",
+        article_type="location",
+        excerpt=None,
+        body_markdown="",
+        subtype=None,
+        parent_id=None,
+        visibility="public",
+        status=None,
+        tag_ids=None,
+    ):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        payload = {"title": title, "article_type": article_type, "body_markdown": body_markdown}
+        if excerpt is not None:
+            payload["excerpt"] = excerpt
+        if subtype is not None:
+            payload["subtype"] = subtype
+        if parent_id is not None:
+            payload["parent_id"] = parent_id
+        if visibility != "public":
+            payload["visibility"] = visibility
+
+        response = await client.post("/articles", json=payload, headers=headers)
+        assert response.status_code == 201, response.text
+        article = response.json()
+
+        if status is not None:
+            patched = await client.patch(f"/articles/{article['id']}", json={"status": status}, headers=headers)
+            assert patched.status_code == 200, patched.text
+            article = patched.json()
+
+        if tag_ids is not None:
+            tagged = await client.put(f"/articles/{article['id']}/tags", json={"tag_ids": tag_ids}, headers=headers)
+            assert tagged.status_code == 200, tagged.text
+            article = tagged.json()
+
+        return article
+
+    return _create_article

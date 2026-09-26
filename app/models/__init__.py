@@ -1,4 +1,13 @@
-from app.models.backgrounds.background_association_models import background_skills  # noqa: F401
+# Shared Tag dictionary. Must come before any catalog's *_tags link table (FK target).
+from app.models.tag_model import Tag  # noqa: F401
+
+from app.models.articles.article_association_models import article_tags  # noqa: F401
+
+# Article and its associations (incl. article_tags, self-referential parent/children).
+from app.models.articles.article_image_model import ArticleImage  # noqa: F401
+from app.models.articles.article_model import Article  # noqa: F401
+from app.models.articles.article_relation_model import ArticleRelation  # noqa: F401
+from app.models.backgrounds.background_association_models import background_skills, background_tags  # noqa: F401
 
 # Background and its associations.
 from app.models.backgrounds.background_model import Background  # noqa: F401
@@ -62,16 +71,15 @@ from app.models.items.item_model import Item  # noqa: F401
 # Source-owned starting equipment (classes/backgrounds).
 from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption  # noqa: F401
 from app.models.items.item_source_model import SourceItem  # noqa: F401
-from app.models.races.race_association_models import RaceAbilityBonus, race_skills  # noqa: F401
+from app.models.races.race_association_models import RaceAbilityBonus, race_skills, race_tags  # noqa: F401
 
 # Race and its associations.
 from app.models.races.race_model import Race  # noqa: F401
 
 # Subrace and its associations (incl. subrace_tags).
 # Must come after Class/Race (FK targets) and before Feature (FK target).
-from app.models.races.subrace_association_models import SubraceAbilityBonus, subrace_tag_links  # noqa: F401
+from app.models.races.subrace_association_models import SubraceAbilityBonus, subrace_tags  # noqa: F401
 from app.models.races.subrace_model import Subrace  # noqa: F401
-from app.models.races.subrace_tag_model import SubraceTag  # noqa: F401
 from app.models.skill_model import Skill  # noqa: F401
 
 # Spell.

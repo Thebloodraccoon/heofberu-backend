@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.enums import RaceSizeType
-from app.models.races.race_association_models import race_skills
+from app.models.races.race_association_models import race_skills, race_tags
 from app.settings import settings
 
 
@@ -45,6 +45,12 @@ class Race(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="Subrace.name, Subrace.id",
+    )
+    tags = relationship(
+        "Tag",
+        secondary=race_tags,
+        back_populates="races",
+        order_by="Tag.name",
     )
 
     def __repr__(self):

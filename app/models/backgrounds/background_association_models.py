@@ -14,3 +14,14 @@ background_skills = Table(
     # (e.g. the skill-deletion in-use guard) can't use it, hence this index.
     Index("ix_background_skills_skill_id", "skill_id"),
 )
+
+# backgrounds <-> tags (shared Tag dictionary)
+background_tags = Table(
+    "background_tags",
+    settings.Base.metadata,
+    Column("background_id", Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="RESTRICT"), primary_key=True),
+    # The composite PK is (background_id, tag_id) — a lone `WHERE tag_id = ...`
+    # can't use it, hence this index.
+    Index("ix_background_tags_tag_id", "tag_id"),
+)

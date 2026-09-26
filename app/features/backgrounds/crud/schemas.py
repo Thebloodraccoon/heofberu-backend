@@ -6,6 +6,7 @@ from app.features.backgrounds.skills.schemas import SkillResponse
 from app.features.backgrounds.suggestions.schemas import SuggestionResponse
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.shared.items.schemas import ChoiceGroupResponse, SourceItemResponse
+from app.features.shared.tags.schemas import TagBrief
 
 
 class BackgroundBase(BaseModel):
@@ -20,7 +21,7 @@ class BackgroundCreate(BackgroundBase):
     """
     Create payload for a background: base fields only.
 
-    ``granted_skills``/``suggestions`` (like ``features``/``starting_items``)
+    ``granted_skills``/``suggestions``/``tags`` (like ``features``/``starting_items``)
     are deliberately not part of create — they're attached afterwards through
     their own PUT full-replace endpoints.
     """
@@ -47,6 +48,7 @@ class BackgroundResponse(BackgroundBase):
     features: list[NestedFeatureResponse] = []
     starting_items: list[SourceItemResponse] = []
     starting_choice_groups: list[ChoiceGroupResponse] = []
+    tags: list[TagBrief] = []
 
 
 class BackgroundGetAllResponse(BaseModel):

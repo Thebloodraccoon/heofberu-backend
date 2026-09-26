@@ -39,6 +39,33 @@ async def get_current_user(
 CurrentUserDep = Annotated[UserResponse, Depends(get_current_user)]
 
 
+async def get_optional_user(
+    user_service: UserServiceDep,
+    token: TokenDep,
+) -> UserResponse | None:
+    """
+    Resolve the user when a bearer token is sent, or ``None`` for anonymous callers.
+
+    For open endpoints whose payload depends on who's asking (e.g. hiding
+    draft/GM-only articles). A token that IS sent but is invalid/expired/
+    blacklisted still fails with 401 rather than silently downgrading to anonymous.
+    """
+
+    if token is None:
+        return None
+
+    return await get_current_user(user_service, token)
+
+
+OptionalUserDep = Annotated[UserResponse | None, Depends(get_optional_user)]
+
+
+def can_see_hidden(user: UserResponse | None) -> bool:
+    """Whether ``user`` may see unpublished/GM-only content (GMs and the founder)."""
+
+    return user is not None and user.role in (UserRole.GM, UserRole.FOUND_FATHER)
+
+
 def require_gm(current_user: CurrentUserDep) -> UserResponse:
     """Require the current user to have the GM role (or the higher found-father role)."""
 

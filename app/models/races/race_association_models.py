@@ -16,6 +16,17 @@ race_skills = Table(
     Index("ix_race_skills_skill_id", "skill_id"),
 )
 
+# races <-> tags (shared Tag dictionary)
+race_tags = Table(
+    "race_tags",
+    settings.Base.metadata,
+    Column("race_id", Integer, ForeignKey("races.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="RESTRICT"), primary_key=True),
+    # The composite PK is (race_id, tag_id) — a lone `WHERE tag_id = ...`
+    # can't use it, hence this index.
+    Index("ix_race_tags_tag_id", "tag_id"),
+)
+
 
 class RaceAbilityBonus(settings.Base):  # type: ignore
     """Ability score bonus granted by a race, e.g. {race: Elf, ability: DEX, bonus: 2}."""

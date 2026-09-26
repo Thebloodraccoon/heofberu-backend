@@ -1,16 +1,19 @@
 """ORM models/tables for subrace sub-resources: ability bonuses and tags."""
 
-from sqlalchemy import Column, ForeignKey, Integer, Table
+from sqlalchemy import Column, ForeignKey, Index, Integer, Table
 
 from app.models.enums import AbilityScoreType
 from app.settings import settings
 
-# subraces <-> subrace_tags (cultural/regional tags, e.g. "Sutrice", "Nordavingar")
-subrace_tag_links = Table(
-    "subrace_tag_links",
+# subraces <-> tags (shared Tag dictionary, e.g. "Sutrice", "Nordavingar")
+subrace_tags = Table(
+    "subrace_tags",
     settings.Base.metadata,
     Column("subrace_id", Integer, ForeignKey("subraces.id", ondelete="CASCADE"), primary_key=True),
-    Column("subrace_tag_id", Integer, ForeignKey("subrace_tags.id", ondelete="RESTRICT"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="RESTRICT"), primary_key=True),
+    # The composite PK is (subrace_id, tag_id) — a lone `WHERE tag_id = ...`
+    # can't use it, hence this index.
+    Index("ix_subrace_tags_tag_id", "tag_id"),
 )
 
 

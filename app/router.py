@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.features.admin.router import router as admin_router
+from app.features.articles.router import router as article_router
 from app.features.auth.router import router as auth_router
 from app.features.backgrounds.router import router as background_router
 from app.features.characters.router import router as character_router
@@ -16,6 +17,7 @@ from app.features.skills.router import router as skill_router
 from app.features.spells.router import router as spell_router
 from app.features.subclasses.router import router as subclass_router
 from app.features.subraces.router import router as subrace_router
+from app.features.tags.router import router as tag_router
 from app.features.users.router import router as user_router
 
 api_router = APIRouter(prefix="/api")
@@ -30,8 +32,10 @@ _feature_routers = (
     class_router,
     subclass_router,
     skill_router,
+    tag_router,
     spell_router,
     background_router,
+    article_router,
     feat_router,
     feature_router,
     item_router,

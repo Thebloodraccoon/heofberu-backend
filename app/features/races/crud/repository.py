@@ -13,10 +13,10 @@ from app.models.races.subrace_model import Subrace
 
 
 class RaceRepository(BaseRepository[Race]):
-    """Race repository with eager-loaded bonuses, skills, features, and subraces."""
+    """Race repository with eager-loaded bonuses, skills, tags, features, and subraces."""
 
     def __init__(self, db: AsyncSession):
-        """Initialize the repository with eager-loaded bonus, skill, feature, and subrace fields."""
+        """Initialize the repository with eager-loaded bonus, skill, tag, feature, and subrace fields."""
 
         super().__init__(
             Race,
@@ -24,6 +24,7 @@ class RaceRepository(BaseRepository[Race]):
             default_load_options=[
                 selectinload(Race.ability_bonuses),
                 selectinload(Race.granted_skills),
+                selectinload(Race.tags),
                 *feature_summary_loads(selectinload(Race.features)),
                 selectinload(Race.subraces),
             ],
