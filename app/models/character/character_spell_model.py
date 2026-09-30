@@ -23,7 +23,7 @@ class CharacterSpell(settings.Base):  # type: ignore
     __tablename__ = "character_spells"
 
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
-    spell_id = Column(Integer, ForeignKey("spells.id", ondelete="CASCADE"), primary_key=True)
+    spell_id = Column(Integer, ForeignKey("spells.id", ondelete="CASCADE"), primary_key=True, index=True)
 
     spell = relationship("Spell")
 

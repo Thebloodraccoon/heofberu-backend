@@ -18,7 +18,7 @@ class Tag(settings.Base):  # type: ignore
     __tablename__ = "tags"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False, unique=True, index=True)
+    name = Column(String(100), nullable=False)  # unique ignoring case: ``uq_tags_name_lower`` below
 
     races = relationship("Race", secondary="race_tags", back_populates="tags")
     subraces = relationship("Subrace", secondary="subrace_tags", back_populates="tags")

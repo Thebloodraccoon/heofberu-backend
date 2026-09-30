@@ -1,6 +1,6 @@
 """ORM model for features acquired by a character (with per-character notes)."""
 
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.models.enums import GrantSourceType
@@ -30,6 +30,8 @@ class CharacterFeature(settings.Base):  # type: ignore
     """
 
     __tablename__ = "character_features"
+    # One grant per (character, feature): repositories read the pair with ``scalar_one_or_none()``.
+    __table_args__ = (UniqueConstraint("character_id", "feature_id", name="uq_character_features_character_feature"),)
 
     id = Column(Integer, primary_key=True)
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)

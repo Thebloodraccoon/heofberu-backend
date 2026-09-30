@@ -1,6 +1,6 @@
 """ORM model for world-lore articles (global lore down to a single location/faction/NPC)."""
 
-from sqlalchemy import Column, Computed, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, Computed, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import relationship
 from sqlalchemy_utils import LtreeType
@@ -47,6 +47,13 @@ class Article(settings.Base):  # type: ignore
     """
 
     __tablename__ = "articles"
+    __table_args__ = (
+        # ltree ``<@``/``@>`` (tree queries) need GiST; B-tree can't serve them.
+        Index("ix_articles_path", "path", postgresql_using="gist"),
+        Index("ix_articles_search_vector", "search_vector", postgresql_using="gin"),
+        Index("ix_articles_search_vector_gm", "search_vector_gm", postgresql_using="gin"),
+        Index("ix_articles_title_trgm", "title", postgresql_using="gin", postgresql_ops={"title": "gin_trgm_ops"}),
+    )
 
     id = Column(Integer, primary_key=True)
 
@@ -59,7 +66,7 @@ class Article(settings.Base):  # type: ignore
     subtype_id = Column(Integer, ForeignKey("article_subtypes.id", ondelete="SET NULL"), nullable=True, index=True)
 
     parent_id = Column(Integer, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True)
-    path = Column(LtreeType, nullable=True, index=True)
+    path = Column(LtreeType, nullable=True)
 
 
     status = Column(ArticleStatusType, nullable=False, default=ArticleStatus.DRAFT, index=True)
