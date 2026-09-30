@@ -13,6 +13,7 @@ from app.features.articles.slug import slugify
 from app.models.articles.article_association_models import article_tags
 from app.models.articles.article_image_model import ArticleImage
 from app.models.articles.article_model import Article
+from app.models.articles.article_subtype_model import ArticleSubtype
 
 
 #: Minimum ``pg_trgm`` word-similarity for a title to count as a typo/prefix-tolerant match.
@@ -105,6 +106,8 @@ class ArticleRepository(BaseRepository[Article]):
     async def get_subtype_type(self, subtype_id: int) -> str | None:
         """Return the ``article_type`` a subtype belongs to, or ``None`` if it doesn't exist."""
 
+        return await self.db.scalar(select(ArticleSubtype.article_type).where(ArticleSubtype.id == subtype_id))
+
     async def list_image_keys(self, article_id: int) -> list[tuple[int, str]]:
         """Return ``(id, storage_key)`` of every image owned by the article (for storage cleanup on delete)."""
 
@@ -164,8 +167,6 @@ class ArticleRepository(BaseRepository[Article]):
         return [Article.status == ArticleStatus.PUBLISHED, Article.visibility == ArticleVisibility.PUBLIC]
 
     @staticmethod
-    def _subtype_condition(subtype: str):
-        """Case-insensitive exact match on the free-text ``subtype``."""
     def _excerpt_column(include_hidden: bool):
         """``excerpt`` as the reader may see it: GM-only blocks stripped for non-GMs."""
 
@@ -174,7 +175,34 @@ class ArticleRepository(BaseRepository[Article]):
 
         return func.regexp_replace(Article.excerpt, ARTICLE_GM_BLOCK_SQL_PATTERN, " ", "g").label("excerpt")
 
-        return func.lower(Article.subtype) == subtype.strip().lower()
+    async def _type_condition(self, article_types: list[str], subtype_ids: list[int]):
+        """
+        Type/subtype filter where a subtype refines only its own type (faceted search).
+
+        A type with some of its subtypes picked contributes only those subtypes; a type with none
+        picked contributes all of its articles: ``type IN (types w/o picked subtypes) OR subtype_id IN
+        (picked)``. Subtypes picked without their type still match (their type is implied).
+        """
+
+        if not subtype_ids:
+            return Article.article_type.in_(article_types)
+
+        refined = set(
+            (
+                await self.db.execute(
+                    select(ArticleSubtype.article_type).where(ArticleSubtype.id.in_(subtype_ids)).distinct()
+                )
+            ).scalars()
+        )
+        whole_types = [t for t in article_types if t not in refined]
+
+        return or_(Article.subtype_id.in_(subtype_ids), Article.article_type.in_(whole_types))
+
+    @staticmethod
+    def _subtype_columns() -> list:
+        """Listing columns for the (optional) subtype; ``ArticleCrudService`` nests them into ``subtype``."""
+
+        return [ArticleSubtype.id.label("subtype_id"), ArticleSubtype.name.label("subtype_name")]
 
     @staticmethod
     def _tag_condition(tag_ids: list[int], match_all: bool):
@@ -302,8 +330,7 @@ class ArticleRepository(BaseRepository[Article]):
         include_hidden: bool,
         search: str | None = None,
         article_types: list[str] | None = None,
-        subtype: str | None = None,
-        parent_id: int | None = None,
+        subtype_ids: list[int] | None = None,
         tag_ids: list[int] | None = None,
         match_all_tags: bool = False,
         sort: str = "title",
@@ -317,12 +344,10 @@ class ArticleRepository(BaseRepository[Article]):
             conditions.append(
                 or_(Article.title.ilike(pattern, escape="\\"), Article.slug.ilike(pattern, escape="\\"))
             )
-        if article_types:
-            conditions.append(Article.article_type.in_(article_types))
-        if subtype:
-            conditions.append(self._subtype_condition(subtype))
         if parent_id is not None:
             conditions.append(Article.parent_id == parent_id)
+        if article_types or subtype_ids:
+            conditions.append(await self._type_condition(article_types or [], subtype_ids or []))
         if tag_ids:
             conditions.append(self._tag_condition(tag_ids, match_all_tags))
 
@@ -341,10 +366,11 @@ class ArticleRepository(BaseRepository[Article]):
                 Article.title,
                 self._excerpt_column(include_hidden),
                 Article.article_type,
-                Article.subtype,
+                *self._subtype_columns(),
                 Article.status,
                 Article.visibility,
             )
+            .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
             .where(*conditions)
             .order_by(*order_by)
             .offset((page - 1) * size)
@@ -360,7 +386,7 @@ class ArticleRepository(BaseRepository[Article]):
         size: int,
         include_hidden: bool,
         article_types: list[str] | None = None,
-        subtype: str | None = None,
+        subtype_ids: list[int] | None = None,
         tag_ids: list[int] | None = None,
         match_all_tags: bool = False,
     ) -> tuple[list[Any], int]:
@@ -395,10 +421,8 @@ class ArticleRepository(BaseRepository[Article]):
             or_(vector.op("@@")(combined_query), similarity > TITLE_SIMILARITY_THRESHOLD),
             *self._visibility_conditions(include_hidden),
         ]
-        if article_types:
-            conditions.append(Article.article_type.in_(article_types))
-        if subtype:
-            conditions.append(self._subtype_condition(subtype))
+        if article_types or subtype_ids:
+            conditions.append(await self._type_condition(article_types or [], subtype_ids or []))
         if tag_ids:
             conditions.append(self._tag_condition(tag_ids, match_all_tags))
 
@@ -418,12 +442,13 @@ class ArticleRepository(BaseRepository[Article]):
                 Article.title,
                 self._excerpt_column(include_hidden),
                 Article.article_type,
-                Article.subtype,
+                *self._subtype_columns(),
                 Article.status,
                 Article.visibility,
                 rank,
                 snippet,
             )
+            .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
             .where(*conditions)
             .order_by(rank.desc(), Article.id)
             .offset((page - 1) * size)

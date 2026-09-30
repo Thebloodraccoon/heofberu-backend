@@ -428,7 +428,16 @@ async def create_article(client, gm_token):
         if excerpt is not None:
             payload["excerpt"] = excerpt
         if subtype is not None:
-            payload["subtype"] = subtype
+            # ``subtype`` is a name: reuse the article_type's dictionary entry or create it.
+            existing = await client.get("/articles/subtypes", params={"article_type": article_type})
+            match = [s for s in existing.json() if s["name"].lower() == subtype.lower()]
+            if not match:
+                created = await client.post(
+                    "/articles/subtypes", json={"article_type": article_type, "name": subtype}, headers=headers
+                )
+                assert created.status_code == 201, created.text
+                match = [created.json()]
+            payload["subtype_id"] = match[0]["id"]
         if parent_id is not None:
             payload["parent_id"] = parent_id
         if visibility != "public":

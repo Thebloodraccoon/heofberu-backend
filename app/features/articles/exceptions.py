@@ -14,3 +14,32 @@ class ArticleParentCycleException(AppError):
         self.article_id = article_id
         self.parent_id = parent_id
         super().__init__(f"Article {parent_id} cannot be the parent of article {article_id}: it would create a cycle.")
+
+
+class ArticleStatusTransitionException(AppError):
+    """Raised (409) when a review-workflow action isn't allowed from the article's current status."""
+
+    status_code = 409
+
+    def __init__(self, article_id: int, action: str, current_status: str):
+        """Initialize with the article, the rejected action and the status it was attempted from."""
+
+        self.article_id = article_id
+        self.action = action
+        self.current_status = current_status
+        super().__init__(f"Cannot {action} article {article_id}: it is {current_status}.")
+
+
+class ArticleSubtypeTypeMismatchException(AppError):
+    """Raised (400) when an article would use a subtype of a different ``article_type``."""
+
+    status_code = 400
+
+    def __init__(self, subtype_id: int, subtype_type: str, article_type: str):
+        """Initialize with the subtype, the type it belongs to and the article's type."""
+
+        self.subtype_id = subtype_id
+        super().__init__(
+            f"Subtype {subtype_id} belongs to article_type '{subtype_type}', not '{article_type}'. "
+            "Change or clear subtype_id together with article_type."
+        )

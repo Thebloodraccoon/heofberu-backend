@@ -185,15 +185,18 @@ class TestArticleSearch:
         assert body["items"][0]["article_type"] == "deity"
 
     async def test_search_filters_by_subtype(self, client, create_article):
-        await create_article(title="Aurora Temple", subtype="shrine", status="published")
+        temple = await create_article(title="Aurora Temple", subtype="shrine", status="published")
         await create_article(title="Aurora Keep", subtype="fortress", status="published")
 
-        response = await client.get("/articles/search", params={"q": "Aurora", "subtype": "shrine"})
+        response = await client.get(
+            "/articles/search", params={"q": "Aurora", "subtype_id": temple["subtype"]["id"]}
+        )
 
         assert response.status_code == 200
         body = response.json()
         assert body["total"] == 1
         assert body["items"][0]["title"] == "Aurora Temple"
+        assert body["items"][0]["subtype"] == temple["subtype"]
 
     async def test_search_rejects_query_shorter_than_two_chars(self, client):
         response = await client.get("/articles/search", params={"q": "a"})

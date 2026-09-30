@@ -18,13 +18,13 @@ def _validate_article_type(article_type: str) -> str:
     return article_type
 
 
-def _normalize_subtype(subtype: str | None) -> str | None:
-    """Trim a free-text ``subtype``; blank becomes ``None``."""
+class ArticleSubtypeBrief(BaseModel):
+    """Subtype reference embedded in article responses."""
 
-    if subtype is None:
-        return None
+    model_config = ConfigDict(from_attributes=True)
 
-    return subtype.strip() or None
+    id: int
+    name: str
 
 
 class ArticleBase(BaseModel):
@@ -34,10 +34,9 @@ class ArticleBase(BaseModel):
     excerpt: str | None = Field(default=None, max_length=500)
     body_markdown: str = ""
     article_type: str
-    subtype: str | None = Field(
+    subtype_id: int | None = Field(
         default=None,
-        max_length=50,
-        description="Free-text refinement of article_type, e.g. location → «таверна», «город», «данж».",
+        description="An `/articles/subtypes` entry of this article's own `article_type` (location → таверна).",
     )
     visibility: ArticleVisibility = ArticleVisibility.PUBLIC
     parent_id: int | None = None
@@ -47,12 +46,6 @@ class ArticleBase(BaseModel):
         """Reject an ``article_type`` not in the open ``ARTICLE_TYPES`` list."""
 
         return _validate_article_type(article_type)
-
-    @field_validator("subtype")
-    def normalize_subtype(cls, subtype):
-        """Trim ``subtype``; blank becomes ``None``."""
-
-        return _normalize_subtype(subtype)
 
 
 class ArticleCreate(ArticleBase):
@@ -73,7 +66,7 @@ class ArticleUpdate(BaseModel):
     excerpt: str | None = Field(default=None, max_length=500)
     body_markdown: str | None = None
     article_type: str | None = None
-    subtype: str | None = Field(default=None, max_length=50)
+    subtype_id: int | None = None
     parent_id: int | None = None
     attributes: dict | None = None
     status: ArticleStatus | None = None
@@ -102,12 +95,6 @@ class ArticleUpdate(BaseModel):
 
         return _validate_article_type(article_type)
 
-    @field_validator("subtype")
-    def normalize_subtype(cls, subtype):
-        """Trim ``subtype``; blank (or explicit ``null``) clears it."""
-
-        return _normalize_subtype(subtype)
-
 
 class ArticleResponse(ArticleBase):
     """Full article representation returned by the API."""
@@ -121,6 +108,7 @@ class ArticleResponse(ArticleBase):
     created_at: datetime
     updated_at: datetime
     published_at: datetime | None = None
+    subtype: ArticleSubtypeBrief | None = None
     tags: list[TagBrief] = []
     images: list[ArticleImageResponse] = []
 
@@ -135,7 +123,7 @@ class ArticleGetAllResponse(BaseModel):
     title: str
     excerpt: str | None = None
     article_type: str
-    subtype: str | None = None
+    subtype: ArticleSubtypeBrief | None = None
     status: ArticleStatus
     visibility: ArticleVisibility
 
@@ -151,7 +139,7 @@ class ArticleSearchResult(ArticleGetAllResponse):
 
 
 class ArticleBrief(BaseModel):
-    """Minimal article reference embedded in relation/tree/latest responses."""
+    """Minimal article reference embedded in relation/tree responses."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -159,4 +147,4 @@ class ArticleBrief(BaseModel):
     slug: str
     title: str
     article_type: str
-    subtype: str | None = None
+    subtype: ArticleSubtypeBrief | None = None

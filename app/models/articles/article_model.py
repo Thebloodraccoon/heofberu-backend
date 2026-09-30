@@ -56,7 +56,7 @@ class Article(settings.Base):  # type: ignore
     body_markdown = Column(Text, nullable=False, default="")
 
     article_type = Column(String(50), nullable=False, index=True)
-    subtype = Column(String(50), nullable=True, index=True)
+    subtype_id = Column(Integer, ForeignKey("article_subtypes.id", ondelete="SET NULL"), nullable=True, index=True)
 
     parent_id = Column(Integer, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True)
     path = Column(LtreeType, nullable=True, index=True)
@@ -81,6 +81,8 @@ class Article(settings.Base):  # type: ignore
     children = relationship("Article", back_populates="parent")
     author = relationship("User", foreign_keys=[author_id])
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_id])
+    # Many-to-one, always needed in responses (incl. tree/relation briefs): joined-loaded, never lazy in async.
+    subtype = relationship("ArticleSubtype", lazy="joined")
     tags = relationship("Tag", secondary="article_tags", back_populates="articles", order_by="Tag.name")
     images = relationship(
         "ArticleImage",

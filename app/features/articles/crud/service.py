@@ -20,10 +20,24 @@ from app.features.articles.crud.schemas import (
     ArticleSearchResult,
     ArticleUpdate,
 )
-from app.features.articles.exceptions import ArticleParentCycleException
+from app.features.articles.exceptions import (
+    ArticleParentCycleException,
+    ArticleSubtypeTypeMismatchException,
+)
 from app.features.articles.images.service import storage_entity
 from app.features.articles.secrets import strip_gm_blocks
 from app.models.articles.article_model import Article
+
+
+
+
+def _nest_subtype(row) -> dict:
+    """Listing row (``subtype_id``/``subtype_name`` columns) -> dict with a nested ``subtype`` object."""
+
+    data = dict(row._mapping)
+    subtype_id, name = data.pop("subtype_id"), data.pop("subtype_name")
+    data["subtype"] = {"id": subtype_id, "name": name} if subtype_id is not None else None
+    return data
 
 
 class ArticleCrudService(
@@ -56,6 +70,7 @@ class ArticleCrudService(
         """
 
         await self._validate_parent(data.parent_id)
+        await self._validate_subtype(data.subtype_id, data.article_type)
 
         async with self._atomic():
             slug = await self.repository.generate_unique_slug(data.title)
@@ -85,6 +100,10 @@ class ArticleCrudService(
 
         if fields.get("status") == ArticleStatus.PUBLISHED and item.published_at is None:
             fields["published_at"] = datetime.now(timezone.utc)
+        if "subtype_id" in fields or "article_type" in fields:
+            await self._validate_subtype(
+                fields.get("subtype_id", item.subtype_id), fields.get("article_type", item.article_type)
+            )
 
         async with self._atomic():
             await self.repository.apply_update(item, fields, commit=False)
@@ -172,8 +191,7 @@ class ArticleCrudService(
         include_hidden: bool,
         search: str | None,
         article_types: list[str] | None,
-        subtype: str | None,
-        parent_id: int | None,
+        subtype_ids: list[int] | None,
         tag_ids: list[int] | None,
         match_all_tags: bool,
         sort: str,
@@ -186,13 +204,12 @@ class ArticleCrudService(
             include_hidden=include_hidden,
             search=search,
             article_types=article_types,
-            subtype=subtype,
-            parent_id=parent_id,
+            subtype_ids=subtype_ids,
             tag_ids=tag_ids,
             match_all_tags=match_all_tags,
             sort=sort,
         )
-        items = [ArticleGetAllResponse.model_validate(row) for row in rows]
+        items = [ArticleGetAllResponse.model_validate(_nest_subtype(row)) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
     async def search_articles(
@@ -203,7 +220,7 @@ class ArticleCrudService(
         size: int,
         include_hidden: bool,
         article_types: list[str] | None,
-        subtype: str | None,
+        subtype_ids: list[int] | None,
         tag_ids: list[int] | None,
         match_all_tags: bool,
     ) -> Page[ArticleSearchResult]:
@@ -215,11 +232,11 @@ class ArticleCrudService(
             size=size,
             include_hidden=include_hidden,
             article_types=article_types,
-            subtype=subtype,
+            subtype_ids=subtype_ids,
             tag_ids=tag_ids,
             match_all_tags=match_all_tags,
         )
-        items = [ArticleSearchResult.model_validate(row) for row in rows]
+        items = [ArticleSearchResult.model_validate(_nest_subtype(row)) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
     async def get_children(self, article_id: int, *, include_hidden: bool) -> list[ArticleBrief]:
@@ -256,6 +273,18 @@ class ArticleCrudService(
 
         if not await self.repository.exists_visible(article_id, include_hidden):
             raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
+
+    async def _validate_subtype(self, subtype_id: int | None, article_type: str) -> None:
+        """Reject a ``subtype_id`` that doesn't exist or belongs to another ``article_type`` (400)."""
+
+        if subtype_id is None:
+            return
+
+        subtype_type = await self.repository.get_subtype_type(subtype_id)
+        if subtype_type is None:
+            raise RecordIdsInvalidError(model_name="ArticleSubtype", ids=[subtype_id])
+        if subtype_type != article_type:
+            raise ArticleSubtypeTypeMismatchException(subtype_id, subtype_type, article_type)
 
     async def _validate_parent(self, parent_id: int | None, article_id: int | None = None) -> None:
         """Reject a ``parent_id`` that doesn't exist or (when ``article_id`` is given) would create a cycle."""

@@ -35,8 +35,13 @@ ArticleTypesQuery = Annotated[
     ),
 ]
 SubtypeQuery = Annotated[
-    str | None,
-    Query(max_length=50, description="Case-insensitive exact match on the free-text subtype, e.g. `таверна`."),
+    list[int] | None,
+    Query(
+        alias="subtype_id",
+        description="Subtype ids (repeat the key; see `GET /articles/subtypes`). A subtype refines only its own "
+        "type: `?article_type=location&article_type=npc&subtype_id=5` (5 = a location subtype) → those locations "
+        "plus every NPC.",
+    ),
 ]
 
 
@@ -56,8 +61,7 @@ async def get_articles(
     tag_id: TagIdsQuery = None,
     tag_match: TagMatchQuery = "any",
     article_type: ArticleTypesQuery = None,
-    subtype: SubtypeQuery = None,
-    parent_id: int | None = Query(None, gt=0, description="Only direct children of this article."),
+    subtype_ids: SubtypeQuery = None,
     sort: Literal["title", "newest", "oldest", "updated"] = Query(
         "title", description="`newest`/`oldest` order by published_at (falling back to created_at)."
     ),
@@ -77,8 +81,7 @@ async def get_articles(
         include_hidden=can_see_hidden(user),
         search=search,
         article_types=article_type,
-        subtype=subtype,
-        parent_id=parent_id,
+        subtype_ids=subtype_ids,
         tag_ids=tag_id,
         match_all_tags=tag_match == "all",
         sort=sort,
@@ -102,7 +105,7 @@ async def search_articles(
     tag_id: TagIdsQuery = None,
     tag_match: TagMatchQuery = "any",
     article_type: ArticleTypesQuery = None,
-    subtype: SubtypeQuery = None,
+    subtype_ids: SubtypeQuery = None,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=50, description="Page size"),
 ):
@@ -120,7 +123,7 @@ async def search_articles(
         size=size,
         include_hidden=can_see_hidden(user),
         article_types=article_type,
-        subtype=subtype,
+        subtype_ids=subtype_ids,
         tag_ids=tag_id,
         match_all_tags=tag_match == "all",
     )
@@ -224,7 +227,7 @@ async def create_article(
                     "value": {
                         "title": "Moria",
                         "article_type": "location",
-                        "subtype": "город",
+                        "subtype_id": 3,
                         "parent_id": 12,
                         "body_markdown": "A once-great dwarven kingdom...\n\n:::gm\nA Balrog sleeps below.\n:::",
                     },
