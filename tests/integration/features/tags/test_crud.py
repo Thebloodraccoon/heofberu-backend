@@ -52,7 +52,7 @@ class TestTagCrud:
             )
         ).json()
 
-        response = await client.get(f"/tags/{created['id']}")
+        response = await client.get(f"/tags/{created['id']}", headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 200
         assert response.json()["name"] == "Dwarven"
@@ -140,7 +140,7 @@ class TestTagCrud:
         for name in ("Alpha", "Beta", "Gamma"):
             await client.post("/tags", json={"name": name}, headers=headers)
 
-        response = await client.get("/tags", params={"page": 1, "size": 2, "sort": "name"})
+        response = await client.get("/tags", params={"page": 1, "size": 2, "sort": "name"}, headers=headers)
 
         assert response.status_code == 200
         body = response.json()
@@ -152,7 +152,7 @@ class TestTagCrud:
         await client.post("/tags", json={"name": "Dwarven"}, headers=headers)
         await client.post("/tags", json={"name": "Elven"}, headers=headers)
 
-        response = await client.get("/tags", params={"search": "warv"})
+        response = await client.get("/tags", params={"search": "warv"}, headers=headers)
 
         assert response.status_code == 200
         body = response.json()
@@ -164,7 +164,7 @@ class TestTagCrud:
         tag = (await client.post("/tags", json={"name": "Dwarven"}, headers=headers)).json()
         await create_article(title="Khazad-dum", tag_ids=[tag["id"]])
 
-        response = await client.get("/tags", params={"search": "Dwarven"})
+        response = await client.get("/tags", params={"search": "Dwarven"}, headers=headers)
 
         assert response.status_code == 200
         assert response.json()["items"][0]["usage_count"] == 1
@@ -174,7 +174,7 @@ class TestTagCrud:
         await client.post("/tags", json={"name": "Underground River"}, headers=headers)
         await client.post("/tags", json={"name": "Dwarven"}, headers=headers)
 
-        response = await client.get("/tags/suggest", params={"q": "Dwar"})
+        response = await client.get("/tags/suggest", params={"q": "Dwar"}, headers=headers)
 
         assert response.status_code == 200
         names = [t["name"] for t in response.json()]
@@ -185,7 +185,48 @@ class TestTagCrud:
         for i in range(3):
             await client.post("/tags", json={"name": f"Dwarven {i}"}, headers=headers)
 
-        response = await client.get("/tags/suggest", params={"q": "Dwarven", "limit": 2})
+        response = await client.get("/tags/suggest", params={"q": "Dwarven", "limit": 2}, headers=headers)
 
         assert response.status_code == 200
         assert len(response.json()) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestTagVisibility:
+    async def test_tag_only_on_hidden_article_invisible_to_anonymous(self, client, gm_token, create_article):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        tag = (await client.post("/tags", json={"name": "Traitor"}, headers=headers)).json()
+        await create_article(title="Secret Plot", tag_ids=[tag["id"]])
+
+        listed = await client.get("/tags", params={"search": "Traitor"})
+        suggested = await client.get("/tags/suggest", params={"q": "Trai"})
+        fetched = await client.get(f"/tags/{tag['id']}")
+
+        assert listed.json()["total"] == 0
+        assert suggested.json() == []
+        assert fetched.status_code == 404
+
+    async def test_tag_on_hidden_article_still_visible_to_gm(self, client, gm_token, create_article):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        tag = (await client.post("/tags", json={"name": "Traitor"}, headers=headers)).json()
+        await create_article(title="Secret Plot", tag_ids=[tag["id"]])
+
+        listed = await client.get("/tags", params={"search": "Traitor"}, headers=headers)
+        fetched = await client.get(f"/tags/{tag['id']}", headers=headers)
+
+        assert listed.json()["items"][0]["usage_count"] == 1
+        assert fetched.status_code == 200
+
+    async def test_anonymous_usage_count_ignores_hidden_articles(self, client, gm_token, create_article):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        tag = (await client.post("/tags", json={"name": "Dwarven"}, headers=headers)).json()
+        await create_article(title="Khazad-dum", tag_ids=[tag["id"]], status="published")
+        await create_article(title="Hidden Hold", tag_ids=[tag["id"]])
+        await create_article(title="GM Hold", tag_ids=[tag["id"]], status="published", visibility="gm_only")
+
+        listed = await client.get("/tags", params={"search": "Dwarven"})
+        fetched = await client.get(f"/tags/{tag['id']}")
+
+        assert listed.json()["items"][0]["usage_count"] == 1
+        assert fetched.status_code == 200

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, Query, status
 from app.core.base.service import Page
 from app.features.tags.crud.schemas import TagCreate, TagGetAllResponse, TagResponse, TagUpdate
 from app.features.tags.dependencies import TagCrudDep
-from app.features.users.security import FounderDep, GmUserDep
+from app.features.users.security import FounderDep, GmUserDep, OptionalUserDep, can_see_hidden
 
 router = APIRouter()
 
@@ -19,6 +19,7 @@ router = APIRouter()
 )
 async def get_tags(
     tag_service: TagCrudDep,
+    user: OptionalUserDep,
     search: str | None = Query(
         None,
         description="Case-insensitive substring match against the tag's name.",
@@ -30,10 +31,12 @@ async def get_tags(
     """
     Return a paginated list of tags, each with a `usage_count` (how many races, subraces,
     backgrounds and articles carry it). Response is `{items, total, page, size}`.
-    Open endpoint.
+    Non-GMs only get tags on records they can see (drafts/GM-only articles don't count). Open endpoint.
     """
 
-    return await tag_service.list_tags(page=page, size=size, search=search, sort=sort)
+    return await tag_service.list_tags(
+        page=page, size=size, search=search, sort=sort, include_hidden=can_see_hidden(user)
+    )
 
 
 @router.get(
@@ -43,15 +46,17 @@ async def get_tags(
 )
 async def suggest_tags(
     tag_service: TagCrudDep,
+    user: OptionalUserDep,
     q: str = Query(..., min_length=1, max_length=100, description="What the user has typed so far."),
     limit: int = Query(10, ge=1, le=25, description="Max suggestions to return."),
 ):
     """
     Return up to `limit` tags whose name contains `q` (case-insensitive) — names starting with
-    `q` first, then the most used, then A-Z. For a tag picker's typeahead. Open endpoint.
+    `q` first, then the most used, then A-Z. For a tag picker's typeahead. Same visibility
+    rule as `GET /tags`. Open endpoint.
     """
 
-    return await tag_service.suggest(q, limit)
+    return await tag_service.suggest(q, limit, include_hidden=can_see_hidden(user))
 
 
 @router.get(
@@ -62,10 +67,10 @@ async def suggest_tags(
         404: {"description": "Tag with id not found."},
     },
 )
-async def get_tag(tag_id: int, tag_service: TagCrudDep):
-    """Return a single tag by ID. Open endpoint."""
+async def get_tag(tag_id: int, tag_service: TagCrudDep, user: OptionalUserDep):
+    """Return a single tag by ID. 404 for non-GMs if no record they can see carries it. Open endpoint."""
 
-    return await tag_service.get_by_id(tag_id)
+    return await tag_service.get_tag(tag_id, include_hidden=can_see_hidden(user))
 
 
 @router.post(

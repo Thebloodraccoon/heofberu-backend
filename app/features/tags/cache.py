@@ -9,13 +9,4 @@ under the ``"races"`` namespace too (see ``SUBRACE_CACHE_NAMESPACES`` in
 namespace to purge.
 """
 
-from app.core.cache import invalidate
-
 TAG_CACHE_NAMESPACES = ("tags", "races", "backgrounds", "articles")
-
-
-async def invalidate_tag_cache() -> None:
-    """Purge every cache namespace a tag read can hit."""
-
-    for namespace in TAG_CACHE_NAMESPACES:
-        await invalidate(namespace)

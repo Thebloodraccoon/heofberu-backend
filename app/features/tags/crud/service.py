@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.cached_service import CachedService
 from app.core.base.service import Page
+from app.core.exceptions import RecordNotFoundError
 from app.features.tags.cache import TAG_CACHE_NAMESPACES
 from app.features.tags.crud.repository import TagRepository
 from app.features.tags.crud.schemas import TagCreate, TagGetAllResponse, TagResponse, TagUpdate
@@ -34,15 +35,28 @@ class TagCrudService(CachedService[Tag, TagCreate, TagUpdate, TagResponse, TagGe
             get_all_schema=TagGetAllResponse,
         )
 
-    async def list_tags(self, *, page: int, size: int, search: str | None, sort: str) -> Page[TagGetAllResponse]:
+    async def get_tag(self, tag_id: int, *, include_hidden: bool) -> TagResponse:
+        """Cached read; 404 for a non-GM if no record they can see carries the tag (its name may be a spoiler)."""
+
+        tag = await self.get_by_id(tag_id)
+        if not include_hidden and not await self.repository.is_visible(tag_id):
+            raise RecordNotFoundError(model_name="Tag", model_id=str(tag_id))
+
+        return tag
+
+    async def list_tags(
+        self, *, page: int, size: int, search: str | None, sort: str, include_hidden: bool
+    ) -> Page[TagGetAllResponse]:
         """Paginated tags with usage counts (not cached: the counts change whenever any catalog re-tags a record)."""
 
-        rows, total = await self.repository.list_with_usage(page=page, size=size, search=search, sort=sort)
+        rows, total = await self.repository.list_with_usage(
+            page=page, size=size, search=search, sort=sort, include_hidden=include_hidden
+        )
         items = [TagGetAllResponse.model_validate(row) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
-    async def suggest(self, query: str, limit: int) -> list[TagGetAllResponse]:
+    async def suggest(self, query: str, limit: int, *, include_hidden: bool) -> list[TagGetAllResponse]:
         """Autocomplete suggestions for a tag picker."""
 
-        rows = await self.repository.suggest(query, limit)
+        rows = await self.repository.suggest(query, limit, include_hidden=include_hidden)
         return [TagGetAllResponse.model_validate(row) for row in rows]
