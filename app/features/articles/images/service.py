@@ -14,10 +14,10 @@ from app.models.articles.article_image_model import ArticleImage
 from app.models.articles.article_model import Article
 
 
-def storage_entity(article_id: int) -> str:
-    """Storage folder for one article's gallery — each image's own row id is the object key within it."""
+def storage_entity(article_id: int, storage_key: str) -> str:
+    """Storage folder for one image: the article plus the row's unguessable ``storage_key``; the row id is the file."""
 
-    return f"articles/{article_id}"
+    return f"articles/{article_id}/{storage_key}"
 
 
 class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, ArticleResponse, None]):
@@ -71,17 +71,14 @@ class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, Ar
 
         row = await self.repository.create_placeholder(article_id, commit=False)
         image_id = row.id
-        uploaded = False
         try:
             url = await self._storage.upload_image(
-                storage_entity(article_id), image_id, content, image.content_type or ""
+                storage_entity(article_id, row.storage_key), image_id, content, image.content_type or ""
             )
-            uploaded = True
             updated = await self.repository.set_image_url(row, url)
         except Exception:
             await self.repository.db.rollback()
-            if uploaded:
-                await self._storage.delete_image(storage_entity(article_id), image_id)
+            await self._storage.delete_image(storage_entity(article_id, row.storage_key), image_id)
             raise
 
         await self._invalidate_cache()
@@ -101,7 +98,7 @@ class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, Ar
         await self._exists_or_404(article_id)
         image_row = await self._get_image_or_404(article_id, image_id)
         await self.repository.delete_image_row(image_row)
-        await self._storage.delete_image(storage_entity(article_id), image_id)
+        await self._storage.delete_image(storage_entity(article_id, image_row.storage_key), image_id)
         await self._invalidate_cache()
 
     async def _get_image_or_404(self, article_id: int, image_id: int) -> ArticleImage:

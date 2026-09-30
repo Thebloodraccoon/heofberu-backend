@@ -1,5 +1,6 @@
 """Article CRUD service: cached catalog CRUD plus composed capability reads."""
 
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,7 +117,7 @@ class ArticleCrudService(
         """
 
         item = await self._get_or_404(item_id)
-        image_ids = await self.repository.list_image_ids(item_id)
+        image_keys = await self.repository.list_image_keys(item_id)
         child_ids = await self.repository.list_child_ids(item_id)
 
         async with self._atomic():
@@ -126,8 +127,9 @@ class ArticleCrudService(
 
         await self._invalidate_cache()
 
-        for image_id in image_ids:
-            await self._storage.delete_image(storage_entity(item_id), image_id)
+        await asyncio.gather(
+            *(self._storage.delete_image(storage_entity(item_id, key), image_id) for image_id, key in image_keys)
+        )
 
         return True
 

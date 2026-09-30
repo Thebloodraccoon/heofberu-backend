@@ -101,8 +101,17 @@ class ArticleRepository(BaseRepository[Article]):
     async def list_image_ids(self, article_id: int) -> list[int]:
         """Return the ids of every gallery image owned by the article (for storage cleanup on delete)."""
 
-        result = await self.db.execute(select(ArticleImage.id).where(ArticleImage.article_id == article_id))
-        return list(result.scalars().all())
+
+    async def get_subtype_type(self, subtype_id: int) -> str | None:
+        """Return the ``article_type`` a subtype belongs to, or ``None`` if it doesn't exist."""
+
+    async def list_image_keys(self, article_id: int) -> list[tuple[int, str]]:
+        """Return ``(id, storage_key)`` of every image owned by the article (for storage cleanup on delete)."""
+
+        result = await self.db.execute(
+            select(ArticleImage.id, ArticleImage.storage_key).where(ArticleImage.article_id == article_id)
+        )
+        return [(row.id, row.storage_key) for row in result]
 
     async def list_child_ids(self, article_id: int) -> list[int]:
         """Return the ids of every direct child (any visibility) — used to fix up ``path`` after a delete."""

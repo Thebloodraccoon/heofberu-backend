@@ -21,6 +21,9 @@ class ArticleImage(settings.Base):  # type: ignore
     article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True)
 
     image_url = Column(String(512), nullable=False, default="")
+    #: Random folder in the Storage key (``articles/{article_id}/{storage_key}/{id}.{ext}``): the bucket is
+    #: public, so without it an image embedded in a ``:::gm`` block or a draft could be reached by guessing ids.
+    storage_key = Column(String(36), nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

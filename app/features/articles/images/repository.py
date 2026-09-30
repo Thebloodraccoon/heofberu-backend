@@ -1,5 +1,7 @@
 """Article images repository: per-article image listing, upload placeholder, delete."""
 
+from uuid import uuid4
+
 from sqlalchemy import select
 
 from app.features.articles.crud.repository import ArticleRepository
@@ -32,12 +34,13 @@ class ArticleImagesRepository(ArticleRepository):
         """
         Insert an image row with an empty ``image_url`` and return it (id assigned).
 
-        The row's own id is the storage object key (``articles/{article_id}/{image_id}.{ext}``),
+        The row's id and fresh random ``storage_key`` form the storage object key
+        (``articles/{article_id}/{storage_key}/{image_id}.{ext}``),
         so it has to exist before the upload happens — ``set_image_url`` fills
         ``image_url`` in immediately afterward.
         """
 
-        row = ArticleImage(article_id=article_id, image_url="")
+        row = ArticleImage(article_id=article_id, image_url="", storage_key=str(uuid4()))
         self.db.add(row)
         await self.commit_or_flush(commit=commit)
 

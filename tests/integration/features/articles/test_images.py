@@ -9,6 +9,7 @@ import pytest
 
 from app import main as app_module
 from app.core.storage.dependencies import get_image_storage_service
+from app.core.storage.service import ImageUploadError
 
 
 class FakeImageStorage:
@@ -64,7 +65,29 @@ class TestArticleImages:
         body = response.json()
         assert body["article_id"] == article["id"]
         assert body["image_url"]
-        assert _fake_storage.uploaded == [(f"articles/{article['id']}", body["id"], "image/png")]
+        [(entity, row_id, content_type)] = _fake_storage.uploaded
+        assert (row_id, content_type) == (body["id"], "image/png")
+        prefix, storage_key = entity.rsplit("/", 1)
+        assert prefix == f"articles/{article['id']}"
+        assert len(storage_key) == 36  # uuid4: the public URL can't be guessed from the ids
+
+    async def test_failed_upload_still_removes_storage_object(self, client, create_article, gm_token, _fake_storage):
+        article = await create_article(title="Khazad-dum")
+        headers = {"Authorization": f"Bearer {gm_token}"}
+
+        async def failing_upload(entity, row_id, content, content_type):
+            _fake_storage.uploaded.append((entity, row_id, content_type))
+            raise ImageUploadError("timed out after the object was written")
+
+        _fake_storage.upload_image = failing_upload
+
+        response = await client.post(f"/articles/{article['id']}/images", files=self._png_files(), headers=headers)
+
+        assert response.status_code == 400
+        [(entity, row_id, _)] = _fake_storage.uploaded
+        assert _fake_storage.deleted == [(entity, row_id)]
+        listed = await client.get(f"/articles/{article['id']}/images", headers=headers)
+        assert listed.json() == []
 
     async def test_upload_for_missing_article_returns_404(self, client, gm_token, _fake_storage):
         response = await client.post(
@@ -106,7 +129,8 @@ class TestArticleImages:
         response = await client.delete(f"/articles/{article['id']}/images/{uploaded['id']}", headers=headers)
 
         assert response.status_code == 204
-        assert _fake_storage.deleted == [(f"articles/{article['id']}", uploaded["id"])]
+        [uploaded_entity] = [entity for entity, row_id, _ in _fake_storage.uploaded if row_id == uploaded["id"]]
+        assert _fake_storage.deleted == [(uploaded_entity, uploaded["id"])]
 
         listed = await client.get(f"/articles/{article['id']}/images", headers=headers)
         assert listed.json() == []
