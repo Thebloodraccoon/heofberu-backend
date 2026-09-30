@@ -424,9 +424,9 @@ ARTICLE_TYPES = (
 )
 
 #: Postgres ARE for a GM-only block in ``body_markdown``: ``:::gm`` ... ``:::``. An unclosed
-#: block hides everything to the end of the text (fail closed). Must stay equivalent to
-#: ``GM_BLOCK_RE`` in ``app/features/articles/secrets.py``.
-ARTICLE_GM_BLOCK_SQL_PATTERN = ":::gm.*?(:::|$)"
+#: block hides everything to the end of the text (fail closed). ``(?i)`` = case-insensitive
+#: (``:::GM`` too). Must stay equivalent to ``GM_BLOCK_RE`` in ``app/features/articles/secrets.py``.
+ARTICLE_GM_BLOCK_SQL_PATTERN = "(?i):::gm.*?(:::|$)"
 RELATION_TYPES = (
     "LOCATED_IN",
     "MEMBER_OF",

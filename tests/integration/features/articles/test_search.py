@@ -134,6 +134,41 @@ class TestArticleSearch:
         snippet = body["items"][0]["snippet"] or ""
         assert "Balrogborn" not in snippet
 
+    async def test_uppercase_gm_block_content_not_searchable_by_non_gm(self, client, create_article):
+        await create_article(
+            title="Public Fortress",
+            body_markdown="A quiet fortress on the border.\n\n:::GM\nBalrogborn stirs beneath it.\n:::",
+            status="published",
+        )
+
+        response = await client.get("/articles/search", params={"q": "Balrogborn"})
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 0
+
+    async def test_mixed_case_gm_block_content_not_leaked_in_non_gm_snippet(self, client, create_article):
+        await create_article(
+            title="Riverside Watchtower",
+            body_markdown="Riverside Watchtower guards the ford.\n\n:::Gm\nBalrogborn stirs beneath it.\n:::",
+            status="published",
+        )
+
+        response = await client.get("/articles/search", params={"q": "Riverside"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert "Balrogborn" not in (body["items"][0]["snippet"] or "")
+        await create_article(
+        )
+
+        secret = await client.get("/articles/search", params={"q": "Balrogborn"})
+        public = await client.get("/articles/search", params={"q": "Fortress"})
+
+        assert secret.json()["total"] == 0
+        hit = public.json()["items"][0]
+        assert "Balrogborn" not in (hit["snippet"] or "")
+
     async def test_search_filters_by_article_type(self, client, create_article):
         await create_article(title="Aurora the Sun God", article_type="deity", status="published")
         await create_article(title="Aurora's Blade", article_type="artifact", status="published")

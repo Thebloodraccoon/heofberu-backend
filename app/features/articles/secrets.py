@@ -3,8 +3,9 @@
 import re
 
 #: Python twin of ``app.constants.ARTICLE_GM_BLOCK_SQL_PATTERN`` (used by the generated
-#: ``search_vector`` column); an unclosed block runs to the end of the text (fail closed).
-GM_BLOCK_RE = re.compile(r":::gm.*?(?::::|\Z)", re.DOTALL)
+#: ``search_vector`` column); case-insensitive (``:::GM`` too), an unclosed block runs to the end of
+#: the text (fail closed).
+GM_BLOCK_RE = re.compile(r":::gm.*?(?::::|\Z)", re.DOTALL | re.IGNORECASE)
 
 
 def strip_gm_blocks(body: str) -> str:

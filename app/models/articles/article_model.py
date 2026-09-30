@@ -73,8 +73,6 @@ class Article(settings.Base):  # type: ignore
     search_vector = Column(TSVECTOR, Computed(SEARCH_VECTOR_SQL, persisted=True), nullable=True)
     search_vector_gm = Column(TSVECTOR, Computed(SEARCH_VECTOR_GM_SQL, persisted=True), nullable=True)
 
-    view_count = Column(Integer, nullable=False, default=0)
-
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     published_at = Column(DateTime(timezone=True), nullable=True)

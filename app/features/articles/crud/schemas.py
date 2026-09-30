@@ -119,7 +119,6 @@ class ArticleResponse(ArticleBase):
     slug: str
     status: ArticleStatus
     author_id: int | None = None
-    view_count: int
     created_at: datetime
     updated_at: datetime
     published_at: datetime | None = None
