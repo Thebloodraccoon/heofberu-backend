@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import ArticleVisibility, is_article_publicly_visible
 from app.core.base.service import BaseService
 from app.core.exceptions import RecordAlreadyExistsError, RecordIdsInvalidError, RecordNotFoundError
-from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES
 from app.features.articles.crud.schemas import ArticleBrief, ArticleCreate, ArticleResponse, ArticleUpdate
 from app.features.articles.relations.exceptions import ArticleRelationNotFoundException, ArticleSelfRelationException
 from app.features.articles.relations.repository import ArticleRelationsRepository
@@ -27,8 +26,6 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
     """
 
     repository: ArticleRelationsRepository
-
-    cache_namespaces = ARTICLE_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
         """Initialize the service with the relations repository."""
@@ -78,7 +75,6 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
             )
 
         row = await self.repository.create_relation(article_id, data)
-        await self._invalidate_cache()
 
         return self._to_response(article_id, row)
 
@@ -103,7 +99,6 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
                 )
 
         updated = await self.repository.update_relation(relation, fields)
-        await self._invalidate_cache()
 
         return self._to_response(article_id, updated)
 
@@ -113,7 +108,6 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
         await self._exists_or_404(article_id)
         relation = await self._get_relation_or_404(article_id, relation_id)
         await self.repository.delete_relation(relation)
-        await self._invalidate_cache()
 
     async def _get_relation_or_404(self, article_id: int, relation_id: int) -> ArticleRelation:
         """Fetch a relation scoped to the article, or raise ``ArticleRelationNotFoundException``."""

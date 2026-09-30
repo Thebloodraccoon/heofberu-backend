@@ -138,7 +138,12 @@ def make_get_redis(redis_url: str):
                     # Best-effort close of a client bound to a dead event loop.
                     with suppress(Exception):
                         await state["client"].aclose()
-                state["client"] = Redis.from_url(redis_url, decode_responses=True)
+                # Without these, a Redis that accepts the TCP connection but never answers
+                # (network blackhole, overloaded instance) blocks every cached GET/write on
+                # the OS-level TCP timeout instead of degrading to a fast cache miss.
+                state["client"] = Redis.from_url(
+                    redis_url, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5
+                )
                 state["loop"] = current_loop
 
         yield state["client"]

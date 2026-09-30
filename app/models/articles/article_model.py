@@ -2,7 +2,7 @@
 
 from sqlalchemy import Column, Computed, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
 from sqlalchemy_utils import LtreeType
 
 from app.constants import (
@@ -77,8 +77,9 @@ class Article(settings.Base):  # type: ignore
     reviewed_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # фаза 3
 
     # Generated columns (never written by the app): weighted title > excerpt > body, Russian + simple configs.
-    search_vector = Column(TSVECTOR, Computed(SEARCH_VECTOR_SQL, persisted=True), nullable=True)
-    search_vector_gm = Column(TSVECTOR, Computed(SEARCH_VECTOR_GM_SQL, persisted=True), nullable=True)
+    # deferred: never in a response, no reason to load them on every select(Article).
+    search_vector = deferred(Column(TSVECTOR, Computed(SEARCH_VECTOR_SQL, persisted=True), nullable=True))
+    search_vector_gm = deferred(Column(TSVECTOR, Computed(SEARCH_VECTOR_GM_SQL, persisted=True), nullable=True))
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

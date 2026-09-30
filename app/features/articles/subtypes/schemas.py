@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import ARTICLE_TYPES
+from app.features.articles.schema_validators import validate_in_list
 
 
 def _normalize_name(name: str | None) -> str:
@@ -25,10 +26,7 @@ class ArticleSubtypeCreate(BaseModel):
     def validate_article_type(cls, article_type):
         """Reject an ``article_type`` not in ``ARTICLE_TYPES``."""
 
-        if article_type not in ARTICLE_TYPES:
-            raise ValueError(f"article_type must be one of {ARTICLE_TYPES}")
-
-        return article_type
+        return validate_in_list(article_type, ARTICLE_TYPES, "article_type")
 
     @field_validator("name")
     def normalize_name(cls, name):

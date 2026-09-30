@@ -7,15 +7,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.constants import RELATION_TYPES, ArticleVisibility
 from app.features.articles.crud.schemas import ArticleBrief
-
-
-def _validate_relation_type(relation_type: str) -> str:
-    """Reject a ``relation_type`` not in the open ``RELATION_TYPES`` list."""
-
-    if relation_type not in RELATION_TYPES:
-        raise ValueError(f"relation_type must be one of {RELATION_TYPES}")
-
-    return relation_type
+from app.features.articles.schema_validators import reject_explicit_null, validate_in_list
 
 
 class ArticleRelationCreate(BaseModel):
@@ -30,7 +22,7 @@ class ArticleRelationCreate(BaseModel):
     def validate_relation_type(cls, relation_type):
         """Reject a ``relation_type`` not in the open ``RELATION_TYPES`` list."""
 
-        return _validate_relation_type(relation_type)
+        return validate_in_list(relation_type, RELATION_TYPES, "relation_type")
 
 
 class ArticleRelationUpdate(BaseModel):
@@ -44,19 +36,16 @@ class ArticleRelationUpdate(BaseModel):
     visibility: ArticleVisibility | None = None
 
     @field_validator("relation_type", "visibility")
-    def reject_explicit_null(cls, value, info):
+    def validate_not_null(cls, value, info):
         """``relation_type``/``visibility`` are NOT NULL columns — reject an explicit ``null`` (422, not 500)."""
 
-        if value is None:
-            raise ValueError(f"{info.field_name} may not be null")
-
-        return value
+        return reject_explicit_null(value, info.field_name)
 
     @field_validator("relation_type")
     def validate_relation_type(cls, relation_type):
         """Reject a ``relation_type`` not in the open ``RELATION_TYPES`` list."""
 
-        return _validate_relation_type(relation_type)
+        return validate_in_list(relation_type, RELATION_TYPES, "relation_type")
 
 
 class ArticleRelationResponse(BaseModel):

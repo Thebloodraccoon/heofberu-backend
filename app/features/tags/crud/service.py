@@ -35,6 +35,15 @@ class TagCrudService(CachedService[Tag, TagCreate, TagUpdate, TagResponse, TagGe
             get_all_schema=TagGetAllResponse,
         )
 
+    async def create(self, create_data: TagCreate) -> TagResponse:
+        """
+        A new tag starts unattached to any record, so it can't be embedded in any
+        cached payload yet (not even its own, new-id ``get_by_id``) — skip the flush.
+        """
+
+        item = await self.repository.create(create_data.model_dump())
+        return self.response_schema.model_validate(item)
+
     async def get_tag(self, tag_id: int, *, include_hidden: bool) -> TagResponse:
         """Cached read; 404 for a non-GM if no record they can see carries the tag (its name may be a spoiler)."""
 

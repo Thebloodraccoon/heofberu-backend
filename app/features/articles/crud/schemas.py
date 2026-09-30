@@ -6,16 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import ARTICLE_TYPES, ArticleStatus, ArticleVisibility
 from app.features.articles.images.schemas import ArticleImageResponse
+from app.features.articles.schema_validators import reject_explicit_null, validate_in_list
 from app.features.shared.tags.schemas import TagBrief
-
-
-def _validate_article_type(article_type: str) -> str:
-    """Reject an ``article_type`` not in the open ``ARTICLE_TYPES`` list."""
-
-    if article_type not in ARTICLE_TYPES:
-        raise ValueError(f"article_type must be one of {ARTICLE_TYPES}")
-
-    return article_type
 
 
 class ArticleSubtypeBrief(BaseModel):
@@ -45,7 +37,7 @@ class ArticleBase(BaseModel):
     def validate_article_type(cls, article_type):
         """Reject an ``article_type`` not in the open ``ARTICLE_TYPES`` list."""
 
-        return _validate_article_type(article_type)
+        return validate_in_list(article_type, ARTICLE_TYPES, "article_type")
 
 
 class ArticleCreate(ArticleBase):
@@ -76,27 +68,20 @@ class ArticleUpdate(BaseModel):
     visibility: ArticleVisibility | None = None
 
     @field_validator("title", "body_markdown", "article_type", "visibility")
-    def reject_explicit_null(cls, value, info):
+    def validate_not_null(cls, value, info):
         """
-        Reject an explicit ``null`` for a field that's ``nullable=False`` on the ``Article``
-        model — without this, it passes Pydantic (the field is ``X | None`` for PATCH
-        semantics) and only fails later as an uncaught ``IntegrityError`` (500) when
-        ``ArticleRepository.apply_update`` sets the column to ``NULL``.
-
-        Only runs when the field is actually present in the payload — Pydantic v2
-        skips validators for unset fields that fall back to their ``None`` default.
+        NOT NULL columns on ``Article`` would otherwise fail later as an uncaught ``IntegrityError``
+        (500) in ``ArticleRepository.apply_update`` — Pydantic only skips this for an UNSET field
+        (PATCH semantics), not an explicit ``null``.
         """
 
-        if value is None:
-            raise ValueError(f"{info.field_name} may not be null")
-
-        return value
+        return reject_explicit_null(value, info.field_name)
 
     @field_validator("article_type")
     def validate_article_type(cls, article_type):
         """Reject an ``article_type`` not in the open ``ARTICLE_TYPES`` list."""
 
-        return _validate_article_type(article_type)
+        return validate_in_list(article_type, ARTICLE_TYPES, "article_type")
 
 
 class ArticleResponse(ArticleBase):

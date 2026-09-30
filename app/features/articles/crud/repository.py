@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import and_, exists, func, literal_column, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.orm import aliased, load_only, selectinload
 from sqlalchemy_utils import Ltree
 
 from app.constants import ARTICLE_GM_BLOCK_SQL_PATTERN, ArticleStatus, ArticleVisibility
@@ -163,6 +163,17 @@ class ArticleRepository(BaseRepository[Article]):
 
         await self.commit_or_flush(commit=commit)
 
+    async def _count(self, model, conditions: list) -> int:
+        """Fallback total for an empty page (``count() OVER()`` yields no row when nothing matches)."""
+
+        return await self.db.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
+
+    @staticmethod
+    def _brief_load_options() -> list:
+        """Columns an ``ArticleBrief`` response actually uses (tree endpoints don't need body/tags/images)."""
+
+        return [load_only(Article.id, Article.slug, Article.title, Article.article_type, Article.subtype_id)]
+
     @staticmethod
     def _visibility_conditions(include_hidden: bool) -> list:
         """Row filters hiding unpublished and GM-only articles from non-GM readers."""
@@ -234,7 +245,7 @@ class ArticleRepository(BaseRepository[Article]):
         result = await self.db.execute(
             select(Article)
             .where(Article.parent_id == article_id, *self._visibility_conditions(include_hidden))
-            .options(*self._default_load_options)
+            .options(*self._brief_load_options())
             .order_by(Article.title)
         )
         return list(result.scalars().unique().all())
@@ -279,7 +290,7 @@ class ArticleRepository(BaseRepository[Article]):
         result = await self.db.execute(
             select(Article)
             .where(and_(*conditions))
-            .options(*self._default_load_options)
+            .options(*self._brief_load_options())
             .order_by(Article.path)
         )
         return list(result.scalars().unique().all())
@@ -298,7 +309,7 @@ class ArticleRepository(BaseRepository[Article]):
                 Article.id != article_id,
                 *self._visibility_conditions(include_hidden),
             )
-            .options(*self._default_load_options)
+            .options(*self._brief_load_options())
             .order_by(Article.path)
         )
         return list(result.scalars().unique().all())
@@ -333,7 +344,6 @@ class ArticleRepository(BaseRepository[Article]):
             "updated": [Article.updated_at.desc(), Article.id.desc()],
         }[sort]
 
-        total = await self.db.scalar(select(func.count()).select_from(Article).where(*conditions))
         result = await self.db.execute(
             select(
                 Article.id,
@@ -344,6 +354,7 @@ class ArticleRepository(BaseRepository[Article]):
                 *self._subtype_columns(),
                 Article.status,
                 Article.visibility,
+                func.count().over().label("total"),
             )
             .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
             .where(*conditions)
@@ -351,7 +362,9 @@ class ArticleRepository(BaseRepository[Article]):
             .offset((page - 1) * size)
             .limit(size)
         )
-        return list(result.all()), total or 0
+        rows = list(result.all())
+        total = rows[0].total if rows else await self._count(Article, conditions)
+        return rows, total or 0
 
     async def search_articles(
         self,
@@ -382,6 +395,8 @@ class ArticleRepository(BaseRepository[Article]):
         russian_query = func.websearch_to_tsquery(RUSSIAN_CONFIG, query)
         combined_query = russian_query.op("||")(func.websearch_to_tsquery(SIMPLE_CONFIG, query))
         similarity = func.word_similarity(query, Article.title)
+        #: Indexed (``gin_trgm_ops``) equivalent of ``word_similarity(query, title) > threshold``.
+        title_match = Article.title.op("%>")(query)
 
         if include_hidden:
             vector, body = Article.search_vector_gm, Article.body_markdown
@@ -393,7 +408,7 @@ class ArticleRepository(BaseRepository[Article]):
         snippet_source = func.concat_ws(" ", Article.title, excerpt, body)
 
         conditions = [
-            or_(vector.op("@@")(combined_query), similarity > TITLE_SIMILARITY_THRESHOLD),
+            or_(vector.op("@@")(combined_query), title_match),
             *self._visibility_conditions(include_hidden),
         ]
         if article_types or subtype_ids:
@@ -409,7 +424,8 @@ class ArticleRepository(BaseRepository[Article]):
             "StartSel=<mark>, StopSel=</mark>, MaxFragments=2, MaxWords=25, MinWords=10, ShortWord=2",
         ).label("snippet")
 
-        total = await self.db.scalar(select(func.count()).select_from(Article).where(*conditions))
+        # SET LOCAL rejects bind params; TITLE_SIMILARITY_THRESHOLD is a hardcoded constant, so inlining it is safe.
+        await self.db.execute(text(f"SET LOCAL pg_trgm.word_similarity_threshold = {TITLE_SIMILARITY_THRESHOLD}"))
         result = await self.db.execute(
             select(
                 Article.id,
@@ -422,6 +438,7 @@ class ArticleRepository(BaseRepository[Article]):
                 Article.visibility,
                 rank,
                 snippet,
+                func.count().over().label("total"),
             )
             .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
             .where(*conditions)
@@ -429,4 +446,6 @@ class ArticleRepository(BaseRepository[Article]):
             .offset((page - 1) * size)
             .limit(size)
         )
-        return list(result.all()), total or 0
+        rows = list(result.all())
+        total = rows[0].total if rows else await self._count(Article, conditions)
+        return rows, total or 0

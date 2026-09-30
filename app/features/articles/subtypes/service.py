@@ -30,6 +30,12 @@ class ArticleSubtypeService(
 
         super().__init__(repository=ArticleSubtypeRepository(db), response_schema=ArticleSubtypeResponse)
 
+    async def create(self, create_data: ArticleSubtypeCreate) -> ArticleSubtypeResponse:
+        """A new subtype isn't referenced by any cached article payload yet, so skip the namespace flush."""
+
+        item = await self.repository.create(create_data.model_dump())
+        return self.response_schema.model_validate(item)
+
     async def list_subtypes(self, article_type: str | None) -> list[ArticleSubtypeResponse]:
         """Every subtype, optionally of one ``article_type`` (not cached: tiny table)."""
 

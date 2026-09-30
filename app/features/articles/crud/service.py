@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import ArticleStatus, is_article_publicly_visible
 from app.core.base.cached_service import CachedService
 from app.core.base.service import Page
+from app.core.cache import use_cache
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.core.storage.service import ImageStorageService
-from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES, invalidate_article_cache
+from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES, invalidate_article, invalidate_article_cache
 from app.features.articles.crud.repository import ArticleRepository
 from app.features.articles.crud.schemas import (
     ArticleBrief,
@@ -75,6 +76,12 @@ class ArticleCrudService(
         )
         self._storage = storage or ImageStorageService()
 
+    @use_cache(ttl=1800)
+    async def get_by_id(self, item_id: int) -> ArticleResponse:
+        """Cached fetch, 30 min TTL (vs. the 24 h default) — actively-edited lore shouldn't stay stale a full day."""
+
+        return await super().get_by_id(item_id)
+
     async def create_article(self, data: ArticleCreate, author_id: int | None = None) -> ArticleResponse:
         """
         Create an article (identity/content fields only), generate its slug from the title,
@@ -92,7 +99,7 @@ class ArticleCrudService(
             item = await self.repository.create({**data.model_dump(), "slug": slug, "author_id": author_id}, commit=False)
             await self.repository.set_path(item.id, data.parent_id, commit=False)
 
-        await invalidate_article_cache()
+        await invalidate_article(item.id)
 
         return await self._get_response(item.id)
 
@@ -129,7 +136,7 @@ class ArticleCrudService(
             if "parent_id" in fields:
                 await self.repository.set_path(article_id, fields["parent_id"], commit=False)
 
-        await invalidate_article_cache()
+        await invalidate_article(article_id)
 
         return await self._get_response(article_id)
 
@@ -154,7 +161,7 @@ class ArticleCrudService(
             fields["published_at"] = datetime.now(timezone.utc)
 
         await self.repository.apply_update(item, fields)
-        await invalidate_article_cache()
+        await invalidate_article(article_id)
 
         return await self._get_response(article_id)
 

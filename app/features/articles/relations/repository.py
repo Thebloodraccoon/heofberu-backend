@@ -1,10 +1,11 @@
 """Article relations repository: per-article combined listing and per-relation CRUD."""
 
 from sqlalchemy import or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import load_only, selectinload
 
 from app.features.articles.crud.repository import ArticleRepository
 from app.features.articles.relations.schemas import ArticleRelationCreate
+from app.models.articles.article_model import Article
 from app.models.articles.article_relation_model import ArticleRelation
 
 
@@ -29,10 +30,18 @@ class ArticleRelationsRepository(ArticleRepository):
     async def list_relations(self, article_id: int) -> list[ArticleRelation]:
         """Return every relation touching the article (either direction), newest first."""
 
+        # The response and the visibility filter only need these columns, never body_markdown.
+        other_side_columns = load_only(
+            Article.id, Article.slug, Article.title, Article.article_type, Article.subtype_id,
+            Article.status, Article.visibility,
+        )
         result = await self.db.execute(
             select(ArticleRelation)
             .where(or_(ArticleRelation.from_article_id == article_id, ArticleRelation.to_article_id == article_id))
-            .options(selectinload(ArticleRelation.from_article), selectinload(ArticleRelation.to_article))
+            .options(
+                selectinload(ArticleRelation.from_article).options(other_side_columns),
+                selectinload(ArticleRelation.to_article).options(other_side_columns),
+            )
             .order_by(ArticleRelation.created_at.desc())
         )
         return list(result.scalars().all())

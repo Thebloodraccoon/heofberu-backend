@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
 from app.core.storage.service import ImageStorageService
-from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES
+from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES, invalidate_article
 from app.features.articles.crud.schemas import ArticleCreate, ArticleResponse, ArticleUpdate
 from app.features.articles.images.exceptions import ArticleImageNotFoundException
 from app.features.articles.images.repository import ArticleImagesRepository
@@ -81,7 +81,7 @@ class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, Ar
             await self._storage.delete_image(storage_entity(article_id, row.storage_key), image_id)
             raise
 
-        await self._invalidate_cache()
+        await invalidate_article(article_id)
 
         return ArticleImageResponse.model_validate(updated)
 
@@ -98,8 +98,8 @@ class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, Ar
         await self._exists_or_404(article_id)
         image_row = await self._get_image_or_404(article_id, image_id)
         await self.repository.delete_image_row(image_row)
+        await invalidate_article(article_id)
         await self._storage.delete_image(storage_entity(article_id, image_row.storage_key), image_id)
-        await self._invalidate_cache()
 
     async def _get_image_or_404(self, article_id: int, image_id: int) -> ArticleImage:
         """Fetch an image scoped to the article, or raise ``ArticleImageNotFoundException``."""
