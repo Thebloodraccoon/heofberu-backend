@@ -2,9 +2,12 @@
 Repository backing the GM proficiency panel: upserts/clears the GM layer
 of a character's proficiency rows in ``character_proficiencies``.
 
-A GM write never touches another source's rows (class/race/background/
-feature) — it only ever creates, updates, or deletes the single
-``source_type=GM`` row for one (character, proficiency_type, discriminator).
+A GM write never touches another source's rows (class/race/background)
+— it only ever creates, updates, or deletes the single ``source_type=GM``
+row for one (character, proficiency_type, discriminator). Feature/feat
+grants have no rows at all: their proficiencies are computed from the
+grant (``characters/grants/effects.py``) and only consulted by
+``is_granted``.
 See ``CharacterProficiency`` for the full resolution algorithm and the
 upsert-and-clear rule this repository implements: writing the OPPOSITE
 action of an existing GM row deletes it (clears the override back to
@@ -16,7 +19,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
 from app.core.base.repository import _commit_or_rollback
+from app.features.characters.grants.effects import GrantEffects, load_character_grant_effects
 from app.models.character.character_proficiency_model import CharacterProficiency
+
+
+def _effect_keys(effects: GrantEffects, proficiency_type: ProficiencyType):
+    """The keys a grant's computed effects hold for one proficiency kind."""
+
+    if proficiency_type == ProficiencyType.SKILL:
+        return effects.skills.keys()
+    if proficiency_type == ProficiencyType.SAVING_THROW:
+        return effects.saving_throws
+    if proficiency_type == ProficiencyType.ARMOR:
+        return effects.armor
+    return effects.weapons
+
+
+def _discriminator_key(proficiency_type: ProficiencyType, discriminator: dict):
+    """The same key, built from the ``**discriminator`` the GM service passes."""
+
+    if proficiency_type == ProficiencyType.WEAPON:
+        return (discriminator.get("weapon_category"), discriminator.get("item_id"))
+    (value,) = discriminator.values()
+    return value
 
 
 class CharacterProficiencyGmRepository:
@@ -62,6 +87,27 @@ class CharacterProficiencyGmRepository:
             return None
 
         return next((row for row in rows if row.is_expertise), rows[0])
+
+    async def is_granted(self, character_id: int, proficiency_type: ProficiencyType, **discriminator) -> bool:
+        """
+        Whether the character currently has the proficiency from any source:
+        a GM row decides outright; otherwise any stored row or any
+        feature/feat grant's computed effect grants it.
+        """
+
+        rows = await self.get_rows(character_id, proficiency_type, **discriminator)
+
+        gm_row = next((row for row in rows if row.source_type == ProficiencySourceType.GM), None)
+        if gm_row is not None:
+            return gm_row.action == ProficiencyAction.GRANT
+        if rows:
+            return True
+
+        key = _discriminator_key(proficiency_type, discriminator)
+        return any(
+            key in _effect_keys(effects, proficiency_type)
+            for _, effects in await load_character_grant_effects(self.db, character_id)
+        )
 
     async def set_override(
         self,

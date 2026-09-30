@@ -31,9 +31,10 @@ class TestSpellsPayloadShape:
 
         assert response.status_code == 200
         body = response.json()
-        assert set(body) == {"spell_slots", "spells", "granted_spells"}
+        assert set(body) == {"spell_slots", "spells", "gm_spells", "feature_spells"}
         assert body["spells"] == []
-        assert body["granted_spells"] == []
+        assert body["gm_spells"] == []
+        assert body["feature_spells"] == []
         assert len(body["spell_slots"]) == 1
         assert set(body["spell_slots"][0]) == {"spell_level", "total"}
         assert body["spell_slots"][0] == {"spell_level": "CANTRIP", "total": 2}
@@ -53,8 +54,9 @@ class TestSpellsPayloadShape:
             headers={"Authorization": f"Bearer {player_token}"},
         )
         body = list_response.json()
-        assert [entry["spell_id"] for entry in body["spells"]] == [spell.id]
-        assert body["spells"][0]["spell"]["name"] == "Magic Missile"
+        assert [entry["id"] for entry in body["spells"]] == [spell.id]
+        assert body["spells"][0]["name"] == "Magic Missile"
+        assert not any(key.startswith("available_") for key in body["spells"][0])
         assert {slot["spell_level"]: slot["total"] for slot in body["spell_slots"]} == {"LEVEL_1": 2}
 
 
@@ -110,7 +112,7 @@ class TestPerLevelKnownSpellCaps:
             f"/characters/{character['id']}/spells",
             headers={"Authorization": f"Bearer {player_token}"},
         )
-        assert sorted(entry["spell_id"] for entry in list_response.json()["spells"]) == [charm.id, shield.id]
+        assert sorted(entry["id"] for entry in list_response.json()["spells"]) == [charm.id, shield.id]
 
     async def test_missing_slot_row_means_zero_capacity(
         self, client, player, player_token, create_caster_class, create_api_character, create_spell

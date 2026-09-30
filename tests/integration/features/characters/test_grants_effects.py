@@ -1,9 +1,9 @@
 """
-Coverage for the materializer paths test_grants.py never exercises:
+Coverage for the grant-effect paths test_grants.py never exercises:
 saving-throw/armor/weapon proficiencies (fixed feature effects AND choice-
-option effects), re-answer removing a stale proficiency, and the
-never-downgrade skill-expertise upgrade rule in
-``FeatureGrantMaterializer._reconcile_skills``.
+option effects), re-answer removing a stale proficiency, skill expertise
+following the current pick, and feature-granted spells being computed
+(``feature_spells``) rather than stored — see ``characters/grants/effects.py``.
 """
 
 import pytest
@@ -39,7 +39,7 @@ async def _seed_open_spell_choice_group(db_session, feature_id: int) -> tuple[in
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestFixedEffectTypes:
-    async def test_fixed_saving_throw_armor_weapon_effects_materialize(
+    async def test_fixed_saving_throw_armor_weapon_effects_apply(
         self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         feature_class = await create_class(name="Fighter")
@@ -74,7 +74,7 @@ class TestFixedEffectTypes:
         assert [a["armor_type"] for a in body["armor"]] == ["MEDIUM"]
         assert [w["weapon_category"] for w in body["weapons"]] == ["MARTIAL"]
 
-    async def test_fixed_weapon_item_effect_materializes(
+    async def test_fixed_weapon_item_effect_applies(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_item
     ):
         feature_class = await create_class(name="Fighter")
@@ -107,7 +107,7 @@ class TestFixedEffectTypes:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestChoiceOptionEffectTypes:
-    async def test_choice_option_saving_throw_armor_weapon_effects_materialize(
+    async def test_choice_option_saving_throw_armor_weapon_effects_apply(
         self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         """Three separate single-type groups on one feature, answered together."""
@@ -157,8 +157,7 @@ class TestChoiceOptionEffectTypes:
             f"/characters/{character.id}/features/{cf_id}/choices",
             json={
                 "answers": [
-                    {"choice_group_id": group["id"], "choice_option_id": group["options"][0]["id"]}
-                    for group in groups
+                    {"choice_group_id": group["id"], "choice_option_id": group["options"][0]["id"]} for group in groups
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -240,15 +239,13 @@ class TestChoiceOptionEffectTypes:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestSkillExpertiseMonotonic:
-    async def test_expertise_upgrade_is_never_downgraded_on_reanswer(
+class TestSkillExpertiseFollowsPick:
+    async def test_reanswer_without_expertise_drops_it(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
     ):
         """
-        A grant's own skill row upgrades ``is_expertise`` when a re-answer
-        wants it, but a later re-answer that no longer wants expertise must
-        NOT strip it back off (see FeatureGrantMaterializer's class docstring
-        on why this is monotonic).
+        Effects are computed from the current pick, so re-answering with an
+        option that doesn't grant expertise takes it away again.
         """
 
         feature_class = await create_class(name="Rogue")
@@ -300,7 +297,7 @@ class TestSkillExpertiseMonotonic:
         row = next(s for s in skills_after_expertise if s["skill_id"] == skill.id)
         assert row["is_expertise"] is True
 
-        # Re-answer with the plain (non-expertise) option — expertise must stick.
+        # Re-answer with the plain (non-expertise) option — expertise goes away.
         ans2 = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
             json={"answers": [{"choice_group_id": group_id, "choice_option_id": plain_option_id}]},
@@ -313,7 +310,7 @@ class TestSkillExpertiseMonotonic:
             )
         ).json()["skills"]
         row = next(s for s in skills_after_plain if s["skill_id"] == skill.id)
-        assert row["is_expertise"] is True
+        assert row["is_expertise"] is False
 
 
 @pytest.mark.integration
@@ -331,7 +328,12 @@ class TestAnswerChoicesAdditionalErrors:
             f"/features/{feature.id}/choice-groups",
             json={
                 "choice_groups": [
-                    {"pick_count": 1, "choice_type": "SKILL", "label": "Skill", "options": [{"skill_effects": [{"skill_id": skill.id}]}]}
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SKILL",
+                        "label": "Skill",
+                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                    }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -406,12 +408,12 @@ class TestAnswerChoicesAdditionalErrors:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestGmGrantInlineChoices:
-    async def test_gm_add_feature_with_inline_choices_materializes_immediately(
+    async def test_gm_add_feature_with_inline_choices_applies_immediately(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
     ):
         """
         GM-panel feature grants accept ``choices`` in the same request
-        (``enforce=False``): a fully answered set materializes right away,
+        (``enforce=False``): a fully answered set applies right away,
         with no pending group left afterward.
         """
 
@@ -424,7 +426,12 @@ class TestGmGrantInlineChoices:
             f"/features/{feature.id}/choice-groups",
             json={
                 "choice_groups": [
-                    {"pick_count": 1, "choice_type": "SKILL", "label": "Skill", "options": [{"skill_effects": [{"skill_id": skill.id}]}]}
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SKILL",
+                        "label": "Skill",
+                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                    }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -470,7 +477,12 @@ class TestGmGrantInlineChoices:
             f"/features/{feature.id}/choice-groups",
             json={
                 "choice_groups": [
-                    {"pick_count": 1, "choice_type": "SKILL", "label": "Skill", "options": [{"skill_effects": [{"skill_id": skill.id}]}]}
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SKILL",
+                        "label": "Skill",
+                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                    }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -506,7 +518,12 @@ class TestAllPendingChoicesSurface:
             f"/features/{pending_feature.id}/choice-groups",
             json={
                 "choice_groups": [
-                    {"pick_count": 1, "choice_type": "SKILL", "label": "Skill", "options": [{"skill_effects": [{"skill_id": skill.id}]}]}
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SKILL",
+                        "label": "Skill",
+                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                    }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
@@ -582,11 +599,7 @@ class TestSpellResolutionEdgeCases:
 
         ans = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
-            json={
-                "answers": [
-                    {"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": 999999}
-                ]
-            },
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": 999999}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         # The option is rejected as unconditionally open before spell_id is
@@ -641,8 +654,8 @@ class TestSpellResolutionEdgeCases:
         assert ans1.status_code == 200
         first_spells = (
             await client.get(f"/characters/{character.id}/spells", headers={"Authorization": f"Bearer {gm_token}"})
-        ).json()["granted_spells"]
-        assert [s["spell_id"] for s in first_spells] == [fireball.id]
+        ).json()["feature_spells"]
+        assert [s["id"] for s in first_spells] == [fireball.id]
 
         ans2 = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
@@ -652,5 +665,5 @@ class TestSpellResolutionEdgeCases:
         assert ans2.status_code == 200
         second_spells = (
             await client.get(f"/characters/{character.id}/spells", headers={"Authorization": f"Bearer {gm_token}"})
-        ).json()["granted_spells"]
-        assert [s["spell_id"] for s in second_spells] == [cure_wounds.id]
+        ).json()["feature_spells"]
+        assert [s["id"] for s in second_spells] == [cure_wounds.id]

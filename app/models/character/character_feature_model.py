@@ -24,9 +24,10 @@ class CharacterFeature(settings.Base):  # type: ignore
     - ``ASI`` — taken instead of an Ability Score Improvement at level-up.
 
     Choices made for a grant's choice groups are recorded in
-    ``character_feature_choices`` (via the ``choices`` relationship); the
-    materialized effect rows on the character (skills, saves, armor, weapons,
-    granted spells) reference this row through ``source_character_feature_id``.
+    ``character_feature_choices`` (via the ``choices`` relationship). What
+    the grant gives (skills, saves, armor, weapons, spells) is not stored:
+    it is computed on read from the feature's effect tree plus those picks
+    (``app.features.characters.grants.effects``).
     """
 
     __tablename__ = "character_features"

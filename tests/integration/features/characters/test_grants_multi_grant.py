@@ -1,28 +1,14 @@
 """
-Baseline coverage for the *multi-grant, same-character* materializer risks
-that the ``characters-grant-materialization-batching-plan`` Variant A
-refactor would introduce if the batched diff's key ever drops ``grant_id``.
+Two grants on one character (class + race) whose effects target the SAME
+skill: each grant's effects must stay its own — neither grant's expertise
+leaks into the other, and a level-up that adds a new grant leaves the
+existing sibling grant untouched.
 
-Unlike ``test_grants_materializer_effects.py`` (single grant, re-answer
-scenarios), these tests put TWO auto-grants (class + race) on one character
-whose effects target the SAME skill, then assert on the *resulting,
-per-grant materialized rows* — exactly what
-``FeatureGrantMaterializer._own_rows``/``_reconcile_by_key`` must keep
-correct if ``sync_progression_features``'s per-grant loop is ever collapsed
-into one batched diff keyed by ``(grant_id, skill_id)`` instead of scoped
-per grant by construction (see ``materializer.py``'s class docstring: two
-sources granting the same proficiency is two legitimate rows, and
-``is_expertise`` upgrades are monotonic per row, never merged across rows).
-
-Read via ``GET /characters/{id}/features`` (``effects`` per grant, built by
-``get_grant_effects_map`` keyed on ``grant.id``) rather than
-``GET /characters/{id}/proficiencies``, which deliberately RESOLVES/merges
-every source into one row per skill (``is_expertise`` is documented there as
-"the OR across all of them") — that view would mask exactly the per-row
-corruption these tests exist to catch.
-
-Must pass against the CURRENT unbatched code (one query per grant) before
-any Variant A refactor starts, and must still pass after.
+Read via ``GET /characters/{id}/features`` (``effects`` per grant, from
+``get_grant_effects_map``) rather than ``GET /characters/{id}/proficiencies``,
+which deliberately merges every source into one entry per skill
+(``is_expertise`` is the OR across all of them) and would mask a per-grant
+mix-up.
 """
 
 import pytest
@@ -39,7 +25,7 @@ def _skill_row(grant: dict, skill_id: int) -> dict:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestMultiGrantDedup:
-    async def test_two_auto_grants_sharing_a_skill_each_materialize_their_own_row(
+    async def test_two_auto_grants_sharing_a_skill_each_report_their_own_effect(
         self,
         client,
         gm_token,
@@ -65,9 +51,7 @@ class TestMultiGrantDedup:
         class_feature = await create_feature(
             name="Keen Senses (Class)", source_type="CLASS", class_id=character_class.id, level=None
         )
-        race_feature = await create_feature(
-            name="Keen Senses (Race)", source_type="RACE", race_id=race.id, level=None
-        )
+        race_feature = await create_feature(name="Keen Senses (Race)", source_type="RACE", race_id=race.id, level=None)
 
         for feature in (class_feature, race_feature):
             fx_resp = await client.put(
@@ -235,7 +219,7 @@ class TestMultiGrantSyncPreservesSiblingRows:
         class_grant_after = _grant_for_feature(after_grants, class_feature.id)
 
         assert race_grant_after["id"] == race_grant_before["id"], "the race grant itself must not be replaced"
-        assert (
-            _skill_row(race_grant_after, skill.id)["is_expertise"] is False
-        ), "the race grant's row must not be upgraded by the sibling class grant"
+        assert _skill_row(race_grant_after, skill.id)["is_expertise"] is False, (
+            "the race grant's row must not be upgraded by the sibling class grant"
+        )
         assert _skill_row(class_grant_after, skill.id)["is_expertise"] is True

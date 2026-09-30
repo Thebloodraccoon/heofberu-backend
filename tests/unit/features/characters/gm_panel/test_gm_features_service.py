@@ -96,7 +96,9 @@ def make_service(character=None, *, grants_by_id=None, feature_exists=True):
     db = FakeAsyncSession()
     service = GmPanelFeatureService(db)
     service.get_character_for_user = AsyncMock(return_value=character or SimpleNamespace(id=1))
-    service.feature_repository = FakeRepository(db, existing_by_id={4: SimpleNamespace(source_type=FeatureSourceType.CLASS)} if feature_exists else {})
+    service.feature_repository = FakeRepository(
+        db, existing_by_id={4: SimpleNamespace(source_type=FeatureSourceType.CLASS)} if feature_exists else {}
+    )
     service.feature_grant_repository = FakeCharacterFeatureRepository(db, grants_by_id=grants_by_id or {})
     service.stats_service = FakeStatsService()
     service.grant_service = SimpleNamespace(resolve_grant_choices=AsyncMock(return_value=None))
@@ -106,10 +108,7 @@ def make_service(character=None, *, grants_by_id=None, feature_exists=True):
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestAddFeature:
-    async def test_records_grant_and_refreshes_stats_cache(self, monkeypatch):
-        monkeypatch.setattr(
-            "app.features.characters.gm_panel.features.service.materialize_grant", AsyncMock()
-        )
+    async def test_records_grant_and_refreshes_stats_cache(self):
         character = SimpleNamespace(id=1)
         service = make_service(character, feature_exists=True)
 
@@ -136,39 +135,23 @@ class TestAddFeature:
         with pytest.raises(CharacterFeatureAlreadyKnownException):
             await service.add_feature(1, CharacterFeatureAdd(feature_id=4), SimpleNamespace())
 
-    async def test_gm_grant_of_feat_source_type_raises(self, monkeypatch):
-        monkeypatch.setattr(
-            "app.features.characters.gm_panel.features.service.materialize_grant", AsyncMock()
-        )
+    async def test_gm_grant_of_feat_source_type_raises(self):
         feat_feature = SimpleNamespace(id=5, source_type=FeatureSourceType.FEAT)
         service = make_service(SimpleNamespace(id=1))
-        service.feature_repository = FakeRepository(
-            FakeAsyncSession(), existing_by_id={5: feat_feature}
-        )
+        service.feature_repository = FakeRepository(FakeAsyncSession(), existing_by_id={5: feat_feature})
 
         with pytest.raises(FeatureIsAFeatException):
             await service.add_feature(1, CharacterFeatureAdd(feature_id=5), SimpleNamespace())
 
-    async def test_gm_grant_materializes_fixed_skill_effect(self, monkeypatch):
-        """Regression: GM grant of a feature with a fixed skill effect creates the proficiency row."""
-        materialize_mock = AsyncMock()
-        monkeypatch.setattr(
-            "app.features.characters.gm_panel.features.service.materialize_grant", materialize_mock
-        )
-        character = SimpleNamespace(id=1)
-        feature_with_skill = SimpleNamespace(
-            id=4,
-            source_type=FeatureSourceType.CLASS,
-            skill_effects=[SimpleNamespace(skill_id=7, grants_expertise=False)],
-        )
-        service = make_service(character, feature_exists=True)
-        service.feature_repository = FakeRepository(
-            FakeAsyncSession(), existing_by_id={4: feature_with_skill}
-        )
+    async def test_gm_grant_resolves_choices_without_enforcing(self):
+        """Effects are computed on read — the grant only records picks, and a GM grant may leave groups pending."""
+        service = make_service(SimpleNamespace(id=1), feature_exists=True)
 
         await service.add_feature(1, CharacterFeatureAdd(feature_id=4), SimpleNamespace())
 
-        assert materialize_mock.call_count == 1
+        resolve = service.grant_service.resolve_grant_choices
+        assert resolve.call_count == 1
+        assert resolve.call_args.kwargs == {"enforce": False}
 
 
 @pytest.mark.unit

@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
-from app.features.characters.grants.materializer import choice_option_effect_loads
+from app.features.characters.grants.effects import choice_option_effect_loads
 from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature

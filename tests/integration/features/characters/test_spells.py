@@ -79,7 +79,7 @@ class TestCharacterKnownSpells:
         )
 
         assert response.status_code == 201
-        assert response.json()["spell_id"] == spell.id
+        assert response.json()["id"] == spell.id
 
     async def test_add_duplicate_spell_returns_409(
         self, client, player, player_token, create_caster_class, create_api_character, create_spell
@@ -298,7 +298,7 @@ class TestCharacterKnownSpells:
         )
         assert list_response.status_code == 200
         body = list_response.json()
-        assert [item["spell_id"] for item in body["spells"]] == [spell.id]
+        assert [item["id"] for item in body["spells"]] == [spell.id]
         assert len(body["spell_slots"]) > 0
 
         remove_response = await client.delete(

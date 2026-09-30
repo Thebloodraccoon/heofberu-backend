@@ -2,8 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from app.features.characters.grants.schemas import CharacterGrantedSpellResponse
-from app.features.spells.crud.schemas import SpellResponse
+from app.features.spells.crud.schemas import SpellBase
 
 
 class SpellSlotResponse(BaseModel):
@@ -26,22 +25,32 @@ class CharacterSpellAdd(BaseModel):
     spell_id: int
 
 
-class CharacterSpellResponse(BaseModel):
-    """A known-spell entry returned on the character."""
+class CharacterSpellResponse(SpellBase):
+    """
+    A spell as shown on a character: every spell field plus its ``id``, but
+    none of the catalog's ``available_*`` lists — on the sheet the spell is
+    already known/granted, so who else may take it doesn't matter (the full
+    record stays at ``GET /spells/{id}``).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
-    spell_id: int
-    spell: SpellResponse
+    id: int
 
 
 class CharacterSpellsResponse(BaseModel):
     """
-    Combined read model behind ``GET /characters/{id}/spells``: slot
-    totals, free-form known spells, and feature-granted spells in one
-    response.
+    Combined read model behind ``GET /characters/{id}/spells``, every spell
+    list a plain list of spells:
+
+    - ``spells`` — the free-form known spells (count against slot totals);
+    - ``gm_spells`` — spells the GM granted directly (removable via
+      ``DELETE /gm-panel/spells?spell_id=``);
+    - ``feature_spells`` — spells the character's feature/feat grants give
+      (computed, deduplicated; they go away only with their grant).
     """
 
     spell_slots: list[SpellSlotResponse] = []
     spells: list[CharacterSpellResponse] = []
-    granted_spells: list[CharacterGrantedSpellResponse] = []
+    gm_spells: list[CharacterSpellResponse] = []
+    feature_spells: list[CharacterSpellResponse] = []

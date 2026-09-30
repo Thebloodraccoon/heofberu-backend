@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
+from app.features.characters.spells.schemas import CharacterSpellResponse
 from app.features.features.effects.schemas import (
     AbilityEffectItem,
     ArmorEffectItem,
@@ -11,7 +12,6 @@ from app.features.features.effects.schemas import (
     SpellEffectItem,
     WeaponEffectItem,
 )
-from app.features.spells.crud.schemas import SpellResponse
 
 
 class ChoiceAnswerItem(BaseModel):
@@ -85,7 +85,7 @@ class PendingChoiceGroupsResponse(BaseModel):
 
 
 class CharacterSavingThrowProficiencyResponse(BaseModel):
-    """A materialized saving-throw proficiency on the character."""
+    """Asaving-throw proficiency on the character."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,7 +93,7 @@ class CharacterSavingThrowProficiencyResponse(BaseModel):
 
 
 class CharacterArmorProficiencyResponse(BaseModel):
-    """A materialized armor proficiency on the character."""
+    """Aarmor proficiency on the character."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -101,7 +101,7 @@ class CharacterArmorProficiencyResponse(BaseModel):
 
 
 class CharacterWeaponProficiencyResponse(BaseModel):
-    """A materialized weapon proficiency on the character (category or item)."""
+    """Aweapon proficiency on the character (category or item)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,22 +109,8 @@ class CharacterWeaponProficiencyResponse(BaseModel):
     item_id: int | None = None
 
 
-class CharacterGrantedSpellResponse(BaseModel):
-    """
-    A spell granted to the character, with its full spell record. ``id`` is
-    the grant row's own id — pass it as ``granted_spell_id`` to
-    ``DELETE /gm-panel/spells`` to revoke a free-form (GM-granted) one.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    spell_id: int
-    spell: SpellResponse
-
-
 class GrantedSkillEffectResponse(BaseModel):
-    """A skill proficiency materialized by a grant."""
+    """A skill proficiency a grant gives."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -134,16 +120,15 @@ class GrantedSkillEffectResponse(BaseModel):
 
 class GrantEffectsResponse(BaseModel):
     """
-    Every materialized effect row a single grant produced on the character —
-    what it actually did, resolved (an "any skill" pick already carries the
-    concrete ``skill_id``, an open spell filter the concrete ``spell_id``).
+    What a single grant gives the character — its feature's fixed effects
+    plus the picked options' bundles, computed from the current effect tree.
     """
 
     skills: list[GrantedSkillEffectResponse] = []
     saving_throws: list[CharacterSavingThrowProficiencyResponse] = []
     armor: list[CharacterArmorProficiencyResponse] = []
     weapons: list[CharacterWeaponProficiencyResponse] = []
-    spells: list[CharacterGrantedSpellResponse] = []
+    spells: list[CharacterSpellResponse] = []
 
 
 class ChosenOptionResponse(BaseModel):

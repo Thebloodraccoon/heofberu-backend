@@ -6,7 +6,13 @@ from sqlalchemy.orm import selectinload
 
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.cache import invalidate_character_cache
-from app.features.characters.grants.effects import build_chosen_options
+from app.features.characters.grants.effects import (
+    build_chosen_options,
+    choice_option_effect_loads,
+    engine_effect_loads,
+    load_feature_effect_tree,
+    pending_groups,
+)
 from app.features.characters.grants.exceptions import (
     ChoiceCountMismatchError,
     ChoiceGroupNotFoundError,
@@ -16,13 +22,6 @@ from app.features.characters.grants.exceptions import (
     GrantNotFoundError,
     SkillResolutionsError,
     SpellResolutionsError,
-)
-from app.features.characters.grants.materializer import (
-    FeatureGrantMaterializer,
-    ResolvedOption,
-    choice_option_effect_loads,
-    engine_effect_loads,
-    load_feature_effect_tree,
 )
 from app.features.characters.grants.schemas import (
     AnsweredChoicesResponse,
@@ -50,28 +49,26 @@ class FeatureGrantService:
     """
     Player-facing surface of the effect engine on a granted feature.
 
-    A grant is "fully materialized" when every one of its choice groups has
-    the required number of picks; until then the un-answered groups hang in
+    A grant is fully resolved when every one of its choice groups has the
+    required number of picks; until then the un-answered groups hang in
     ``get_pending_choice_groups``. Answering replaces a group's stored picks
-    (a re-answer is an edit, not an append) and re-materializes the grant's
-    effect rows in the same transaction. All writes here never commit —
-    callers own the transaction (the fixed abilities are re-counted by the
-    stats service, and the character cache is refreshed by the caller).
+    (a re-answer is an edit, not an append); the grant's effects are
+    computed from those picks on read (``grants/effects.py``), so nothing
+    else is written. All writes here never commit — callers own the
+    transaction.
     """
 
     def __init__(self, db: AsyncSession):
-        """Create the service with the materializer and the stats service."""
+        """Create the service with the stats service."""
 
         self.db = db
-        self.materializer = FeatureGrantMaterializer()
         self.stats_service = CharacterStatsService(db)
 
     async def _load_grant(self, character_id: int, grant_id: int) -> CharacterFeature:
         """Fetch the grant scoped to the character, or raise ``GrantNotFoundError``."""
 
         result = await self.db.execute(
-            select(CharacterFeature)
-            .where(
+            select(CharacterFeature).where(
                 CharacterFeature.id == grant_id,
                 CharacterFeature.character_id == character_id,
             )
@@ -108,9 +105,7 @@ class FeatureGrantService:
     def _index_options(self, groups: dict[int, FeatureChoiceGroup]) -> dict[int, FeatureChoiceOption]:
         """``{option_id: option}`` across every group of the feature."""
 
-        return {
-            option.id: option for group in groups.values() for option in group.options
-        }
+        return {option.id: option for group in groups.values() for option in group.options}
 
     @staticmethod
     def _group_has_open_skill(option: FeatureChoiceOption) -> bool:
@@ -124,7 +119,9 @@ class FeatureGrantService:
 
         return any(effect.spell_id is None for effect in option.spell_effects)
 
-    def _to_pending_response(self, grant: CharacterFeature, feature: Feature, pending: list[FeatureChoiceGroup]) -> PendingChoiceGroupsResponse:
+    def _to_pending_response(
+        self, grant: CharacterFeature, feature: Feature, pending: list[FeatureChoiceGroup]
+    ) -> PendingChoiceGroupsResponse:
         """Serialise the still-pending groups of a grant."""
 
         return PendingChoiceGroupsResponse(
@@ -162,7 +159,7 @@ class FeatureGrantService:
         feature = await self._load_feature(grant)
         stored = await self._load_stored_choices(grant_id)
 
-        pending = self.materializer.pending_groups(feature, stored)
+        pending = pending_groups(feature, stored)
         return self._to_pending_response(grant, feature, pending)
 
     async def get_all_pending_choices(self, character_id: int) -> list[PendingChoiceGroupsResponse]:
@@ -205,7 +202,7 @@ class FeatureGrantService:
                 continue
 
             stored = stored_by_grant.get(grant.id, [])
-            pending = self.materializer.pending_groups(feature, stored)
+            pending = pending_groups(feature, stored)
             if pending:
                 pending_responses.append(self._to_pending_response(grant, feature, pending))
 
@@ -300,9 +297,7 @@ class FeatureGrantService:
             return
 
         if answers:
-            pending_response = await self.answer_choices(
-                character.id, grant.id, GrantChoicesUpdate(answers=answers)
-            )
+            pending_response = await self.answer_choices(character.id, grant.id, GrantChoicesUpdate(answers=answers))
             still_pending = pending_response.groups
         else:
             # No answers here doesn't mean nothing is stored yet — a feat's
@@ -310,7 +305,7 @@ class FeatureGrantService:
             # ability_score_increase_id path before this runs. Check what's
             # actually stored, not an assumed-empty grant.
             stored = await self._load_stored_choices(grant.id)
-            still_pending = self.materializer.pending_groups(feature, stored)
+            still_pending = pending_groups(feature, stored)
 
         if still_pending and enforce:
             raise GrantChoiceRequiredException(
@@ -331,9 +326,9 @@ class FeatureGrantService:
         Validates the request against the feature's groups/options (wrong
         group, unknown or foreign option, duplicate pick, wrong pick count,
         or an option carrying an open skill/spell effect — not resolvable
-        yet), replaces each answered group's stored picks, and
-        re-materializes the grant's effect rows from the full stored choice
-        set in the same transaction.
+        yet) and replaces each answered group's stored picks. The picks'
+        effects show up on the next read; only the ability-score cache and
+        the character's Redis payload need refreshing here.
         """
 
         grant = await self._load_grant(character_id, grant_id)
@@ -396,33 +391,15 @@ class FeatureGrantService:
                     )
                 )
 
-        # --- Re-materialize from the full stored set -------------------------
         await self.db.flush()
         stored = await self._load_stored_choices(grant_id)
 
-        # No option reaching here carries an open skill/spell effect (such
-        # picks are rejected above), so ResolvedOption's skill_id/spell_id
-        # stay at their None default — nothing to resolve.
-        choice_map: dict[int, list[ResolvedOption]] = {}
-        for choice in stored:
-            option = options.get(choice.choice_option_id)
-            if option is None:
-                continue
-            choice_map.setdefault(choice.choice_group_id, []).append(
-                ResolvedOption(option=option)
-            )
-
-        await self.materializer.reconcile(self.db, character_id, grant, feature, choice_map)
-        await self.db.flush()
-
-        # The player's picks changed the fixed-effects surface — refresh the
-        # ability totals and the character cache (never commits here).
-        character = (
-            await self.db.execute(select(Character).where(Character.id == character_id))
-        ).scalars().first()
+        # Picks can carry ability effects — refresh the ability totals and
+        # the character cache (never commits here).
+        character = (await self.db.execute(select(Character).where(Character.id == character_id))).scalars().first()
         if character is not None:
             await self.stats_service.refresh(character, commit=False)
         await invalidate_character_cache(character_id)
 
-        pending = self.materializer.pending_groups(feature, stored)
+        pending = pending_groups(feature, stored)
         return self._to_pending_response(grant, feature, pending)

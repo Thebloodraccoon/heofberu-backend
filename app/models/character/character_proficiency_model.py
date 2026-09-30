@@ -1,24 +1,25 @@
 """
-ORM model for a character's proficiencies: the single table for both
-current state ("does the character have this skill") and provenance
-("who/what granted it"). Replaces the old per-kind
-``CharacterSkillProficiency``/``CharacterSavingThrowProficiency``/
-``CharacterArmorProficiency``/``CharacterWeaponProficiency`` tables — there
-is no separate materialized cache anymore, this table IS the state.
+ORM model for a character's stored proficiencies: class/race/background
+choices and GM overrides, each row carrying its provenance. Proficiencies
+from feature/feat grants are NOT stored here — they are computed on read
+from the grant's feature effect tree plus the player's picks
+(``app.features.characters.grants.effects``) and merged in by the readers.
 
-A given proficiency can carry several rows at once (e.g. a skill granted by
-both the class AND a feat — both are legitimate, neither is a duplicate to
-collapse), except ``source_type=GM`` which is upserted in place: at most one
-GM row per (character, proficiency), so it always reflects the GM's latest
-decision rather than piling up history.
+A given proficiency can come from several sources at once (e.g. a skill
+from both the class AND a feat — both are legitimate, neither is a
+duplicate to collapse), except ``source_type=GM`` which is upserted in
+place: at most one GM row per (character, proficiency), so it always
+reflects the GM's latest decision rather than piling up history.
 
 Resolution algorithm for "does the character currently have proficiency P":
-1. Gather every row for (character_id, proficiency_type, discriminator=P).
+1. Gather every row for (character_id, proficiency_type, discriminator=P)
+   plus every feature/feat grant's computed effect for P.
 2. If a ``GM`` row with ``action=REVOKE`` exists -> no, full stop. The GM
    veto wins over every other source, including ones still "wanting" to
-   grant it (e.g. the class), and survives re-materialization forever since
-   nothing but another GM write ever touches a GM row.
-3. Else if any row exists at all (GM GRANT or any other source_type) -> yes.
+   grant it (e.g. the class or a feature), since nothing but another GM
+   write ever touches a GM row.
+3. Else if any source grants it (GM GRANT row, any other row, or a
+   feature/feat grant) -> yes.
 4. Else -> no.
 
 Every caller of this algorithm runs the same query shape — (character_id,
@@ -33,8 +34,6 @@ from sqlalchemy.orm import relationship
 from app.models.enums import (
     AbilityScoreType,
     ArmorProficiencyType,
-    FeatureSourceTypeType,
-    GrantSourceType,
     ProficiencyActionType,
     ProficiencySourceTypeType,
     ProficiencyTypeType,
@@ -63,22 +62,15 @@ class CharacterProficiency(settings.Base):  # type: ignore
 
     Exactly one of ``skill_id``/``ability``/``armor_type``/(``weapon_category``
     or ``item_id``) is set, matching ``proficiency_type`` (enforced by
-    ``ck_character_proficiency_discriminator_shape``). ``source_character_feature_id``
-    is set only for ``FEATURE``/``FEATURE_CHOICE`` rows — the grant that
-    materialized them; the row cascades away when that grant is removed.
-    ``grant_source``/``feature_id``/``feature_source_type`` are denormalized
-    copies (write-once fields on ``CharacterFeature``/``Feature``, so they
-    never go stale) so the read side never has to hop through
-    ``CharacterFeature`` to answer "where did this come from".
+    ``ck_character_proficiency_discriminator_shape``). ``actor_user_id`` is
+    set only on GM rows.
 
     Uniqueness is deliberately asymmetric:
     - At most one ``GM`` row per (character, proficiency) — a GM edit is
       current state, not a history entry, so it upserts in place.
-    - At most one row per (grant, proficiency) for grant-sourced rows, so
-      re-materializing an unchanged grant never duplicates its own row.
-    - No uniqueness at all for ``CLASS_CHOICE``/``RACE``/``BACKGROUND`` (and
-      none between different grants) — a proficiency legitimately reachable
-      from more than one source is several rows, not a conflict. Those three
+    - No uniqueness at all for ``CLASS``/``CLASS_CHOICE``/``RACE``/
+      ``BACKGROUND`` — a proficiency legitimately reachable from more than
+      one source is several rows, not a conflict. Those
       source types are written wholesale (cleared and rewritten together) by
       character creation / point-rebuild rather than incrementally
       reconciled, so no DB constraint is needed to keep them from
@@ -89,7 +81,7 @@ class CharacterProficiency(settings.Base):  # type: ignore
 
     id = Column(Integer, primary_key=True)
     # No index=True here: every real query filters (character_id,
-    # proficiency_type) together (GM writes, materializer reconciliation),
+    # proficiency_type) together (GM writes, the proficiency read),
     # so the composite index below covers this column too (leftmost-prefix)
     # — a separate single-column index on character_id would be redundant.
     character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
@@ -104,16 +96,6 @@ class CharacterProficiency(settings.Base):  # type: ignore
     source_type = Column(ProficiencySourceTypeType, nullable=False)
     action = Column(ProficiencyActionType, nullable=False, default="GRANT")
 
-    source_character_feature_id = Column(
-        Integer,
-        ForeignKey("character_features.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-    grant_source = Column(GrantSourceType, nullable=True)
-    feature_id = Column(Integer, ForeignKey("features.id", ondelete="CASCADE"), nullable=True, index=True)
-    feature_source_type = Column(FeatureSourceTypeType, nullable=True)
-
     actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     is_expertise = Column(Boolean, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -121,14 +103,12 @@ class CharacterProficiency(settings.Base):  # type: ignore
     character = relationship("Character", back_populates="proficiencies")
     skill = relationship("Skill")
     item = relationship("Item")
-    source_grant = relationship("CharacterFeature")
-    feature = relationship("Feature")
     actor = relationship("User")
 
     __table_args__ = (
         CheckConstraint(_DISCRIMINATOR_SHAPE, name="ck_character_proficiency_discriminator_shape"),
-        # Every read (GM add/remove/expertise-toggle check, materializer
-        # reconcile) queries exactly (character_id, proficiency_type, one
+        # Every read (GM add/remove/expertise-toggle check, the proficiency
+        # listing) queries exactly (character_id, proficiency_type, one
         # discriminator column). This composite index resolves the first
         # two columns down to a handful of rows per character+type; the
         # discriminator check on that tiny set is effectively free without
@@ -169,47 +149,6 @@ class CharacterProficiency(settings.Base):  # type: ignore
             "item_id",
             unique=True,
             postgresql_where=(source_type == "GM") & (proficiency_type == "WEAPON") & (item_id != None),  # noqa: E711
-        ),
-        # At most one row per (grant, proficiency) — re-materializing an
-        # unchanged grant must never duplicate its own row.
-        Index(
-            "uq_character_proficiency_grant_skill",
-            "source_character_feature_id",
-            "skill_id",
-            unique=True,
-            postgresql_where=(source_character_feature_id != None) & (proficiency_type == "SKILL"),  # noqa: E711
-        ),
-        Index(
-            "uq_character_proficiency_grant_save",
-            "source_character_feature_id",
-            "ability",
-            unique=True,
-            postgresql_where=(source_character_feature_id != None) & (proficiency_type == "SAVING_THROW"),  # noqa: E711
-        ),
-        Index(
-            "uq_character_proficiency_grant_armor",
-            "source_character_feature_id",
-            "armor_type",
-            unique=True,
-            postgresql_where=(source_character_feature_id != None) & (proficiency_type == "ARMOR"),  # noqa: E711
-        ),
-        Index(
-            "uq_character_proficiency_grant_weapon_category",
-            "source_character_feature_id",
-            "weapon_category",
-            unique=True,
-            postgresql_where=(source_character_feature_id != None)  # noqa: E711
-            & (proficiency_type == "WEAPON")
-            & (weapon_category != None),  # noqa: E711
-        ),
-        Index(
-            "uq_character_proficiency_grant_weapon_item",
-            "source_character_feature_id",
-            "item_id",
-            unique=True,
-            postgresql_where=(source_character_feature_id != None)  # noqa: E711
-            & (proficiency_type == "WEAPON")
-            & (item_id != None),  # noqa: E711
         ),
     )
 

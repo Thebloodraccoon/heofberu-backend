@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.features.characters.gm_panel.dependencies import GmPanelSpellsDep
 from app.features.characters.gm_panel.spells.schemas import CharacterGrantedSpellAdd
-from app.features.characters.grants.schemas import CharacterGrantedSpellResponse
+from app.features.characters.spells.schemas import CharacterSpellResponse
 from app.features.users.security import GmUserDep
 
 router = APIRouter()
@@ -14,12 +14,13 @@ router = APIRouter()
 
 @router.post(
     "/spells",
-    response_model=CharacterGrantedSpellResponse,
+    response_model=CharacterSpellResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Grant a spell to a character directly",
     responses={
         403: {"description": "You are not a GM."},
         404: {"description": "No character or spell exists with the given ID."},
+        409: {"description": "The GM already granted this spell to the character."},
     },
 )
 async def add_character_granted_spell(
@@ -54,20 +55,22 @@ async def add_character_granted_spell(
         403: {"description": "You are not a GM."},
         404: {
             "description": (
-                "No character exists with the given ID, or no free-form granted spell "
-                "exists with the given `granted_spell_id`."
+                "No character exists with the given ID, or the GM never granted this spell to the character directly."
             )
         },
-        409: {"description": "The granted spell came from a feature/feat grant — revoke that grant instead."},
     },
 )
 async def remove_character_granted_spell(
     character_id: int,
-    granted_spell_id: Annotated[int, Query(gt=0)],
+    spell_id: Annotated[int, Query(gt=0)],
     spell_service: GmPanelSpellsDep,
     current_user: GmUserDep,
 ):
-    """Revoke a free-form (directly-granted) spell from a character. **GM only.**"""
+    """
+    Revoke a spell the GM granted directly (one of `gm_spells`). Spells from
+    feature/feat grants can't be removed here — they go with their grant.
+    **GM only.**
+    """
 
-    await spell_service.remove_granted_spell(character_id, granted_spell_id, current_user)
+    await spell_service.remove_granted_spell(character_id, spell_id, current_user)
     return None

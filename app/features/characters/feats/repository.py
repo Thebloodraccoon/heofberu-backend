@@ -4,9 +4,8 @@ Repository for the feat grants recorded on a character.
 A feat grant is a ``character_features`` row whose ``feature.source_type ==
 FEAT`` — a feat IS a Feature (see ``app/models/feature_model.py``); there is
 no separate storage. The chosen ASI option (if any) is a single
-``character_feature_choices`` row, materialized into the character's
-skill/save/armor/weapon/spell rows the same way any other feature grant is
-(``app.features.characters.progression.feature_sync.materialize_grant``).
+``character_feature_choices`` row; the feat's effects are computed on read
+from it like any other grant's (``app.features.characters.grants.effects``).
 """
 
 from sqlalchemy import delete, select
@@ -16,10 +15,8 @@ from sqlalchemy.orm import selectinload
 from app.constants import CharacterFeatSource, FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
 from app.features.characters.feats.schemas import CharacterFeatResponse, FeatBriefResponse
-from app.features.characters.grants.effects import build_chosen_options
-from app.features.characters.grants.materializer import choice_option_effect_loads
+from app.features.characters.grants.effects import build_chosen_options, choice_option_effect_loads
 from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
-from app.features.characters.progression.feature_sync import materialize_grant
 from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
@@ -143,10 +140,8 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
     ) -> CharacterFeature:
         """
         Grant a feat to ``character``: create the ``character_features`` row,
-        record the ASI pick (if any) as a ``character_feature_choices`` row,
-        then materialize every effect the feat carries (the picked ASI
-        option plus any fixed skill/save/armor/weapon/spell effects) onto
-        the character. Never commits internally except the final write, so
+        and record the ASI pick (if any) as a ``character_feature_choices``
+        row. Never commits internally except the final write, so
         this can run standalone (``commit=True``, GM panel) or inside a
         caller's own ``_atomic()`` (``commit=False``, ASI level-up).
         """
@@ -172,7 +167,6 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
                 )
                 await self.db.flush()
 
-        await materialize_grant(self.db, character, grant)
         await self.commit_or_flush(commit=commit)
 
         return await self._reload_with_feat(grant.id)
@@ -180,7 +174,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
     async def set_character_feat_ability_score_increase(
         self, character: Character, grant: CharacterFeature, ability_score_increase_id: int | None
     ) -> CharacterFeature:
-        """Set (or clear, if ``None``) the ASI choice on an existing feat grant, re-materializing its effects."""
+        """Set (or clear, if ``None``) the ASI choice on an existing feat grant."""
 
         await self.db.execute(
             delete(CharacterFeatureChoice).where(CharacterFeatureChoice.character_feature_id == grant.id)
@@ -200,7 +194,6 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
                 )
                 await self.db.flush()
 
-        await materialize_grant(self.db, character, grant)
         await self.commit_or_flush()
 
         return await self._reload_with_feat(grant.id)
@@ -216,22 +209,19 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
     async def remove_character_feat(self, grant: CharacterFeature) -> bool:
         """
         Revoke a feat grant. Cascades (``ON DELETE CASCADE`` on
-        ``source_character_feature_id`` / ``character_feature_id``) clear
-        its stored choice and every materialized effect row automatically.
+        ``character_feature_id``) clear its stored choice automatically.
         """
 
         await self.db.delete(grant)
         await self.commit_or_flush()
         return True
 
-    async def remove_feats_by_source(
-        self, character_id: int, source_type: GrantSource, *, commit: bool = True
-    ) -> None:
+    async def remove_feats_by_source(self, character_id: int, source_type: GrantSource, *, commit: bool = True) -> None:
         """
         Revoke every feat grant of a given ``source_type`` for a character
         — a point-rebuild uses this to clear the feats granted by prior
         ASI-level choices before replacing them. Scoped to FEAT-source
-        features only. Cascades clean up their materialized effect rows.
+        features only. Cascades clean up their stored choices.
         """
 
         await self.db.execute(

@@ -1,92 +1,225 @@
 """
-Shared loader: what a feature/feat grant actually did to a character —
-its materialized effect rows (scoped by ``source_character_feature_id``)
-and the player's stored picks for its choice groups.
+Feature/feat grant effects, computed on read.
 
-Used by both ``features`` and ``feats`` so a character's feature/feat
-listing can show not just "you have this" but "here's what it gave you".
+A grant's effects are its feature's fixed effect rows plus the effect
+bundles of the options the player picked for the feature's choice groups
+(``character_feature_choices``). Nothing is persisted per character: every
+read derives them from the current effect tree, so a GM edit to a feature
+(or a player's re-answer) is visible on the next read without touching
+any character row.
+
+Ability effects are not handled here — they feed the ability-score
+calculator (``CharacterStatsRepository.get_feature_increases``) — and open
+("any skill"/"any spell") effects contribute nothing, since picking one
+isn't supported (``FeatureGrantService.answer_choices`` rejects it).
 """
+
+from collections import defaultdict
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.constants import ProficiencyType
 from app.features.characters.grants.schemas import (
     CharacterArmorProficiencyResponse,
-    CharacterGrantedSpellResponse,
     CharacterSavingThrowProficiencyResponse,
     CharacterWeaponProficiencyResponse,
     ChosenOptionResponse,
     GrantedSkillEffectResponse,
     GrantEffectsResponse,
 )
-from app.features.characters.spells.repository import spell_response_loads
+from app.features.characters.spells.schemas import CharacterSpellResponse
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
-from app.models.character.character_proficiency_model import CharacterProficiency
-from app.models.character.character_spell_model import CharacterGrantedSpell
+from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_model import Feature
+from app.models.spells.spell_model import Spell
 
-_RESPONSE_BY_TYPE = {
-    ProficiencyType.SKILL: GrantedSkillEffectResponse,
-    ProficiencyType.SAVING_THROW: CharacterSavingThrowProficiencyResponse,
-    ProficiencyType.ARMOR: CharacterArmorProficiencyResponse,
-    ProficiencyType.WEAPON: CharacterWeaponProficiencyResponse,
-}
-_LIST_ATTR_BY_TYPE = {
-    ProficiencyType.SKILL: "skills",
-    ProficiencyType.SAVING_THROW: "saving_throws",
-    ProficiencyType.ARMOR: "armor",
-    ProficiencyType.WEAPON: "weapons",
-}
+_EFFECT_ATTRS = (
+    "ability_effects",
+    "skill_effects",
+    "saving_throw_effects",
+    "armor_effects",
+    "weapon_effects",
+    "spell_effects",
+)
 
 
-async def get_grant_effects_map(db: AsyncSession, grant_ids: list[int]) -> dict[int, GrantEffectsResponse]:
+def choice_option_effect_loads(base_loader) -> list:
+    """Chain the six effect-type loads of a ``FeatureChoiceOption`` onto ``base_loader``."""
+
+    return [base_loader.selectinload(getattr(FeatureChoiceOption, attr)) for attr in _EFFECT_ATTRS]
+
+
+def engine_effect_loads() -> list:
+    """Eager loads for a feature's whole effect tree: fixed effects plus every choice option's bundle."""
+
+    options_loader = selectinload(Feature.choice_groups).selectinload(FeatureChoiceGroup.options)
+    return [selectinload(getattr(Feature, attr)) for attr in _EFFECT_ATTRS] + choice_option_effect_loads(options_loader)
+
+
+async def load_feature_effect_tree(db: AsyncSession, feature_id: int) -> Feature | None:
+    """Fetch a feature with its full effect tree, or ``None`` if it doesn't exist."""
+
+    result = await db.execute(select(Feature).where(Feature.id == feature_id).options(*engine_effect_loads()))
+    return result.scalars().first()
+
+
+async def load_feature_effect_trees(db: AsyncSession, feature_ids: Iterable[int]) -> dict[int, Feature]:
+    """Batched ``load_feature_effect_tree``; missing ids are absent from the result."""
+
+    ids = set(feature_ids)
+    if not ids:
+        return {}
+
+    result = await db.execute(select(Feature).where(Feature.id.in_(ids)).options(*engine_effect_loads()))
+    return {feature.id: feature for feature in result.scalars().unique().all()}
+
+
+@dataclass
+class GrantEffects:
+    """What one grant gives the character: skill id -> expertise, plus the other proficiency keys and spell ids."""
+
+    skills: dict[int, bool] = field(default_factory=dict)
+    saving_throws: set = field(default_factory=set)
+    armor: set = field(default_factory=set)
+    weapons: set[tuple] = field(default_factory=set)
+    spells: set[int] = field(default_factory=set)
+
+    def add(self, holder: Feature | FeatureChoiceOption) -> None:
+        """Fold one effect bundle (a feature's fixed rows or a picked option's rows) in."""
+
+        for effect in holder.skill_effects:
+            if effect.skill_id is not None:
+                self.skills[effect.skill_id] = self.skills.get(effect.skill_id, False) or bool(effect.grants_expertise)
+
+        self.saving_throws.update(effect.ability for effect in holder.saving_throw_effects)
+        self.armor.update(effect.armor_type for effect in holder.armor_effects)
+        self.weapons.update((effect.weapon_category, effect.item_id) for effect in holder.weapon_effects)
+        self.spells.update(effect.spell_id for effect in holder.spell_effects if effect.spell_id is not None)
+
+
+def grant_effects(feature: Feature, picked_option_ids: Iterable[int]) -> GrantEffects:
+    """Effects of a grant of ``feature`` whose player picked ``picked_option_ids`` (unknown ids are ignored)."""
+
+    effects = GrantEffects()
+    effects.add(feature)
+
+    options = {option.id: option for group in feature.choice_groups for option in group.options}
+    for option_id in picked_option_ids:
+        option = options.get(option_id)
+        if option is not None:
+            effects.add(option)
+
+    return effects
+
+
+def pending_groups(feature: Feature, stored_choices: list[CharacterFeatureChoice]) -> list[FeatureChoiceGroup]:
+    """The feature's choice groups that still need picks (stored count < ``pick_count``)."""
+
+    picked_counts: dict[int, int] = defaultdict(int)
+    for choice in stored_choices:
+        picked_counts[choice.choice_group_id] += 1
+
+    return [group for group in feature.choice_groups if picked_counts[group.id] < group.pick_count]
+
+
+async def load_grant_effects(
+    db: AsyncSession, grants: list[CharacterFeature]
+) -> dict[int, tuple[Feature, GrantEffects]]:
     """
-    Batch-load the materialized effect rows for every grant in
-    ``grant_ids``, grouped by ``source_character_feature_id`` — one query
-    for every proficiency kind rather than one per grant, for listing
-    endpoints.
+    ``{grant_id: (feature, effects)}`` for every grant whose feature still
+    exists — one batched effect-tree load plus one query for every grant's
+    stored picks.
     """
 
-    effects_by_grant = {grant_id: GrantEffectsResponse() for grant_id in grant_ids}
-    if not grant_ids:
-        return effects_by_grant
+    if not grants:
+        return {}
 
-    proficiencies = await db.execute(
-        select(CharacterProficiency).where(CharacterProficiency.source_character_feature_id.in_(grant_ids))
-    )
-    for row in proficiencies.scalars().unique().all():
-        response_type = _RESPONSE_BY_TYPE[ProficiencyType(row.proficiency_type)]
-        list_attr = _LIST_ATTR_BY_TYPE[ProficiencyType(row.proficiency_type)]
-        getattr(effects_by_grant[row.source_character_feature_id], list_attr).append(
-            response_type.model_validate(row)
+    features = await load_feature_effect_trees(db, (grant.feature_id for grant in grants))
+
+    picks: dict[int, list[int]] = defaultdict(list)
+    result = await db.execute(
+        select(CharacterFeatureChoice.character_feature_id, CharacterFeatureChoice.choice_option_id).where(
+            CharacterFeatureChoice.character_feature_id.in_([grant.id for grant in grants])
         )
-
-    spells = await db.execute(
-        select(CharacterGrantedSpell)
-        .options(*spell_response_loads(selectinload(CharacterGrantedSpell.spell)))
-        .where(CharacterGrantedSpell.source_character_feature_id.in_(grant_ids))
     )
-    for row in spells.scalars().unique().all():
-        effects_by_grant[row.source_character_feature_id].spells.append(
-            CharacterGrantedSpellResponse.model_validate(row)
-        )
+    for grant_id, option_id in result.all():
+        picks[grant_id].append(option_id)
 
-    return effects_by_grant
+    return {
+        grant.id: (feature, grant_effects(feature, picks[grant.id]))
+        for grant in grants
+        if (feature := features.get(grant.feature_id)) is not None
+    }
 
 
-async def get_grant_effects(db: AsyncSession, grant_id: int) -> GrantEffectsResponse:
-    """Fetch the materialized effect rows for a single grant (see :func:`get_grant_effects_map`)."""
+async def load_character_grant_effects(db: AsyncSession, character_id: int) -> list[tuple[Feature, GrantEffects]]:
+    """``(feature, effects)`` for every feature/feat grant of the character."""
 
-    return (await get_grant_effects_map(db, [grant_id]))[grant_id]
+    result = await db.execute(select(CharacterFeature).where(CharacterFeature.character_id == character_id))
+    by_grant = await load_grant_effects(db, list(result.scalars().all()))
+    return list(by_grant.values())
+
+
+async def load_spell_responses(db: AsyncSession, spell_ids: Iterable[int]) -> dict[int, CharacterSpellResponse]:
+    """``{spell_id: CharacterSpellResponse}`` for the given ids (one plain query, no availability loads)."""
+
+    ids = set(spell_ids)
+    if not ids:
+        return {}
+
+    result = await db.execute(select(Spell).where(Spell.id.in_(ids)))
+    return {spell.id: CharacterSpellResponse.model_validate(spell) for spell in result.scalars().unique().all()}
+
+
+def spell_list(spell_ids: Iterable[int], spells: dict[int, CharacterSpellResponse]) -> list[CharacterSpellResponse]:
+    """The given spells (deduplicated, missing ids skipped), ordered by name."""
+
+    return sorted((spells[spell_id] for spell_id in set(spell_ids) if spell_id in spells), key=lambda spell: spell.name)
+
+
+def _to_response(effects: GrantEffects, spells: dict[int, CharacterSpellResponse]) -> GrantEffectsResponse:
+    """Serialize one grant's computed effects."""
+
+    return GrantEffectsResponse(
+        skills=[
+            GrantedSkillEffectResponse(skill_id=skill_id, is_expertise=expertise)
+            for skill_id, expertise in sorted(effects.skills.items())
+        ],
+        saving_throws=[
+            CharacterSavingThrowProficiencyResponse(ability=ability) for ability in sorted(effects.saving_throws)
+        ],
+        armor=[CharacterArmorProficiencyResponse(armor_type=armor_type) for armor_type in sorted(effects.armor)],
+        weapons=[
+            CharacterWeaponProficiencyResponse(weapon_category=category, item_id=item_id)
+            for category, item_id in effects.weapons
+        ],
+        spells=spell_list(effects.spells, spells),
+    )
+
+
+async def get_grant_effects_map(db: AsyncSession, grants: list[CharacterFeature]) -> dict[int, GrantEffectsResponse]:
+    """``{grant_id: GrantEffectsResponse}`` for listing endpoints (empty effects for a grant whose feature vanished)."""
+
+    by_grant = await load_grant_effects(db, grants)
+    spells = await load_spell_responses(
+        db, (spell_id for _, effects in by_grant.values() for spell_id in effects.spells)
+    )
+
+    return {
+        grant.id: _to_response(by_grant[grant.id][1], spells) if grant.id in by_grant else GrantEffectsResponse()
+        for grant in grants
+    }
 
 
 def build_chosen_options(grant: CharacterFeature) -> list[ChosenOptionResponse]:
     """
-    Build the player's resolved picks for a grant from its stored
-    ``CharacterFeatureChoice`` rows. Requires ``grant.choices`` (and each
-    choice's ``choice_option``, with its six effect-type relationships) to
-    already be eager-loaded (see ``choice_option_effect_loads``).
+    The player's picks for a grant, from its stored ``CharacterFeatureChoice``
+    rows. Requires ``grant.choices`` (and each choice's ``choice_option`` with
+    its six effect relationships) eager-loaded — see ``choice_option_effect_loads``.
     """
 
     responses = []
@@ -96,12 +229,7 @@ def build_chosen_options(grant: CharacterFeature) -> list[ChosenOptionResponse]:
             ChosenOptionResponse(
                 choice_group_id=choice.choice_group_id,
                 choice_option_id=choice.choice_option_id,
-                ability_effects=option.ability_effects if option is not None else [],
-                skill_effects=option.skill_effects if option is not None else [],
-                saving_throw_effects=option.saving_throw_effects if option is not None else [],
-                armor_effects=option.armor_effects if option is not None else [],
-                weapon_effects=option.weapon_effects if option is not None else [],
-                spell_effects=option.spell_effects if option is not None else [],
+                **{attr: getattr(option, attr) if option is not None else [] for attr in _EFFECT_ATTRS},
             )
         )
     return responses

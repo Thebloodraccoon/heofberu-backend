@@ -172,7 +172,6 @@ class TestAnswerChoices:
     async def test_patch_valid_option_materializes_skill(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill, db_session
     ):
-
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
         skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
@@ -319,7 +318,6 @@ class TestAnswerChoices:
     async def test_re_answer_replaces_old_choice(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill, db_session
     ):
-
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
         skill_a = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
@@ -446,11 +444,7 @@ class TestAnswerChoices:
         # in the answer doesn't resolve it, the API doesn't support that yet.
         ans = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
-            json={
-                "answers": [
-                    {"choice_group_id": group_id, "choice_option_id": option_id, "skill_id": skill.id}
-                ]
-            },
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "skill_id": skill.id}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert ans.status_code == 422
@@ -660,9 +654,7 @@ class TestOpenSpellResolution:
 
         fx_resp = await client.put(
             f"/features/{feature.id}/effects",
-            json={
-                "spell_effects": [{"spell_id": cantrip.id}]
-            },
+            json={"spell_effects": [{"spell_id": cantrip.id}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert fx_resp.status_code == 200
@@ -685,7 +677,7 @@ class TestOpenSpellResolution:
             f"/characters/{character.id}/spells",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        granted = spells_resp.json()["granted_spells"]
+        granted = spells_resp.json()["feature_spells"]
         assert len(granted) == 1
-        assert granted[0]["spell_id"] == cantrip.id
-        assert granted[0]["spell"]["name"] == "Prestidigitation"
+        assert granted[0]["id"] == cantrip.id
+        assert granted[0]["name"] == "Prestidigitation"

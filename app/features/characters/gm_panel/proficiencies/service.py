@@ -5,7 +5,8 @@ proficiency layer.
 Every write here only ever touches the ``source_type=GM`` row for the
 target (character, proficiency) — see ``CharacterProficiencyGmRepository``
 for the upsert-and-clear rule and ``CharacterProficiency`` for how a GM row
-resolves against class/race/background/feature rows. A GM "remove" on a
+resolves against class/race/background rows and feature/feat grants
+(computed, see ``CharacterProficiencyGmRepository.is_granted``). A GM "remove" on a
 proficiency the character only has through another source writes a
 ``REVOKE`` row (a durable veto that survives re-sync); on a proficiency the
 character has ONLY because a GM granted it, it clears that grant back to
@@ -44,14 +45,12 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
     # --- Skills ---------------------------------------------------------
 
-    async def add_skill(
-        self, character_id: int, skill_id: int, current_user: UserResponse
-    ) -> SkillProficiencyResponse:
+    async def add_skill(self, character_id: int, skill_id: int, current_user: UserResponse) -> SkillProficiencyResponse:
         """Grant a character proficiency in a skill."""
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id) is not None:
+        if await self.proficiency_repository.is_granted(character_id, ProficiencyType.SKILL, skill_id=skill_id):
             raise ProficiencyAlreadyGrantedException(character_id, f"proficiency in skill {skill_id}")
 
         await self.proficiency_repository.set_override(
@@ -72,7 +71,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id) is None:
+        if not await self.proficiency_repository.is_granted(character_id, ProficiencyType.SKILL, skill_id=skill_id):
             raise SkillProficiencyNotFoundException(character_id=character_id, skill_id=skill_id)
 
         await self.proficiency_repository.set_override(
@@ -87,7 +86,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.SKILL, skill_id=skill_id) is None:
+        if not await self.proficiency_repository.is_granted(character_id, ProficiencyType.SKILL, skill_id=skill_id):
             raise SkillProficiencyNotFoundException(character_id=character_id, skill_id=skill_id)
 
         await self.proficiency_repository.set_override(
@@ -112,7 +111,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.SAVING_THROW, ability=ability) is not None:
+        if await self.proficiency_repository.is_granted(character_id, ProficiencyType.SAVING_THROW, ability=ability):
             raise ProficiencyAlreadyGrantedException(character_id, f"proficiency in the {ability.value} saving throw")
 
         await self.proficiency_repository.set_override(
@@ -128,7 +127,9 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.SAVING_THROW, ability=ability) is None:
+        if not await self.proficiency_repository.is_granted(
+            character_id, ProficiencyType.SAVING_THROW, ability=ability
+        ):
             raise ProficiencyNotFoundException(character_id, f"proficiency in the {ability.value} saving throw")
 
         await self.proficiency_repository.set_override(
@@ -145,7 +146,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.ARMOR, armor_type=armor_type) is not None:
+        if await self.proficiency_repository.is_granted(character_id, ProficiencyType.ARMOR, armor_type=armor_type):
             raise ProficiencyAlreadyGrantedException(character_id, f"proficiency in {armor_type.value} armor")
 
         await self.proficiency_repository.set_override(
@@ -161,7 +162,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.ARMOR, armor_type=armor_type) is None:
+        if not await self.proficiency_repository.is_granted(character_id, ProficiencyType.ARMOR, armor_type=armor_type):
             raise ProficiencyNotFoundException(character_id, f"proficiency in {armor_type.value} armor")
 
         await self.proficiency_repository.set_override(
@@ -184,8 +185,12 @@ class GmPanelProficiencyService(CharacterSubDomainService):
         await self.get_character_for_user(character_id, current_user)
 
         discriminator = {"weapon_category": weapon_category, "item_id": item_id}
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.WEAPON, **discriminator) is not None:
-            detail = f"proficiency in {weapon_category.value} weapons" if weapon_category else f"proficiency in item {item_id}"
+        if await self.proficiency_repository.is_granted(character_id, ProficiencyType.WEAPON, **discriminator):
+            detail = (
+                f"proficiency in {weapon_category.value} weapons"
+                if weapon_category
+                else f"proficiency in item {item_id}"
+            )
             raise ProficiencyAlreadyGrantedException(character_id, detail)
 
         await self.proficiency_repository.set_override(
@@ -209,8 +214,12 @@ class GmPanelProficiencyService(CharacterSubDomainService):
         await self.get_character_for_user(character_id, current_user)
 
         discriminator = {"weapon_category": weapon_category, "item_id": item_id}
-        if await self.proficiency_repository.resolve(character_id, ProficiencyType.WEAPON, **discriminator) is None:
-            detail = f"proficiency in {weapon_category.value} weapons" if weapon_category else f"proficiency in item {item_id}"
+        if not await self.proficiency_repository.is_granted(character_id, ProficiencyType.WEAPON, **discriminator):
+            detail = (
+                f"proficiency in {weapon_category.value} weapons"
+                if weapon_category
+                else f"proficiency in item {item_id}"
+            )
             raise ProficiencyNotFoundException(character_id, detail)
 
         await self.proficiency_repository.set_override(

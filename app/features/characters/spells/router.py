@@ -35,7 +35,8 @@ async def get_character_spells(
 ):
     """
     List the character's spellcasting picture in one payload: slot totals
-    per level plus the known spells.
+    per level, the known spells, the GM's direct grants (`gm_spells`) and
+    the spells feature/feat grants give (`feature_spells`).
 
     Slot ``total`` is always derived from the class/level progression and
     is not client-settable; a level's total doubles as the cap on known

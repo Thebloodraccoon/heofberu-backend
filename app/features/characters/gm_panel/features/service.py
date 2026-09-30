@@ -16,7 +16,6 @@ from app.features.characters.gm_panel.exceptions import (
 from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd
 from app.features.characters.grants.schemas import GrantEffectsResponse
 from app.features.characters.grants.service import FeatureGrantService
-from app.features.characters.progression.feature_sync import materialize_grant
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
 from app.features.users.schemas import UserResponse
@@ -26,9 +25,8 @@ from app.models.character.character_feature_model import CharacterFeature
 class GmPanelFeatureService(CharacterSubDomainService):
     """
     Grant management for reference features (``character_features``);
-    adds/removals refresh the ability-score cache and materialize the
-    grant's other effects (skills, saves, armor/weapons, granted spells —
-    grants can carry any of them).
+    adds/removals refresh the ability-score cache. The grant's other
+    effects (skills, saves, armor/weapons, spells) are computed on read.
     """
 
     def __init__(self, db: AsyncSession):
@@ -64,7 +62,6 @@ class GmPanelFeatureService(CharacterSubDomainService):
             grant = await self.feature_grant_repository.add_character_feature(
                 character_id, data.feature_id, grant_source=GrantSource.GM, commit=False
             )
-            await materialize_grant(self.repository.db, character, grant)
             await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
 
         await self.stats_service.refresh(character)
