@@ -26,6 +26,47 @@ class TestArticleRead:
         assert response.status_code == 200
         assert "mayor" in response.json()["body_markdown"]
 
+    async def test_get_by_slug_returns_article(self, client, create_article):
+        article = await create_article(title="Khazad-dum", status="published")
+
+        response = await client.get(f"/articles/by-slug/{article['slug']}")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == article["id"]
+
+    async def test_get_by_slug_strips_gm_block_for_anonymous(self, client, create_article):
+        article = await create_article(body_markdown="Open.\n\n:::gm\nSecret.\n:::", status="published")
+
+        response = await client.get(f"/articles/by-slug/{article['slug']}")
+
+        assert response.status_code == 200
+        assert "Secret." not in response.json()["body_markdown"]
+
+    async def test_get_by_slug_draft_is_404_for_anonymous_without_leaking_id(self, client, create_article):
+        article = await create_article(title="Hidden Draft")
+
+        response = await client.get(f"/articles/by-slug/{article['slug']}")
+
+        assert response.status_code == 404
+        message = response.json()["error"]["message"]
+        assert article["slug"] in message
+        assert f"id {article['id']} " not in message
+
+    async def test_get_by_slug_draft_visible_to_gm(self, client, create_article, gm_token):
+        article = await create_article(title="Hidden Draft")
+
+        response = await client.get(
+            f"/articles/by-slug/{article['slug']}", headers={"Authorization": f"Bearer {gm_token}"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["id"] == article["id"]
+
+    async def test_get_by_unknown_slug_returns_404(self, client):
+        response = await client.get("/articles/by-slug/no-such-article")
+
+        assert response.status_code == 404
+
     async def test_gm_block_in_excerpt_stripped_for_anonymous(self, client, create_article, gm_token):
         article = await create_article(excerpt="Dwarven city.:::gm Balrog below.:::", status="published")
 

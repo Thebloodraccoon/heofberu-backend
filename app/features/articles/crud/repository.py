@@ -67,16 +67,20 @@ class ArticleRepository(BaseRepository[Article]):
 
         return article
 
-    async def generate_unique_slug(self, title: str) -> str:
+    async def generate_unique_slug(self, title: str, *, exclude_id: int | None = None) -> str:
         """
         Build a slug from ``title`` that no article uses yet: ``base``, then ``base-2``, ``base-3``, ...
 
+        ``exclude_id`` ignores that article's own current slug (re-slugging on rename).
         A concurrent create can still race to the same value; the ``slug`` unique
         constraint is the backstop for that.
         """
 
         base = slugify(title)
-        result = await self.db.execute(select(Article.slug).where(or_(Article.slug == base, Article.slug.like(f"{base}-%"))))
+        stmt = select(Article.slug).where(or_(Article.slug == base, Article.slug.like(f"{base}-%")))
+        if exclude_id is not None:
+            stmt = stmt.where(Article.id != exclude_id)
+        result = await self.db.execute(stmt)
         taken = set(result.scalars().all())
 
         candidate, suffix = base, 2
@@ -99,9 +103,11 @@ class ArticleRepository(BaseRepository[Article]):
         stmt = select(Article.id).where(Article.id == candidate_id, Article.path.op("<@")(article_path))
         return await self.db.scalar(stmt) is not None
 
-    async def list_image_ids(self, article_id: int) -> list[int]:
-        """Return the ids of every gallery image owned by the article (for storage cleanup on delete)."""
+    async def get_id_by_slug(self, slug: str) -> int | None:
+        """Return the id of the article with this ``slug`` (any visibility), or ``None``."""
 
+        result = await self.db.execute(select(Article.id).where(Article.slug == slug))
+        return result.scalar_one_or_none()
 
     async def get_subtype_type(self, subtype_id: int) -> str | None:
         """Return the ``article_type`` a subtype belongs to, or ``None`` if it doesn't exist."""
@@ -297,38 +303,13 @@ class ArticleRepository(BaseRepository[Article]):
         )
         return list(result.scalars().unique().all())
 
-    async def list_latest(
-        self, limit: int, *, article_types: list[str] | None = None, include_hidden: bool = False
-    ) -> list[Article]:
-        """
-        Return the most recently published articles (falls back to ``created_at`` for
-        rows with no ``published_at``), optionally restricted to a set of ``article_types``.
-
-        Always ``PUBLISHED`` only; GM-only articles are additionally hidden from non-GM readers.
-        """
-
-        stmt = (
-            select(Article)
-            .where(Article.status == ArticleStatus.PUBLISHED)
-            .options(*self._default_load_options)
-            .order_by(text("COALESCE(published_at, created_at) DESC"))
-            .limit(limit)
-        )
-        if not include_hidden:
-            stmt = stmt.where(Article.visibility == ArticleVisibility.PUBLIC)
-        if article_types:
-            stmt = stmt.where(Article.article_type.in_(article_types))
-
-        result = await self.db.execute(stmt)
-        return list(result.scalars().unique().all())
-
     async def list_articles(
         self,
         *,
         page: int,
         size: int,
         include_hidden: bool,
-        search: str | None = None,
+        statuses: list[ArticleStatus] | None = None,
         article_types: list[str] | None = None,
         subtype_ids: list[int] | None = None,
         tag_ids: list[int] | None = None,
@@ -338,14 +319,8 @@ class ArticleRepository(BaseRepository[Article]):
         """Filtered, sorted, paginated listing rows (no tags/images loaded) plus the total match count."""
 
         conditions = self._visibility_conditions(include_hidden)
-        if search:
-            escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            pattern = f"%{escaped}%"
-            conditions.append(
-                or_(Article.title.ilike(pattern, escape="\\"), Article.slug.ilike(pattern, escape="\\"))
-            )
-        if parent_id is not None:
-            conditions.append(Article.parent_id == parent_id)
+        if statuses:
+            conditions.append(Article.status.in_(statuses))
         if article_types or subtype_ids:
             conditions.append(await self._type_condition(article_types or [], subtype_ids or []))
         if tag_ids:

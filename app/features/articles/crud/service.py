@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,7 @@ from app.features.articles.crud.schemas import (
 )
 from app.features.articles.exceptions import (
     ArticleParentCycleException,
+    ArticleStatusTransitionException,
     ArticleSubtypeTypeMismatchException,
 )
 from app.features.articles.images.service import storage_entity
@@ -29,6 +31,19 @@ from app.features.articles.secrets import strip_gm_blocks
 from app.models.articles.article_model import Article
 
 
+ArticleAction = Literal["submit", "publish", "reject", "archive", "restore"]
+
+#: Review workflow: action -> (statuses it's allowed from, resulting status). New articles start as DRAFT.
+ARTICLE_TRANSITIONS: dict[str, tuple[frozenset[ArticleStatus], ArticleStatus]] = {
+    "submit": (frozenset({ArticleStatus.DRAFT}), ArticleStatus.IN_REVIEW),
+    "publish": (frozenset({ArticleStatus.IN_REVIEW}), ArticleStatus.PUBLISHED),
+    "reject": (frozenset({ArticleStatus.IN_REVIEW}), ArticleStatus.DRAFT),
+    "archive": (
+        frozenset({ArticleStatus.DRAFT, ArticleStatus.IN_REVIEW, ArticleStatus.PUBLISHED}),
+        ArticleStatus.ARCHIVED,
+    ),
+    "restore": (frozenset({ArticleStatus.ARCHIVED}), ArticleStatus.DRAFT),
+}
 
 
 def _nest_subtype(row) -> dict:
@@ -87,9 +102,12 @@ class ArticleCrudService(
 
         Including ``parent_id`` re-roots ``path`` for the article and every
         existing descendant, and is rejected if it would create a cycle or
-        point at a missing article. The first transition to ``PUBLISHED``
-        stamps ``published_at``. The field update and the path rewrite share
-        one transaction.
+        point at a missing article. The field update and the path rewrite share
+        one transaction. ``status`` never changes here — see ``transition``.
+
+        A new ``title`` re-generates ``slug`` only while the article has never been
+        published (like WordPress/Ghost drafts): once published the slug is its
+        public address, so later renames keep it.
         """
 
         fields = data.model_dump(exclude_unset=True)
@@ -98,18 +116,44 @@ class ArticleCrudService(
         if "parent_id" in fields:
             await self._validate_parent(fields["parent_id"], article_id)
 
-        if fields.get("status") == ArticleStatus.PUBLISHED and item.published_at is None:
-            fields["published_at"] = datetime.now(timezone.utc)
         if "subtype_id" in fields or "article_type" in fields:
             await self._validate_subtype(
                 fields.get("subtype_id", item.subtype_id), fields.get("article_type", item.article_type)
             )
+
+        if "title" in fields and item.published_at is None:
+            fields["slug"] = await self.repository.generate_unique_slug(fields["title"], exclude_id=article_id)
 
         async with self._atomic():
             await self.repository.apply_update(item, fields, commit=False)
             if "parent_id" in fields:
                 await self.repository.set_path(article_id, fields["parent_id"], commit=False)
 
+        await invalidate_article_cache()
+
+        return await self._get_response(article_id)
+
+    async def transition(
+        self, article_id: int, action: ArticleAction, *, actor_id: int | None = None
+    ) -> ArticleResponse:
+        """
+        Apply a review-workflow ``action`` (see ``ARTICLE_TRANSITIONS``); 409 if the current status forbids it.
+
+        ``publish``/``reject`` record ``actor_id`` as ``reviewed_by_id``; the first publish stamps ``published_at``.
+        """
+
+        allowed_from, target = ARTICLE_TRANSITIONS[action]
+        item = await self._get_or_404(article_id)
+        if item.status not in allowed_from:
+            raise ArticleStatusTransitionException(article_id, action, ArticleStatus(item.status).value)
+
+        fields: dict = {"status": target}
+        if action in ("publish", "reject"):
+            fields["reviewed_by_id"] = actor_id
+        if target == ArticleStatus.PUBLISHED and item.published_at is None:
+            fields["published_at"] = datetime.now(timezone.utc)
+
+        await self.repository.apply_update(item, fields)
         await invalidate_article_cache()
 
         return await self._get_response(article_id)
@@ -183,13 +227,27 @@ class ArticleCrudService(
 
         return article.model_copy(update=update)
 
+    async def get_article_by_slug(self, slug: str, *, include_hidden: bool) -> ArticleResponse:
+        """
+        ``get_article`` looked up by ``slug``. The 404 names the slug, never the id, so a
+        hidden article's id doesn't leak to a non-GM.
+        """
+
+        article_id = await self.repository.get_id_by_slug(slug)
+        if article_id is not None:
+            try:
+                return await self.get_article(article_id, include_hidden=include_hidden)
+            except RecordNotFoundError:
+                pass
+        raise RecordNotFoundError(model_name="Article", model_id=slug)
+
     async def list_articles(
         self,
         *,
         page: int,
         size: int,
         include_hidden: bool,
-        search: str | None,
+        statuses: list[ArticleStatus] | None,
         article_types: list[str] | None,
         subtype_ids: list[int] | None,
         tag_ids: list[int] | None,
@@ -202,7 +260,7 @@ class ArticleCrudService(
             page=page,
             size=size,
             include_hidden=include_hidden,
-            search=search,
+            statuses=statuses,
             article_types=article_types,
             subtype_ids=subtype_ids,
             tag_ids=tag_ids,
@@ -259,14 +317,6 @@ class ArticleCrudService(
         await self._exists_visible_or_404(article_id, include_hidden)
         rows = await self.repository.list_ancestors(article_id, include_hidden=include_hidden)
         return [ArticleBrief.model_validate(row) for row in rows]
-
-    async def get_latest(
-        self, limit: int, article_types: list[str] | None, *, include_hidden: bool
-    ) -> list[ArticleGetAllResponse]:
-        """Return the most recently published articles, newest first."""
-
-        rows = await self.repository.list_latest(limit, article_types=article_types, include_hidden=include_hidden)
-        return [ArticleGetAllResponse.model_validate(row) for row in rows]
 
     async def _exists_visible_or_404(self, article_id: int, include_hidden: bool) -> None:
         """Raise ``RecordNotFoundError`` unless the article exists and the reader may see it."""

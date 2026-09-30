@@ -1,9 +1,10 @@
-"""Article endpoints: listing/search, latest, tree navigation, get-by-id, create, update, delete."""
+"""Article endpoints: listing/search, tree navigation, get-by-id/slug, create, update, review workflow, delete."""
 
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Query, status
 
+from app.constants import ArticleStatus
 from app.core.base.service import Page
 from app.features.articles.crud.schemas import (
     ArticleBrief,
@@ -53,11 +54,14 @@ SubtypeQuery = Annotated[
 async def get_articles(
     article_service: ArticleCrudDep,
     user: OptionalUserDep,
-    search: str | None = Query(
-        None,
-        description="Case-insensitive substring match against the article's title or slug. "
-        "For ranked full-text search use `GET /articles/search`.",
-    ),
+    status_filter: Annotated[
+        list[ArticleStatus] | None,
+        Query(
+            alias="status",
+            description="GM only in effect (non-GMs only ever see `published`). Repeat the key: "
+            "`?status=in_review` is the review queue, `?status=published&sort=newest` the latest articles.",
+        ),
+    ] = None,
     tag_id: TagIdsQuery = None,
     tag_match: TagMatchQuery = "any",
     article_type: ArticleTypesQuery = None,
@@ -72,6 +76,7 @@ async def get_articles(
     Return a paginated, filterable list of articles (listing-row fields only) — e.g. tag
     pages: `GET /articles?tag_id=3`. Anonymous callers and players only see `published`,
     `public` articles; GMs see everything. Response is `{items, total, page, size}`.
+    Text search: `GET /articles/search`; direct children: `GET /articles/{id}/children`.
     Open endpoint.
     """
 
@@ -79,7 +84,7 @@ async def get_articles(
         page=page,
         size=size,
         include_hidden=can_see_hidden(user),
-        search=search,
+        statuses=status_filter,
         article_types=article_type,
         subtype_ids=subtype_ids,
         tag_ids=tag_id,
@@ -130,27 +135,6 @@ async def search_articles(
 
 
 @router.get(
-    "/latest",
-    response_model=list[ArticleGetAllResponse],
-    summary="List the most recently published articles",
-)
-async def get_latest_articles(
-    article_service: ArticleCrudDep,
-    user: OptionalUserDep,
-    limit: int = Query(10, ge=1, le=50, description="Max number of articles to return"),
-    article_type: ArticleTypesQuery = None,
-):
-    """
-    Return the most recently published articles, newest first (by
-    `published_at`, falling back to `created_at`). Only `status=published`
-    articles are eligible — drafts never appear here, and GM-only ones are
-    hidden from non-GMs. Open endpoint.
-    """
-
-    return await article_service.get_latest(limit, article_type, include_hidden=can_see_hidden(user))
-
-
-@router.get(
     "/{article_id:int}",
     response_model=ArticleResponse,
     summary="Get an article by ID",
@@ -166,6 +150,20 @@ async def get_article(article_id: int, article_service: ArticleCrudDep, user: Op
     """
 
     return await article_service.get_article(article_id, include_hidden=can_see_hidden(user))
+
+
+@router.get(
+    "/by-slug/{slug}",
+    response_model=ArticleResponse,
+    summary="Get an article by slug",
+    responses={
+        404: {"description": "Article not found (or not visible to the caller)."},
+    },
+)
+async def get_article_by_slug(slug: str, article_service: ArticleCrudDep, user: OptionalUserDep):
+    """Same as `GET /articles/{article_id}`, looked up by the article's `slug`. Open endpoint."""
+
+    return await article_service.get_article_by_slug(slug, include_hidden=can_see_hidden(user))
 
 
 @router.get(
@@ -264,10 +262,6 @@ async def update_article(
         ArticleUpdate,
         Body(
             openapi_examples={
-                "publish": {
-                    "summary": "Publish a draft",
-                    "value": {"status": "published"},
-                },
                 "rewrite": {
                     "summary": "Edit title and body",
                     "value": {"title": "Khazad-dum, the Dwarrowdelf", "body_markdown": "Updated lore text..."},
@@ -287,8 +281,8 @@ async def update_article(
 
     Only fields included in the request body are changed; use
     `PUT /articles/{article_id}/tags` for tags. Including `parent_id`
-    re-roots `path` for this article and its whole existing subtree; the first move to
-    `published` stamps `published_at`.
+    re-roots `path` for this article and its whole existing subtree. `status` can't be
+    changed here — use the `submit`/`publish`/`reject`/`archive`/`restore` actions.
     """
 
     return await article_service.update_article(article_id, data)
@@ -313,3 +307,69 @@ async def delete_article(article_id: int, article_service: ArticleCrudDep, _: Fo
 
     await article_service.delete(article_id)
     return None
+
+
+TRANSITION_RESPONSES = {
+    404: {"description": "No article exists with the given ID."},
+    409: {"description": "The action isn't allowed from the article's current status."},
+}
+
+
+@router.post(
+    "/{article_id:int}/submit",
+    response_model=ArticleResponse,
+    summary="Send a draft for review",
+    responses=TRANSITION_RESPONSES,
+)
+async def submit_article(article_id: int, article_service: ArticleCrudDep, _: GmUserDep):
+    """`draft` → `in_review`. **GM only.**"""
+
+    return await article_service.transition(article_id, "submit")
+
+
+@router.post(
+    "/{article_id:int}/publish",
+    response_model=ArticleResponse,
+    summary="Approve and publish an article under review",
+    responses=TRANSITION_RESPONSES,
+)
+async def publish_article(article_id: int, article_service: ArticleCrudDep, founder: FounderDep):
+    """`in_review` → `published`; records the reviewer, the first publish stamps `published_at`. **Founder only.**"""
+
+    return await article_service.transition(article_id, "publish", actor_id=founder.id)
+
+
+@router.post(
+    "/{article_id:int}/reject",
+    response_model=ArticleResponse,
+    summary="Send an article under review back to draft",
+    responses=TRANSITION_RESPONSES,
+)
+async def reject_article(article_id: int, article_service: ArticleCrudDep, founder: FounderDep):
+    """`in_review` → `draft`; records the reviewer. **Founder only.**"""
+
+    return await article_service.transition(article_id, "reject", actor_id=founder.id)
+
+
+@router.post(
+    "/{article_id:int}/archive",
+    response_model=ArticleResponse,
+    summary="Archive an article",
+    responses=TRANSITION_RESPONSES,
+)
+async def archive_article(article_id: int, article_service: ArticleCrudDep, _: FounderDep):
+    """`draft` / `in_review` / `published` → `archived` (hidden from non-GMs). **Founder only.**"""
+
+    return await article_service.transition(article_id, "archive")
+
+
+@router.post(
+    "/{article_id:int}/restore",
+    response_model=ArticleResponse,
+    summary="Restore an archived article to draft",
+    responses=TRANSITION_RESPONSES,
+)
+async def restore_article(article_id: int, article_service: ArticleCrudDep, _: FounderDep):
+    """`archived` → `draft`. **Founder only.**"""
+
+    return await article_service.transition(article_id, "restore")

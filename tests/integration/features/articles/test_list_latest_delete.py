@@ -1,4 +1,4 @@
-"""Tests for GET /articles, GET /articles/latest, and DELETE /articles/{id}."""
+"""Tests for GET /articles (incl. the status filter: latest / review queue) and DELETE /articles/{id}."""
 
 import pytest
 
@@ -37,17 +37,6 @@ class TestArticleList:
         assert body["total"] == 1
         assert body["items"][0]["article_type"] == "deity"
 
-    async def test_list_filters_by_search_substring(self, client, create_article):
-        await create_article(title="Khazad-dum", status="published")
-        await create_article(title="Moria Region", status="published")
-
-        response = await client.get("/articles", params={"search": "khazad"})
-
-        assert response.status_code == 200
-        body = response.json()
-        assert body["total"] == 1
-        assert body["items"][0]["title"] == "Khazad-dum"
-
     async def test_list_filters_by_tag(self, client, create_article, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}
         tag = (await client.post("/tags", json={"name": "Border Region"}, headers=headers)).json()
@@ -76,46 +65,49 @@ class TestArticleList:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-class TestArticleLatest:
-    async def test_latest_excludes_drafts(self, client, create_article):
-        await create_article(title="Published", status="published")
+class TestArticleStatusFilter:
+    async def test_latest_published_newest_first_excludes_drafts(self, client, create_article, gm_token):
+        await create_article(title="Older", status="published")
         await create_article(title="Draft")
+        await create_article(title="Newer", status="published")
 
-        response = await client.get("/articles/latest")
+        response = await client.get(
+            "/articles",
+            params={"status": "published", "sort": "newest"},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
 
         assert response.status_code == 200
-        titles = [item["title"] for item in response.json()]
-        assert titles == ["Published"]
+        assert [item["title"] for item in response.json()["items"]] == ["Newer", "Older"]
 
-    async def test_latest_hides_gm_only_from_anonymous(self, client, create_article):
+    async def test_published_filter_hides_gm_only_from_anonymous(self, client, create_article):
         await create_article(title="Public", status="published")
         await create_article(title="GM Only", status="published", visibility="gm_only")
 
-        response = await client.get("/articles/latest")
+        response = await client.get("/articles", params={"status": "published", "sort": "newest"})
 
         assert response.status_code == 200
-        titles = [item["title"] for item in response.json()]
-        assert titles == ["Public"]
+        assert [item["title"] for item in response.json()["items"]] == ["Public"]
 
-    async def test_latest_respects_limit(self, client, create_article):
-        for i in range(3):
-            await create_article(title=f"Entry {i}", status="published")
+    async def test_review_queue_lists_only_in_review(self, client, create_article, founder_token):
+        await create_article(title="Queued", status="in_review")
+        await create_article(title="Draft")
+        await create_article(title="Live", status="published")
 
-        response = await client.get("/articles/latest", params={"limit": 2})
-
-        assert response.status_code == 200
-        assert len(response.json()) == 2
-
-    async def test_latest_filters_by_article_type(self, client, create_article):
-        await create_article(title="A Deity", article_type="deity", status="published")
-        await create_article(title="An Artifact", article_type="artifact", status="published")
-
-        response = await client.get("/articles/latest", params={"article_type": "deity"})
+        response = await client.get(
+            "/articles", params={"status": "in_review"}, headers={"Authorization": f"Bearer {founder_token}"}
+        )
 
         assert response.status_code == 200
-        body = response.json()
-        assert len(body) == 1
-        assert body[0]["article_type"] == "deity"
+        assert [item["title"] for item in response.json()["items"]] == ["Queued"]
+
+    async def test_review_queue_is_empty_for_anonymous(self, client, create_article):
+        await create_article(title="Queued", status="in_review")
+
+        response = await client.get("/articles", params={"status": "in_review"})
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 0
 
 
 @pytest.mark.integration

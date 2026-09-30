@@ -60,7 +60,12 @@ class ArticleCreate(ArticleBase):
 
 
 class ArticleUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics)."""
+    """
+    All fields optional — only provided fields are updated (PATCH semantics).
+
+    ``status`` is not here: it moves only through the review workflow endpoints
+    (``ArticleCrudService.transition``).
+    """
 
     title: str | None = Field(default=None, max_length=200)
     excerpt: str | None = Field(default=None, max_length=500)
@@ -68,11 +73,9 @@ class ArticleUpdate(BaseModel):
     article_type: str | None = None
     subtype_id: int | None = None
     parent_id: int | None = None
-    attributes: dict | None = None
-    status: ArticleStatus | None = None
     visibility: ArticleVisibility | None = None
 
-    @field_validator("title", "body_markdown", "article_type", "attributes", "status", "visibility")
+    @field_validator("title", "body_markdown", "article_type", "visibility")
     def reject_explicit_null(cls, value, info):
         """
         Reject an explicit ``null`` for a field that's ``nullable=False`` on the ``Article``

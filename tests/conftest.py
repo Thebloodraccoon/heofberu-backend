@@ -404,12 +404,11 @@ async def founder_token(founder, login_as):
 
 
 @pytest_asyncio.fixture
-async def create_article(client, gm_token):
+async def create_article(client, gm_token, founder_token):
     """
     Create an article through the real API (GM-only) — slug/path generation stays
-    server-side instead of being re-implemented here. Optionally publishes and/or
-    sets ``visibility`` via a follow-up PATCH, since both start out at their
-    ``ArticleCreate``/``draft`` defaults on create.
+    server-side instead of being re-implemented here. ``status`` other than ``draft``
+    is reached through the review workflow (GM submit, founder publish/archive).
     """
 
     async def _create_article(
@@ -447,10 +446,16 @@ async def create_article(client, gm_token):
         assert response.status_code == 201, response.text
         article = response.json()
 
-        if status is not None:
-            patched = await client.patch(f"/articles/{article['id']}", json={"status": status}, headers=headers)
-            assert patched.status_code == 200, patched.text
-            article = patched.json()
+        founder_headers = {"Authorization": f"Bearer {founder_token}"}
+        actions = {
+            "in_review": [("submit", headers)],
+            "published": [("submit", headers), ("publish", founder_headers)],
+            "archived": [("archive", founder_headers)],
+        }.get(status, [])
+        for action, action_headers in actions:
+            moved = await client.post(f"/articles/{article['id']}/{action}", headers=action_headers)
+            assert moved.status_code == 200, moved.text
+            article = moved.json()
 
         if tag_ids is not None:
             tagged = await client.put(f"/articles/{article['id']}/tags", json={"tag_ids": tag_ids}, headers=headers)

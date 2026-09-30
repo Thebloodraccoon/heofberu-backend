@@ -145,22 +145,41 @@ class TestArticleCrud:
 
         assert response.status_code == 400
 
-    async def test_publish_stamps_published_at_once(self, client, gm_token):
-        headers = {"Authorization": f"Bearer {gm_token}"}
-        article = (
-            await client.post("/articles", json={"title": "Lorebook", "article_type": "lore"}, headers=headers)
-        ).json()
-        assert article["published_at"] is None
+    async def test_rename_draft_regenerates_slug(self, client, create_article, gm_token):
+        article = await create_article(title="Working Title")
 
-        first_publish = await client.patch(
-            f"/articles/{article['id']}", json={"status": "published"}, headers=headers
+        response = await client.patch(
+            f"/articles/{article['id']}", json={"title": "Khazad-dum"}, headers={"Authorization": f"Bearer {gm_token}"}
         )
-        assert first_publish.status_code == 200
-        published_at = first_publish.json()["published_at"]
-        assert published_at is not None
 
-        second_update = await client.patch(
-            f"/articles/{article['id']}", json={"title": "Lorebook Revised"}, headers=headers
+        assert response.status_code == 200
+        assert response.json()["slug"] == "khazad-dum"
+
+    async def test_rename_draft_keeps_own_slug_without_suffix(self, client, create_article, gm_token):
+        article = await create_article(title="Khazad-dum")
+
+        response = await client.patch(
+            f"/articles/{article['id']}", json={"title": "KHAZAD-DUM"}, headers={"Authorization": f"Bearer {gm_token}"}
         )
-        assert second_update.status_code == 200
-        assert second_update.json()["published_at"] == published_at
+
+        assert response.json()["slug"] == "khazad-dum"
+
+    async def test_rename_draft_gets_suffix_when_slug_taken(self, client, create_article, gm_token):
+        await create_article(title="Moria")
+        article = await create_article(title="Working Title")
+
+        response = await client.patch(
+            f"/articles/{article['id']}", json={"title": "Moria"}, headers={"Authorization": f"Bearer {gm_token}"}
+        )
+
+        assert response.json()["slug"] == "moria-2"
+
+    async def test_rename_published_article_keeps_slug(self, client, create_article, gm_token):
+        article = await create_article(title="Khazad-dum", status="published")
+
+        response = await client.patch(
+            f"/articles/{article['id']}", json={"title": "Moria"}, headers={"Authorization": f"Bearer {gm_token}"}
+        )
+
+        assert response.json()["title"] == "Moria"
+        assert response.json()["slug"] == "khazad-dum"
