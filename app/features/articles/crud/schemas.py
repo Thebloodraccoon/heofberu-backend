@@ -41,7 +41,6 @@ class ArticleBase(BaseModel):
     )
     visibility: ArticleVisibility = ArticleVisibility.PUBLIC
     parent_id: int | None = None
-    attributes: dict = {}
 
     @field_validator("article_type")
     def validate_article_type(cls, article_type):

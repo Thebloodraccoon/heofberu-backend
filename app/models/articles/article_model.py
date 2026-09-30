@@ -1,7 +1,7 @@
 """ORM model for world-lore articles (global lore down to a single location/faction/NPC)."""
 
 from sqlalchemy import Column, Computed, DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import relationship
 from sqlalchemy_utils import LtreeType
 
@@ -61,7 +61,6 @@ class Article(settings.Base):  # type: ignore
     parent_id = Column(Integer, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True)
     path = Column(LtreeType, nullable=True, index=True)
 
-    attributes = Column(JSONB, nullable=False, default=dict)
 
     status = Column(ArticleStatusType, nullable=False, default=ArticleStatus.DRAFT, index=True)
     visibility = Column(
