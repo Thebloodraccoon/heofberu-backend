@@ -117,6 +117,26 @@ class TestArticleRelations:
         assert response.status_code == 200
         assert response.json() == []
 
+    async def test_gm_block_in_note_stripped_for_non_gm(self, client, create_article, gm_token):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        from_article = await create_article(title="Khazad-dum", status="published")
+        to_article = await create_article(title="Moria", status="published")
+        await client.post(
+            f"/articles/{from_article['id']}/relations",
+            json={
+                "to_article_id": to_article["id"],
+                "relation_type": "MEMBER_OF",
+                "note": "Sworn member.:::gm Secretly a spy.:::",
+            },
+            headers=headers,
+        )
+
+        anonymous = await client.get(f"/articles/{from_article['id']}/relations")
+        gm = await client.get(f"/articles/{from_article['id']}/relations", headers=headers)
+
+        assert anonymous.json()[0]["note"] == "Sworn member."
+        assert "spy" in gm.json()[0]["note"]
+
     async def test_relation_to_hidden_article_hidden_from_non_gm(self, client, create_article, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}
         from_article = await create_article(title="Khazad-dum", status="published")

@@ -14,6 +14,7 @@ from app.features.articles.relations.schemas import (
     ArticleRelationResponse,
     ArticleRelationUpdate,
 )
+from app.features.articles.secrets import strip_gm_blocks
 from app.models.articles.article_model import Article
 from app.models.articles.article_relation_model import ArticleRelation
 
@@ -56,7 +57,7 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
                 if row.visibility == ArticleVisibility.PUBLIC and self._other_is_public(article_id, row)
             ]
 
-        return [self._to_response(article_id, row) for row in rows]
+        return [self._to_response(article_id, row, strip_secrets=not include_hidden) for row in rows]
 
     async def create_relation(self, article_id: int, data: ArticleRelationCreate) -> ArticleRelationResponse:
         """Link ``article_id`` to ``data.to_article_id``. Both ids must already exist."""
@@ -132,8 +133,10 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
         return is_article_publicly_visible(other.status, other.visibility)
 
     @staticmethod
-    def _to_response(article_id: int, relation: ArticleRelation) -> ArticleRelationResponse:
-        """Build the direction-aware response for ``relation`` as seen from ``article_id``."""
+    def _to_response(
+        article_id: int, relation: ArticleRelation, *, strip_secrets: bool = False
+    ) -> ArticleRelationResponse:
+        """Direction-aware response for ``relation`` as seen from ``article_id``; ``strip_secrets`` cuts ``:::gm``."""
 
         outgoing = relation.from_article_id == article_id
         other = relation.to_article if outgoing else relation.from_article
@@ -141,7 +144,7 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
         return ArticleRelationResponse(
             id=relation.id,
             relation_type=relation.relation_type,
-            note=relation.note,
+            note=strip_gm_blocks(relation.note) if strip_secrets else relation.note,
             visibility=relation.visibility,
             created_at=relation.created_at,
             direction="outgoing" if outgoing else "incoming",

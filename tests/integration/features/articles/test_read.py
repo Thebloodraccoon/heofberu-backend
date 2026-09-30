@@ -26,6 +26,17 @@ class TestArticleRead:
         assert response.status_code == 200
         assert "mayor" in response.json()["body_markdown"]
 
+    async def test_gm_block_in_excerpt_stripped_for_anonymous(self, client, create_article, gm_token):
+        article = await create_article(excerpt="Dwarven city.:::gm Balrog below.:::", status="published")
+
+        anonymous = await client.get(f"/articles/{article['id']}")
+        listed = await client.get("/articles")
+        gm = await client.get(f"/articles/{article['id']}", headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert anonymous.json()["excerpt"] == "Dwarven city."
+        assert "Balrog" not in listed.json()["items"][0]["excerpt"]
+        assert "Balrog" in gm.json()["excerpt"]
+
     async def test_response_has_no_view_count(self, client, create_article):
         article = await create_article(status="published")
 

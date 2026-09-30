@@ -8,7 +8,7 @@ import re
 GM_BLOCK_RE = re.compile(r":::gm.*?(?::::|\Z)", re.DOTALL | re.IGNORECASE)
 
 
-def strip_gm_blocks(body: str) -> str:
-    """Return ``body`` with every GM-only block removed."""
+def strip_gm_blocks(text: str | None) -> str | None:
+    """Return ``text`` (body, excerpt, relation note) with every GM-only block removed; ``None`` stays ``None``."""
 
-    return GM_BLOCK_RE.sub("", body)
+    return GM_BLOCK_RE.sub("", text) if text else text

@@ -159,7 +159,10 @@ class TestArticleSearch:
         body = response.json()
         assert body["total"] == 1
         assert "Balrogborn" not in (body["items"][0]["snippet"] or "")
+
+    async def test_gm_block_in_excerpt_not_searchable_or_shown_to_non_gm(self, client, create_article):
         await create_article(
+            title="Public Fortress", excerpt="A border keep.:::gm Balrogborn sleeps here.:::", status="published"
         )
 
         secret = await client.get("/articles/search", params={"q": "Balrogborn"})
@@ -167,6 +170,7 @@ class TestArticleSearch:
 
         assert secret.json()["total"] == 0
         hit = public.json()["items"][0]
+        assert "Balrogborn" not in (hit["excerpt"] or "")
         assert "Balrogborn" not in (hit["snippet"] or "")
 
     async def test_search_filters_by_article_type(self, client, create_article):

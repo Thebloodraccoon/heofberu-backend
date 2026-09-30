@@ -16,24 +16,25 @@ from app.settings import settings
 
 
 PUBLIC_BODY_SQL = f"regexp_replace(coalesce(body_markdown, ''), '{ARTICLE_GM_BLOCK_SQL_PATTERN}', ' ', 'g')"
+PUBLIC_EXCERPT_SQL = f"regexp_replace(coalesce(excerpt, ''), '{ARTICLE_GM_BLOCK_SQL_PATTERN}', ' ', 'g')"
 
 
-def _search_vector_sql(body_sql: str) -> str:
-    """Weighted tsvector: title A > excerpt B > ``body_sql`` C, ``russian`` + ``simple`` configs."""
+def _search_vector_sql(excerpt_sql: str, body_sql: str) -> str:
+    """Weighted tsvector: title A > ``excerpt_sql`` B > ``body_sql`` C, ``russian`` + ``simple`` configs."""
 
     return (
         "setweight(to_tsvector('russian', coalesce(title, '')), 'A') || "
         "setweight(to_tsvector('simple', coalesce(title, '')), 'A') || "
-        "setweight(to_tsvector('russian', coalesce(excerpt, '')), 'B') || "
+        f"setweight(to_tsvector('russian', {excerpt_sql}), 'B') || "
         f"setweight(to_tsvector('russian', {body_sql}), 'C') || "
         f"setweight(to_tsvector('simple', {body_sql}), 'C')"
     )
 
 
-#: Non-GM search: GM-only blocks are stripped from the body before indexing.
-SEARCH_VECTOR_SQL = _search_vector_sql(PUBLIC_BODY_SQL)
-#: GM search: the full body, secrets included.
-SEARCH_VECTOR_GM_SQL = _search_vector_sql("coalesce(body_markdown, '')")
+#: Non-GM search: GM-only blocks are stripped from the excerpt and body before indexing.
+SEARCH_VECTOR_SQL = _search_vector_sql(PUBLIC_EXCERPT_SQL, PUBLIC_BODY_SQL)
+#: GM search: the full excerpt and body, secrets included.
+SEARCH_VECTOR_GM_SQL = _search_vector_sql("coalesce(excerpt, '')", "coalesce(body_markdown, '')")
 
 
 class Article(settings.Base):  # type: ignore

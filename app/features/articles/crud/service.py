@@ -142,7 +142,7 @@ class ArticleCrudService(
         ``parent_id`` is likewise nulled out for a non-GM reader when the parent
         itself isn't visible, so a hidden article's id/existence can't leak
         through a public child's detail response, GM-only ``:::gm`` blocks
-        are stripped from ``body_markdown``, and ``images`` is emptied.
+        are stripped from ``body_markdown``/``excerpt``, and ``images`` is emptied.
         """
 
         article = await self.get_by_id(article_id)
@@ -154,7 +154,11 @@ class ArticleCrudService(
 
         # Images reach readers only through ``![alt](url)`` in the (stripped) body; the raw
         # list would also leak ones placed inside :::gm blocks or not embedded at all.
-        update: dict = {"body_markdown": strip_gm_blocks(article.body_markdown), "images": []}
+        update: dict = {
+            "body_markdown": strip_gm_blocks(article.body_markdown),
+            "excerpt": strip_gm_blocks(article.excerpt),
+            "images": [],
+        }
         if article.parent_id is not None and not await self.repository.exists_visible(article.parent_id, False):
             update["parent_id"] = None
 

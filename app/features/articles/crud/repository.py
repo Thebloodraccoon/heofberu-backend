@@ -166,6 +166,13 @@ class ArticleRepository(BaseRepository[Article]):
     @staticmethod
     def _subtype_condition(subtype: str):
         """Case-insensitive exact match on the free-text ``subtype``."""
+    def _excerpt_column(include_hidden: bool):
+        """``excerpt`` as the reader may see it: GM-only blocks stripped for non-GMs."""
+
+        if include_hidden:
+            return Article.excerpt
+
+        return func.regexp_replace(Article.excerpt, ARTICLE_GM_BLOCK_SQL_PATTERN, " ", "g").label("excerpt")
 
         return func.lower(Article.subtype) == subtype.strip().lower()
 
@@ -332,7 +339,7 @@ class ArticleRepository(BaseRepository[Article]):
                 Article.id,
                 Article.slug,
                 Article.title,
-                Article.excerpt,
+                self._excerpt_column(include_hidden),
                 Article.article_type,
                 Article.subtype,
                 Article.status,
@@ -366,7 +373,7 @@ class ArticleRepository(BaseRepository[Article]):
         ``ts_rank`` with title similarity; ``snippet`` is a ``ts_headline`` fragment of
         title/excerpt/body combined and wrapped in ``<mark>`` (rest of the text is raw markdown).
 
-        Non-GM readers search ``search_vector`` and get snippets from the body with GM-only
+        Non-GM readers search ``search_vector`` and get the excerpt and snippets with GM-only
         blocks stripped, so a secret can neither match nor show up in a snippet; GMs search
         ``search_vector_gm`` over the full body.
         """
@@ -381,7 +388,8 @@ class ArticleRepository(BaseRepository[Article]):
             vector = Article.search_vector
             body = func.regexp_replace(Article.body_markdown, ARTICLE_GM_BLOCK_SQL_PATTERN, " ", "g")
 
-        snippet_source = func.concat_ws(" ", Article.title, func.coalesce(Article.excerpt, ""), body)
+        excerpt = func.coalesce(self._excerpt_column(include_hidden), "")
+        snippet_source = func.concat_ws(" ", Article.title, excerpt, body)
 
         conditions = [
             or_(vector.op("@@")(combined_query), similarity > TITLE_SIMILARITY_THRESHOLD),
@@ -408,7 +416,7 @@ class ArticleRepository(BaseRepository[Article]):
                 Article.id,
                 Article.slug,
                 Article.title,
-                Article.excerpt,
+                self._excerpt_column(include_hidden),
                 Article.article_type,
                 Article.subtype,
                 Article.status,
