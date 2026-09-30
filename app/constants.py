@@ -92,11 +92,17 @@ class SpellSchool(str, Enum):
 
 
 class SpellCastTime(str, Enum):
-    """Time required to cast a spell (action, bonus action, reaction, special)."""
+    """Time required to cast a spell (action, bonus action, reaction, rituals-length casts, special)."""
 
     ACTION = "ACTION"
     BONUS_ACTION = "BONUS_ACTION"
     REACTION = "REACTION"
+    ONE_MINUTE = "ONE_MINUTE"
+    TEN_MINUTES = "TEN_MINUTES"
+    ONE_HOUR = "ONE_HOUR"
+    EIGHT_HOURS = "EIGHT_HOURS"
+    TWELVE_HOURS = "TWELVE_HOURS"
+    TWENTY_FOUR_HOURS = "TWENTY_FOUR_HOURS"
     SPECIAL = "SPECIAL"
 
 
@@ -322,15 +328,6 @@ class ProficiencyAction(str, Enum):
     REVOKE = "REVOKE"
 
 
-class ProficiencyAuditAction(str, Enum):
-    """What a GM did to a character's proficiency row, for ``character_proficiency_audit_log``."""
-
-    ADD = "ADD"
-    REMOVE = "REMOVE"
-    EXPERTISE_GRANTED = "EXPERTISE_GRANTED"
-    EXPERTISE_REVOKED = "EXPERTISE_REVOKED"
-
-
 class ASILevelChoice(str, Enum):
     """What a character chose at a class level that grants an Ability Score Improvement."""
 
@@ -440,25 +437,6 @@ RELATION_TYPES = (
     "PARTICIPATED_IN",
 )
 
-
-# Kept as plain lists for backward compatibility with existing CheckConstraints
-# and any code still importing the raw string lists.
-USER_ROLES = [role.value for role in UserRole]
-RACE_SIZES = [size.value for size in RaceSize]
-ABILITY_SCORES = [score.value for score in AbilityScore]
-ATTACK_TYPES = [attack_type.value for attack_type in AttackType]
-SPELL_LEVELS = [level.value for level in SpellLevel]
-SPELL_SCHOOLS = [school.value for school in SpellSchool]
-SPELL_RANGE_TYPES = [range_type.value for range_type in SpellRangeType]
-DAMAGE_TYPES = [damage_type.value for damage_type in DamageType]
-HEALING_TARGETS = [target.value for target in HealingTarget]
-ITEM_TYPES = [item_type.value for item_type in ItemType]
-ITEM_RARITIES = [rarity.value for rarity in ItemRarity]
-FEATURE_SOURCE_TYPES = [source_type.value for source_type in FeatureSourceType]
-GRANT_SOURCES = [source.value for source in GrantSource]
-ASI_LEVEL_CHOICES = [choice.value for choice in ASILevelChoice]
-CHARACTER_FEAT_SOURCES = [source.value for source in CharacterFeatSource]
-CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
 
 # Class levels (5e standard) at which a character gains an Ability Score
 # Improvement and may instead choose a feat. Same for every class; keep as a

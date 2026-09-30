@@ -1,6 +1,6 @@
 """ORM model for registered users."""
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.constants import UserRole
@@ -13,6 +13,8 @@ class User(settings.Base):  # type: ignore
     """A registered user account (GM or player), owning characters."""
 
     __tablename__ = "users"
+    # ``role`` is a VARCHAR (see ``UserRoleType``); the DB still refuses unknown roles since it gates permissions.
+    __table_args__ = (CheckConstraint("role IN ('GM', 'PLAYER', 'FOUND_FATHER')", name="ck_users_role"),)
 
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, nullable=False)
