@@ -87,6 +87,10 @@ class AppSettings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str
 
+    # Auth state (token blacklist, revocation marks, single-use claims) must never be evicted, so it lives on a
+    # separate ``noeviction`` Redis. Empty = share ``REDIS_URL`` (dev/test only; staging/prod require a distinct one).
+    AUTH_REDIS_URL: str = ""
+
     # Test DB & Redis (STAGE=test only).
     TEST_DATABASE_URL: str = ""
     TEST_REDIS_URL: str = ""
@@ -144,6 +148,7 @@ class AppSettings(BaseSettings):
             *self._origin_problems(),
             *self._host_problems(),
             *self._pool_problems(),
+            *self._auth_redis_problems(),
         ]
         if problems:
             raise ValueError(f"Invalid {stage!r} configuration: " + "; ".join(problems))
@@ -178,6 +183,13 @@ class AppSettings(BaseSettings):
 
         bad = [host for host in self.ALLOWED_HOSTS if "://" in host or "/" in host]
         return [f"ALLOWED_HOSTS entries are bare host names, not URLs: {bad}"] if bad else []
+
+    def _auth_redis_problems(self) -> list[str]:
+        if not self.AUTH_REDIS_URL:
+            return ["AUTH_REDIS_URL must point to a dedicated noeviction Redis so revocations cannot be evicted"]
+        if self.AUTH_REDIS_URL == self.REDIS_URL:
+            return ["AUTH_REDIS_URL must differ from REDIS_URL (the cache Redis evicts keys)"]
+        return []
 
     def _pool_problems(self) -> list[str]:
         budget = self.DB_MAX_CONNECTIONS - DB_RESERVED_CONNECTIONS

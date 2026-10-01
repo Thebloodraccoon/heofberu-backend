@@ -44,7 +44,7 @@ async def is_session_revoked(decoded: DecodedToken, user_id: int) -> bool:
     """
 
     try:
-        async with settings.get_redis() as redis:
+        async with settings.get_auth_redis() as redis:
             blacklisted, revoked_after = await redis.mget(blacklist_key(decoded.jti), _revoked_after_key(user_id))
     except Exception as exc:
         logger.error("Session revocation lookup failed: %s", exc)
@@ -60,7 +60,7 @@ async def revoke_user_sessions(user_id: int) -> None:
     """Invalidate every access/refresh token issued to ``user_id`` before this moment."""
 
     try:
-        async with settings.get_redis() as redis:
+        async with settings.get_auth_redis() as redis:
             await redis.set(
                 _revoked_after_key(user_id),
                 now_ms(),
@@ -84,7 +84,7 @@ async def claim_token(jti: str, ttl_seconds: int, *, reason: str) -> bool:
         return False
 
     try:
-        async with settings.get_redis() as redis:
+        async with settings.get_auth_redis() as redis:
             return bool(await redis.set(blacklist_key(jti), reason, ex=ttl_seconds, nx=True))
     except Exception as exc:
         logger.error("Token claim failed: %s", exc)
@@ -95,7 +95,7 @@ async def release_token(jti: str) -> None:
     """Undo :func:`claim_token` after the guarded operation failed, so the token can be retried (best-effort)."""
 
     try:
-        async with settings.get_redis() as redis:
+        async with settings.get_auth_redis() as redis:
             await redis.delete(blacklist_key(jti))
     except Exception:
         logger.warning("Could not release claimed token", exc_info=True)

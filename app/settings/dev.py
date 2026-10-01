@@ -2,6 +2,7 @@
 
 from app.settings._common import *  # noqa: F401, F403
 from app.settings._common import (
+    AUTH_REDIS_URL,
     DATABASE_URL,
     DB_MAX_OVERFLOW,
     DB_POOL_SIZE,
@@ -30,3 +31,4 @@ engine = make_engine(
 SessionLocal = make_async_session_factory(engine)
 get_db = make_get_db(SessionLocal)
 get_redis = make_get_redis(REDIS_URL)
+get_auth_redis = make_get_redis(AUTH_REDIS_URL)

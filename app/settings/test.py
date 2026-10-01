@@ -20,9 +20,11 @@ CACHE_ENABLED = False
 # The test stage always targets the isolated TEST_* services, never DATABASE_URL/REDIS_URL.
 DATABASE_URL = _settings.TEST_DATABASE_URL
 REDIS_URL = _settings.TEST_REDIS_URL  # noqa: F811
+AUTH_REDIS_URL = REDIS_URL  # noqa: F811
 
 engine = make_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_recycle=None)
 
 SessionLocal = make_async_session_factory(engine)
 get_db = make_get_db(SessionLocal)
 get_redis = make_get_redis(REDIS_URL)
+get_auth_redis = make_get_redis(AUTH_REDIS_URL)

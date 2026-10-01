@@ -152,7 +152,7 @@ class TestRedisOutageIsFailClosed:
             raise ConnectionError("down")
             yield
 
-        monkeypatch.setattr(settings, "get_redis", lambda: broken_redis())
+        monkeypatch.setattr(settings, "get_auth_redis", lambda: broken_redis())
 
         with pytest.raises(ServiceUnavailableError) as exc_info:
             await is_token_blacklisted("jti")
@@ -170,7 +170,7 @@ class TestRedisOutageIsFailClosed:
             raise ConnectionError("down")
             yield
 
-        monkeypatch.setattr(settings, "get_redis", lambda: broken_redis())
+        monkeypatch.setattr(settings, "get_auth_redis", lambda: broken_redis())
 
         with pytest.raises(ServiceUnavailableError):
             await blacklist_token("jti", 60)

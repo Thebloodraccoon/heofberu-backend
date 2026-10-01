@@ -20,6 +20,7 @@ def build(**overrides) -> AppSettings:
         "SUPABASE_KEY": "key",
         "DATABASE_URL": "postgresql://u:p@db/x",
         "REDIS_URL": "redis://redis/0",
+        "AUTH_REDIS_URL": "redis://auth-redis/0",
         "JWT_SECRET_KEY": GOOD_SECRET,
         "CORS_ORIGINS": "https://app.example.com",
         "ALLOWED_HOSTS": "api.example.com",
@@ -181,6 +182,18 @@ class TestDatabaseUrlAndEngine:
 
 
 @pytest.mark.unit
+class TestAuthRedis:
+    @pytest.mark.parametrize("stage", ["prod", "staging"])
+    @pytest.mark.parametrize("url", ["", "redis://redis/0"])
+    def test_prod_like_stages_need_a_distinct_auth_redis(self, stage, url):
+        with pytest.raises(ValidationError, match="AUTH_REDIS_URL"):
+            build(STAGE=stage, AUTH_REDIS_URL=url)
+
+    def test_dev_may_share_the_cache_redis(self):
+        assert build(STAGE="dev", AUTH_REDIS_URL="").AUTH_REDIS_URL == ""
+
+
+@pytest.mark.unit
 class TestSmtpHint:
     def test_missing_smtp_in_prod_logs_a_warning(self, caplog):
         with caplog.at_level("WARNING"):
@@ -210,6 +223,7 @@ class TestEnvironmentParsing:
             SUPABASE_KEY="k",
             DATABASE_URL="d",
             REDIS_URL="r",
+            AUTH_REDIS_URL="a",
         )
 
         assert settings.CORS_ORIGINS == ["https://a.example.com", "https://b.example.com"]

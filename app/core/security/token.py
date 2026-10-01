@@ -5,7 +5,7 @@ Implements access/refresh token creation with unique ``jti`` claims,
 signature/expiry/type verification, and Redis-backed revocation of
 individual tokens.
 
-Redis access is async (``redis.asyncio`` via ``settings.get_redis``); all
+Redis access is async (``redis.asyncio`` via ``settings.get_auth_redis``); all
 other helpers stay synchronous since they are pure JWT operations.
 """
 
@@ -216,7 +216,7 @@ async def blacklist_token(jti: str, ttl_seconds: int, *, reason: str = "revoked"
         return
 
     try:
-        async with settings.get_redis() as redis:
+        async with settings.get_auth_redis() as redis:
             await redis.set(blacklist_key(jti), reason, ex=ttl_seconds)
     except Exception as exc:
         logger.error("Token blacklist write failed: %s", exc)
@@ -232,7 +232,7 @@ async def is_token_blacklisted(jti: str) -> bool:
     """
 
     try:
-        async with settings.get_redis() as redis:
+        async with settings.get_auth_redis() as redis:
             return await redis.exists(blacklist_key(jti)) > 0
     except Exception as exc:
         logger.error("Token blacklist lookup failed: %s", exc)

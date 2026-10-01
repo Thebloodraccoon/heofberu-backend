@@ -411,7 +411,7 @@ class TestRedisOutage:
             raise ConnectionError("redis is down")
             yield
 
-        monkeypatch.setattr(settings, "get_redis", lambda: broken_redis())
+        monkeypatch.setattr(settings, "get_auth_redis", lambda: broken_redis())
 
         response = await client.get("/users/me", headers=bearer(player_token))
 
@@ -426,7 +426,7 @@ class TestRedisOutage:
             raise ConnectionError("redis is down")
             yield
 
-        monkeypatch.setattr(settings, "get_redis", lambda: broken_redis())
+        monkeypatch.setattr(settings, "get_auth_redis", lambda: broken_redis())
 
         assert (await client.post("/auth/refresh")).status_code == 503
 

@@ -43,7 +43,7 @@ def fake_redis(monkeypatch):
     async def provider():
         yield redis
 
-    monkeypatch.setattr(settings, "get_redis", provider)
+    monkeypatch.setattr(settings, "get_auth_redis", provider)
     return redis
 
 
@@ -54,7 +54,7 @@ def broken_redis(monkeypatch):
         raise ConnectionError("secret-host:6379 refused")
         yield
 
-    monkeypatch.setattr(settings, "get_redis", provider)
+    monkeypatch.setattr(settings, "get_auth_redis", provider)
 
 
 @pytest.mark.unit

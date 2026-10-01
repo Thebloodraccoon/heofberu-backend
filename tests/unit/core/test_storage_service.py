@@ -136,6 +136,33 @@ class TestDeleteImage:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+class TestDeleteImageInBackground:
+    async def test_delete_is_deferred_until_the_tasks_run(self, monkeypatch):
+        from fastapi import BackgroundTasks
+
+        bucket = MagicMock()
+        bucket.remove = AsyncMock(return_value=None)
+        monkeypatch.setattr(_ClientState, "get", AsyncMock(return_value=_fake_client(bucket)))
+        tasks = BackgroundTasks()
+
+        await ImageStorageService(tasks).delete_image("races", 7)
+
+        bucket.remove.assert_not_awaited()
+        await tasks()
+        bucket.remove.assert_awaited_once()
+
+    async def test_client_failure_in_background_is_logged_not_raised(self, monkeypatch):
+        from fastapi import BackgroundTasks
+
+        monkeypatch.setattr(_ClientState, "get", AsyncMock(side_effect=RuntimeError("no client")))
+        tasks = BackgroundTasks()
+
+        await ImageStorageService(tasks).delete_image("races", 7)
+        await tasks()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestWithTimeoutAndRetry:
     async def test_succeeds_on_first_attempt(self):
         calls = []

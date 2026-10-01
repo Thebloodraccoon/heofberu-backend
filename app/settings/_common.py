@@ -44,6 +44,7 @@ FRONTEND_RESET_URL = _settings.FRONTEND_RESET_URL
 
 DATABASE_URL = _settings.DATABASE_URL
 REDIS_URL = _settings.REDIS_URL
+AUTH_REDIS_URL = _settings.AUTH_REDIS_URL or _settings.REDIS_URL
 
 CORS_ORIGINS = _settings.CORS_ORIGINS
 ALLOWED_HOSTS = _settings.ALLOWED_HOSTS
@@ -162,7 +163,8 @@ def make_get_redis(redis_url: str):
     Returns an async context manager that yields a connected Redis client.
 
     The client is a lazy module-level singleton shared by every caller
-    (cache reads/writes, JWT blacklist, rate limiting): one connection
+    of this accessor (cache and rate limiting use ``get_redis``, auth
+    state uses a separate ``get_auth_redis``): one connection
     pool per process instead of a fresh TCP connect per operation. The
     yielded context manager does NOT close the client on exit.
 

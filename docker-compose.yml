@@ -42,6 +42,29 @@ services:
       retries: 5
       start_period: 30s
 
+  heof-auth-redis:
+    image: redis:7.2.3-alpine
+    container_name: heof-auth-redis
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - exec redis-server --maxmemory 64mb --maxmemory-policy noeviction --appendonly yes $${AUTH_REDIS_PASSWORD:+--requirepass "$$AUTH_REDIS_PASSWORD"}
+    environment:
+      AUTH_REDIS_PASSWORD: ${AUTH_REDIS_PASSWORD:-}
+    volumes:
+      - heof_auth_redis_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'if [ -n "$$AUTH_REDIS_PASSWORD" ]; then redis-cli -a "$$AUTH_REDIS_PASSWORD" --no-auth-warning ping; else redis-cli ping; fi | grep -q PONG'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   heof-app:
     build:
       context: .
@@ -57,12 +80,15 @@ services:
         condition: service_healthy
       heof-redis:
         condition: service_healthy
+      heof-auth-redis:
+        condition: service_healthy
     networks:
       - app_network
 
 volumes:
   heof_db_data:
   heof_redis_data:
+  heof_auth_redis_data:
 
 networks:
   app_network:

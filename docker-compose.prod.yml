@@ -7,6 +7,10 @@ services:
     restart: always
     ports: !reset []
 
+  heof-auth-redis:
+    restart: always
+    ports: !reset []
+
   heof-app:
     build:
       context: .

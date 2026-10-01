@@ -16,9 +16,11 @@ import asyncio
 import hashlib
 import logging
 
+from fastapi import BackgroundTasks
 import httpx
 from supabase import AsyncClient, AsyncClientOptions, create_async_client
 
+from app.core.background import add_safe_task
 from app.core.exceptions import AppError
 from app.settings import settings
 
@@ -209,7 +211,12 @@ class ImageStorageService:
 
     The service is stateless per request (it only uses the shared client); a
     fresh instance is cheap and is what the ``StorageServiceDep`` provides.
+    Uploads are always synchronous (the response carries the URL); with
+    ``background_tasks`` set, deletes are deferred until after the response.
     """
+
+    def __init__(self, background_tasks: BackgroundTasks | None = None):
+        self._background_tasks = background_tasks
 
     async def upload_image(
         self,
@@ -260,6 +267,18 @@ class ImageStorageService:
 
     async def delete_image(self, entity: str, row_id: int) -> None:
         """
+        Remove the row's image from storage, after the response when background tasks are bound.
+
+        Failures are logged and never raised either way.
+        """
+
+        if self._background_tasks is None:
+            await self._remove_objects(entity, row_id)
+        else:
+            add_safe_task(self._background_tasks, self._remove_objects, entity, row_id)
+
+    async def _remove_objects(self, entity: str, row_id: int) -> None:
+        """
         Remove the row's image from storage (best-effort if absent).
 
         The object path is current-image aware only via the extension; since a
@@ -273,11 +292,11 @@ class ImageStorageService:
         failures remain visible without ever breaking the write path.
         """
 
-        client = await _ClientState.get()
-        bucket = client.storage.from_(STORAGE_BUCKET)
         paths = [f"{entity}/{row_id}.{ext}" for ext in ALLOWED_IMAGE_CONTENT_TYPES.values()]
 
         try:
+            client = await _ClientState.get()
+            bucket = client.storage.from_(STORAGE_BUCKET)
             await _with_timeout_and_retry(
                 lambda: bucket.remove(paths),
                 operation=f"remove({entity}/{row_id}.*)",
