@@ -3,10 +3,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.cached_service import CachedService
-from app.core.base.service import Page, paginate
 from app.core.base.transaction import invalidate_after_commit
 from app.core.cache import use_cache
 from app.core.exceptions import RecordNotFoundError
+from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, keyset_condition, paginate
 from app.features.spells.cache import SPELL_CACHE_NAMESPACES, spell_cache_namespaces
 from app.features.spells.crud.repository import AVAILABILITY_DIMENSIONS, SpellRepository
 from app.features.spells.crud.schemas import (
@@ -27,6 +27,8 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
     """
 
     repository: SpellRepository
+
+    _LIST_COLUMNS = (Spell.id, Spell.name, Spell.school, Spell.level)
 
     cache_namespaces = SPELL_CACHE_NAMESPACES
 
@@ -51,22 +53,41 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
 
         skip, limit = paginate(page, size)
         total = await self.repository.count(filters=filters, search=search)
+        rows = await self.repository.get_brief(
+            *self._LIST_COLUMNS, order_by=Spell.name, skip=skip, limit=limit, filters=filters, search=search
+        )
+        return Page(items=await self._brief_items(rows), total=total, page=page, size=size)
+
+    async def get_cursor_page(
+        self,
+        *,
+        size: int,
+        cursor: str | None,
+        filters: dict | None = None,
+        search: str | None = None,
+    ) -> CursorPage[SpellGetAllResponse]:
+        """Keyset listing ordered by ``(name, id)`` (uncached; same filters as :meth:`get_all`)."""
+
+        conditions = []
+        if cursor is not None:
+            conditions.append(keyset_condition(Spell.name, Spell.id, decode_cursor(cursor, "name")))
 
         rows = await self.repository.get_brief(
-            Spell.id,
-            Spell.name,
-            Spell.school,
-            Spell.level,
+            *self._LIST_COLUMNS,
             order_by=Spell.name,
-            skip=skip,
-            limit=limit,
+            limit=size + 1,
             filters=filters,
             search=search,
+            conditions=conditions,
         )
-        availability = await self.repository.load_availability([row[0] for row in rows])
+        rows, next_cursor = cursor_page(rows, size, "name", lambda row: (row.name, row.id))
+        return CursorPage(items=await self._brief_items(rows), next_cursor=next_cursor, size=size)
 
-        items = [SpellGetAllResponse.model_validate({**row._mapping, **availability.get(row[0], {})}) for row in rows]
-        return Page(items=items, total=total, page=page, size=size)
+    async def _brief_items(self, rows: list) -> list[SpellGetAllResponse]:
+        """Listing rows merged with their availability sets."""
+
+        availability = await self.repository.load_availability([row[0] for row in rows])
+        return [SpellGetAllResponse.model_validate({**row._mapping, **availability.get(row[0], {})}) for row in rows]
 
     async def create_spell(self, spell_data: SpellCreate) -> SpellResponse:
         """Create a spell after checking its name isn't already taken, seeding any availability set."""

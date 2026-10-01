@@ -1,4 +1,4 @@
-"""Aggregates all feature routers under the ``/api`` prefix."""
+"""Aggregates all feature routers under the ``/api/v1`` prefix."""
 
 from fastapi import APIRouter
 
@@ -20,7 +20,7 @@ from app.features.subraces.router import router as subrace_router
 from app.features.tags.router import router as tag_router
 from app.features.users.router import router as user_router
 
-api_router = APIRouter(prefix="/api")
+api_router = APIRouter(prefix="/api/v1")
 
 _feature_routers = (
     admin_router,

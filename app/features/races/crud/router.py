@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import RaceSize
-from app.core.base.service import Page
+from app.core.pagination import Page
 from app.core.types import EntityIdPath
 from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.races.crud.schemas import RaceCreate, RaceGetAllResponse, RaceResponse, RaceUpdate

@@ -31,7 +31,7 @@ _MAX_TRACKED_CLIENTS = 10_000
 
 _DEFAULT_BUCKET = "default"
 
-DEFAULT_SKIP_PATHS = ["/api/ping", "/api/health"]
+DEFAULT_SKIP_PATHS = ["/api/v1/ping", "/api/v1/health"]
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -42,7 +42,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         app: The ASGI application.
         calls: Default per-IP budget within the window (unmatched routes).
         period: Fixed window length in seconds.
-        skip_paths: Exact request paths exempt from rate limiting (health probes; the API lives under ``/api``).
+        skip_paths: Exact request paths exempt from rate limiting (health probes; the API lives under ``/api/v1``).
         rules: Optional endpoint-specific rules (see
             ``MiddlewareConfig.get_route_rules`` for the shape). Each rule
             may set a different ``calls`` budget and counts against its own

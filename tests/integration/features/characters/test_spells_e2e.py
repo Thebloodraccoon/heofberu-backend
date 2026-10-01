@@ -104,8 +104,7 @@ class TestPerLevelKnownSpellCaps:
         assert over_cap.status_code == 400
 
         remove_response = await client.delete(
-            f"/characters/{character['id']}/spells",
-            params={"spell_id": missile_id},
+            f"/characters/{character['id']}/spells/{missile_id}",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert remove_response.status_code == 204

@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ArticleStatus, is_article_publicly_visible
 from app.core.base.cached_service import CachedService
-from app.core.base.service import BaseService, Page
+from app.core.base.service import BaseService
 from app.core.cache import use_cache
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
+from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, paginate
 from app.core.storage.service import ImageStorageService
 from app.features.articles.cache import (
     ARTICLE_CACHE_NAMESPACES,
@@ -300,12 +301,21 @@ class ArticleCrudService(
         tag_ids: list[int] | None,
         match_all_tags: bool,
         sort: str,
-    ) -> Page[ArticleGetAllResponse]:
-        """Filtered/sorted listing (not cached: results depend on the reader's visibility and the filters)."""
+        cursor: str | None = None,
+        use_cursor: bool = False,
+    ) -> Page[ArticleGetAllResponse] | CursorPage[ArticleGetAllResponse]:
+        """
+        Filtered/sorted listing (not cached: results depend on the reader's visibility and the filters).
 
+        Offset ``Page`` by default; with ``use_cursor`` a keyset ``CursorPage`` ordered by ``(sort key, id)``
+        whose ``cursor`` must have been issued for the same ``sort``.
+        """
+
+        skip, limit = paginate(page, size)
+        after = decode_cursor(cursor, sort, as_datetime=sort != "title") if cursor is not None else None
         rows, total = await self.repository.list_articles(
-            page=page,
-            size=size,
+            skip=skip,
+            limit=size + 1 if use_cursor else limit,
             include_hidden=include_hidden,
             statuses=statuses,
             article_types=article_types,
@@ -313,7 +323,13 @@ class ArticleCrudService(
             tag_ids=tag_ids,
             match_all_tags=match_all_tags,
             sort=sort,
+            after=after,
         )
+        if use_cursor:
+            rows, next_cursor = cursor_page(rows, size, sort, lambda row: (row.sort_value, row.id))
+            items = [ArticleGetAllResponse.model_validate(_nest_subtype(row)) for row in rows]
+            return CursorPage(items=items, next_cursor=next_cursor, size=size)
+
         items = [ArticleGetAllResponse.model_validate(_nest_subtype(row)) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
@@ -331,10 +347,11 @@ class ArticleCrudService(
     ) -> Page[ArticleSearchResult]:
         """Ranked full-text search over visible articles."""
 
+        skip, limit = paginate(page, size)
         rows, total = await self.repository.search_articles(
             query,
-            page=page,
-            size=size,
+            skip=skip,
+            limit=limit,
             include_hidden=include_hidden,
             article_types=article_types,
             subtype_ids=subtype_ids,

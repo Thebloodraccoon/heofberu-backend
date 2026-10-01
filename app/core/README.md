@@ -31,6 +31,7 @@ app/core/
 │   ├── invalidation.py    #   invalidate(namespace) / invalidate_many() / flush_all()
 │   └── serialization.py   #   encode()/decode() for Pydantic values
 ├── handlers/              # Exception handlers, registered on the FastAPI app
+├── background.py          # add_safe_task(): post-response work whose failures are only logged
 ├── email/                 # SMTP password-reset mailer
 ├── storage/               # Supabase image storage
 └── security/              # Password hashing + JWT create/verify/blacklist
@@ -109,9 +110,16 @@ The "fetch → validate → persist → serialize" orchestrator:
 - Writes purge the service's `cache_namespaces` via `_invalidate_cache`
   (deferred until after `COMMIT` inside `_atomic()` / `_unit_of_work()`).
 - `resolve_ids` validates FK id lists → `RecordIdsInvalidError` (→ 400).
-- `Page` is the generic `{items, total, page, size}` envelope;
-  `paginate()` converts 1-indexed page/size into skip/limit (clamped to
-  `1 <= size <= MAX_PAGE_SIZE`).
+- Pagination lives in `pagination.py`. Public convention: `page`/`size` query
+  params and the `Page` `{items, total, page, size}` envelope; `skip`/`limit`
+  are internal (repositories) and come from `paginate()` (clamped to
+  `1 <= size <= MAX_PAGE_SIZE`). Large listings (articles, characters, spells)
+  add opt-in keyset pagination: `pagination=cursor` (or a `cursor` token) returns
+  `CursorPage` `{items, next_cursor, size}` ordered by `(sort key, id)`; the cursor
+  is opaque url-safe base64 (`encode_cursor`/`decode_cursor`, max
+  `MAX_CURSOR_LENGTH`, bound to its sort; invalid -> `InvalidCursorError`, 422).
+  Repositories fetch `size + 1` rows with `keyset_condition(...)` passed as
+  `conditions=` and `cursor_page(...)` trims them and builds `next_cursor`.
 
 ### `base/transaction.py`
 
@@ -185,8 +193,9 @@ globally with `CACHE_ENABLED=False`.
     `@use_cache` reads the epoch before running the function and stores
     the result with `cache_set(..., epoch=...)`, which drops the value if a
     purge ran meanwhile (cache-aside refill race).
-  - A circuit breaker skips Redis for 5 s after 3 consecutive failures. JWT
-    blacklist and rate-limit keys are never touched.
+  - A circuit breaker skips Redis for 5 s after 3 consecutive failures. Auth
+    state (separate Redis, see `security/token.py`) is never touched, and
+    rate-limit keys are left alone by purges.
 - `decorator.py` — `@use_cache(ttl=..., namespace=..., key_builder=...,
   skip_if=..., schema=..., cache_none=...)`. Cache keys combine namespace,
   function name, and a canonical rendering of the arguments bound against
@@ -211,6 +220,17 @@ globally with `CACHE_ENABLED=False`.
   `Page[...]` envelopes through `model_dump_json`/`model_validate_json`;
   bare `list[Model]` schemas go through `TypeAdapter`; scalars through
   plain JSON.
+
+### `background.py`
+
+`add_safe_task(background_tasks, func, *args, **kwargs)` schedules an async
+function to run after the response; any exception is logged and swallowed,
+so a failing side effect never becomes a client error. Used for password-reset
+emails (`AuthService.forgot_password`) and image deletes
+(`ImageStorageService.delete_image` when built with the request's
+`BackgroundTasks`, which `StorageServiceDep` does). Image uploads stay
+synchronous because the response returns the image URL. The tasks keep their
+own timeouts/retries (SMTP 15 s; storage 15 s x 3 attempts).
 
 ### `handlers/`
 
@@ -254,6 +274,18 @@ Revocation is separate from verification: `blacklist_token(jti, ttl)`
 writes a Redis key that lives exactly as long as the token would have,
 and callers that care check `is_token_blacklisted(jti)` explicitly. Redis
 failures there fail closed with `ServiceUnavailableError` (503).
+
+**Auth state lives on its own Redis.** Blacklist entries, `auth_revoked_after:*`
+marks and single-use claims (refresh rotation, reset tokens) are read and
+written through `settings.get_auth_redis()`, built from `AUTH_REDIS_URL`.
+The cache Redis (`REDIS_URL`, `volatile-lru`) may evict any key with a TTL,
+which would silently un-revoke tokens; the auth Redis (`heof-auth-redis`
+in docker-compose) runs `noeviction` + `appendonly yes`. Out-of-memory there
+surfaces as a write error, hence a 503, never as a lost revocation.
+Staging/prod refuse to start unless `AUTH_REDIS_URL` is set and differs from
+`REDIS_URL`; in dev an empty value shares `REDIS_URL`, and the test stage
+always uses `TEST_REDIS_URL` for both (per-run key isolation is unchanged).
+Rate-limit counters stay on the cache Redis (they have an in-memory fallback).
 Auth *dependencies* (`TokenDep`, `CurrentUserDep`, role guards) and session
 rules (revocation, single-use claims) live in `app/features/auth`, keeping
 `core` free of feature imports and business rules.

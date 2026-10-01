@@ -4,10 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.cached_service import CachedService
-from app.core.base.service import Page, paginate
 from app.core.base.transaction import invalidate_after_commit
 from app.core.cache import use_cache
 from app.core.exceptions import RecordNotFoundError
+from app.core.pagination import Page, paginate
 from app.features.characters.cache import invalidate_characters_cache
 from app.features.classes.cache import CLASS_CRUD_CACHE_NAMESPACES, CLASS_DELETE_CACHE_NAMESPACES
 from app.features.classes.crud.repository import ClassRepository

@@ -302,8 +302,7 @@ class TestCharacterKnownSpells:
         assert len(body["spell_slots"]) > 0
 
         remove_response = await client.delete(
-            f"/characters/{character['id']}/spells",
-            params={"spell_id": spell.id},
+            f"/characters/{character['id']}/spells/{spell.id}",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert remove_response.status_code == 204

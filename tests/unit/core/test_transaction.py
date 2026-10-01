@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 from pydantic import BaseModel, ConfigDict
 import pytest
 
-from app.core.base.service import BaseService, paginate
+from app.core.base.service import BaseService
 from app.core.base.transaction import (
     after_commit,
     atomic,
@@ -15,6 +15,7 @@ from app.core.base.transaction import (
     invalidate_after_commit,
     unit_of_work,
 )
+from app.core.pagination import paginate
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 

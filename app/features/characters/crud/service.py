@@ -1,12 +1,12 @@
 """Character crud service: reads, updates, HP management and resting."""
 
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.service import Page, paginate
 from app.core.cache import use_cache
 from app.core.exceptions import GmAccessException
+from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, keyset_condition, paginate
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.access import check_character_access, is_gm
@@ -51,88 +51,66 @@ class CharacterService(CharacterSubDomainService):
         self.creation = CharacterCreationService(db, self.stats_service)
         self.character_spell_slot_repository = CharacterSpellSlotRepository(db)
 
-    async def get_characters(
+    async def list_characters(
         self,
         current_user: UserResponse,
         *,
+        scope: Literal["mine", "all"],
         search: str | None = None,
         class_id: int | None = None,
         page: int = 1,
-        size: int = 100,
-    ) -> Page[CharacterResponse]:
+        size: int = 10,
+        cursor: str | None = None,
+        use_cursor: bool = False,
+    ) -> Page[CharacterResponse] | CursorPage[CharacterResponse]:
         """
-        Every character for a GM, only the caller's own for a player, as a
-        paginated ``Page``; ``search``/``class_id`` optionally filter.
+        One listing for every audience, ordered by ``(name, id)``.
+
+        ``scope="mine"`` is the caller's own characters (any role, GMs included);
+        ``scope="all"`` is every user's and GM-only (403 otherwise). With
+        ``use_cursor`` the result is a keyset ``CursorPage``, else an offset ``Page``.
         """
 
-        owner_id = None if is_gm(current_user) else current_user.id
-        return await self._list_characters(owner_id=owner_id, search=search, class_id=class_id, page=page, size=size)
-
-    async def get_my_characters(
-        self,
-        current_user: UserResponse,
-        *,
-        search: str | None = None,
-        class_id: int | None = None,
-        page: int = 1,
-        size: int = 100,
-    ) -> Page[CharacterResponse]:
-        """Only the characters owned by the caller — for every role, including GMs."""
-
-        return await self._list_characters(
-            owner_id=current_user.id, search=search, class_id=class_id, page=page, size=size
-        )
-
-    async def get_all_characters(
-        self,
-        current_user: UserResponse,
-        *,
-        search: str | None = None,
-        class_id: int | None = None,
-        page: int = 1,
-        size: int = 100,
-    ) -> Page[CharacterResponse]:
-        """Every user's characters. GM-only — anyone else gets a 403."""
-
-        if not is_gm(current_user):
-            raise GmAccessException()
-
-        return await self._list_characters(owner_id=None, search=search, class_id=class_id, page=page, size=size)
-
-    async def _list_characters(
-        self,
-        *,
-        owner_id: int | None,
-        search: str | None,
-        class_id: int | None,
-        page: int,
-        size: int,
-    ) -> Page[CharacterResponse]:
-        """Shared paginated listing behind all three list endpoints (ordered by name, then id)."""
+        if scope == "all":
+            if not is_gm(current_user):
+                raise GmAccessException()
+            owner_id = None
+        else:
+            owner_id = current_user.id
 
         filters: dict[str, Any] = {}
         if owner_id is not None:
             filters["owner_id"] = owner_id
         if class_id is not None:
             filters["class_id"] = class_id
+        filters = filters or None
+
+        if use_cursor:
+            conditions = []
+            if cursor is not None:
+                conditions.append(keyset_condition(Character.name, Character.id, decode_cursor(cursor, "name")))
+            characters = await self.repository.get_all(
+                filters=filters, search=search, order_by=Character.name, limit=size + 1, conditions=conditions
+            )
+            characters, next_cursor = cursor_page(characters, size, "name", lambda c: (c.name, c.id))
+            return CursorPage(items=await self._serialize_many(characters), next_cursor=next_cursor, size=size)
 
         skip, limit = paginate(page, size)
         characters = await self.repository.get_all(
-            filters=filters or None, search=search, order_by=Character.name, skip=skip, limit=limit
+            filters=filters, search=search, order_by=Character.name, skip=skip, limit=limit
         )
-        total = await self.repository.count(filters=filters or None, search=search)
+        total = await self.repository.count(filters=filters, search=search)
+        return Page(items=await self._serialize_many(characters), total=total, page=page, size=size)
+
+    async def _serialize_many(self, characters: list[Character]) -> list[CharacterResponse]:
+        """Serialize listed characters with their cached ability scores and derived hit dice."""
 
         cache_by_id = await self.stats_service.get_many_or_stale([character.id for character in characters])
         derived_by_id = await self.stats_service.get_many_derived(characters)
-        return Page(
-            items=[
-                self._serialize(character, cache_by_id.get(character.id), derived_by_id[character.id].hit_dice)
-                for character in characters
-            ],
-            total=total,
-            page=page,
-            size=size,
-        )
+        return [
+            self._serialize(character, cache_by_id.get(character.id), derived_by_id[character.id].hit_dice)
+            for character in characters
+        ]
 
     async def get_character(self, character_id: int, current_user: UserResponse) -> CharacterResponse:
         """

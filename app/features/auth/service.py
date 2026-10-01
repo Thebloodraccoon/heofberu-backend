@@ -5,6 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
+from app.core.background import add_safe_task
 from app.core.base.transaction import atomic
 from app.core.email.service import EmailService
 from app.core.exceptions import (
@@ -41,7 +42,7 @@ from app.features.users.service import invalidate_user_cache
 
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
-_REFRESH_COOKIE_ATTRIBUTES = {"httponly": True, "samesite": "none", "secure": True, "path": "/api/auth"}
+_REFRESH_COOKIE_ATTRIBUTES = {"httponly": True, "samesite": "none", "secure": True, "path": "/api/v1/auth"}
 
 # A dummy bcrypt hash equalizes login timing so unknown emails can't be told apart from wrong passwords.
 DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"  # nosec B105 -- not a credential: public constant hash used as a timing-equalizing dummy
@@ -147,7 +148,7 @@ class AuthService:
 
         if user:
             reset_token = create_reset_token(data={"sub": str(user.id)})
-            background_tasks.add_task(self.email_service.send_password_reset, user.email, reset_token)
+            add_safe_task(background_tasks, self.email_service.send_password_reset, user.email, reset_token)
 
         return ForgotPasswordResponse(
             detail="If an account with this email exists, a password reset link has been sent."

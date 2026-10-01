@@ -183,7 +183,9 @@ class TestCharacterRead:
         await create_character(owner_id=player1.id, class_id=character_class.id, name="Mine")
         await create_character(owner_id=player2.id, class_id=character_class.id, name="Theirs")
 
-        response = await client.get("/characters", headers={"Authorization": f"Bearer {gm_token}"})
+        response = await client.get(
+            "/characters", params={"scope": "all"}, headers={"Authorization": f"Bearer {gm_token}"}
+        )
 
         assert response.status_code == 200
         assert len(response.json()["items"]) == 2

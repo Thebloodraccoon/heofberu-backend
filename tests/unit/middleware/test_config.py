@@ -42,7 +42,7 @@ class TestGetRateLimitConfig:
 class TestGetRouteRules:
     def test_auth_login_is_most_strict_and_first(self):
         rules = MiddlewareConfig.get_route_rules()
-        assert rules[0]["path"] == "/api/auth/login"
+        assert rules[0]["path"] == "/api/v1/auth/login"
         assert rules[0]["prod"] == 10
         assert rules[0]["dev"] == 30
 
@@ -134,8 +134,8 @@ class TestHealthPaths:
         rate = MiddlewareConfig.get_rate_limit_config()["skip_paths"]
         logs = MiddlewareConfig.get_observability_config()["log_skip_paths"]
 
-        assert "/api/ping" in rate
-        assert "/api/ping" in logs
+        assert "/api/v1/ping" in rate
+        assert "/api/v1/ping" in logs
         assert "/ping" not in rate
 
     def test_slow_requests_are_logged_in_every_stage(self, monkeypatch):

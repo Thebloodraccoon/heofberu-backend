@@ -4,8 +4,8 @@ from typing import Any
 
 from app.settings import settings
 
-#: Health/docs paths: not logged and not counted by the rate limiter. The API lives under ``/api``.
-HEALTH_SKIP_PATHS = ["/api/ping", "/api/health", "/docs", "/openapi.json", "/redoc"]
+#: Health/docs paths: not logged and not counted by the rate limiter. The API lives under ``/api/v1``.
+HEALTH_SKIP_PATHS = ["/api/v1/ping", "/api/v1/health", "/docs", "/openapi.json", "/redoc"]
 
 PROD_LIKE_STAGES = ("prod", "staging")
 
@@ -75,9 +75,16 @@ class MiddlewareConfig:
         Unmatched requests fall back to the default per-stage budget.
         """
         return [
-            {"path": "/api/auth/login", "method": "POST", "bucket": "auth-login", "prod": 10, "staging": 10, "dev": 30},
             {
-                "path": "/api/auth/register",
+                "path": "/api/v1/auth/login",
+                "method": "POST",
+                "bucket": "auth-login",
+                "prod": 10,
+                "staging": 10,
+                "dev": 30,
+            },
+            {
+                "path": "/api/v1/auth/register",
                 "method": "POST",
                 "bucket": "auth-register",
                 "prod": 5,
@@ -85,7 +92,7 @@ class MiddlewareConfig:
                 "dev": 20,
             },
             {
-                "path": "/api/auth/forgot-password",
+                "path": "/api/v1/auth/forgot-password",
                 "method": "POST",
                 "bucket": "auth-forgot",
                 "prod": 3,
@@ -93,7 +100,7 @@ class MiddlewareConfig:
                 "dev": 10,
             },
             {
-                "path": "/api/auth/reset-password",
+                "path": "/api/v1/auth/reset-password",
                 "method": "POST",
                 "bucket": "auth-reset",
                 "prod": 5,
@@ -101,7 +108,7 @@ class MiddlewareConfig:
                 "dev": 10,
             },
             {
-                "path": "/api/auth/refresh",
+                "path": "/api/v1/auth/refresh",
                 "method": "POST",
                 "bucket": "auth-refresh",
                 "prod": 20,
@@ -119,7 +126,7 @@ class MiddlewareConfig:
                 "dev": 60,
             },
             {
-                "path": "/api/spells",
+                "path": "/api/v1/spells",
                 "method": "GET",
                 "search": True,
                 "bucket": "search-spells",
@@ -128,7 +135,7 @@ class MiddlewareConfig:
                 "dev": 60,
             },
             {
-                "path": "/api/feats",
+                "path": "/api/v1/feats",
                 "method": "GET",
                 "search": True,
                 "bucket": "search-feats",
@@ -137,7 +144,7 @@ class MiddlewareConfig:
                 "dev": 60,
             },
             {
-                "path": "/api/features",
+                "path": "/api/v1/features",
                 "method": "GET",
                 "search": True,
                 "bucket": "search-features",

@@ -30,8 +30,7 @@ class TestCharacterConditionsHardening:
         )
 
         response = await client.patch(
-            f"/characters/{character.id}/conditions",
-            params={"condition": "POISONED"},
+            f"/characters/{character.id}/conditions/POISONED",
             json={"source": None},
             headers=auth(player_token),
         )

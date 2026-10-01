@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Query, status
 from pydantic import StringConstraints
 
 from app.constants import ArticleStatus
-from app.core.base.service import Page
+from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
 from app.features.articles.crud.schemas import (
     ArticleBrief,
     ArticleCreate,
@@ -57,8 +57,9 @@ SubtypeQuery = Annotated[
 
 @router.get(
     "",
-    response_model=Page[ArticleGetAllResponse],
+    response_model=Page[ArticleGetAllResponse] | CursorPage[ArticleGetAllResponse],
     summary="List articles",
+    responses={422: {"description": "Invalid `cursor`, or one issued for a different `sort`."}},
 )
 async def get_articles(
     article_service: ArticleCrudDep,
@@ -80,11 +81,15 @@ async def get_articles(
     ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
+    pagination: PaginationQuery = "page",
+    cursor: CursorQuery = None,
 ):
     """
     Return a paginated, filterable list of articles (listing-row fields only) — e.g. tag
     pages: `GET /articles?tag_id=3`. Anonymous callers and players only see `published`,
-    `public` articles; GMs see everything. Response is `{items, total, page, size}`.
+    `public` articles; GMs see everything. Response is `{items, total, page, size}`; with
+    `pagination=cursor` (or a `cursor`) it is the keyset envelope `{items, next_cursor, size}`
+    ordered by `(sort key, id)` (no `total`).
     Text search: `GET /articles/search`; direct children: `GET /articles/{id}/children`.
     Open endpoint.
     """
@@ -99,6 +104,8 @@ async def get_articles(
         tag_ids=tag_id,
         match_all_tags=tag_match == "all",
         sort=sort,
+        cursor=cursor,
+        use_cursor=use_cursor(pagination, cursor),
     )
 
 

@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import ItemRarity, ItemType
-from app.core.base.service import Page
+from app.core.pagination import Page
 from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.items.crud.schemas import ItemCreate, ItemGetAllResponse, ItemResponse, ItemUpdate
 from app.features.items.dependencies import ItemCrudDep

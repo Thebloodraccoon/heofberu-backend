@@ -3,9 +3,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.cached_service import CachedService
-from app.core.base.service import Page
 from app.core.base.transaction import invalidate_after_commit
 from app.core.exceptions import RecordNotFoundError
+from app.core.pagination import Page
 from app.features.tags.cache import TAG_CACHE_NAMESPACES
 from app.features.tags.crud.repository import TagRepository
 from app.features.tags.crud.schemas import TagCreate, TagGetAllResponse, TagResponse, TagUpdate

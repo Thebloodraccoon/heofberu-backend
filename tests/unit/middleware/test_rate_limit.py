@@ -24,7 +24,7 @@ from app.middleware.utils import get_client_ip
 from app.settings import settings
 
 AUTH_RULES = [
-    {"path": "/api/auth/login", "method": "POST", "bucket": "auth-login", "prod": 3, "staging": 3, "dev": 5},
+    {"path": "/api/v1/auth/login", "method": "POST", "bucket": "auth-login", "prod": 3, "staging": 3, "dev": 5},
 ]
 
 
@@ -78,7 +78,7 @@ def make_redis(monkeypatch, store):
     monkeypatch.setattr(settings, "get_redis", lambda: get_redis())
 
 
-def make_request(path="/api/things", method="GET", headers=None, query=None, client_host="10.0.0.1"):
+def make_request(path="/api/v1/things", method="GET", headers=None, query=None, client_host="10.0.0.1"):
     request = SimpleNamespace()
     request.method = method
     request.url = SimpleNamespace(path=path)
@@ -134,14 +134,14 @@ class TestDispatchSkipPaths:
         make_redis(monkeypatch, store)
         middleware = make_middleware(monkeypatch=monkeypatch)
 
-        for path in ("/api/ping", "/api/health"):
+        for path in ("/api/v1/ping", "/api/v1/health"):
             _, seen = await run_dispatch(middleware, make_request(path=path))
             assert len(seen) == 1
 
         assert store.pipelines == []
 
     async def test_legacy_unprefixed_paths_are_not_skipped(self, monkeypatch):
-        """The API lives under ``/api``; ``/ping`` would be an ordinary (counted) path."""
+        """The API lives under ``/api/v1``; ``/ping`` would be an ordinary (counted) path."""
 
         store = FakeRedis()
         make_redis(monkeypatch, store)
@@ -208,7 +208,7 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/auth/login", method="POST"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/auth/login", method="POST"))
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["X-RateLimit-Limit"] == "3"
@@ -221,7 +221,7 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/spells"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/spells"))
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["X-RateLimit-Limit"] == "60"
@@ -234,8 +234,8 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        # GET to /api/auth/login does NOT match the POST login rule.
-        await run_dispatch(middleware, make_request(path="/api/auth/login", method="GET"))
+        # GET to /api/v1/auth/login does NOT match the POST login rule.
+        await run_dispatch(middleware, make_request(path="/api/v1/auth/login", method="GET"))
 
         assert store.pipelines[0].commands[0] == ("incr", f"rate_limit:10.0.0.1:{_DEFAULT_BUCKET}:16")
 
@@ -246,7 +246,7 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/auth/login", method="POST"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/auth/login", method="POST"))
 
         assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
         assert response.headers["X-RateLimit-Limit"] == "3"
@@ -259,13 +259,13 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=rules, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/races/3/image", method="PUT"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/races/3/image", method="PUT"))
 
         assert response.headers["X-RateLimit-Limit"] == "5"
         assert store.pipelines[0].commands[0] == ("incr", "rate_limit:10.0.0.1:image:16")
 
     async def test_search_rule_only_when_search_param_present(self, monkeypatch):
-        rules = [{"path": "/api/spells", "method": "GET", "search": True, "bucket": "search", "prod": 20, "dev": 60}]
+        rules = [{"path": "/api/v1/spells", "method": "GET", "search": True, "bucket": "search", "prod": 20, "dev": 60}]
         store = FakeRedis(incr_result=1)
         make_redis(monkeypatch, store)
         middleware = make_middleware(
@@ -273,11 +273,11 @@ class TestRouteRules:
         )
 
         # No ?search= -> default budget/bucket.
-        await run_dispatch(middleware, make_request(path="/api/spells", method="GET"))
+        await run_dispatch(middleware, make_request(path="/api/v1/spells", method="GET"))
         assert store.pipelines[0].commands[0] == ("incr", f"rate_limit:10.0.0.1:{_DEFAULT_BUCKET}:16")
 
         # With ?search= -> rule applies.
-        await run_dispatch(middleware, make_request(path="/api/spells", method="GET", query={"search": "fire"}))
+        await run_dispatch(middleware, make_request(path="/api/v1/spells", method="GET", query={"search": "fire"}))
         assert store.pipelines[1].commands[0] == ("incr", "rate_limit:10.0.0.1:search:16")
 
 

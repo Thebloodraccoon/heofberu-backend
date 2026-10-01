@@ -12,7 +12,7 @@ same `Spells` tag):
 
 | Capability | Endpoints |
 | --- | --- |
-| `crud/` | `GET ""` (paginated, heavily filterable listing), `GET /{spell_id}`, `POST ""` (GM), `PATCH /{spell_id}` (GM), `DELETE /{spell_id}` (Founder) |
+| `crud/` | `GET ""` (paginated, heavily filterable listing; opt-in `pagination=cursor`), `GET /{spell_id}`, `POST ""` (GM), `PATCH /{spell_id}` (GM), `DELETE /{spell_id}` (Founder) |
 | `availability/` | `PUT /spells/{spell_id}/classes`, `PUT /spells/{spell_id}/subclasses`, `PUT /spells/{spell_id}/races`, `PUT /spells/{spell_id}/subraces` — full-replace of each availability dimension (GM) |
 
 The spell is identified via a **path** parameter (`{spell_id}`) on all

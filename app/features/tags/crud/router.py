@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.core.base.service import Page
+from app.core.pagination import Page
 from app.features.auth.dependencies import FounderDep, GmUserDep, OptionalUserDep, can_see_hidden
 from app.features.tags.crud.schemas import TagCreate, TagGetAllResponse, TagResponse, TagUpdate
 from app.features.tags.dependencies import TagCrudDep

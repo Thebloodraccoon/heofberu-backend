@@ -40,8 +40,9 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   and `CharacterStatsService` as the single decision point for *when* the
   cache is recomputed.
 - `attacks/` — weapon/attack rows on the sheet (at most 100 per character).
-- `conditions/` — conditions applied to a character (not part of the cached
-  response, so they never purge it). The add is an atomic
+- `conditions/` — conditions applied to a character, addressed as
+  `/characters/{id}/conditions[/{condition}]` (PATCH/DELETE take the condition
+  in the URL; not part of the cached response, so they never purge it). The add is an atomic
   `INSERT ... ON CONFLICT DO NOTHING`; a duplicate is a 409.
 - `items/` — read-only inventory listing (`GET /characters/{id}/items`); the
   stack repository is shared with the GM panel, which owns all writes.
@@ -55,7 +56,8 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   cached — reads hit the DB directly through the owner/GM access check. It is
   also not part of `CharacterCreate`/`CharacterUpdate`.
 - `spells/` — known spells + slot totals (class-derived only, no
-  spend/restore endpoints).
+  spend/restore endpoints); a spell is removed with
+  `DELETE /characters/{id}/spells/{spell_id}`.
 - `progression/` — level-up, subclass/subrace/background setup,
   progression-feature sync, the ASI-choice log repositories, and the
   point-rebuild endpoint (`POST /characters/{id}/rebuild`): a full
@@ -165,6 +167,10 @@ derived server-side:
   and reuses it on a cache miss; the assembled response is cached under the
   exact key `<CACHE_PREFIX>:characters:<id>` for 300 s. Access control is
   never cached.
+- There is ONE listing, `GET /characters`: `scope=mine` (default; the caller's own,
+  GMs included) or `scope=all` (every user's, GM/founder only, 403 otherwise), plus
+  `search` (name substring) and `class_id`. Default response is the offset `Page`;
+  `pagination=cursor` / `cursor=` switches to keyset `{items, next_cursor, size}`.
 - Listings order by `name` then `id` (stable pagination) and read the
   ability-score rows and hit dice in one batched query each.
 - `GET /characters/{id}/stats` is the only read path that **recomputes**

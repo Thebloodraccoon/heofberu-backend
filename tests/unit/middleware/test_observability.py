@@ -13,7 +13,7 @@ from app.middleware.observability import _UUID_RE, ObservabilityMiddleware
 def _make_request(headers=None):
     return SimpleNamespace(
         method="GET",
-        url=SimpleNamespace(path="/api/test"),
+        url=SimpleNamespace(path="/api/v1/test"),
         headers=Headers(headers or {}),
         query_params={},
         client=SimpleNamespace(host="127.0.0.1"),
@@ -111,7 +111,7 @@ class TestObservabilityLogging:
     async def test_health_probe_is_not_logged_by_default(self, caplog):
         middleware = ObservabilityMiddleware(app=SimpleNamespace())
         request = _make_request()
-        request.url = SimpleNamespace(path="/api/ping")
+        request.url = SimpleNamespace(path="/api/v1/ping")
 
         with caplog.at_level("INFO"):
             await middleware.dispatch(request, _call_next)
@@ -124,7 +124,7 @@ class TestObservabilityLogging:
         with caplog.at_level("INFO"):
             await middleware.dispatch(_make_request(), _call_next)
 
-        assert "Incoming request: GET /api/test" in caplog.text
+        assert "Incoming request: GET /api/v1/test" in caplog.text
 
     async def test_user_agent_cannot_forge_log_lines(self, caplog):
         middleware = ObservabilityMiddleware(app=SimpleNamespace())

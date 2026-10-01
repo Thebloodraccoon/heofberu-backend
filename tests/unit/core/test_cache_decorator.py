@@ -16,9 +16,9 @@ from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import declarative_base
 
 from app.core.base.cached_service import CachedService
-from app.core.base.service import Page
 from app.core.cache import invalidate, invalidate_many, use_cache
 import app.core.cache.client as cache_client
+from app.core.pagination import Page
 from app.settings import settings
 from tests.unit.fakes import FakeCacheRedis
 

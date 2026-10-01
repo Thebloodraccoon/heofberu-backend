@@ -208,7 +208,7 @@ def _resolve_call_schema(func: Callable, args: tuple) -> Any:
     if func.__name__ == "get_all":
         item_schema = getattr(instance, "get_all_schema", None)
         if item_schema is not None:
-            from app.core.base.service import Page  # deferred to avoid an import cycle
+            from app.core.pagination import Page
 
             return Page[item_schema]
 

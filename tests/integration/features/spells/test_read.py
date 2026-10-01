@@ -36,3 +36,43 @@ class TestSpellOpenRead:
 
     async def test_get_spell_404(self, client):
         assert (await client.get("/spells/999999")).status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestSpellCursorPagination:
+    async def test_cursor_walks_every_spell_once_in_name_order(self, client, create_spell):
+        for name in ("Bless", "Aid", "Dust", "Cure Wounds", "Bane"):
+            await create_spell(name=name)
+
+        names, cursor = [], None
+        while True:
+            params = {"pagination": "cursor", "size": 2, **({"cursor": cursor} if cursor else {})}
+            body = (await client.get("/spells", params=params)).json()
+            assert set(body) == {"items", "next_cursor", "size"}
+            names.extend(item["name"] for item in body["items"])
+            cursor = body["next_cursor"]
+            if cursor is None:
+                break
+
+        assert names == ["Aid", "Bane", "Bless", "Cure Wounds", "Dust"]
+
+    async def test_cursor_respects_filters(self, client, create_spell):
+        await create_spell(name="Cure Wounds", level="LEVEL_1")
+        await create_spell(name="Fireball", level="LEVEL_3")
+
+        body = (await client.get("/spells", params={"pagination": "cursor", "level": "LEVEL_3"})).json()
+
+        assert [item["name"] for item in body["items"]] == ["Fireball"]
+        assert body["next_cursor"] is None
+
+    async def test_default_listing_stays_offset_paginated(self, client, create_spell):
+        await create_spell(name="Aid")
+
+        body = (await client.get("/spells")).json()
+
+        assert {"items", "total", "page", "size"} <= set(body)
+
+    @pytest.mark.parametrize("cursor", ["garbage!", "e30", "x" * 600])
+    async def test_invalid_cursor_is_rejected(self, client, cursor):
+        assert (await client.get("/spells", params={"cursor": cursor})).status_code == 422

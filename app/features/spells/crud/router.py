@@ -14,7 +14,7 @@ from app.constants import (
     SpellRangeType,
     SpellSchool,
 )
-from app.core.base.service import Page
+from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
 from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.spells.crud.schemas import (
     SpellCreate,
@@ -29,8 +29,9 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=Page[SpellGetAllResponse],
+    response_model=Page[SpellGetAllResponse] | CursorPage[SpellGetAllResponse],
     summary="List spells",
+    responses={422: {"description": "Invalid `cursor`."}},
 )
 async def get_spells(
     spell_service: SpellCrudDep,
@@ -62,9 +63,13 @@ async def get_spells(
     ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
+    pagination: PaginationQuery = "page",
+    cursor: CursorQuery = None,
 ):
     """
-    Return a paginated list of lightweight spells, with filters and search.
+    Return lightweight spells ordered by name (then id), with filters and search.
+    Default response is `{items, total, page, size}`; with `pagination=cursor` (or a
+    `cursor`) it is the keyset envelope `{items, next_cursor, size}` (no `total`).
     Open endpoint.
     """
 
@@ -80,6 +85,9 @@ async def get_spells(
         "is_ritual": is_ritual,
         "is_concentration": is_concentration,
     }
+    if use_cursor(pagination, cursor):
+        return await spell_service.get_cursor_page(size=size, cursor=cursor, filters=filters, search=search)
+
     return await spell_service.get_all(page=page, size=size, filters=filters, search=search)
 
 

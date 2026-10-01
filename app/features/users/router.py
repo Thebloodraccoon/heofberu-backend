@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import UserRole
-from app.core.base.service import Page
+from app.core.pagination import Page
 from app.features.auth.dependencies import CurrentUserDep, FounderDep, GmUserDep
 from app.features.users.dependencies import UserServiceDep
 from app.features.users.schemas import UserCreate, UserProfileUpdate, UserResponse, UserUpdate

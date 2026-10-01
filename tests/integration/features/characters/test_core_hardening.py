@@ -38,13 +38,13 @@ class TestListingRoles:
         await create_character(owner_id=gm.id, class_id=fighter.id, name="GM Hero")
         await create_character(owner_id=player.id, class_id=fighter.id, name="Player Hero")
 
-        response = await client.get("/characters/mine", headers=auth(gm_token))
+        response = await client.get("/characters", params={"scope": "mine"}, headers=auth(gm_token))
 
         assert response.status_code == 200
         assert [item["name"] for item in response.json()["items"]] == ["GM Hero"]
 
     async def test_all_is_gm_only(self, client, player_token):
-        response = await client.get("/characters/all", headers=auth(player_token))
+        response = await client.get("/characters", params={"scope": "all"}, headers=auth(player_token))
 
         assert response.status_code == 403
 
@@ -54,7 +54,7 @@ class TestListingRoles:
         fighter = await create_class(name="Fighter")
         await create_character(owner_id=player.id, class_id=fighter.id, name="Aragorn")
 
-        response = await client.get("/characters/all", headers=auth(gm_token))
+        response = await client.get("/characters", params={"scope": "all"}, headers=auth(gm_token))
 
         assert response.status_code == 200
         assert response.json()["total"] == 1
@@ -65,18 +65,43 @@ class TestListingRoles:
         fighter = await create_class(name="Fighter")
         await create_character(owner_id=player.id, class_id=fighter.id, name="Aragorn")
 
-        response = await client.get("/characters/all", headers=auth(founder_token))
+        response = await client.get("/characters", params={"scope": "all"}, headers=auth(founder_token))
 
         assert response.status_code == 200
         assert response.json()["total"] == 1
 
-    async def test_founder_sees_every_character_in_the_default_listing(
+    async def test_default_scope_is_mine_even_for_a_gm(
+        self, client, gm, gm_token, player, create_class, create_character
+    ):
+        fighter = await create_class(name="Fighter")
+        await create_character(owner_id=gm.id, class_id=fighter.id, name="GM Hero")
+        await create_character(owner_id=player.id, class_id=fighter.id, name="Player Hero")
+
+        response = await client.get("/characters", headers=auth(gm_token))
+
+        assert [item["name"] for item in response.json()["items"]] == ["GM Hero"]
+
+    async def test_unknown_scope_is_rejected(self, client, gm_token):
+        response = await client.get("/characters", params={"scope": "everyone"}, headers=auth(gm_token))
+
+        assert response.status_code == 422
+
+    async def test_all_scope_combines_with_filters(self, client, gm_token, player, create_class, create_character):
+        fighter = await create_class(name="Fighter")
+        await create_character(owner_id=player.id, class_id=fighter.id, name="Aragorn")
+        await create_character(owner_id=player.id, class_id=fighter.id, name="Legolas")
+
+        response = await client.get("/characters", params={"scope": "all", "search": "ara"}, headers=auth(gm_token))
+
+        assert [item["name"] for item in response.json()["items"]] == ["Aragorn"]
+
+    async def test_founder_sees_every_character_with_scope_all(
         self, client, founder_token, player, create_class, create_character
     ):
         fighter = await create_class(name="Fighter")
         await create_character(owner_id=player.id, class_id=fighter.id, name="Aragorn")
 
-        response = await client.get("/characters", headers=auth(founder_token))
+        response = await client.get("/characters", params={"scope": "all"}, headers=auth(founder_token))
 
         assert [item["name"] for item in response.json()["items"]] == ["Aragorn"]
 
@@ -107,6 +132,42 @@ class TestListingRoles:
             seen.extend(item["id"] for item in response.json()["items"])
 
         assert seen == created
+
+    async def test_cursor_pagination_walks_every_character_once_in_order(
+        self, client, player, player_token, create_class, create_character
+    ):
+        fighter = await create_class(name="Fighter")
+        created = [(await create_character(owner_id=player.id, class_id=fighter.id, name="Twin")).id for _ in range(3)]
+        await create_character(owner_id=player.id, class_id=fighter.id, name="Aaron")
+
+        seen, cursor, pages = [], None, 0
+        while True:
+            params = {"pagination": "cursor", "size": 2}
+            if cursor:
+                params["cursor"] = cursor
+            body = (await client.get("/characters", params=params, headers=auth(player_token))).json()
+            assert set(body) == {"items", "next_cursor", "size"}
+            seen.extend(item["id"] for item in body["items"])
+            pages += 1
+            cursor = body["next_cursor"]
+            if cursor is None:
+                break
+
+        assert pages == 2
+        assert seen[1:] == created and len(seen) == 4
+
+    async def test_cursor_keeps_scope_authorization(self, client, player_token):
+        response = await client.get(
+            "/characters", params={"scope": "all", "pagination": "cursor"}, headers=auth(player_token)
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("cursor", ["not-a-cursor", "e30", "x" * 600])
+    async def test_invalid_cursor_is_rejected(self, client, player_token, cursor):
+        response = await client.get("/characters", params={"cursor": cursor}, headers=auth(player_token))
+
+        assert response.status_code == 422
 
     async def test_oversized_search_is_rejected(self, client, player_token):
         response = await client.get("/characters", params={"search": "x" * 201}, headers=auth(player_token))

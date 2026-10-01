@@ -159,3 +159,47 @@ class TestArticleDelete:
         response = await client.delete("/articles/999999", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestArticleCursorPagination:
+    @pytest.mark.parametrize("sort", ["title", "newest", "oldest", "updated"])
+    async def test_cursor_walk_matches_offset_order_for_every_sort(self, client, create_article, sort):
+        for title in ("Delta", "Alpha", "Charlie", "Bravo", "Echo"):
+            await create_article(title=title, status="published")
+
+        offset = (await client.get("/articles", params={"sort": sort, "size": 10})).json()["items"]
+
+        ids, cursor = [], None
+        while True:
+            params = {"pagination": "cursor", "size": 2, "sort": sort, **({"cursor": cursor} if cursor else {})}
+            body = (await client.get("/articles", params=params)).json()
+            assert set(body) == {"items", "next_cursor", "size"}
+            ids.extend(item["id"] for item in body["items"])
+            cursor = body["next_cursor"]
+            if cursor is None:
+                break
+
+        assert ids == [item["id"] for item in offset]
+
+    async def test_cursor_keeps_visibility_rules(self, client, create_article):
+        await create_article(title="Public", status="published")
+        await create_article(title="Draft")
+
+        body = (await client.get("/articles", params={"pagination": "cursor"})).json()
+
+        assert [item["title"] for item in body["items"]] == ["Public"]
+
+    async def test_cursor_from_another_sort_is_rejected(self, client, create_article):
+        for title in ("A", "B", "C"):
+            await create_article(title=title, status="published")
+        cursor = (await client.get("/articles", params={"pagination": "cursor", "size": 1})).json()["next_cursor"]
+
+        response = await client.get("/articles", params={"cursor": cursor, "sort": "newest"})
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("cursor", ["garbage!", "e30", "x" * 600])
+    async def test_invalid_cursor_is_rejected(self, client, cursor):
+        assert (await client.get("/articles", params={"cursor": cursor})).status_code == 422

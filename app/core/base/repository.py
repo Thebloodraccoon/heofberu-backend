@@ -9,7 +9,7 @@ Async stack: all public methods are ``async`` and run against an
 ``AsyncSession`` using 2.0-style ``select()`` statements.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Generic, Protocol, TypeVar
 
@@ -174,6 +174,7 @@ class BaseRepository(Generic[ModelType]):
         filters: dict[str, Any] | None = None,
         search: str | None = None,
         order_by: Any = None,
+        conditions: Sequence[Any] = (),
     ) -> list[ModelType]:
         """
         Retrieve records with offset-based pagination, ordered by ``id``
@@ -188,6 +189,7 @@ class BaseRepository(Generic[ModelType]):
             filters: Exact-match filters against ``self.model``.
             search: Substring match against ``self._search_fields``.
             order_by: Optional column(s) to order by; ``self.model.id`` is always the final tie-break.
+            conditions: Extra WHERE clauses (e.g. a keyset cursor condition).
         """
 
         stmt = select(self.model)
@@ -196,6 +198,7 @@ class BaseRepository(Generic[ModelType]):
 
         stmt = self._apply_filters(stmt, filters)
         stmt = self._apply_search(stmt, search)
+        stmt = stmt.where(*conditions)
 
         stmt = stmt.order_by(*self._ordering(order_by))
 
@@ -216,6 +219,7 @@ class BaseRepository(Generic[ModelType]):
         limit: int = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
+        conditions: Sequence[Any] = (),
     ) -> list[Any]:
         """
         Retrieve a paginated page of specific columns (no relationship loading).
@@ -230,6 +234,7 @@ class BaseRepository(Generic[ModelType]):
             limit: Max records to return.
             filters: Exact-match filters against ``self.model``.
             search: Substring match against ``self._search_fields``.
+            conditions: Extra WHERE clauses (e.g. a keyset cursor condition).
 
         Returns:
             A list of ``Row`` tuples in column order.
@@ -238,6 +243,7 @@ class BaseRepository(Generic[ModelType]):
         stmt = select(*columns)
         stmt = self._apply_filters(stmt, filters)
         stmt = self._apply_search(stmt, search)
+        stmt = stmt.where(*conditions)
 
         stmt = stmt.order_by(*self._ordering(order_by))
 

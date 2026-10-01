@@ -17,7 +17,7 @@ from app.middleware.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LOG_SKIP_PATHS = ["/api/ping", "/api/health", "/docs", "/openapi.json", "/redoc"]
+DEFAULT_LOG_SKIP_PATHS = ["/api/v1/ping", "/api/v1/health", "/docs", "/openapi.json", "/redoc"]
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 

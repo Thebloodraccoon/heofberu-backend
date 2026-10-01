@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
 from app.core.base.cached_service import CachedService
-from app.core.base.service import Page, paginate
 from app.core.cache import use_cache
 from app.core.exceptions import RecordInUseError, RecordNotFoundError
+from app.core.pagination import Page, paginate
 from app.features.characters.cache import invalidate_characters_cache
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
 from app.features.features.cache import FEATURE_CACHE_NAMESPACES, invalidate_feature_cache_after_commit

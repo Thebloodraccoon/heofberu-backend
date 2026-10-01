@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.core.base.service import Page
+from app.core.pagination import Page
 from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.feats.crud.schemas import (
     FeatCreate,

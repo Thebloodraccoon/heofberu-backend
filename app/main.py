@@ -44,9 +44,10 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up Heofberu Backend API...")
     yield
     logger.info("Shutting down Heofberu Backend API...")
-    close_redis = getattr(settings.get_redis, "close", None)
-    if close_redis is not None:
-        await close_redis()
+    for provider in (settings.get_redis, settings.get_auth_redis):
+        close_redis = getattr(provider, "close", None)
+        if close_redis is not None:
+            await close_redis()
     await settings.engine.dispose()
 
 

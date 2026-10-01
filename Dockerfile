@@ -44,7 +44,7 @@ COPY --chown=app:app . .
 USER app
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl --fail http://localhost:8000/api/ping || exit 1
+    CMD curl --fail http://localhost:8000/api/v1/ping || exit 1
 
 EXPOSE 8000
 

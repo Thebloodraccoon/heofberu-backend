@@ -211,7 +211,7 @@ class TestSubraceDetail:
 
     async def test_openapi_documents_the_codes_the_api_returns(self):
         paths = app_module.app.openapi()["paths"]
-        paths = {path.removeprefix("/api"): item for path, item in paths.items()}
+        paths = {path.removeprefix("/api/v1"): item for path, item in paths.items()}
 
         assert "400" in paths["/races"]["post"]["responses"]
         assert "409" not in paths["/races"]["post"]["responses"]

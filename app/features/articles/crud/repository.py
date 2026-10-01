@@ -11,6 +11,7 @@ from sqlalchemy_utils import Ltree
 
 from app.constants import ArticleStatus, ArticleVisibility
 from app.core.exceptions import RecordAlreadyExistsError
+from app.core.pagination import Cursor, keyset_condition
 from app.features.articles.base import ArticleScopedRepository
 from app.features.articles.exceptions import ArticleTreeTooDeepException
 from app.features.articles.secrets import gm_stripped_sql
@@ -459,11 +460,23 @@ class ArticleRepository(ArticleScopedRepository):
         )
         return list(result.scalars().unique().all())
 
+    @staticmethod
+    def _sort_key(sort: str) -> tuple[Any, bool]:
+        """``(sort expression, descending)`` of a listing ``sort``; ``Article.id`` (same direction) breaks ties."""
+
+        published = func.coalesce(Article.published_at, Article.created_at)
+        return {
+            "title": (Article.title, False),
+            "newest": (published, True),
+            "oldest": (published, False),
+            "updated": (Article.updated_at, True),
+        }[sort]
+
     async def list_articles(
         self,
         *,
-        page: int,
-        size: int,
+        skip: int,
+        limit: int,
         include_hidden: bool,
         statuses: list[ArticleStatus] | None = None,
         article_types: list[str] | None = None,
@@ -471,39 +484,49 @@ class ArticleRepository(ArticleScopedRepository):
         tag_ids: list[int] | None = None,
         match_all_tags: bool = False,
         sort: str = "title",
-    ) -> tuple[list[Any], int]:
-        """Filtered, sorted, paginated listing rows (no tags/images loaded) plus the total match count."""
+        after: Cursor | None = None,
+    ) -> tuple[list[Any], int | None]:
+        """
+        Filtered, sorted listing rows (no tags/images loaded); each row carries its ``sort_value``.
+
+        Offset mode returns the total match count too; with ``after`` (keyset mode, ``skip`` unused)
+        only the rows strictly after that position are returned and the total is ``None``.
+        """
 
         conditions = await self._filter_conditions(include_hidden, article_types, subtype_ids, tag_ids, match_all_tags)
         if statuses:
             conditions.append(Article.status.in_(statuses))
 
-        order_by = {
-            "title": [Article.title, Article.id],
-            "newest": [text("COALESCE(articles.published_at, articles.created_at) DESC"), Article.id.desc()],
-            "oldest": [text("COALESCE(articles.published_at, articles.created_at) ASC"), Article.id],
-            "updated": [Article.updated_at.desc(), Article.id.desc()],
-        }[sort]
+        key, descending = self._sort_key(sort)
+        if after is not None:
+            conditions.append(keyset_condition(key, Article.id, after, descending=descending))
+
+        columns = [
+            Article.id,
+            Article.slug,
+            Article.title,
+            self._excerpt_column(include_hidden),
+            Article.article_type,
+            *self._subtype_columns(),
+            Article.status,
+            Article.visibility,
+            key.label("sort_value"),
+        ]
+        if after is None:
+            columns.append(func.count().over().label("total"))
 
         result = await self.db.execute(
-            select(
-                Article.id,
-                Article.slug,
-                Article.title,
-                self._excerpt_column(include_hidden),
-                Article.article_type,
-                *self._subtype_columns(),
-                Article.status,
-                Article.visibility,
-                func.count().over().label("total"),
-            )
+            select(*columns)
             .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
             .where(*conditions)
-            .order_by(*order_by)
-            .offset((page - 1) * size)
-            .limit(size)
+            .order_by(*((key.desc(), Article.id.desc()) if descending else (key, Article.id)))
+            .offset(skip)
+            .limit(limit)
         )
         rows = list(result.all())
+        if after is not None:
+            return rows, None
+
         total = rows[0].total if rows else await self._count(Article, conditions)
         return rows, total or 0
 
@@ -511,8 +534,8 @@ class ArticleRepository(ArticleScopedRepository):
         self,
         query: str,
         *,
-        page: int,
-        size: int,
+        skip: int,
+        limit: int,
         include_hidden: bool,
         article_types: list[str] | None = None,
         subtype_ids: list[int] | None = None,
@@ -555,8 +578,8 @@ class ArticleRepository(ArticleScopedRepository):
             select(Article.id.label("id"), rank, func.count().over().label("total"))
             .where(*conditions)
             .order_by(rank.desc(), Article.id)
-            .offset((page - 1) * size)
-            .limit(size)
+            .offset(skip)
+            .limit(limit)
             .subquery("ranked_page")
         )
 

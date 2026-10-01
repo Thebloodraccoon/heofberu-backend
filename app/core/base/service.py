@@ -2,8 +2,7 @@
 Generic service layer: fetch -> validate -> persist -> serialize orchestration.
 
 Provides :class:`BaseService` (a model-generic CRUD orchestrator sitting on
-top of :class:`BaseRepository`), the paginated :class:`Page` envelope, and
-the schema type variables services bind to.
+top of :class:`BaseRepository`) and the schema type variables services bind to.
 
 Async stack: every orchestration method is ``async`` (repository calls are
 awaited); ``_atomic`` / ``_unit_of_work`` wrap multistep writes in one
@@ -22,6 +21,7 @@ from app.core.base.repository import BaseRepository, ModelType
 from app.core.base.transaction import UnitOfWork, after_commit, atomic, unit_of_work
 from app.core.cache.invalidation import invalidate
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
+from app.core.pagination import Page, paginate
 
 CreateSchema = TypeVar("CreateSchema", bound=BaseModel)
 UpdateSchema = TypeVar("UpdateSchema", bound=BaseModel)
@@ -29,33 +29,7 @@ ResponseSchema = TypeVar("ResponseSchema", bound=BaseModel)
 GetAllSchema = TypeVar("GetAllSchema", bound=BaseModel, default=BaseModel)
 BeforeUpdateHook = Callable[[ModelType, dict], None]
 
-ItemSchema = TypeVar("ItemSchema", bound=BaseModel)
 ResolvedItem = TypeVar("ResolvedItem")
-
-
-class Page(BaseModel, Generic[ItemSchema]):
-    """Generic ``{items, total, page, size}`` envelope for a paginated listing."""
-
-    items: list[ItemSchema]
-    total: int
-    page: int
-    size: int
-
-
-MAX_PAGE_SIZE = 1000
-
-
-def paginate(page: int, size: int) -> tuple[int, int]:
-    """
-    Convert a 1-indexed ``(page, size)`` into the repository's 0-indexed ``(skip, limit)``.
-
-    Defensive clamp: ``page >= 1`` and ``1 <= size <= MAX_PAGE_SIZE`` even if a
-    router forgot to bound the query parameters.
-    """
-
-    page = max(page, 1)
-    size = min(max(size, 1), MAX_PAGE_SIZE)
-    return (page - 1) * size, size
 
 
 class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):

@@ -9,7 +9,10 @@ external services (no DB, no Redis).
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/ping` | Open | Returns `{"ping": "pong", "timestamp": ..., "status": "healthy"}` with the current epoch time. |
+| GET | `/api/v1/ping` | Open | Returns `{"ping": "pong", "timestamp": ..., "status": "healthy"}` with the current epoch time. |
+
+The probe is versioned with the rest of the API (`/api/v1/ping`); it is excluded from request
+logging and rate limiting (`HEALTH_SKIP_PATHS`) and used by the Docker `HEALTHCHECK`.
 
 ## Structure
 

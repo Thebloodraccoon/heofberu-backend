@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import AbilityScore
-from app.core.base.service import Page
+from app.core.pagination import Page
 from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.skills.crud.schemas import SkillCreate, SkillGetAllResponse, SkillResponse, SkillUpdate
 from app.features.skills.dependencies import SkillCrudDep
