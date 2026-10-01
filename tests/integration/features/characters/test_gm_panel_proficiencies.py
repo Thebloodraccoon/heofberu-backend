@@ -15,7 +15,7 @@ class TestGmPanelSkillProficiency:
     ):
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
 
         add_resp = await client.post(
             f"/characters/{character.id}/gm-panel/proficiencies/skills",
@@ -47,7 +47,7 @@ class TestGmPanelSkillProficiency:
     ):
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
 
         first = await client.post(
             f"/characters/{character.id}/gm-panel/proficiencies/skills",
@@ -68,7 +68,7 @@ class TestGmPanelSkillProficiency:
     ):
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
-        skill = await create_skill(key="RELIGION", name="Religion", ability="INT")
+        skill = await create_skill(name="Religion", ability="INT")
 
         response = await client.delete(
             f"/characters/{character.id}/gm-panel/proficiencies/skills",

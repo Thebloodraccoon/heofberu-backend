@@ -18,24 +18,19 @@ logout via the Redis token blacklist in `app/core/security/token.py`.
 
 ## Structure
 
-- `router.py` — thin endpoints; all logic delegates to `AuthService`.
-- `service.py` — `AuthService`: credential verification (with a dummy bcrypt
-  hash to equalize timing for unknown emails), registration (always `PLAYER`,
-  generic duplicate error so account existence never leaks), refresh
-  (checks the blacklist but does not rotate the refresh token), logout
-  (blacklists both tokens). Also owns `REFRESH_COOKIE_NAME`.
-- `dependencies.py` — `AuthServiceDep` (built on `DatabaseDep`).
-- `schemas.py` — `LoginRequest`/`RegisterRequest` and their responses;
-  validation mirrors the users schemas without importing them (so no `role`
-  field can slip into self-registration).
-- `exceptions.py` — `AccountAlreadyExistsException` (400, deliberately generic).
+- `router.py` — thin endpoints (`/auth/register|login|logout|refresh|forgot-password|reset-password`); all logic delegates to `AuthService`.
+- `service.py` — `AuthService`: credential verification (dummy bcrypt hash equalizes timing for unknown emails), registration (always `PLAYER`), refresh with rotation (old `jti` claimed atomically, new cookie issued), logout (blacklists both tokens), password reset (single-use token, revokes the user's sessions). Also owns the refresh-cookie helpers and `REFRESH_COOKIE_NAME`. Token `sub` is the user id (legacy email subjects are still accepted).
+- `sessions.py` — Redis session state: per-user revocation timestamp (`auth_revoked_after:*`), `is_session_revoked` (one `MGET` for blacklist + revocation), single-use `claim_token`/`release_token`. Fail-closed 503 when Redis is down.
+- `dependencies.py` — the one place feature routers import auth from: `AuthServiceDep`, `TokenDep`, `CurrentUserDep`, `OptionalUserDep`, `GmUserDep`, `FounderDep`, `can_see_hidden`.
+- `schemas.py` — request/response models and the login-only password constraint (`LoginPassword`); user-field rules come from `users/validators.py`.
+- `exceptions.py` — `AccountAlreadyExistsException`, `InvalidResetTokenException`.
+
+## Dependency direction
+
+`auth` -> `users` (repository, service, schemas, validators) and `core/security` (JWT/password primitives, no business rules).
+The users domain layers never import `auth`; only `users/router.py` imports the guards from `auth/dependencies.py`, like every other feature router.
 
 ## Auth Model
 
-- `register`, `login`, `refresh` are open endpoints.
-- `logout` requires a valid, non-blacklisted access token (`CurrentUserDep`),
-  with the raw bearer credentials additionally passed as `TokenDep` for the
-  service to verify and blacklist.
-
-Auth dependencies themselves (`TokenDep`/`CurrentUserDep`) live in
-`app/features/users/security.py`, not here.
+- `register`, `login`, `refresh`, `forgot-password`, `reset-password` are open endpoints.
+- `logout` requires a valid, non-blacklisted access token (`CurrentUserDep`), with the raw bearer credentials also passed as `TokenDep` for the service to verify and blacklist.

@@ -1,47 +1,44 @@
 """
-Repository backing the GM proficiency panel: upserts/clears the GM layer
-of a character's proficiency rows in ``character_proficiencies``.
+Repository backing the GM proficiency panel: reads the rows and feature
+grants behind ONE proficiency and upserts/clears the GM layer of
+``character_proficiencies``.
 
-A GM write never touches another source's rows (class/race/background)
-— it only ever creates, updates, or deletes the single ``source_type=GM``
-row for one (character, proficiency_type, discriminator). Feature/feat
-grants have no rows at all: their proficiencies are computed from the
-grant (``characters/grants/effects.py``) and only consulted by
-``is_granted``.
-See ``CharacterProficiency`` for the full resolution algorithm and the
-upsert-and-clear rule this repository implements: writing the OPPOSITE
-action of an existing GM row deletes it (clears the override back to
-whatever the character's other sources say) rather than piling up rows.
+A GM write never touches another source's rows (class/race/background) —
+it only ever creates, updates, or deletes the single ``source_type=GM`` row
+for one (character, proficiency_type, discriminator). Feature/feat grants
+have no rows at all: their proficiencies are computed from the grant, and
+:meth:`feature_entries` asks the database for just the grants that give the
+one proficiency in question.
+
+Writes only flush; the service owns the transaction.
 """
 
-from sqlalchemy import select
+from types import SimpleNamespace
+
+from sqlalchemy import and_, false, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
-from app.core.base.repository import _commit_or_rollback
-from app.features.characters.grants.effects import GrantEffects, load_character_grant_effects
+from app.features.characters.proficiencies.resolver import ProficiencyEntry, feature_source, proficiency_key
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
+from app.models.character.character_feature_model import CharacterFeature
 from app.models.character.character_proficiency_model import CharacterProficiency
+from app.models.features.feature_engine_models import (
+    FeatureArmorProficiencyEffect,
+    FeatureChoiceGroup,
+    FeatureChoiceOption,
+    FeatureSavingThrowEffect,
+    FeatureSkillProficiencyEffect,
+    FeatureWeaponProficiencyEffect,
+)
+from app.models.features.feature_model import Feature
 
-
-def _effect_keys(effects: GrantEffects, proficiency_type: ProficiencyType):
-    """The keys a grant's computed effects hold for one proficiency kind."""
-
-    if proficiency_type == ProficiencyType.SKILL:
-        return effects.skills.keys()
-    if proficiency_type == ProficiencyType.SAVING_THROW:
-        return effects.saving_throws
-    if proficiency_type == ProficiencyType.ARMOR:
-        return effects.armor
-    return effects.weapons
-
-
-def _discriminator_key(proficiency_type: ProficiencyType, discriminator: dict):
-    """The same key, built from the ``**discriminator`` the GM service passes."""
-
-    if proficiency_type == ProficiencyType.WEAPON:
-        return (discriminator.get("weapon_category"), discriminator.get("item_id"))
-    (value,) = discriminator.values()
-    return value
+_EFFECT_MODEL = {
+    ProficiencyType.SKILL: FeatureSkillProficiencyEffect,
+    ProficiencyType.SAVING_THROW: FeatureSavingThrowEffect,
+    ProficiencyType.ARMOR: FeatureArmorProficiencyEffect,
+    ProficiencyType.WEAPON: FeatureWeaponProficiencyEffect,
+}
 
 
 class CharacterProficiencyGmRepository:
@@ -67,88 +64,105 @@ class CharacterProficiencyGmRepository:
         result = await self.db.execute(select(CharacterProficiency).where(*conditions))
         return list(result.scalars().unique().all())
 
-    async def resolve(
+    async def feature_entries(
         self, character_id: int, proficiency_type: ProficiencyType, **discriminator
-    ) -> CharacterProficiency | None:
+    ) -> list[ProficiencyEntry]:
         """
-        Resolve current effective state for one (character, proficiency):
-        a GM row wins outright (``REVOKE`` -> None, ``GRANT`` -> itself);
-        otherwise any row means granted (preferring one with
-        ``is_expertise`` set, for skills); no rows -> None.
-        """
-
-        rows = await self.get_rows(character_id, proficiency_type, **discriminator)
-
-        gm_row = next((row for row in rows if row.source_type == ProficiencySourceType.GM), None)
-        if gm_row is not None:
-            return gm_row if gm_row.action == ProficiencyAction.GRANT else None
-
-        if not rows:
-            return None
-
-        return next((row for row in rows if row.is_expertise), rows[0])
-
-    async def is_granted(self, character_id: int, proficiency_type: ProficiencyType, **discriminator) -> bool:
-        """
-        Whether the character currently has the proficiency from any source:
-        a GM row decides outright; otherwise any stored row or any
-        feature/feat grant's computed effect grants it.
+        One entry per feature/feat grant of the character whose effects give
+        this proficiency — a fixed effect of the feature or an effect of an
+        option the player picked — fetched with a single targeted query
+        instead of loading every grant's whole effect tree.
         """
 
-        rows = await self.get_rows(character_id, proficiency_type, **discriminator)
+        effect = _EFFECT_MODEL[proficiency_type]
+        key_conditions = [getattr(effect, column) == value for column, value in discriminator.items()]
+        expertise = effect.grants_expertise if proficiency_type == ProficiencyType.SKILL else false()
+        columns = (Feature.id, Feature.name, Feature.source_type, expertise.label("grants_expertise"))
 
-        gm_row = next((row for row in rows if row.source_type == ProficiencySourceType.GM), None)
-        if gm_row is not None:
-            return gm_row.action == ProficiencyAction.GRANT
-        if rows:
-            return True
-
-        key = _discriminator_key(proficiency_type, discriminator)
-        return any(
-            key in _effect_keys(effects, proficiency_type)
-            for _, effects in await load_character_grant_effects(self.db, character_id)
+        fixed = (
+            select(*columns)
+            .select_from(Feature)
+            .join(effect, effect.feature_id == Feature.id)
+            .join(CharacterFeature, CharacterFeature.feature_id == Feature.id)
+            .where(CharacterFeature.character_id == character_id, *key_conditions)
+        )
+        picked = (
+            select(*columns)
+            .select_from(Feature)
+            .join(FeatureChoiceGroup, FeatureChoiceGroup.feature_id == Feature.id)
+            .join(FeatureChoiceOption, FeatureChoiceOption.group_id == FeatureChoiceGroup.id)
+            .join(effect, effect.choice_option_id == FeatureChoiceOption.id)
+            .join(CharacterFeature, CharacterFeature.feature_id == Feature.id)
+            .join(
+                CharacterFeatureChoice,
+                and_(
+                    CharacterFeatureChoice.character_feature_id == CharacterFeature.id,
+                    CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id,
+                ),
+            )
+            .where(CharacterFeature.character_id == character_id, *key_conditions)
         )
 
-    async def set_override(
+        expertise_by_feature: dict[int, bool] = {}
+        features: dict[int, SimpleNamespace] = {}
+        for feature_id, name, source_type, grants_expertise in (await self.db.execute(union_all(fixed, picked))).all():
+            features[feature_id] = SimpleNamespace(id=feature_id, name=name, source_type=source_type)
+            expertise_by_feature[feature_id] = expertise_by_feature.get(feature_id, False) or bool(grants_expertise)
+
+        key = proficiency_key(proficiency_type, **discriminator)
+        return [
+            ProficiencyEntry(key, feature_source(feature), is_expertise=expertise_by_feature[feature_id])
+            for feature_id, feature in features.items()
+        ]
+
+    async def apply(
         self,
         character_id: int,
         proficiency_type: ProficiencyType,
-        action: ProficiencyAction,
-        actor_user_id: int | None,
+        rows: list[CharacterProficiency],
         *,
+        granted: bool,
+        others_grant: bool,
+        actor_user_id: int | None,
         is_expertise: bool | None = None,
         **discriminator,
-    ) -> None:
+    ) -> CharacterProficiency | None:
         """
-        Upsert-and-clear the GM row for one (character, proficiency).
+        Make the GM layer produce the wanted outcome for one proficiency
+        and return the GM row that results (``None`` when no row is needed).
 
-        An existing GM row with the OPPOSITE action is deleted (the GM
-        changed their mind — back to whatever other sources say). An
-        existing GM row with the SAME action is updated in place (actor,
-        ``is_expertise``). No existing GM row -> a new one is inserted.
+        ``granted`` is the outcome the GM wants; ``others_grant`` says whether
+        any non-GM source (stored row or feature/feat grant) gives it anyway.
+        When they agree no GM row is needed and an existing one is deleted
+        (back to whatever the other sources say); otherwise the GM row
+        carries the decision — ``GRANT`` when nothing else grants it,
+        ``REVOKE`` as a veto over sources that do — and is updated in place
+        or inserted. An explicit ``is_expertise`` always needs a GRANT row to
+        live on. ``rows`` is what :meth:`get_rows` returned for this proficiency.
         """
 
-        rows = await self.get_rows(character_id, proficiency_type, **discriminator)
-        existing = next((row for row in rows if row.source_type == ProficiencySourceType.GM), None)
+        gm_row = next((row for row in rows if row.source_type == ProficiencySourceType.GM), None)
 
-        if existing is not None:
-            if existing.action != action:
-                await self.db.delete(existing)
-            else:
-                existing.actor_user_id = actor_user_id
-                if is_expertise is not None:
-                    existing.is_expertise = is_expertise
-            await _commit_or_rollback(self.db)
-            return
+        if granted == others_grant and is_expertise is None:
+            if gm_row is not None:
+                await self.db.delete(gm_row)
+                await self.db.flush()
+            return None
 
-        row = CharacterProficiency(
-            character_id=character_id,
-            proficiency_type=proficiency_type,
-            source_type=ProficiencySourceType.GM,
-            action=action,
-            actor_user_id=actor_user_id,
-            is_expertise=is_expertise,
-            **discriminator,
-        )
-        self.db.add(row)
-        await _commit_or_rollback(self.db)
+        action = ProficiencyAction.GRANT if granted else ProficiencyAction.REVOKE
+        expertise = is_expertise if granted else None
+
+        if gm_row is None:
+            gm_row = CharacterProficiency(
+                character_id=character_id,
+                proficiency_type=proficiency_type,
+                source_type=ProficiencySourceType.GM,
+                **discriminator,
+            )
+            self.db.add(gm_row)
+
+        gm_row.action = action
+        gm_row.actor_user_id = actor_user_id
+        gm_row.is_expertise = expertise
+        await self.db.flush()
+        return gm_row

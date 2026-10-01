@@ -1,14 +1,13 @@
 """
 Unit tests for the ``@use_cache`` decorator against a fake Redis store.
 
-The cache layer is exercised with an in-memory ``FakeRedis`` that mimics the
-async ``get``/``set``/``scan_iter``/``delete`` surface, injected by patching
-``app.crud.cache.client._redis_provider``. ``CACHE_ENABLED`` is flipped on
+The cache layer is exercised with the in-memory ``FakeCacheRedis`` from
+``tests/unit/fakes.py``, injected by patching
+``app.core.cache.client._redis_provider``. ``CACHE_ENABLED`` is flipped on
 per-test (``app.settings.test`` keeps it off by default).
 """
 
 from contextlib import asynccontextmanager
-import fnmatch
 from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict
@@ -21,42 +20,13 @@ from app.core.base.service import Page
 from app.core.cache import invalidate, invalidate_many, use_cache
 import app.core.cache.client as cache_client
 from app.settings import settings
-
-
-class FakeRedis:
-    """Minimal in-memory stand-in for the async Redis surface the cache uses."""
-
-    def __init__(self):
-        self.data = {}
-        self.sets = []
-
-    async def get(self, key):
-        return self.data.get(key)
-
-    async def set(self, key, value, ex=None):
-        self.sets.append((key, value, ex))
-        self.data[key] = value
-        return True
-
-    async def scan_iter(self, match=None, count=100):
-        keys = list(self.data)
-        if match is not None:
-            keys = [key for key in keys if fnmatch.fnmatchcase(key, match)]
-        for key in keys:
-            yield key
-
-    async def delete(self, *keys):
-        removed = 0
-        for key in keys:
-            if self.data.pop(key, None) is not None:
-                removed += 1
-        return removed
+from tests.unit.fakes import FakeCacheRedis
 
 
 @pytest.fixture
 def fake_redis(monkeypatch):
     """Patch the Redis provider with a fresh ``FakeRedis`` and enable caching."""
-    store = FakeRedis()
+    store = FakeCacheRedis()
 
     @asynccontextmanager
     async def get_redis():
@@ -242,7 +212,7 @@ class TestUseCache:
 
         await service.get()
 
-        assert fake_redis.sets[0][2] == 60
+        assert fake_redis.set_calls[0][2] == 60
 
     async def test_default_ttl_comes_from_settings(self, fake_redis, monkeypatch):
         monkeypatch.setattr(settings, "CACHE_TTL_DEFAULT", 123)
@@ -250,7 +220,7 @@ class TestUseCache:
 
         await greeter.greet("Alice")
 
-        assert fake_redis.sets[0][2] == 123
+        assert fake_redis.set_calls[0][2] == 123
 
     async def test_result_decoded_back_into_return_schema(self, fake_redis):
         people = People()

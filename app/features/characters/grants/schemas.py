@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
+from app.core.types import EntityId
 from app.features.characters.spells.schemas import CharacterSpellResponse
 from app.features.features.effects.schemas import (
     AbilityEffectItem,
@@ -12,6 +13,9 @@ from app.features.features.effects.schemas import (
     SpellEffectItem,
     WeaponEffectItem,
 )
+
+# Upper bound on the answers of one request (a feature has a handful of groups).
+MAX_ANSWERS = 50
 
 
 class ChoiceAnswerItem(BaseModel):
@@ -24,8 +28,8 @@ class ChoiceAnswerItem(BaseModel):
     regardless of what's requested.
     """
 
-    choice_group_id: int
-    choice_option_id: int
+    choice_group_id: EntityId
+    choice_option_id: EntityId
 
 
 class GrantChoicesUpdate(BaseModel):
@@ -34,13 +38,12 @@ class GrantChoicesUpdate(BaseModel):
 
     ``answers`` must include exactly ``pick_count`` items per group that the
     feature still needs answered (unanswered groups stay pending). Re-answers
-    replace the group's stored picks and re-materialize the affected effect
-    rows on the character in the same transaction.
+    replace the group's stored picks in the same transaction.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    answers: list[ChoiceAnswerItem] = Field(default_factory=list)
+    answers: list[ChoiceAnswerItem] = Field(default_factory=list, max_length=MAX_ANSWERS)
 
 
 class PendingChoiceOption(BaseModel):
@@ -56,12 +59,12 @@ class PendingChoiceOption(BaseModel):
     id: int
     needs_skill: bool = False
     needs_spell: bool = False
-    ability_effects: list[AbilityEffectItem] = []
-    skill_effects: list[SkillEffectItem] = []
-    saving_throw_effects: list[SavingThrowEffectItem] = []
-    armor_effects: list[ArmorEffectItem] = []
-    weapon_effects: list[WeaponEffectItem] = []
-    spell_effects: list[SpellEffectItem] = []
+    ability_effects: list[AbilityEffectItem] = Field(default_factory=list)
+    skill_effects: list[SkillEffectItem] = Field(default_factory=list)
+    saving_throw_effects: list[SavingThrowEffectItem] = Field(default_factory=list)
+    armor_effects: list[ArmorEffectItem] = Field(default_factory=list)
+    weapon_effects: list[WeaponEffectItem] = Field(default_factory=list)
+    spell_effects: list[SpellEffectItem] = Field(default_factory=list)
 
 
 class PendingChoiceGroup(BaseModel):
@@ -72,7 +75,7 @@ class PendingChoiceGroup(BaseModel):
     id: int
     pick_count: int
     choice_type: ChoiceType
-    options: list[PendingChoiceOption] = []
+    options: list[PendingChoiceOption] = Field(default_factory=list)
 
 
 class PendingChoiceGroupsResponse(BaseModel):
@@ -81,11 +84,11 @@ class PendingChoiceGroupsResponse(BaseModel):
     character_feature_id: int
     feature_id: int
     feature_name: str = ""
-    groups: list[PendingChoiceGroup] = []
+    groups: list[PendingChoiceGroup] = Field(default_factory=list)
 
 
 class CharacterSavingThrowProficiencyResponse(BaseModel):
-    """Asaving-throw proficiency on the character."""
+    """A saving-throw proficiency on the character."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,7 +96,7 @@ class CharacterSavingThrowProficiencyResponse(BaseModel):
 
 
 class CharacterArmorProficiencyResponse(BaseModel):
-    """Aarmor proficiency on the character."""
+    """An armor proficiency on the character."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -101,7 +104,7 @@ class CharacterArmorProficiencyResponse(BaseModel):
 
 
 class CharacterWeaponProficiencyResponse(BaseModel):
-    """Aweapon proficiency on the character (category or item)."""
+    """A weapon proficiency on the character (category or item)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -124,11 +127,11 @@ class GrantEffectsResponse(BaseModel):
     plus the picked options' bundles, computed from the current effect tree.
     """
 
-    skills: list[GrantedSkillEffectResponse] = []
-    saving_throws: list[CharacterSavingThrowProficiencyResponse] = []
-    armor: list[CharacterArmorProficiencyResponse] = []
-    weapons: list[CharacterWeaponProficiencyResponse] = []
-    spells: list[CharacterSpellResponse] = []
+    skills: list[GrantedSkillEffectResponse] = Field(default_factory=list)
+    saving_throws: list[CharacterSavingThrowProficiencyResponse] = Field(default_factory=list)
+    armor: list[CharacterArmorProficiencyResponse] = Field(default_factory=list)
+    weapons: list[CharacterWeaponProficiencyResponse] = Field(default_factory=list)
+    spells: list[CharacterSpellResponse] = Field(default_factory=list)
 
 
 class ChosenOptionResponse(BaseModel):
@@ -136,12 +139,12 @@ class ChosenOptionResponse(BaseModel):
 
     choice_group_id: int
     choice_option_id: int
-    ability_effects: list[AbilityEffectItem] = []
-    skill_effects: list[SkillEffectItem] = []
-    saving_throw_effects: list[SavingThrowEffectItem] = []
-    armor_effects: list[ArmorEffectItem] = []
-    weapon_effects: list[WeaponEffectItem] = []
-    spell_effects: list[SpellEffectItem] = []
+    ability_effects: list[AbilityEffectItem] = Field(default_factory=list)
+    skill_effects: list[SkillEffectItem] = Field(default_factory=list)
+    saving_throw_effects: list[SavingThrowEffectItem] = Field(default_factory=list)
+    armor_effects: list[ArmorEffectItem] = Field(default_factory=list)
+    weapon_effects: list[WeaponEffectItem] = Field(default_factory=list)
+    spell_effects: list[SpellEffectItem] = Field(default_factory=list)
 
 
 class AnsweredChoicesResponse(BaseModel):
@@ -150,4 +153,4 @@ class AnsweredChoicesResponse(BaseModel):
     character_feature_id: int
     feature_id: int
     feature_name: str = ""
-    choices: list[ChosenOptionResponse] = []
+    choices: list[ChosenOptionResponse] = Field(default_factory=list)

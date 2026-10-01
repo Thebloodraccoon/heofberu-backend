@@ -1,6 +1,6 @@
 """ORM model for character attacks (weapon entries)."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.enums import AbilityScoreType, AttackTypeType, DamageTypeType, DiceTypeColumn
@@ -22,11 +22,17 @@ class Attack(settings.Base):  # type: ignore
 
     bonus_attack = Column(Integer, nullable=False, default=0)
     bonus_damage = Column(Integer, nullable=False, default=0)
-    damage_dice_count = Column(Integer, nullable=True)  # e.g. 2
-    damage_dice_type = Column(DiceTypeColumn, nullable=True)  # e.g. D6 -> "2d6" combined
+    damage_dice_count = Column(Integer, nullable=True)
+    damage_dice_type = Column(DiceTypeColumn, nullable=True)
     damage_type = Column(DamageTypeType, nullable=True)
     range = Column(String(50), nullable=False, default="")
     notes = Column(Text, nullable=False, default="")
+
+    __table_args__ = (
+        CheckConstraint(
+            "damage_dice_count IS NULL OR damage_dice_count BETWEEN 1 AND 100", name="ck_attacks_damage_dice_count"
+        ),
+    )
 
     character = relationship("Character", back_populates="attacks")
 

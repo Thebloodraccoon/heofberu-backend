@@ -3,15 +3,16 @@
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.service import BaseService
-from app.core.storage.service import ImageStorageService
-from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES, invalidate_article
-from app.features.articles.crud.schemas import ArticleCreate, ArticleResponse, ArticleUpdate
-from app.features.articles.images.exceptions import ArticleImageNotFoundException
+from app.core.storage.service import IMAGE_MAX_BYTES, ImageStorageService
+from app.features.articles.base import ArticleScopedService
+from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES, invalidate_articles
+from app.features.articles.images.exceptions import ArticleImageLimitException, ArticleImageNotFoundException
 from app.features.articles.images.repository import ArticleImagesRepository
 from app.features.articles.images.schemas import ArticleImageResponse
 from app.models.articles.article_image_model import ArticleImage
-from app.models.articles.article_model import Article
+
+#: Gallery size cap per article.
+MAX_IMAGES_PER_ARTICLE = 100
 
 
 def storage_entity(article_id: int, storage_key: str) -> str:
@@ -20,12 +21,12 @@ def storage_entity(article_id: int, storage_key: str) -> str:
     return f"articles/{article_id}/{storage_key}"
 
 
-class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, ArticleResponse, None]):
+class ArticleImagesService(ArticleScopedService):
     """
     Article images: unlike a race/class/subrace's single ``image_url``
     (one object per row, upsert-replaced — see ``EntityImageService``), an
     article can carry several images, each its own DB row and its own
-    Supabase Storage object (``articles/{article_id}/{image_id}.{ext}``).
+    Supabase Storage object (``articles/{article_id}/{storage_key}/{image_id}.{ext}``).
 
     Images are shown only where ``body_markdown`` embeds them (``![alt](url)``),
     so there's no caption/order metadata and the list is a GM editor concern.
@@ -38,10 +39,7 @@ class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, Ar
     def __init__(self, db: AsyncSession, storage: ImageStorageService):
         """Initialize the service with the images repository and the shared storage backend."""
 
-        super().__init__(
-            repository=ArticleImagesRepository(db),
-            response_schema=ArticleResponse,
-        )
+        super().__init__(ArticleImagesRepository(db))
         self._storage = storage
 
     async def list_images(self, article_id: int) -> list[ArticleImageResponse]:
@@ -55,33 +53,36 @@ class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, Ar
         """
         Upload a new image for the article.
 
-        Reads the file first, then flushes (not commits) a placeholder row to
-        get its id — the storage object key — uploads, and commits only once
-        the public URL is set. A failure at any point rolls the placeholder
-        back, so no row with an empty ``image_url`` is ever committed or
-        visible to readers.
+        No database transaction is held across the network call: a short transaction commits a
+        placeholder row (its id and key name the storage object), the file is uploaded with no
+        connection checked out, and a second short transaction sets the public URL. If the upload or the
+        second step fails, the placeholder row and any object written are removed again, so no row with an
+        empty ``image_url`` outlives the request. At most ``IMAGE_MAX_BYTES`` + 1 bytes of the file are read.
         """
 
         await self._exists_or_404(article_id)
+        if await self.repository.count_images(article_id) >= MAX_IMAGES_PER_ARTICLE:
+            raise ArticleImageLimitException(article_id, MAX_IMAGES_PER_ARTICLE)
 
         try:
-            content = await image.read()
+            content = await image.read(IMAGE_MAX_BYTES + 1)
         finally:
             await image.close()
 
-        row = await self.repository.create_placeholder(article_id, commit=False)
-        image_id = row.id
+        row = await self.repository.create_placeholder(article_id)
+        image_id, entity = row.id, storage_entity(article_id, row.storage_key)
         try:
-            url = await self._storage.upload_image(
-                storage_entity(article_id, row.storage_key), image_id, content, image.content_type or ""
-            )
-            updated = await self.repository.set_image_url(row, url)
+            url = await self._storage.upload_image(entity, image_id, content, image.content_type or "")
+            updated = await self.repository.set_image_url(article_id, image_id, url)
+            if updated is None:
+                raise ArticleImageNotFoundException(article_id=article_id, image_id=image_id)
         except Exception:
-            await self.repository.db.rollback()
-            await self._storage.delete_image(storage_entity(article_id, row.storage_key), image_id)
+            await self._storage.delete_image(entity, image_id)
+            await self.repository.delete_image_by_id(image_id)
+            await invalidate_articles(self.repository.db, article_id)
             raise
 
-        await invalidate_article(article_id)
+        await invalidate_articles(self.repository.db, article_id)
 
         return ArticleImageResponse.model_validate(updated)
 
@@ -97,9 +98,10 @@ class ArticleImagesService(BaseService[Article, ArticleCreate, ArticleUpdate, Ar
 
         await self._exists_or_404(article_id)
         image_row = await self._get_image_or_404(article_id, image_id)
+        entity = storage_entity(article_id, image_row.storage_key)
         await self.repository.delete_image_row(image_row)
-        await invalidate_article(article_id)
-        await self._storage.delete_image(storage_entity(article_id, image_row.storage_key), image_id)
+        await invalidate_articles(self.repository.db, article_id)
+        await self._storage.delete_image(entity, image_id)
 
     async def _get_image_or_404(self, article_id: int, image_id: int) -> ArticleImage:
         """Fetch an image scoped to the article, or raise ``ArticleImageNotFoundException``."""

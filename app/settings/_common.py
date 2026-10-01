@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.settings.base import Base  # noqa: F401
 from app.settings.config import AppSettings
@@ -26,9 +27,7 @@ HOST = _settings.HOST
 JWT_SECRET_KEY = _settings.JWT_SECRET_KEY
 JWT_ALGORITHM = _settings.JWT_ALGORITHM
 
-ADMIN_NAME = _settings.ADMIN_NAME
 ADMIN_LOGIN = _settings.ADMIN_LOGIN
-ADMIN_PASSWORD = _settings.ADMIN_PASSWORD
 
 SUPABASE_URL = _settings.SUPABASE_URL
 SUPABASE_KEY = _settings.SUPABASE_KEY
@@ -41,19 +40,27 @@ SMTP_PASSWORD = _settings.SMTP_PASSWORD
 SMTP_FROM = _settings.SMTP_FROM
 SMTP_USE_TLS = _settings.SMTP_USE_TLS
 SMTP_STARTTLS = _settings.SMTP_STARTTLS
+FRONTEND_RESET_URL = _settings.FRONTEND_RESET_URL
 
 DATABASE_URL = _settings.DATABASE_URL
 REDIS_URL = _settings.REDIS_URL
 
+CORS_ORIGINS = _settings.CORS_ORIGINS
+ALLOWED_HOSTS = _settings.ALLOWED_HOSTS
+FORWARDED_ALLOW_IPS = _settings.FORWARDED_ALLOW_IPS
+
 CACHE_ENABLED = _settings.CACHE_ENABLED
 CACHE_TTL_DEFAULT = _settings.CACHE_TTL_DEFAULT
 CACHE_PREFIX = _settings.CACHE_PREFIX
+CACHE_VERSION = _settings.CACHE_VERSION
+CACHE_INDEX_MAX_KEYS = _settings.CACHE_INDEX_MAX_KEYS
 
-# Request & payload limits (defaults; stages override tighter/looser values).
+DB_POOL_SIZE = _settings.DB_POOL_SIZE
+DB_MAX_OVERFLOW = _settings.DB_MAX_OVERFLOW
+WEB_CONCURRENCY = _settings.WEB_CONCURRENCY
+
 REQUEST_BODY_MAX_BYTES = _settings.REQUEST_BODY_MAX_BYTES
 IMAGE_UPLOAD_MAX_BYTES = _settings.IMAGE_UPLOAD_MAX_BYTES
-REQUEST_TIMEOUT_SECONDS = _settings.REQUEST_TIMEOUT_SECONDS
-MAX_CONCURRENT_CONNECTIONS_PER_IP = _settings.MAX_CONCURRENT_CONNECTIONS_PER_IP
 
 
 def utcnow() -> datetime:
@@ -87,6 +94,44 @@ def as_async_database_url(url: str) -> str:
         query["ssl"] = sslmode
 
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def make_engine(
+    database_url: str,
+    *,
+    pool_size: int,
+    max_overflow: int,
+    pool_recycle: int | None = 1800,
+    echo: bool = False,
+    hide_parameters: bool = False,
+    command_timeout: int = 0,
+) -> AsyncEngine:
+    """
+    Build the async engine for a stage.
+
+    ``hide_parameters`` keeps bound values out of SQLAlchemy error messages and
+    logs; ``command_timeout`` (seconds, ``0`` = off) is asyncpg's client-side
+    per-command timeout and, unlike a server ``statement_timeout``, works behind
+    connection poolers.
+    """
+
+    options: dict = {}
+    if pool_recycle:
+        options["pool_recycle"] = pool_recycle
+    if command_timeout:
+        options["connect_args"] = {"command_timeout": command_timeout}
+
+    return create_async_engine(
+        as_async_database_url(database_url),
+        poolclass=pool.AsyncAdaptedQueuePool,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_pre_ping=True,
+        pool_timeout=30,
+        echo=echo,
+        hide_parameters=hide_parameters,
+        **options,
+    )
 
 
 def make_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
@@ -135,12 +180,9 @@ def make_get_redis(redis_url: str):
             current_loop = asyncio.get_running_loop()
             if state["client"] is None or state["loop"] is not current_loop:
                 if state["client"] is not None:
-                    # Best-effort close of a client bound to a dead event loop.
                     with suppress(Exception):
                         await state["client"].aclose()
-                # Without these, a Redis that accepts the TCP connection but never answers
-                # (network blackhole, overloaded instance) blocks every cached GET/write on
-                # the OS-level TCP timeout instead of degrading to a fast cache miss.
+                # Short timeouts: a blackholed Redis must degrade to a fast cache miss, not an OS-level TCP wait.
                 state["client"] = Redis.from_url(
                     redis_url, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5
                 )
@@ -148,4 +190,13 @@ def make_get_redis(redis_url: str):
 
         yield state["client"]
 
+    async def close() -> None:
+        """Close the shared client (application shutdown); the next use rebuilds it."""
+
+        client, state["client"], state["loop"] = state["client"], None, None
+        if client is not None:
+            with suppress(Exception):
+                await client.aclose()
+
+    get_redis.close = close
     return get_redis

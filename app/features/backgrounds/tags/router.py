@@ -4,10 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.auth.dependencies import GmUserDep
 from app.features.backgrounds.crud.schemas import BackgroundResponse
 from app.features.backgrounds.dependencies import BackgroundTagsDep
 from app.features.shared.tags.schemas import TagsUpdate
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

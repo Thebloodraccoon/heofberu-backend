@@ -6,9 +6,9 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.constants import ItemRarity, ItemType
 from app.core.base.service import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.items.crud.schemas import ItemCreate, ItemGetAllResponse, ItemResponse, ItemUpdate
 from app.features.items.dependencies import ItemCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -25,7 +25,9 @@ async def get_items(
         description="Any-of match on the item's type (repeat the key: `?item_type=WEAPON&item_type=ARMOR`).",
     ),
     rarity: list[ItemRarity] | None = Query(None, description="Any-of match on the item's rarity (repeat the key)."),
-    search: str | None = Query(None, description="Case-insensitive substring match against the item's name."),
+    search: str | None = Query(
+        None, max_length=100, description="Case-insensitive substring match against the item's name."
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
@@ -61,7 +63,7 @@ async def get_item(item_id: int, item_service: ItemCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create an item",
     responses={
-        409: {"description": "An item with this name already exists."},
+        400: {"description": "An item with this name already exists."},
     },
 )
 async def create_item(
@@ -121,7 +123,7 @@ async def create_item(
 ):
     """Create a new item. **GM only.**"""
 
-    return await item_service.create_item(data)
+    return await item_service.create(data)
 
 
 @router.patch(
@@ -129,8 +131,8 @@ async def create_item(
     response_model=ItemResponse,
     summary="Update an item",
     responses={
+        400: {"description": "Another item already uses the requested name."},
         404: {"description": "No item exists with the given ID."},
-        409: {"description": "Another item already uses the requested name."},
     },
 )
 async def update_item(
@@ -174,12 +176,13 @@ async def update_item(
     summary="Delete an item",
     responses={
         404: {"description": "No item exists with the given ID."},
-        409: {"description": "Item is still owned by one or more characters."},
+        409: {"description": "Item is still owned by a character or referenced by a class, background or feature."},
     },
 )
 async def delete_item(item_id: int, item_service: ItemCrudDep, _: FounderDep):
     """
-    Delete an item, unless still owned by a character.
+    Delete an item, unless a character owns it or a class, background,
+    feature effect or character proficiency still references it.
     **Founder only.**
     """
 

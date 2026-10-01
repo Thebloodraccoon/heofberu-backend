@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import AbilityScore
+from app.constants import MAX_ABILITY_SCORE_CAP, AbilityScore
 
 
 class GmAsiIncreaseItem(BaseModel):
@@ -14,12 +14,28 @@ class GmAsiIncreaseItem(BaseModel):
     amount: int
 
 
+class GmAsiIncreaseInput(GmAsiIncreaseItem):
+    """A requested adjustment: non-zero and within the ability-score cap either way."""
+
+    amount: int = Field(ge=-MAX_ABILITY_SCORE_CAP, le=MAX_ABILITY_SCORE_CAP)
+
+    @field_validator("amount")
+    @classmethod
+    def validate_non_zero(cls, amount: int) -> int:
+        """A zero adjustment records nothing."""
+
+        if amount == 0:
+            raise ValueError("An ASI adjustment amount must not be zero.")
+        return amount
+
+
 class GmAsiChoiceAdd(BaseModel):
     """Add one GM ASI adjustment: a set of ±ability changes, no level attached."""
 
-    increases: list[GmAsiIncreaseItem]
+    increases: list[GmAsiIncreaseInput] = Field(min_length=1, max_length=len(AbilityScore))
 
     @field_validator("increases")
+    @classmethod
     def validate_increases(cls, increases):
         """Reject a choice that lists the same ability more than once."""
 

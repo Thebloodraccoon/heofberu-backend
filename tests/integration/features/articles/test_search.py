@@ -188,9 +188,7 @@ class TestArticleSearch:
         temple = await create_article(title="Aurora Temple", subtype="shrine", status="published")
         await create_article(title="Aurora Keep", subtype="fortress", status="published")
 
-        response = await client.get(
-            "/articles/search", params={"q": "Aurora", "subtype_id": temple["subtype"]["id"]}
-        )
+        response = await client.get("/articles/search", params={"q": "Aurora", "subtype_id": temple["subtype"]["id"]})
 
         assert response.status_code == 200
         body = response.json()

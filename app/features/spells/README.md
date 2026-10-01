@@ -16,33 +16,49 @@ same `Spells` tag):
 | `availability/` | `PUT /spells/{spell_id}/classes`, `PUT /spells/{spell_id}/subclasses`, `PUT /spells/{spell_id}/races`, `PUT /spells/{spell_id}/subraces` — full-replace of each availability dimension (GM) |
 
 The spell is identified via a **path** parameter (`{spell_id}`) on all
-availability endpoints, consistent with the other catalogs (no query-style
-IDs remain). Request body is generation-based (`{class_ids: [...]}`,
-`{subclass_ids: [...]}`, etc.); unknown ids → 400. Each `set_*` returns the
-full `SpellResponse`. Deps live in `dependencies.py` (`SpellCrudDep`,
-`SpellAvailabilityDep`); `exceptions.py` holds `SpellNotFoundException`.
+availability endpoints. Request body is `{class_ids: [...]}`,
+`{subclass_ids: [...]}`, etc.; unknown ids -> 400, repeated ids collapse to one,
+`[]` clears the restriction. Each `set_*` returns the full `SpellResponse`.
+Deps live in `dependencies.py` (`SpellCrudDep`, `SpellAvailabilityDep`);
+`exceptions.py` holds `SpellNotFoundException`.
 
-## Service Composition & Create Seeding
+## Layout and transactions
 
-`crud/service.py:SpellCrudService` extends `CachedService` and composes
-`SpellAvailabilityService` in `__init__`. `create_spell` seeds association
-rows at create time inside one `_atomic()` transaction: each provided
-availability list is resolved through `resolve_ids` (400 on unknown ids),
-then written through the availability service's `set_classes_for_spell` /
-`set_subclasses_for_spell` / `set_races_for_spell` / `set_subraces_for_spell`
-(`commit=False`) variants next to the new `Spell` row. Empty or omitted lists
-mean the spell stays unrestricted on that dimension.
+- `crud/repository.py` — `SpellRepository` plus the single table of availability dimensions
+  (`AVAILABILITY_DIMENSIONS`: field, label, catalog model, association table, child FK).
+  Everything that touches the association tables lives here: `set_availability` (replace one
+  dimension), `get_dimension_members` (resolve ids), `load_availability` (the listing's links for
+  a page of spells in **one** `UNION ALL` query, ordered by child name in SQL — no re-sort in
+  Python). `get_plain` is the bare-row fetch used by delete.
+- `crud/service.py` — `SpellCrudService` (extends `CachedService`). `create_spell` resolves the
+  ids, then writes the spell row and its availability in one `_atomic()` transaction (the cache
+  purge is deferred to after the COMMIT). `update` is one transaction too.
+- `availability/service.py` — `SpellAvailabilityService`: the four PUTs share one `_replace`
+  (404 check, resolve ids, replace in `_atomic()`, purge `spells` after the COMMIT, return the
+  full `SpellResponse`). A failed write rolls the previous links back.
 
-`get_all` is overridden to build the cached listing WITHOUT materializing
-full `Spell` rows — column-selected scalars plus one join query per
-availability dimension per page (`_load_availability`).
+## Write validation (422)
+
+`SpellCreate`/`SpellUpdate` reject unknown keys and bound every value: `name` 1-300 chars,
+texts <= 20 000, `range_value` 0..1 000 000, dice counts 1..100, <= 500 availability ids
+(each 1..2^31-1). `SpellCreate` also requires dice count and type together (damage and healing
+alike) and a `MATERIAL` component whenever `material`/`is_material_consumed` is set. `SpellUpdate`
+rejects an explicit `null` for any NOT NULL column (omit the field to keep it); nullable columns
+(`range_value`, `attack_type`, `material`, ...) can still be cleared with `null`.
 
 ## Cache Invalidation
 
-`cache.py` owns `invalidate_spell_cache()` purging `SPELL_CACHE_NAMESPACES =
-("spells",)`. Every write — catalog CRUD and availability replacement alike —
-calls it after commit; the crud service also declares it as
-`cache_namespaces`.
+`cache.py` owns the matrix. `SPELL_CACHE_NAMESPACES = ("spells",)` is purged by every write.
+A spell's **name** is rendered into other catalogs' cached payloads (the `effects_summary` of the
+features that grant it), so a **rename** also purges `SPELL_NAME_DEPENDENT_NAMESPACES`:
+`features`, `feats`, the five `*_features` lists, `classes`, `races`, `backgrounds` and
+`characters`. Deleting a spell only purges `spells` (a spell referenced by a feature effect can't
+be deleted).
+
+The reverse direction (renaming/deleting a class/subclass/race/subrace purges `spells`, whose list
+embeds `{id, name}` of the available classes/subclasses/races/subraces) is declared once in
+`app/core/cache/namespaces.py` (`CACHE_DEPENDENTS`) and applied by those modules' `cache.py`
+(`*_CRUD_CACHE_NAMESPACES`, `*_DELETE_*`).
 
 ## Notable Rules
 
@@ -52,6 +68,8 @@ calls it after commit; the crud service also declares it as
   castable by a character only if it passes the class, subclass, race, and
   subrace checks (each unrestricted dimension passes automatically). See
   `characters/spells/eligibility.py`.
+- A spell can't be deleted (409) while a character knows it (`character_spells`), the GM granted
+  it (`character_granted_spells`) or a feature effect grants it (`feature_spell_grant_effects`).
 - The known-cantrip cap is a `"CANTRIP"` row in a class's spell-slot
   progression table (`PUT /classes/{class_id}/spell-slots?class_level=` with
   `{"spell_level": "CANTRIP"}`) — that lives in the classes catalog, not

@@ -1,4 +1,4 @@
-FROM python:3.10.13-slim AS builder
+FROM python:3.10-slim AS builder
 
 LABEL description="Heofberu Backend API -- BUILDER"
 
@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /install
 
-RUN pip install --no-cache-dir poetry poetry-plugin-export
+RUN pip install --no-cache-dir "poetry==2.1.3" "poetry-plugin-export==1.9.0"
 
 COPY pyproject.toml poetry.lock* ./
 
@@ -17,7 +17,7 @@ RUN poetry export --without-hashes --format=requirements.txt --output=requiremen
 
 RUN pip install --no-cache-dir --prefix=/install/deps -r requirements.txt
 
-FROM python:3.10.13-slim
+FROM python:3.10-slim
 
 LABEL description="Heofberu Backend API"
 
@@ -26,15 +26,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# REQUIRE_EXPLICIT_STAGE: refuse to start without STAGE instead of silently running as "dev".
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PATH=/usr/local/bin:$PATH
+    PATH=/usr/local/bin:$PATH \
+    REQUIRE_EXPLICIT_STAGE=true
 
 WORKDIR /app
 
-RUN useradd --create-home --shell /bin/bash --uid 1000 app \
-    && chown -R app:app /app
+RUN useradd --create-home --shell /bin/bash --uid 1000 app
 
 # Only the installed dependencies are copied — no Poetry, no compilers, no build tools.
 COPY --from=builder /install/deps /usr/local
@@ -47,5 +48,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 EXPOSE 8000
 
+# Set RUN_MIGRATIONS=false on every replica but one (or run `alembic upgrade head` as a separate job)
+# to avoid concurrent migration runs. `exec` makes the app PID 1 so it receives SIGTERM.
 ENTRYPOINT ["sh", "-c"]
-CMD ["alembic upgrade head && python -m app.main"]
+CMD ["if [ \"${RUN_MIGRATIONS:-true}\" != \"false\" ]; then alembic upgrade head; fi && exec python -m app.main"]

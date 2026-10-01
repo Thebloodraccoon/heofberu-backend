@@ -4,8 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile, status
 
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
 from app.features.races.dependencies import RaceImageDep
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -20,7 +21,7 @@ router = APIRouter()
     },
 )
 async def upload_race_image(
-    race_id: int,
+    race_id: EntityIdPath,
     image_service: RaceImageDep,
     _: GmUserDep,
     image: Annotated[UploadFile, File(description="Image file (JPEG, PNG, WebP or GIF, max 5 MB).")],
@@ -40,7 +41,7 @@ async def upload_race_image(
     responses={404: {"description": "No race exists with the given ID."}},
 )
 async def delete_race_image(
-    race_id: int,
+    race_id: EntityIdPath,
     image_service: RaceImageDep,
     _: GmUserDep,
 ):

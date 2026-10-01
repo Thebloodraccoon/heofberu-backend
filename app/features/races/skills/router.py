@@ -4,10 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
 from app.features.races.crud.schemas import RaceResponse
 from app.features.races.dependencies import RaceSkillsDep
 from app.features.races.skills.schemas import SkillsUpdate
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -22,7 +23,7 @@ router = APIRouter()
     },
 )
 async def set_skills(
-    race_id: int,
+    race_id: EntityIdPath,
     data: Annotated[
         SkillsUpdate,
         Body(

@@ -1,13 +1,29 @@
 """Request/response schemas for the article CRUD endpoints (identity/content fields; tags/images live in their own folders)."""
 
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import ARTICLE_TYPES, ArticleStatus, ArticleVisibility
 from app.features.articles.images.schemas import ArticleImageResponse
-from app.features.articles.schema_validators import reject_explicit_null, validate_in_list
+from app.features.articles.schema_validators import (
+    normalize_title,
+    reject_explicit_null,
+    reject_nested_gm_containers,
+    validate_in_list,
+)
 from app.features.shared.tags.schemas import TagBrief
+
+TITLE_MAX_LENGTH = 200
+EXCERPT_MAX_LENGTH = 500
+#: Upper bound on ``body_markdown`` (``Text`` column): far above real lore pages, far below the request-body cap.
+BODY_MAX_LENGTH = 200_000
+
+ArticleType = Annotated[str, AfterValidator(lambda value: validate_in_list(value, ARTICLE_TYPES, "article_type"))]
+ArticleTitle = Annotated[str, Field(max_length=TITLE_MAX_LENGTH), AfterValidator(normalize_title)]
+ArticleExcerpt = Annotated[str, Field(max_length=EXCERPT_MAX_LENGTH), AfterValidator(reject_nested_gm_containers)]
+ArticleBody = Annotated[str, Field(max_length=BODY_MAX_LENGTH), AfterValidator(reject_nested_gm_containers)]
 
 
 class ArticleSubtypeBrief(BaseModel):
@@ -20,10 +36,10 @@ class ArticleSubtypeBrief(BaseModel):
 
 
 class ArticleBase(BaseModel):
-    """Base article fields shared by create, update, and response schemas."""
+    """Article fields as stored and returned (no write-side validation, so legacy rows always serialize)."""
 
-    title: str = Field(max_length=200)
-    excerpt: str | None = Field(default=None, max_length=500)
+    title: str
+    excerpt: str | None = None
     body_markdown: str = ""
     article_type: str
     subtype_id: int | None = Field(
@@ -33,14 +49,8 @@ class ArticleBase(BaseModel):
     visibility: ArticleVisibility = ArticleVisibility.PUBLIC
     parent_id: int | None = None
 
-    @field_validator("article_type")
-    def validate_article_type(cls, article_type):
-        """Reject an ``article_type`` not in the open ``ARTICLE_TYPES`` list."""
 
-        return validate_in_list(article_type, ARTICLE_TYPES, "article_type")
-
-
-class ArticleCreate(ArticleBase):
+class ArticleCreate(BaseModel):
     """
     Create payload for an article: identity/content fields only.
 
@@ -48,21 +58,35 @@ class ArticleCreate(ArticleBase):
     made unique with a ``-2``/``-3`` suffix) and stays stable across later renames.
     ``status`` starts at ``DRAFT`` and ``tags``/``images`` are attached
     afterwards through their own capability endpoints (mirrors ``RaceCreate``).
+
+    ``title`` is trimmed and may not be blank; a ``:::gm`` block in ``excerpt``/``body_markdown`` may not
+    contain another ``:::`` container.
     """
+
+    title: ArticleTitle
+    excerpt: ArticleExcerpt | None = None
+    body_markdown: ArticleBody = ""
+    article_type: ArticleType
+    subtype_id: int | None = Field(
+        default=None,
+        description="An `/articles/subtypes` entry of this article's own `article_type` (location → таверна).",
+    )
+    visibility: ArticleVisibility = ArticleVisibility.PUBLIC
+    parent_id: int | None = None
 
 
 class ArticleUpdate(BaseModel):
     """
-    All fields optional — only provided fields are updated (PATCH semantics).
+    All fields optional — only provided fields are updated (PATCH semantics); same rules as ``ArticleCreate``.
 
     ``status`` is not here: it moves only through the review workflow endpoints
     (``ArticleCrudService.transition``).
     """
 
-    title: str | None = Field(default=None, max_length=200)
-    excerpt: str | None = Field(default=None, max_length=500)
-    body_markdown: str | None = None
-    article_type: str | None = None
+    title: ArticleTitle | None = None
+    excerpt: ArticleExcerpt | None = None
+    body_markdown: ArticleBody | None = None
+    article_type: ArticleType | None = None
     subtype_id: int | None = None
     parent_id: int | None = None
     visibility: ArticleVisibility | None = None
@@ -71,17 +95,11 @@ class ArticleUpdate(BaseModel):
     def validate_not_null(cls, value, info):
         """
         NOT NULL columns on ``Article`` would otherwise fail later as an uncaught ``IntegrityError``
-        (500) in ``ArticleRepository.apply_update`` — Pydantic only skips this for an UNSET field
+        (500) in the UPDATE — Pydantic only skips this for an UNSET field
         (PATCH semantics), not an explicit ``null``.
         """
 
         return reject_explicit_null(value, info.field_name)
-
-    @field_validator("article_type")
-    def validate_article_type(cls, article_type):
-        """Reject an ``article_type`` not in the open ``ARTICLE_TYPES`` list."""
-
-        return validate_in_list(article_type, ARTICLE_TYPES, "article_type")
 
 
 class ArticleResponse(ArticleBase):
@@ -117,7 +135,8 @@ class ArticleGetAllResponse(BaseModel):
 
 
 class ArticleSearchResult(ArticleGetAllResponse):
-    """One ``GET /articles/search`` hit: listing fields plus relevance ``rank`` and a body ``snippet``.
+    """
+    One ``GET /articles/search`` hit: listing fields plus relevance ``rank`` and a body ``snippet``.
 
     ``snippet`` wraps matched terms in ``<mark>``; everything else in it is raw markdown, so escape it before rendering.
     """

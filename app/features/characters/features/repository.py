@@ -6,21 +6,15 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
-from app.features.characters.grants.effects import choice_option_effect_loads
+from app.features.characters.grants.effects import GRANT_CHOICES_LOADS
 from app.features.features.crud.repository import feature_summary_loads
-from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.features.feature_model import Feature
 
-_CHOICE_OPTION_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
-_WITH_CHOICES = [_CHOICE_OPTION_LOADER, *choice_option_effect_loads(_CHOICE_OPTION_LOADER)]
-
-# ``CharacterFeatureBriefResponse.effects_summary`` reads the ``Feature``
-# ORM property of the same name (``render_effects_summary``), which touches
-# every fixed-effect relationship and the choice-group tree — so
-# ``grant.feature`` needs the full engine effect tree eager-loaded wherever
-# a ``CharacterFeatureBriefResponse`` gets built from it, not just the bare
-# relationship.
+# ``CharacterFeatureBriefResponse.effects_summary`` reads the ``Feature`` ORM
+# property of the same name, which touches every fixed-effect relationship and
+# the choice-group tree — ``grant.feature`` needs the full engine effect tree
+# wherever that response is built.
 _WITH_FEATURE_SUMMARY = feature_summary_loads(base=selectinload(CharacterFeature.feature))
 
 
@@ -30,11 +24,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
     def __init__(self, db: AsyncSession):
         """Create the feature-grant repository."""
 
-        super().__init__(
-            CharacterFeature,
-            db,
-            default_load_options=[selectinload(CharacterFeature.feature)],
-        )
+        super().__init__(CharacterFeature, db)
 
     async def get_character_features(self, character_id: int) -> list[CharacterFeature]:
         """
@@ -49,7 +39,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         result = await self.db.execute(
             select(CharacterFeature)
             .join(Feature, Feature.id == CharacterFeature.feature_id)
-            .options(*_WITH_FEATURE_SUMMARY, *_WITH_CHOICES)
+            .options(*_WITH_FEATURE_SUMMARY, *GRANT_CHOICES_LOADS)
             .where(CharacterFeature.character_id == character_id, Feature.source_type != FeatureSourceType.FEAT)
         )
         return list(result.scalars().unique().all())
@@ -91,12 +81,11 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         """
         Record a reference feature on a character.
 
-        ``grant_source`` defaults to ``GM`` (this is the manual-grant path —
-        auto-synced grants are written by
-        ``progression.feature_sync.sync_progression_features`` with
-        ``AUTO``) so a subsequent sync never mistakes a GM's manual grant
-        for a stale auto-grant and revokes it. ``commit=False`` flushes
-        instead, for callers running inside their own ``_atomic()``.
+        ``grant_source`` defaults to ``GM`` (the manual-grant path;
+        ``sync_progression_features`` writes ``AUTO``) so a later sync never
+        mistakes a GM's grant for a stale auto-grant and revokes it.
+        ``commit=False`` flushes instead, for callers inside their own
+        transaction.
         """
 
         grant = CharacterFeature(
@@ -113,9 +102,9 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         )
         return result.scalar_one()
 
-    async def remove_character_feature(self, grant: CharacterFeature) -> bool:
-        """Remove a feature grant from a character."""
+    async def remove_character_feature(self, grant: CharacterFeature, *, commit: bool = True) -> bool:
+        """Remove a feature grant from a character (``commit=False`` flushes, for callers inside their own transaction)."""
 
         await self.db.delete(grant)
-        await self.commit_or_flush()
+        await self.commit_or_flush(commit=commit)
         return True

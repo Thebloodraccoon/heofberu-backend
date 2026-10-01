@@ -1,27 +1,27 @@
-"""Class repository: base CRUD plus throws/spell-slot/subclass management."""
+"""Class repository: base CRUD plus child-row management, spell slots and the progression reads."""
+
+from collections import namedtuple
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
+from app.features.classes.proficiencies.kinds import ProficiencyKind
 from app.features.features.crud.repository import feature_summary_loads
-from app.models import (
-    Character,
-    Class,
-    ClassArmorProficiency,
-    ClassSavingThrow,
-    ClassSpellSlotProgression,
-    ClassWeaponProficiency,
-    SourceItem,
-)
+from app.features.shared.skills.mixins import SkillLookupMixin
+from app.models import Character, Class, ClassSpellSlotProgression, SourceItem, class_available_skills
 from app.models.classes.subclass_model import Subclass
 from app.models.features.feature_model import Feature
 from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
+from app.models.skill_model import Skill
+
+_ParentRef = namedtuple("_ParentRef", "id")
 
 
-class ClassRepository(BaseRepository[Class]):
-    """Class-specific repository built on :class:`BaseRepository` (skill management lives in ``ClassSkillsRepository``)."""
+class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
+    """Class-specific repository built on :class:`BaseRepository`."""
 
     def __init__(self, db: AsyncSession):
         """Initialize the repository with the class's default load options and search fields."""
@@ -52,6 +52,22 @@ class ClassRepository(BaseRepository[Class]):
 
         return await self.exists_referencing(Character, "class_id", class_id)
 
+    async def get_row(self, class_id: int) -> Class | None:
+        """Fetch the bare ``Class`` row (no relationships) for writes that only touch its own columns."""
+
+        return await self.db.scalar(select(Class).where(Class.id == class_id).execution_options(populate_existing=True))
+
+    async def get_name(self, class_id: int) -> str | None:
+        """Return the class name, or ``None`` when the class does not exist."""
+
+        return await self.db.scalar(select(Class.name).where(Class.id == class_id))
+
+    async def get_character_ids(self, class_id: int) -> list[int]:
+        """Ids of every character of the class (to purge their cached payloads)."""
+
+        result = await self.db.execute(select(Character.id).where(Character.class_id == class_id))
+        return list(result.scalars().all())
+
     async def get_spell_slot_progression(self, class_id: int, class_level: int) -> dict[str, int]:
         """
         Return ``{spell_level: slots}`` for a single ``(class_id, class_level)``.
@@ -66,21 +82,26 @@ class ClassRepository(BaseRepository[Class]):
                 ClassSpellSlotProgression.class_level == class_level,
             )
         )
-        rows = list(result.scalars().all())
-        return {row.spell_level: row.slots for row in rows}
+        return {row.spell_level: row.slots for row in result.scalars().all()}
+
+    async def get_spell_slot_rows(self, class_id: int) -> list[ClassSpellSlotProgression]:
+        """All spell slot rows of the class, ordered by class level then spell level."""
+
+        result = await self.db.execute(
+            select(ClassSpellSlotProgression)
+            .where(ClassSpellSlotProgression.class_id == class_id)
+            .order_by(ClassSpellSlotProgression.class_level, ClassSpellSlotProgression.spell_level)
+        )
+        return list(result.scalars().all())
 
     async def set_spell_slots(
-        self, character_class: Class, class_level: int, slots_by_spell_level: dict[str, int], *, commit: bool = True
-    ) -> Class:
-        """
-        Replace spell slot rows for a single ``class_level``.
-
-        Full replace: existing rows for this level are deleted first.
-        """
+        self, class_id: int, class_level: int, slots_by_spell_level: dict[str, int], *, commit: bool = True
+    ) -> None:
+        """Replace the spell slot rows of a single ``class_level`` (existing rows of that level are deleted first)."""
 
         await self.replace_child_rows(
             ClassSpellSlotProgression,
-            character_class,
+            _ParentRef(class_id),
             "class_id",
             [
                 {"class_level": class_level, "spell_level": spell_level, "slots": slots}
@@ -90,67 +111,39 @@ class ClassRepository(BaseRepository[Class]):
             commit=commit,
         )
 
-        return character_class
-
-    async def set_saving_throws(self, character_class: Class, abilities: list[str], *, commit: bool = True) -> Class:
-        """Replace all saving throw proficiencies for a class."""
+    async def set_proficiencies(
+        self, class_id: int, kind: ProficiencyKind, values: list[Any], *, commit: bool = True
+    ) -> None:
+        """Replace one proficiency list (saving throws, armor or weapons) of the class."""
 
         await self.replace_child_rows(
-            ClassSavingThrow,
-            character_class,
+            kind.model,
+            _ParentRef(class_id),
             "class_id",
-            [{"ability": ability} for ability in abilities],
+            [{kind.column: value} for value in values],
             commit=commit,
         )
 
-        return character_class
-
-    async def set_armor_proficiencies(
-        self, character_class: Class, armor_types: list[str], *, commit: bool = True
-    ) -> Class:
-        """Replace all armor proficiencies for a class."""
-
-        await self.replace_child_rows(
-            ClassArmorProficiency,
-            character_class,
-            "class_id",
-            [{"armor_type": armor_type} for armor_type in armor_types],
-            commit=commit,
-        )
-
-        return character_class
-
-    async def set_weapon_proficiencies(
-        self, character_class: Class, weapon_categories: list[str], *, commit: bool = True
-    ) -> Class:
-        """Replace all weapon proficiencies for a class."""
-
-        await self.replace_child_rows(
-            ClassWeaponProficiency,
-            character_class,
-            "class_id",
-            [{"weapon_category": weapon_category} for weapon_category in weapon_categories],
-            commit=commit,
-        )
-
-        return character_class
-
-    async def create_subclass(self, character_class: Class, payload: dict, *, commit: bool = True) -> Subclass:
+    async def set_available_skills(self, class_id: int, skills: list[Skill] | None, *, commit: bool = True) -> None:
         """
-        Insert a ``Subclass`` row linked to ``character_class``.
+        Replace all skills a class may choose proficiencies from.
 
-        ``commit=False`` leaves the transaction open for the caller.
+        Written through the association table (delete + insert) instead of
+        assigning the ORM relationship, which would trigger an unsupported
+        lazy load on the async stack.
         """
 
-        subclass = Subclass(**payload, class_id=character_class.id)
-        self.db.add(subclass)
-        await self.commit_or_flush(commit=commit)
-        if commit:
-            await self.db.refresh(subclass)
-        return subclass
+        await self.replace_association(
+            class_available_skills,
+            _ParentRef(class_id),
+            "class_id",
+            "skill_id",
+            [skill.id for skill in (skills or [])],
+            commit=commit,
+        )
 
     async def get_subclass(self, class_id: int, subclass_id: int) -> Subclass | None:
-        """Fetch a subclass that belongs to ``class_id``, or ``None``."""
+        """Fetch a subclass that belongs to ``class_id``, or ``None`` (used by the characters flows)."""
 
         result = await self.db.execute(
             select(Subclass)
@@ -159,46 +152,15 @@ class ClassRepository(BaseRepository[Class]):
         )
         return result.scalar_one_or_none()
 
-    async def list_subclasses(self, class_id: int) -> list[Subclass]:
-        """Return all subclasses for ``class_id`` ordered by name."""
-
-        result = await self.db.execute(
-            select(Subclass)
-            .where(Subclass.class_id == class_id)
-            .order_by(Subclass.name)
-            .execution_options(populate_existing=True)
-        )
-        return list(result.scalars().unique().all())
-
-    async def update_subclass(self, subclass: Subclass, fields: dict, *, commit: bool = True) -> Subclass:
-        """Apply ``fields`` onto ``subclass`` and commit."""
-
-        for field, value in fields.items():
-            if hasattr(subclass, field):
-                setattr(subclass, field, value)
-
-        if commit:
-            await self.commit_or_flush()
-            await self.db.refresh(subclass)
-        else:
-            await self.db.flush()
-
-        return subclass
-
-    async def delete_subclass(self, subclass: Subclass) -> None:
-        """Delete a subclass (cascades to its features via ON DELETE CASCADE)."""
-
-        await self.db.delete(subclass)
-        await self.commit_or_flush()
-
     async def get_progression_features(self, class_id: int) -> list[Feature]:
-        """Return all CLASS and SUBCLASS features for ``class_id``, ordered by level."""
+        """Return all CLASS and SUBCLASS features of ``class_id`` with their effect trees, ordered by level."""
 
         subclass_ids = select(Subclass.id).where(Subclass.class_id == class_id)
 
         result = await self.db.execute(
             select(Feature)
             .where((Feature.class_id == class_id) | (Feature.subclass_id.in_(subclass_ids)))
+            .options(*feature_summary_loads())
             .order_by(Feature.level, Feature.id)
         )
         return list(result.scalars().unique().all())

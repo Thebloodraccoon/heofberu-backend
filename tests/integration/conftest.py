@@ -1,5 +1,5 @@
 """
-Integration-test fixtures: schema via Alembic, async DB session, and Redis.
+Integration-test fixtures: per-process database (Alembic template), async DB session, Redis.
 
 These are deliberately scoped to ``tests/integration``: they require the
 ``heof-test-db`` / ``heof-test-redis`` containers from ``docker-compose.dev.yml``.
@@ -10,22 +10,13 @@ Redis access goes through ``redis.asyncio``. Migrations run synchronously
 via Alembic (``migrations/env.py`` stays sync, driving psycopg2).
 """
 
-from alembic import command  # noqa: E402
-from alembic.config import Config  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from redis.asyncio import Redis  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from app.settings import settings  # noqa: E402
-
-ALEMBIC_INI = "alembic.ini"
-
-
-def _run_migrations() -> None:
-    """Apply all Alembic migrations to the test database."""
-    cfg = Config(ALEMBIC_INI)
-    command.upgrade(cfg, "head")
+from tests import isolation  # noqa: E402
 
 
 async def _truncate_all_tables(session) -> None:
@@ -37,33 +28,37 @@ async def _truncate_all_tables(session) -> None:
     a partial wipe can never leave stale rows that poison later tests with
     unique-constraint violations.
     """
+
     await session.rollback()  # discard any aborted/stale transaction state
     table_names = ", ".join(f'"{table.name}"' for table in settings.Base.metadata.sorted_tables)
     await session.execute(text(f"TRUNCATE TABLE {table_names} RESTART IDENTITY CASCADE"))
+
     await session.commit()
 
 
 @pytest.fixture(scope="session")
 def prepare_database():
     """
-    Create the test schema via Alembic once per session.
+    Create this process's own database (``heof_test_<run>_<worker>``) once per session.
 
-    Deliberately sync: the session-scoped fixture cannot depend on a
-    function-scoped asyncio event loop, and Alembic's migration runner
-    (``migrations/env.py``) is synchronous. The async engine is left for
-    process-exit cleanup — calling ``engine.dispose()`` from a different
-    event loop would break asyncpg pool connections.
-
-    Not autouse: only pulled in by fixtures that touch the database
-    (``db_session``), so unit tests never need the test DB to be running.
+    The DB is cloned from a migrated template (built once per migration set by
+    Alembic under a cross-process Postgres advisory lock) and dropped at session
+    end, also when tests fail. Sync on purpose: session-scoped and independent of
+    function event loops. Not autouse: only ``db_session`` pulls it in, so unit
+    tests never need Postgres.
     """
-    _run_migrations()
-    yield
+
+    isolation.create_worker_database()
+    try:
+        yield
+    finally:
+        isolation.drop_worker_database()
 
 
 @pytest_asyncio.fixture
 async def db_session(prepare_database):
-    """A fresh, truncated async DB session per test."""
+    """A fresh, truncated async DB session per test (on this process's own database)."""
+
     session = settings.SessionLocal()
     try:
         await _truncate_all_tables(session)
@@ -74,9 +69,17 @@ async def db_session(prepare_database):
 
 @pytest_asyncio.fixture
 async def redis_client():
-    """A connected, flushed Redis client for the test DB."""
+    """
+    A connected Redis client with this process's key namespace cleared before/after.
+
+    Never ``flushdb``: Redis is shared with other runs/workers. Only keys under
+    ``settings.CACHE_PREFIX`` and this process's rate-limit buckets are deleted.
+    """
+
     client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-    await client.flushdb()
+
+    await isolation.clear_redis_keys(client)
     yield client
-    await client.flushdb()
+    await isolation.clear_redis_keys(client)
+
     await client.aclose()

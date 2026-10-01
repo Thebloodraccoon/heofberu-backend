@@ -64,9 +64,7 @@ class TestSubraceTags:
         race = await create_race(name="Elf")
         subrace = await create_subrace(race.id, name="Wood Elf")
 
-        response = await client.put(
-            f"/subraces/{subrace.id}/tags", json={"tag_ids": [tag["id"]]}, headers=headers
-        )
+        response = await client.put(f"/subraces/{subrace.id}/tags", json={"tag_ids": [tag["id"]]}, headers=headers)
 
         assert response.status_code == 200
         assert [t["name"] for t in response.json()["tags"]] == ["Wood"]

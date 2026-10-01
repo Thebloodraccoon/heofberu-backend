@@ -11,7 +11,6 @@ article_tags = Table(
     settings.Base.metadata,
     Column("article_id", Integer, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True),
     Column("tag_id", Integer, ForeignKey("tags.id", ondelete="RESTRICT"), primary_key=True),
-
     # The composite PK is (article_id, tag_id) — a lone `WHERE tag_id = ...`
     # can't use it, hence this index.
     Index("ix_article_tags_tag_id", "tag_id"),

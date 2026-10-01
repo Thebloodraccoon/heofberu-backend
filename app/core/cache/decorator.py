@@ -23,6 +23,12 @@ Behavior
 * The cache key is derived from the namespace, function name and a
   canonical rendering of every argument, so calls that differ in any
   argument land on different keys and identical calls hit the same key.
+  Arguments are bound against the function signature, so ``get(5)`` and
+  ``get(item_id=5)`` share the key ``<prefix>:<ns>:get:1=5`` (the part is
+  ``<parameter position>=<value>``; ``self`` is position 0). Values longer
+  than ``MAX_KEY_PART_LENGTH`` (user-supplied search text) are replaced by a
+  digest, so keys stay bounded. Use :func:`build_cache_key` to compute the
+  key for point invalidation instead of hand-formatting it.
 * The namespace comes from (in order): the ``namespace`` argument, the
   decorated service's ``cache_namespaces[0]``, or ``module.qualname``.
 * The deserialization schema is read from the function's return
@@ -36,6 +42,11 @@ Behavior
   truthy (e.g. ``skip_if=lambda self, **_: self.some_flag``).
 * ``cache_none=False`` skips storing ``None`` results (useful when a
   cache hit must never mask a missing record).
+* Refills are race-safe: the invalidation epoch is read before the function
+  runs and the result is stored only if no purge happened meanwhile, so a value
+  read before a concurrent write committed never outlives that write's purge.
+* A cached payload that no longer decodes (schema changed by a deploy) is
+  treated as a miss: the key is dropped and the function runs.
 
 The generated wrapper is always a coroutine function; a decorated
 *sync* function is called directly inside it and its plain result is
@@ -43,14 +54,31 @@ returned. Every cached/uncached branch is awaited by the caller.
 """
 
 from collections.abc import Callable
+from datetime import date, datetime
+from enum import Enum
 import functools
+import hashlib
 import inspect
+import logging
 from typing import Any, get_type_hints
 
-from app.core.cache.client import cache_enabled, cache_get, cache_prefix, cache_set
+from pydantic import BaseModel
+
+from app.core.cache.client import (
+    cache_delete_key,
+    cache_enabled,
+    cache_epoch,
+    cache_get,
+    cache_prefix,
+    cache_set,
+)
 from app.core.cache.serialization import decode, encode
 
-_DYNAMIC_SCHEMA = object()  # sentinel: resolve the schema per-call from the service instance
+logger = logging.getLogger(__name__)
+
+MAX_KEY_PART_LENGTH = 64
+
+_DYNAMIC_SCHEMA = object()
 
 
 def use_cache(
@@ -87,15 +115,21 @@ def use_cache(
             key = _build_key(namespace, func, args, kwargs, key_builder)
             raw = await cache_get(key)
             if raw is not None:
-                return decode(raw, call_schema)
+                try:
+                    return decode(raw, call_schema)
+                except Exception:
+                    logger.warning("Undecodable cache entry for %s; treating as a miss", key, exc_info=True)
+                    await cache_delete_key(key)
 
+            epoch = await cache_epoch()
             result = await _call(*args, **kwargs)
-            if result is None and not cache_none:
+            if (result is None and not cache_none) or epoch is None:
                 return result
 
-            await cache_set(key, encode(result), ttl)
+            await cache_set(key, encode(result), ttl, epoch=epoch)
             return result
 
+        wrapper.__use_cache__ = {"namespace": namespace}
         return wrapper
 
     return decorator
@@ -107,6 +141,7 @@ def _resolve_return_schema(func: Callable) -> Any:
     try:
         hints = get_type_hints(func)
     except Exception:
+        logger.warning("Cannot resolve return type hints of %s; cached values decode to plain JSON", func.__qualname__)
         return None
 
     hint = hints.get("return")
@@ -195,14 +230,63 @@ def _build_key(
     if key_builder is not None:
         return key_builder(*args, **kwargs)
 
-    parts = [_resolve_namespace(namespace, args, func), func.__name__]
-    for index, value in enumerate(args[1:], start=1):
-        parts.append(f"{index}={_canonical(value)}")
+    return build_cache_key(func, *args, namespace=namespace, **kwargs)
 
-    for name in sorted(kwargs):
-        parts.append(f"{name}={_canonical(kwargs[name])}")
+
+def build_cache_key(func: Callable, *args: Any, namespace: str | None = None, **kwargs: Any) -> str:
+    """
+    Compute the exact key ``@use_cache`` stores ``func(*args, **kwargs)`` under.
+
+    ``func`` is the undecorated-or-decorated function (``functools.wraps`` keeps the
+    signature); ``args[0]`` is the instance for methods. For point invalidation::
+
+        key = build_cache_key(ArticleService.get_by_id, service, article_id)
+    """
+
+    parts = [_resolve_namespace(namespace, args, func), func.__name__]
+    parts.extend(_render_arguments(func, args, kwargs))
 
     return f"{cache_prefix()}:{':'.join(parts)}"
+
+
+def _render_arguments(func: Callable, args: tuple, kwargs: dict) -> list[str]:
+    """Render call arguments as ``<position>=<value>`` / ``<name>=<value>`` parts, in signature order."""
+
+    try:
+        signature = inspect.signature(func)
+        bound = signature.bind(*args, **kwargs)
+    except (TypeError, ValueError):
+        return [f"{index}={_part(value)}" for index, value in enumerate(args[1:], start=1)] + [
+            f"{name}={_part(kwargs[name])}" for name in sorted(kwargs)
+        ]
+
+    parameters = list(signature.parameters.values())
+    parts: list[str] = []
+    for position, parameter in enumerate(parameters):
+        if parameter.name not in bound.arguments or (position == 0 and parameter.name in ("self", "cls")):
+            continue
+
+        value = bound.arguments[parameter.name]
+        if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+            parts.extend(f"{position + offset}={_part(item)}" for offset, item in enumerate(value))
+        elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            parts.extend(f"{name}={_part(value[name])}" for name in sorted(value))
+        elif parameter.kind is inspect.Parameter.KEYWORD_ONLY:
+            parts.append(f"{parameter.name}={_part(value)}")
+        else:
+            parts.append(f"{position}={_part(value)}")
+
+    return parts
+
+
+def _part(value: Any) -> str:
+    """Canonical rendering of one argument, replaced by a digest when too long to keep keys bounded."""
+
+    rendered = _canonical(value)
+    if len(rendered) <= MAX_KEY_PART_LENGTH:
+        return rendered
+
+    return "~" + hashlib.sha256(rendered.encode()).hexdigest()[:24]
 
 
 def _resolve_namespace(explicit: str | None, args: tuple, func: Callable) -> str:
@@ -231,5 +315,17 @@ def _canonical(value: Any) -> str:
 
     if isinstance(value, list | tuple):
         return "[" + ",".join(_canonical(v) for v in value) + "]"
+
+    if isinstance(value, set | frozenset):
+        return "{" + ",".join(sorted(_canonical(v) for v in value)) + "}"
+
+    if isinstance(value, Enum):
+        return str(value.value)
+
+    if isinstance(value, BaseModel):
+        return value.model_dump_json(exclude_none=True)
+
+    if isinstance(value, datetime | date):
+        return value.isoformat()
 
     return str(value)

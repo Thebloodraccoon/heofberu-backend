@@ -1,21 +1,21 @@
-"""Class progression service: spell-slot table and full 1-20 progression."""
+"""Class progression service: spell-slot table and the derived 1-20 progression."""
 
 import math
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.base.service import BaseService
-from app.features.classes.cache import CLASS_CACHE_NAMESPACES, invalidate_class_cache
-from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
-from app.features.classes.exceptions import InvalidClassLevelException
+from app.core.cache import use_cache
+from app.core.exceptions import RecordNotFoundError
+from app.features.classes.crud.schemas import ClassResponse
 from app.features.classes.progression.schemas import (
     ClassProgressionResponse,
     ProgressionLevelRow,
+    ProgressionSubclassFeature,
     SpellSlotProgressionUpdate,
 )
-from app.features.features.crud.schemas import NestedFeatureCreate
-from app.models.classes.class_model import Class
+from app.features.classes.service_base import ClassScopedService
+from app.features.features.crud.schemas import NestedFeatureResponse
+
+MIN_CLASS_LEVEL = 1
+MAX_CLASS_LEVEL = 20
 
 
 def _proficiency_bonus(class_level: int) -> int:
@@ -24,85 +24,53 @@ def _proficiency_bonus(class_level: int) -> int:
     return math.ceil(class_level / 4) + 1
 
 
-class ClassProgressionService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None]):
+class ClassProgressionService(ClassScopedService):
     """
-    Everything about a class's progression.
-
-    ``set_spell_slots`` validates ``class_level`` (1-20) and full-replaces
-    that level's rows; ``get_progression`` builds the whole 1-20 table.
-    Writes purge ``CLASS_CACHE_NAMESPACES`` via ``cache_namespaces``.
+    A class's progression: ``set_spell_slots`` replaces one level's slot rows,
+    ``get_progression`` builds the whole 1-20 table (cached under ``classes``,
+    which every class, subclass and feature write purges).
     """
-
-    repository: ClassRepository
-
-    cache_namespaces = CLASS_CACHE_NAMESPACES
-
-    def __init__(self, db: AsyncSession):
-        """Initialize the service with a repository over the session."""
-
-        super().__init__(
-            repository=ClassRepository(db),
-            response_schema=ClassResponse,
-        )
 
     async def set_spell_slots(self, class_id: int, class_level: int, data: SpellSlotProgressionUpdate) -> ClassResponse:
-        """
-        Replace spell slots for a single class_level (1-20).
+        """Replace the spell slots of a single ``class_level`` (the router bounds it to 1-20)."""
 
-        ``class_level`` is validated here before touching the DB.
-        """
-
-        character_class = await self._get_or_404(class_id)
-        if not (1 <= class_level <= 20):
-            raise InvalidClassLevelException(class_level)
+        await self._exists_or_404(class_id)
 
         slots_by_spell_level = {entry.spell_level: entry.slots for entry in data.slots}
-        await self.repository.set_spell_slots(character_class, class_level, slots_by_spell_level)
-        await invalidate_class_cache()
+        await self.repository.set_spell_slots(class_id, class_level, slots_by_spell_level)
+        await self._invalidate_cache()
 
         return await self._get_response(class_id)
 
+    @use_cache(namespace="classes")
     async def get_progression(self, class_id: int) -> ClassProgressionResponse:
         """Build the full 1-20 progression table for a class (slots + class/subclass features)."""
 
-        character_class = await self._get_or_404(class_id)
+        class_name = await self.repository.get_name(class_id)
+        if class_name is None:
+            raise RecordNotFoundError(model_name="Class", model_id=str(class_id))
 
-        # Index spell slots by class_level → {spell_level: slots}
         slots_by_level: dict[int, dict[str, int]] = {}
-        for row in character_class.spell_slot_progression:
+        for row in await self.repository.get_spell_slot_rows(class_id):
             slots_by_level.setdefault(row.class_level, {})[row.spell_level] = row.slots
 
-        # Fetch all CLASS + SUBCLASS features for this class, ordered by level.
-        all_features = await self.repository.get_progression_features(class_id)
+        class_features: dict[int, list] = {}
+        subclass_features: dict[int, list] = {}
+        for feature in await self.repository.get_progression_features(class_id):
+            bucket = class_features if feature.subclass_id is None else subclass_features
+            bucket.setdefault(feature.level, []).append(feature)
 
-        # Index features by (level, source_type)
-        class_features_by_level: dict[int, list] = {}
-        subclass_features_by_level: dict[int, list] = {}
-        for f in all_features:
-            lvl = f.level or 0
-            if f.subclass_id is not None:
-                subclass_features_by_level.setdefault(lvl, []).append(f)
-            else:
-                class_features_by_level.setdefault(lvl, []).append(f)
-
-        rows = []
-        for lvl in range(1, 21):
-            rows.append(
-                ProgressionLevelRow(
-                    level=lvl,
-                    proficiency_bonus=_proficiency_bonus(lvl),
-                    spell_slots=slots_by_level.get(lvl, {}),
-                    class_features=[
-                        NestedFeatureCreate.model_validate(f) for f in class_features_by_level.get(lvl, [])
-                    ],
-                    subclass_features=[
-                        NestedFeatureCreate.model_validate(f) for f in subclass_features_by_level.get(lvl, [])
-                    ],
-                )
+        rows = [
+            ProgressionLevelRow(
+                level=level,
+                proficiency_bonus=_proficiency_bonus(level),
+                spell_slots=slots_by_level.get(level, {}),
+                class_features=[NestedFeatureResponse.model_validate(f) for f in class_features.get(level, [])],
+                subclass_features=[
+                    ProgressionSubclassFeature.model_validate(f) for f in subclass_features.get(level, [])
+                ],
             )
+            for level in range(MIN_CLASS_LEVEL, MAX_CLASS_LEVEL + 1)
+        ]
 
-        return ClassProgressionResponse(
-            class_id=class_id,
-            class_name=character_class.name,
-            rows=rows,
-        )
+        return ClassProgressionResponse(class_id=class_id, class_name=class_name, rows=rows)

@@ -1,6 +1,6 @@
 """Request schema for a GM directly granting a spell to a character."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CharacterGrantedSpellAdd(BaseModel):
@@ -9,4 +9,4 @@ class CharacterGrantedSpellAdd(BaseModel):
     no class/race eligibility check (a GM override, like a homebrew boon).
     """
 
-    spell_id: int
+    spell_id: int = Field(gt=0)

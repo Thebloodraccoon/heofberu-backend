@@ -1,4 +1,5 @@
-"""Tag cache coordination: one invalidation point shared by every capability.
+"""
+Tag cache coordination: one invalidation point shared by every capability.
 
 Every catalog that embeds tags (races/subraces/backgrounds/articles) reads
 them through ITS OWN cache namespace, not this one — a tag write only needs
@@ -9,4 +10,6 @@ under the ``"races"`` namespace too (see ``SUBRACE_CACHE_NAMESPACES`` in
 namespace to purge.
 """
 
-TAG_CACHE_NAMESPACES = ("tags", "races", "backgrounds", "articles")
+from app.core.cache.namespaces import dependents
+
+TAG_CACHE_NAMESPACES = ("tags", *dependents("tags"))

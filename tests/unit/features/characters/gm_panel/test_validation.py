@@ -13,10 +13,8 @@ from app.features.characters.feats.exceptions import (
 from app.features.characters.feats.validation import (
     check_feat_prerequisite,
     validate_ability_score_increase,
-    validate_ability_score_increase_cap,
     validate_asi_choice_required,
 )
-from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
 from tests.unit.features.characters.conftest import make_feat_with_choice_groups
 
 TOTALS = {
@@ -92,45 +90,6 @@ class TestValidateAsiChoiceRequired:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-class TestValidateAbilityScoreIncreaseCap:
-    async def test_unknown_increase_is_a_no_op(self):
-        feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])
-        stats = FakeStatsService()
-
-        assert await validate_ability_score_increase_cap(feat, 999, SimpleNamespace(), stats) is None
-        assert stats.compute_calls == []
-
-    async def test_under_the_cap_passes_without_raising(self):
-        feat = make_feat(ability_effects=[(AbilityScore.STR, 2)])
-        stats = FakeStatsService()
-
-        assert await validate_ability_score_increase_cap(feat, 200, SimpleNamespace(), stats) is None
-        assert len(stats.compute_calls) == 1
-
-    async def test_over_the_cap_raises_with_effective_numbers(self):
-        feat = make_feat(ability_effects=[(AbilityScore.DEX, 3)])
-        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 19})
-
-        with pytest.raises(AbilityScoreCapExceededException) as exc_info:
-            await validate_ability_score_increase_cap(feat, 200, SimpleNamespace(), stats)
-
-        assert exc_info.value.ability == "DEX"
-        assert exc_info.value.current_total == 19
-        assert exc_info.value.requested == 22
-
-    async def test_feat_is_capped_at_twenty_even_when_a_feature_raises_the_cap(self):
-        feat = make_feat(ability_effects=[(AbilityScore.STR, 4)])
-        stats = FakeStatsService(
-            totals={**TOTALS, "strength_total": 20},
-            caps={**dict.fromkeys(AbilityScore, 20), AbilityScore.STR: 30},
-        )
-
-        with pytest.raises(AbilityScoreCapExceededException):
-            await validate_ability_score_increase_cap(feat, 200, SimpleNamespace(), stats)
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
 class TestCheckFeatPrerequisite:
     async def test_no_prerequisite_passes_without_computing(self):
         feat = SimpleNamespace(id=2, choice_groups=[], prerequisite_ability=None, prerequisite_minimum_score=None)
@@ -140,20 +99,26 @@ class TestCheckFeatPrerequisite:
         assert stats.compute_calls == []
 
     async def test_partial_prerequisite_passes(self):
-        feat = SimpleNamespace(id=2, choice_groups=[], prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=None)
+        feat = SimpleNamespace(
+            id=2, choice_groups=[], prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=None
+        )
         stats = FakeStatsService()
 
         assert await check_feat_prerequisite(SimpleNamespace(), feat, stats) is None
         assert stats.compute_calls == []
 
     async def test_met_prerequisite_passes(self):
-        feat = SimpleNamespace(id=2, choice_groups=[], prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=14)
+        feat = SimpleNamespace(
+            id=2, choice_groups=[], prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=14
+        )
         stats = FakeStatsService()
 
         assert await check_feat_prerequisite(SimpleNamespace(), feat, stats) is None
 
     async def test_unmet_prerequisite_raises(self):
-        feat = SimpleNamespace(id=2, choice_groups=[], prerequisite_ability=AbilityScore.INT, prerequisite_minimum_score=13)
+        feat = SimpleNamespace(
+            id=2, choice_groups=[], prerequisite_ability=AbilityScore.INT, prerequisite_minimum_score=13
+        )
         stats = FakeStatsService(totals={**TOTALS, "intelligence_total": 8})
 
         with pytest.raises(FeatPrerequisiteNotMetException) as exc_info:
@@ -164,7 +129,9 @@ class TestCheckFeatPrerequisite:
         assert exc_info.value.actual == 8
 
     async def test_check_uses_effective_totals_not_base_columns(self):
-        feat = SimpleNamespace(id=2, choice_groups=[], prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=15)
+        feat = SimpleNamespace(
+            id=2, choice_groups=[], prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=15
+        )
         character = SimpleNamespace(strength=14)
         stats = FakeStatsService(totals={**TOTALS, "strength_total": 16})
 

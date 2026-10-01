@@ -130,14 +130,14 @@ class FakeRepository:
             await self.db.commit()
         return row
 
-    async def update(self, db_obj, update_data: dict[str, Any], *, refresh: bool = False):
+    async def update(self, db_obj, update_data: dict[str, Any], *, refresh: bool = False, commit: bool = True):
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
         self.updated.append(db_obj)
         if refresh:
             await self.db.refresh(db_obj)
-        else:
+        elif commit:
             await self.db.commit()
         return db_obj
 
@@ -150,3 +150,119 @@ class FakeRepository:
             await self.db.commit()
         else:
             await self.db.flush()
+
+
+class FakeRedisPipeline:
+    """Buffers commands and replays them against a :class:`FakeCacheRedis` on ``execute``."""
+
+    def __init__(self, redis: "FakeCacheRedis"):
+        self._redis = redis
+        self._commands: list[tuple[str, tuple, dict]] = []
+
+    def __getattr__(self, name: str):
+        def queue(*args, **kwargs):
+            self._commands.append((name, args, kwargs))
+            return self
+
+        return queue
+
+    async def execute(self):
+        results = []
+        for name, args, kwargs in self._commands:
+            results.append(await getattr(self._redis, name)(*args, **kwargs))
+        self._commands = []
+        return results
+
+
+class FakeCacheRedis:
+    """
+    In-memory stand-in for the async Redis surface the cache layer uses.
+
+    Strings live in ``data`` (so ``fake.data == {...}`` assertions only see cache
+    entries); index SETs live in ``sets``. ``set_calls`` records ``(key, value, ex)``,
+    ``unlinked`` every key passed to ``unlink``/``delete``, and ``scans`` counts
+    ``scan_iter`` calls (namespace invalidation must never scan).
+    """
+
+    def __init__(self):
+        self.data: dict[str, Any] = {}
+        self.sets: dict[str, set[str]] = {}
+        self.expiries: dict[str, int] = {}
+        self.counters: dict[str, int] = {}
+        self.set_calls: list[tuple[str, Any, int | None]] = []
+        self.unlinked: list[str] = []
+        self.scans = 0
+
+    def pipeline(self, transaction: bool = True):
+        return FakeRedisPipeline(self)
+
+    async def get(self, key):
+        if key in self.counters:
+            return str(self.counters[key])
+        return self.data.get(key)
+
+    async def incr(self, key):
+        self.counters[key] = self.counters.get(key, 0) + 1
+        return self.counters[key]
+
+    async def persist(self, name):
+        return self.expiries.pop(name, None) is not None
+
+    async def set(self, key, value, ex=None):
+        self.set_calls.append((key, value, ex))
+        self.data[key] = value
+        return True
+
+    async def sadd(self, name, *members):
+        bucket = self.sets.setdefault(name, set())
+        before = len(bucket)
+        bucket.update(members)
+        return len(bucket) - before
+
+    async def srem(self, name, *members):
+        bucket = self.sets.get(name, set())
+        removed = len(bucket & set(members))
+        bucket.difference_update(members)
+        if not bucket:
+            self.sets.pop(name, None)
+        return removed
+
+    async def smembers(self, name):
+        return set(self.sets.get(name, set()))
+
+    async def scard(self, name):
+        return len(self.sets.get(name, set()))
+
+    async def expire(self, name, seconds):
+        self.expiries[name] = seconds
+        return True
+
+    async def rename(self, source, destination):
+        if source not in self.sets:
+            raise RuntimeError("ERR no such key")
+        self.sets[destination] = self.sets.pop(source)
+        return True
+
+    async def unlink(self, *keys):
+        removed = 0
+        for key in keys:
+            self.unlinked.append(key)
+            if self.data.pop(key, None) is not None or self.sets.pop(key, None) is not None:
+                removed += 1
+        return removed
+
+    async def delete(self, *keys):
+        removed = 0
+        for key in keys:
+            self.unlinked.append(key)
+            if self.data.pop(key, None) is not None or self.sets.pop(key, None) is not None:
+                removed += 1
+        return removed
+
+    async def scan_iter(self, match=None, count=100):
+        import fnmatch
+
+        self.scans += 1
+        for key in [*self.data, *self.sets, *self.counters]:
+            if match is None or fnmatch.fnmatchcase(key, match):
+                yield key

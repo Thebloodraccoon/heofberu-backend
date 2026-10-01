@@ -1,7 +1,10 @@
 """Character spell service: slots and known spells management."""
 
+from functools import partial
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.base.transaction import unit_of_work
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.grants.effects import (
@@ -9,6 +12,7 @@ from app.features.characters.grants.effects import (
     load_spell_responses,
     spell_list,
 )
+from app.features.characters.locking import lock_character
 from app.features.characters.spells.eligibility import CharacterSpellEligibilityChecker
 from app.features.characters.spells.exceptions import (
     CharacterSpellAlreadyKnownException,
@@ -99,25 +103,27 @@ class CharacterSpellService(CharacterSubDomainService):
         if not spell:
             raise SpellNotFoundException(spell_id=data.spell_id)
 
-        existing = await self.character_spell_repository.get_known_spell(character_id, data.spell_id)
-        if existing:
-            raise CharacterSpellAlreadyKnownException(character_id=character_id, spell_id=data.spell_id)
+        async with unit_of_work(self.repository.db) as uow:
+            await lock_character(self.repository.db, character_id)
 
-        await self.eligibility_checker.check(character, spell)
+            if await self.character_spell_repository.get_known_spell(character_id, data.spell_id):
+                raise CharacterSpellAlreadyKnownException(character_id=character_id, spell_id=data.spell_id)
 
-        character_spell = await self.character_spell_repository.add_known_spell(character_id, data.spell_id)
-        await invalidate_character_cache(character_id)
-        return CharacterSpellResponse.model_validate(character_spell.spell)
+            await self.eligibility_checker.check(character, spell)
+            await self.character_spell_repository.add_known_spell(character_id, data.spell_id)
+            await uow.after_commit(partial(invalidate_character_cache, character_id))
 
-    async def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> bool:
+        return CharacterSpellResponse.model_validate(spell)
+
+    async def remove_known_spell(self, character_id: int, spell_id: int, current_user: UserResponse) -> None:
         """Remove a spell from the character's known spells, freeing up its slot."""
 
         await self.get_character_for_user(character_id, current_user)
 
         character_spell = await self._get_known_spell_or_404(character_id, spell_id)
-        result = await self.character_spell_repository.remove_known_spell(character_spell)
-        await invalidate_character_cache(character_id)
-        return result
+        async with unit_of_work(self.repository.db) as uow:
+            await self.character_spell_repository.remove_known_spell(character_spell)
+            await uow.after_commit(partial(invalidate_character_cache, character_id))
 
     async def _get_known_spell_or_404(self, character_id: int, spell_id: int) -> CharacterSpell:
         """Fetch a known-spell entry, or raise ``CharacterSpellNotFoundException``."""

@@ -49,18 +49,22 @@ class TagsReplaceMixin:
 class TagsManagerMixin:
     """Fully replace the tags attached to a source record."""
 
-    _set_tags_method: str = "set_tags"
-
     async def set_tags(self, source_id: int, data: Any) -> Any:
-        """Fully replace the tags attached to ``source_id``."""
+        """Fully replace the tags attached to ``source_id`` (check, resolve, write and purge in one transaction)."""
 
-        await self._exists_or_404(source_id)
-        tags = await self._resolve_tags(data.tag_ids)
+        async with self._atomic():
+            await self._exists_or_404(source_id)
+            tags = await self._resolve_tags(data.tag_ids)
 
-        await getattr(self.repository, self._set_tags_method)(source_id, tags)
-        await self._invalidate_cache()
+            await self.repository.set_tags(source_id, tags, commit=False)
+            await self._after_tags_set(source_id)
 
         return await self._get_response(source_id)
+
+    async def _after_tags_set(self, source_id: int) -> None:
+        """Post-write cache hook (runs after COMMIT inside the transaction); purges the service namespaces by default."""
+
+        await self._invalidate_cache()
 
     async def _resolve_tags(self, tag_ids: list[int] | None) -> list[Tag] | None:
         """Resolve ``tag_ids`` to ``Tag`` rows, or ``None`` when absent/empty."""

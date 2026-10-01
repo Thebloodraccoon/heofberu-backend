@@ -263,17 +263,18 @@ class TestBackgroundItemChoices:
         await db_session.flush()
         db_session.add(SourceItemChoiceOption(group_id=group.id, item_id=rapier.id, quantity=1))
         await db_session.commit()
+        character_id, background_id = character.id, background.id
 
         response = await client.patch(
-            f"/characters/{character.id}/progression/background",
-            json={"background_id": background.id},
+            f"/characters/{character_id}/progression/background",
+            json={"background_id": background_id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
         assert response.status_code == 400, response.text
 
         detail = await client.get(
-            f"/characters/{character.id}",
+            f"/characters/{character_id}",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert detail.status_code == 200

@@ -1,8 +1,9 @@
 """
 SQLAlchemy enum column types mapped from the shared domain enums.
 
-Each entry is a native PostgreSQL ENUM (``create_type=False``); the actual
-``CREATE TYPE`` statements live in the Alembic migrations.
+Closed sets are native PostgreSQL ENUMs (``create_type=False``, the
+``CREATE TYPE`` statements live in the Alembic migrations); sets that grow
+with content are stored as ``VARCHAR`` (``native_enum=False``).
 """
 
 from sqlalchemy import Enum as SAEnum

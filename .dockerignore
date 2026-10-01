@@ -30,8 +30,12 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual environments
+# Secrets: every .env file stays out of the image (inject with env_file / the orchestrator)
 .env
+.env.*
+!.env.example
+
+# Virtual environments
 .venv
 env/
 venv/
@@ -100,3 +104,9 @@ yarn-error.log*
 # Github
 .github/
 .github/*
+
+# Not needed at runtime
+tests/
+output/
+.opencode/
+.claude/

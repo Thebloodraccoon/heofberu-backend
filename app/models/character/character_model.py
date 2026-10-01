@@ -5,6 +5,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -21,9 +22,8 @@ class Character(settings.Base):  # type: ignore
     __tablename__ = "characters"
 
     id = Column(Integer, primary_key=True)
-    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
-    # Basic info
     name = Column(String(200), nullable=False, index=True)
     level = Column(Integer, nullable=False, default=1)
 
@@ -33,7 +33,6 @@ class Character(settings.Base):  # type: ignore
     subrace_id = Column(Integer, ForeignKey("subraces.id", ondelete="SET NULL"), nullable=True, index=True)
     background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    # Combat stats
     current_hp = Column(Integer, nullable=False, default=0)
     max_hp = Column(Integer, nullable=False, default=0)
     temp_hp = Column(Integer, nullable=False, default=0)
@@ -42,7 +41,6 @@ class Character(settings.Base):  # type: ignore
     armor_class = Column(Integer, nullable=False, default=10)
     shield = Column(Integer, nullable=False, default=0)
 
-    # Ability scores
     strength = Column(Integer, nullable=False, default=10)
     dexterity = Column(Integer, nullable=False, default=10)
     constitution = Column(Integer, nullable=False, default=10)
@@ -50,20 +48,16 @@ class Character(settings.Base):  # type: ignore
     wisdom = Column(Integer, nullable=False, default=10)
     charisma = Column(Integer, nullable=False, default=10)
 
-    # Free text sections
     notes = Column(Text, nullable=False, default="")
 
-    # Inspiration points (0-13) the GM grants; unlike 5e's plain boolean,
-    # this table tracks a stockpile the player can spend down over time.
+    # 0-13 points the GM grants; unlike 5e's boolean it is a stockpile the player spends down.
     inspiration = Column(Integer, nullable=False, default=0)
 
-    # Personality card free-text fields (5e "Personality" section).
     personality_traits = Column(Text, nullable=False, default="")
     ideals = Column(Text, nullable=False, default="")
     bonds = Column(Text, nullable=False, default="")
     flaws = Column(Text, nullable=False, default="")
 
-    # Currency
     money_gold = Column(Integer, nullable=False, default=0)
     money_silver = Column(Integer, nullable=False, default=0)
     money_copper = Column(Integer, nullable=False, default=0)
@@ -105,7 +99,6 @@ class Character(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    spells = relationship("Spell", secondary="character_spells", viewonly=True)
 
     character_features = relationship(
         "CharacterFeature",
@@ -113,7 +106,6 @@ class Character(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    features = relationship("Feature", secondary="character_features", viewonly=True)
 
     character_items = relationship(
         "CharacterItem",
@@ -121,7 +113,6 @@ class Character(settings.Base):  # type: ignore
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    items = relationship("Item", secondary="character_items", viewonly=True)
 
     conditions = relationship(
         "CharacterCondition",
@@ -159,6 +150,13 @@ class Character(settings.Base):  # type: ignore
         CheckConstraint("max_hp >= 0", name="check_max_hp_nonnegative"),
         CheckConstraint("temp_hp >= 0", name="check_temp_hp_nonnegative"),
         CheckConstraint("inspiration >= 0 AND inspiration <= 13", name="check_inspiration_range"),
+        CheckConstraint("current_hp <= max_hp", name="ck_characters_current_hp_le_max_hp"),
+        CheckConstraint("armor_class >= 0 AND shield >= 0 AND speed >= 0", name="ck_characters_combat_stats"),
+        CheckConstraint("money_gold >= 0 AND money_silver >= 0 AND money_copper >= 0", name="ck_characters_money"),
+        # ``GET /characters`` filters by owner and sorts by (name, id); replaces the bare owner_id index.
+        Index("ix_characters_owner_id_name", "owner_id", "name", "id"),
+        # ``ILIKE '%x%'`` name search (pg_trgm is installed by migration 0001).
+        Index("ix_characters_name_trgm", "name", postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
     )
 
     def __repr__(self):

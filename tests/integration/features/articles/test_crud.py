@@ -113,9 +113,7 @@ class TestArticleCrud:
             )
         ).json()
 
-        response = await client.patch(
-            f"/articles/{city['id']}", json={"parent_id": region_b["id"]}, headers=headers
-        )
+        response = await client.patch(f"/articles/{city['id']}", json={"parent_id": region_b["id"]}, headers=headers)
         assert response.status_code == 200
         assert response.json()["parent_id"] == region_b["id"]
 
@@ -139,9 +137,7 @@ class TestArticleCrud:
             )
         ).json()
 
-        response = await client.patch(
-            f"/articles/{parent['id']}", json={"parent_id": child["id"]}, headers=headers
-        )
+        response = await client.patch(f"/articles/{parent['id']}", json={"parent_id": child["id"]}, headers=headers)
 
         assert response.status_code == 400
 

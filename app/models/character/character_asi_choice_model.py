@@ -1,6 +1,6 @@
 """ORM models for a character's resolved Ability Score Improvement choices."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.models.enums import AbilityScoreType, ASILevelChoiceType
@@ -45,7 +45,8 @@ class CharacterASIChoice(settings.Base):  # type: ignore
     __tablename__ = "character_asi_choices"
 
     id = Column(Integer, primary_key=True)
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    # No own index: ``uq_character_asi_choice_level`` (character_id, class_level) already leads with it.
+    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
     class_level = Column(Integer, nullable=True)
     choice_type = Column(ASILevelChoiceType, nullable=False)
 
@@ -63,7 +64,12 @@ class CharacterASIChoice(settings.Base):  # type: ignore
     # live ONLY in the child rows below.
     applied_to_base = Column(Boolean, nullable=False, default=False, server_default="false")
 
-    __table_args__ = (UniqueConstraint("character_id", "class_level", name="uq_character_asi_choice_level"),)
+    __table_args__ = (
+        UniqueConstraint("character_id", "class_level", name="uq_character_asi_choice_level"),
+        CheckConstraint("choice_type <> 'FEAT' OR feat_id IS NOT NULL", name="ck_character_asi_choice_feat_has_feat"),
+        # Upper bound = CHARACTER_MAX_LEVEL.
+        CheckConstraint("class_level IS NULL OR class_level BETWEEN 1 AND 20", name="ck_character_asi_choice_level"),
+    )
 
     character = relationship("Character", back_populates="asi_choices")
 
@@ -105,7 +111,11 @@ class CharacterASIChoiceIncrease(settings.Base):  # type: ignore
     ability = Column(AbilityScoreType, nullable=False)
     amount = Column(Integer, nullable=False)
 
-    __table_args__ = (UniqueConstraint("character_asi_choice_id", "ability", name="uq_character_asi_inc_ability"),)
+    __table_args__ = (
+        UniqueConstraint("character_asi_choice_id", "ability", name="uq_character_asi_inc_ability"),
+        # Upper bound = MAX_ABILITY_SCORE_CAP (the GM-panel schema limit).
+        CheckConstraint("amount BETWEEN -30 AND 30", name="ck_character_asi_increase_amount"),
+    )
 
     choice = relationship("CharacterASIChoice", back_populates="increases")
 

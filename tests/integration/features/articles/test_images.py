@@ -6,6 +6,7 @@ environment — see ``tests/integration/features/races/test_image.py`` for the s
 """
 
 import pytest
+from sqlalchemy import text
 
 from app import main as app_module
 from app.core.storage.dependencies import get_image_storage_service
@@ -162,3 +163,91 @@ class TestArticleImages:
         )
 
         assert response.status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestArticleImageTransactions:
+    @pytest.fixture(autouse=True)
+    def _fake_storage(self):
+        fake = FakeImageStorage()
+        app_module.app.dependency_overrides[get_image_storage_service] = lambda: fake
+        yield fake
+        app_module.app.dependency_overrides.pop(get_image_storage_service, None)
+
+    def _png_files(self):
+        return {"image": ("map.png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\x00", "image/png")}
+
+    async def test_no_db_transaction_is_open_during_the_network_upload(
+        self, client, create_article, gm_token, db_session, _fake_storage
+    ):
+        article = await create_article(title="Khazad-dum")
+        seen = []
+
+        async def upload(entity, row_id, content, content_type):
+            seen.append(db_session.in_transaction())
+            return f"https://fake-storage/{entity}/{row_id}.png"
+
+        _fake_storage.upload_image = upload
+
+        response = await client.post(
+            f"/articles/{article['id']}/images",
+            files=self._png_files(),
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        assert seen == [False]
+
+    async def test_failed_upload_leaves_no_row_and_cleans_storage(
+        self, client, create_article, gm_token, db_session, _fake_storage
+    ):
+        article = await create_article(title="Khazad-dum")
+
+        async def failing(entity, row_id, content, content_type):
+            raise ImageUploadError("boom")
+
+        _fake_storage.upload_image = failing
+
+        response = await client.post(
+            f"/articles/{article['id']}/images",
+            files=self._png_files(),
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
+        assert len(_fake_storage.deleted) == 1
+        count = await db_session.scalar(text("SELECT count(*) FROM article_images"))
+        assert count == 0
+
+    async def test_article_deleted_during_upload_cleans_storage_and_returns_404(
+        self, client, create_article, gm_token, db_session, _fake_storage
+    ):
+        article = await create_article(title="Khazad-dum")
+
+        async def upload_then_article_vanishes(entity, row_id, content, content_type):
+            await db_session.execute(text("DELETE FROM articles WHERE id = :id"), {"id": article["id"]})
+            await db_session.commit()
+            return "https://fake-storage/x.png"
+
+        _fake_storage.upload_image = upload_then_article_vanishes
+
+        response = await client.post(
+            f"/articles/{article['id']}/images",
+            files=self._png_files(),
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 404
+        assert len(_fake_storage.deleted) == 1
+
+    async def test_image_limit_per_article(self, client, create_article, gm_token, monkeypatch, _fake_storage):
+        monkeypatch.setattr("app.features.articles.images.service.MAX_IMAGES_PER_ARTICLE", 1)
+        article = await create_article(title="Khazad-dum")
+        headers = {"Authorization": f"Bearer {gm_token}"}
+
+        first = await client.post(f"/articles/{article['id']}/images", files=self._png_files(), headers=headers)
+        second = await client.post(f"/articles/{article['id']}/images", files=self._png_files(), headers=headers)
+
+        assert (first.status_code, second.status_code) == (201, 400)
+        assert len(_fake_storage.uploaded) == 1

@@ -15,6 +15,7 @@ from app.constants import (
     SpellSchool,
 )
 from app.core.base.service import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.spells.crud.schemas import (
     SpellCreate,
     SpellGetAllResponse,
@@ -22,7 +23,6 @@ from app.features.spells.crud.schemas import (
     SpellUpdate,
 )
 from app.features.spells.dependencies import SpellCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -107,6 +107,7 @@ async def get_spell(spell_id: int, spell_service: SpellCrudDep):
     summary="Create a spell",
     responses={
         400: {"description": "A spell with this name already exists, or an availability id is invalid."},
+        422: {"description": "Invalid payload (bounds, dice/material consistency, unknown key)."},
     },
 )
 async def create_spell(
@@ -228,6 +229,7 @@ async def create_spell(
     responses={
         400: {"description": "Another spell already uses the requested name."},
         404: {"description": "No spell exists with the given ID."},
+        422: {"description": "Invalid payload (bounds, an explicit null for a required field, unknown key)."},
     },
 )
 async def update_spell(
@@ -257,8 +259,8 @@ async def update_spell(
     _: GmUserDep,
 ):
     """
-    Partially update a spell only with the provided fields (availabilty via the PUT endpoints).
-    **GM only.**
+    Partially update a spell only with the provided fields (availability via the PUT endpoints).
+    A rename also refreshes every cached payload that renders the spell's name. **GM only.**
     """
 
     return await spell_service.update(spell_id, data)
@@ -270,6 +272,7 @@ async def update_spell(
     summary="Delete a spell",
     responses={
         404: {"description": "No spell exists with the given ID."},
+        409: {"description": "A character knows or was granted the spell, or a feature effect grants it."},
     },
 )
 async def delete_spell(spell_id: int, spell_service: SpellCrudDep, _: FounderDep):

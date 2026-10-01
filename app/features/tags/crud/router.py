@@ -5,9 +5,9 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Body, Query, status
 
 from app.core.base.service import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep, OptionalUserDep, can_see_hidden
 from app.features.tags.crud.schemas import TagCreate, TagGetAllResponse, TagResponse, TagUpdate
 from app.features.tags.dependencies import TagCrudDep
-from app.features.users.security import FounderDep, GmUserDep, OptionalUserDep, can_see_hidden
 
 router = APIRouter()
 
@@ -22,6 +22,7 @@ async def get_tags(
     user: OptionalUserDep,
     search: str | None = Query(
         None,
+        max_length=100,
         description="Case-insensitive substring match against the tag's name.",
     ),
     sort: Literal["name", "popular"] = Query("name", description="`name` = A-Z, `popular` = most used first."),

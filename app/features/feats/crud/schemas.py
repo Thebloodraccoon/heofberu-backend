@@ -1,10 +1,26 @@
 """Request/response schemas for the feat endpoints."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from app.constants import AbilityScore
 from app.features.features.crud.schemas import FeatPrerequisiteFields, FeatPrerequisiteFieldsUpdate
 from app.features.features.effects.schemas import ChoiceGroupResponse, StaticEffectGroup
+
+# Input bounds follow the column sizes; responses stay unconstrained so legacy rows always serialize.
+FeatName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+PrerequisiteScore = Annotated[int, Field(ge=1, le=30)]
+AbilityScoreAmount = Annotated[int, Field(ge=1, le=10)]
+
+
+def _reject_explicit_null(value):
+    """Omit a field to leave it unchanged; ``null`` is not a valid value for a NOT NULL column."""
+
+    if value is None:
+        raise ValueError("This field cannot be null; omit it to leave it unchanged.")
+
+    return value
 
 
 class FeatBase(FeatPrerequisiteFields):
@@ -25,7 +41,7 @@ class AbilityScoreIncreaseItem(BaseModel):
     """A single ASI choice granted by a feat, e.g. {"ability": "STR", "amount": 1}."""
 
     ability: AbilityScore
-    amount: int = 1
+    amount: AbilityScoreAmount = 1
 
 
 def _validate_unique_asi_abilities(
@@ -50,7 +66,18 @@ class FeatCreate(FeatBase):
     semantics; it is a simple child table, not a nested dependency.
     """
 
-    ability_score_increases: list[AbilityScoreIncreaseItem] | None = None
+    name: FeatName
+    prerequisite_minimum_score: PrerequisiteScore | None = None
+    ability_score_increases: list[AbilityScoreIncreaseItem] | None = Field(default=None, max_length=6)
+
+    @model_validator(mode="after")
+    def validate_prerequisite_pair(self):
+        """The ability prerequisite needs both the ability and its minimum score (or neither)."""
+
+        if (self.prerequisite_ability is None) != (self.prerequisite_minimum_score is None):
+            raise ValueError("prerequisite_ability and prerequisite_minimum_score must be set together.")
+
+        return self
 
     @field_validator("ability_score_increases")
     def validate_unique_asi_abilities(cls, value):
@@ -66,12 +93,21 @@ class FeatUpdate(FeatPrerequisiteFieldsUpdate):
     """
     All fields optional — only provided fields are updated (PATCH semantics).
 
-    Excludes ``ability_score_increases`` so that list keeps its own PUT
-    full-replace endpoint.
+    Excludes ``ability_score_increases``: ASI options are managed through the
+    feat's effects/choice-group endpoints. An explicit ``null`` is rejected for
+    the NOT NULL columns (``name``, ``description``, ``prerequisite_description``).
     """
 
-    name: str | None = None
+    name: FeatName | None = None
     description: str | None = None
+    prerequisite_minimum_score: PrerequisiteScore | None = None
+
+    @field_validator("name", "description", "prerequisite_description")
+    @classmethod
+    def reject_explicit_null(cls, value):
+        """Reject an explicit ``null`` for the NOT NULL columns."""
+
+        return _reject_explicit_null(value)
 
 
 class FeatResponse(FeatBase):
@@ -82,12 +118,11 @@ class FeatResponse(FeatBase):
     effects grouped by kind (``static_groups``), ``effects_summary`` as a
     plain ``Feature`` property, and ``has_static_effects``/``has_choices``
     as real denormalized columns (a feat IS a ``Feature``,
-    ``source_type=FEAT``). An ASI choice (e.g.
-    Resilient's "+1 to an ability score") lives in ``choice_groups`` like any
-    other choice; a fixed ASI would show up under ``static_groups``. Feats
-    currently have no write endpoints for effects beyond ``POST``'s embedded
-    ``ability_score_increases``, so these are populated via the effect
-    engine's reads only.
+    ``source_type=FEAT``). An ASI choice (e.g. Resilient's "+1 to an ability
+    score") lives in ``choice_groups`` like any other choice; a fixed ASI
+    would show up under ``static_groups``. Effects are written through
+    ``POST``'s embedded ``ability_score_increases`` or ``/feats/{id}/effects``
+    and ``/feats/{id}/choice-groups``.
     """
 
     model_config = ConfigDict(from_attributes=True)

@@ -55,9 +55,7 @@ class TestSubclassImageUploadDelete:
         assert response.status_code == 403
         assert _fake_storage.uploaded == []
 
-    async def test_gm_can_upload_and_store_url(
-        self, client, gm_token, create_class, create_subclass, _fake_storage
-    ):
+    async def test_gm_can_upload_and_store_url(self, client, gm_token, create_class, create_subclass, _fake_storage):
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
 
@@ -80,9 +78,7 @@ class TestSubclassImageUploadDelete:
 
         assert response.status_code == 404
 
-    async def test_gm_can_delete_subclass_image(
-        self, client, gm_token, create_class, create_subclass, _fake_storage
-    ):
+    async def test_gm_can_delete_subclass_image(self, client, gm_token, create_class, create_subclass, _fake_storage):
         character_class = await create_class(name="Fighter")
         subclass = await create_subclass(class_id=character_class.id, name="Champion")
 

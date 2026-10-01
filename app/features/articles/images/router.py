@@ -6,7 +6,7 @@ from fastapi import APIRouter, File, UploadFile, status
 
 from app.features.articles.dependencies import ArticleImagesDep
 from app.features.articles.images.schemas import ArticleImageResponse
-from app.features.users.security import GmUserDep
+from app.features.auth.dependencies import GmUserDep
 
 router = APIRouter()
 

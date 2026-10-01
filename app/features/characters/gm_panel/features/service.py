@@ -20,6 +20,7 @@ from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_model import Character
 
 
 class GmPanelFeatureService(CharacterSubDomainService):
@@ -63,9 +64,8 @@ class GmPanelFeatureService(CharacterSubDomainService):
                 character_id, data.feature_id, grant_source=GrantSource.GM, commit=False
             )
             await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
+            await self._refresh_stats(character)
 
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
         return self._to_response(grant)
 
     async def remove_feature(self, character_id: int, character_feature_id: int, current_user: UserResponse) -> bool:
@@ -74,11 +74,18 @@ class GmPanelFeatureService(CharacterSubDomainService):
         character = await self.get_character_for_user(character_id, current_user)
 
         grant = await self._get_feature_grant_or_404(character_id, character_feature_id)
-        result = await self.feature_grant_repository.remove_character_feature(grant)
 
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
+        async with self._atomic():
+            result = await self.feature_grant_repository.remove_character_feature(grant, commit=False)
+            await self._refresh_stats(character)
+
         return result
+
+    async def _refresh_stats(self, character: Character) -> None:
+        """Recompute the ability-score cache in the caller's transaction; purge the payload after its commit."""
+
+        await self.stats_service.refresh(character, commit=False)
+        await invalidate_character_cache(character.id, db=self.repository.db)
 
     @staticmethod
     def _to_response(grant: CharacterFeature) -> CharacterFeatureResponse:

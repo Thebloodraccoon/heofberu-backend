@@ -1,6 +1,6 @@
 """ORM model for the reference table of playable races."""
 
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import CheckConstraint, Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.models.enums import RaceSizeType
@@ -12,6 +12,7 @@ class Race(settings.Base):  # type: ignore
     """Reference table of playable races, shared across all characters."""
 
     __tablename__ = "races"
+    __table_args__ = (CheckConstraint("speed BETWEEN 0 AND 200", name="ck_races_speed"),)
 
     id = Column(Integer, primary_key=True)
 
@@ -31,7 +32,7 @@ class Race(settings.Base):  # type: ignore
         "Skill",
         secondary=race_skills,
     )
-    characters = relationship("Character", back_populates="race")
+    characters = relationship("Character", back_populates="race", passive_deletes=True)
     features = relationship(
         "Feature",
         back_populates="race",

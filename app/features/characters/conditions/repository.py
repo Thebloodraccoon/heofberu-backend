@@ -1,6 +1,7 @@
 """Character condition repository: active-condition row CRUD."""
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
@@ -41,19 +42,21 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
         condition: ConditionType,
         exhaustion_level: int | None,
         source: str,
-    ) -> CharacterCondition:
-        """Record an active condition on a character."""
+    ) -> CharacterCondition | None:
+        """
+        Record an active condition; returns ``None`` when the character is
+        already under it (atomic ``ON CONFLICT DO NOTHING``, so concurrent
+        adds cannot hit the primary key).
+        """
 
-        row = CharacterCondition(
-            character_id=character_id,
-            condition=condition,
-            exhaustion_level=exhaustion_level,
-            source=source,
+        statement = (
+            pg_insert(CharacterCondition)
+            .values(character_id=character_id, condition=condition, exhaustion_level=exhaustion_level, source=source)
+            .on_conflict_do_nothing(index_elements=["character_id", "condition"])
+            .returning(CharacterCondition)
         )
-        self.db.add(row)
+        row = await self.db.scalar(statement)
         await self.commit_or_flush()
-        await self.db.refresh(row)
-
         return row
 
     async def update_character_condition(

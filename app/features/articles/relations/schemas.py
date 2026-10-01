@@ -1,28 +1,28 @@
 """Request/response schemas for the article relations endpoints."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import RELATION_TYPES, ArticleVisibility
 from app.features.articles.crud.schemas import ArticleBrief
-from app.features.articles.schema_validators import reject_explicit_null, validate_in_list
+from app.features.articles.schema_validators import reject_explicit_null, reject_nested_gm_containers, validate_in_list
+
+#: ``article_relations.note`` is ``String(300)``.
+NOTE_MAX_LENGTH = 300
+
+RelationType = Annotated[str, AfterValidator(lambda value: validate_in_list(value, RELATION_TYPES, "relation_type"))]
+RelationNote = Annotated[str, Field(max_length=NOTE_MAX_LENGTH), AfterValidator(reject_nested_gm_containers)]
 
 
 class ArticleRelationCreate(BaseModel):
     """Payload to link the source article (path id) to another article."""
 
     to_article_id: int
-    relation_type: str
-    note: str | None = None
+    relation_type: RelationType
+    note: RelationNote | None = None
     visibility: ArticleVisibility = ArticleVisibility.PUBLIC
-
-    @field_validator("relation_type")
-    def validate_relation_type(cls, relation_type):
-        """Reject a ``relation_type`` not in the open ``RELATION_TYPES`` list."""
-
-        return validate_in_list(relation_type, RELATION_TYPES, "relation_type")
 
 
 class ArticleRelationUpdate(BaseModel):
@@ -31,8 +31,8 @@ class ArticleRelationUpdate(BaseModel):
     direction are fixed — to relink, delete the relation and create a new one.
     """
 
-    relation_type: str | None = None
-    note: str | None = None
+    relation_type: RelationType | None = None
+    note: RelationNote | None = None
     visibility: ArticleVisibility | None = None
 
     @field_validator("relation_type", "visibility")
@@ -40,12 +40,6 @@ class ArticleRelationUpdate(BaseModel):
         """``relation_type``/``visibility`` are NOT NULL columns — reject an explicit ``null`` (422, not 500)."""
 
         return reject_explicit_null(value, info.field_name)
-
-    @field_validator("relation_type")
-    def validate_relation_type(cls, relation_type):
-        """Reject a ``relation_type`` not in the open ``RELATION_TYPES`` list."""
-
-        return validate_in_list(relation_type, RELATION_TYPES, "relation_type")
 
 
 class ArticleRelationResponse(BaseModel):

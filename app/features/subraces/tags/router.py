@@ -4,10 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
 from app.features.shared.tags.schemas import TagsUpdate
 from app.features.subraces.crud.schemas import SubraceResponse
 from app.features.subraces.dependencies import SubraceTagsDep
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -22,7 +23,7 @@ router = APIRouter()
     },
 )
 async def set_tags(
-    subrace_id: int,
+    subrace_id: EntityIdPath,
     data: Annotated[
         TagsUpdate,
         Body(

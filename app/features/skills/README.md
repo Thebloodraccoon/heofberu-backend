@@ -1,35 +1,40 @@
 # Skills Catalog
 
-Reference catalog for the `Skill` entity: each skill has a stable `key`, a display `name`, a governing ability (`AbilityScore`), and an optional description (e.g. "Stealth", DEX).
+Reference catalog for the `Skill` entity: each skill has a unique display `name`, a governing ability (`AbilityScore`), and an optional description (e.g. "Stealth", DEX).
 
 ## Layout
 
 - `crud/` — the single capability: `repository.py` (`SkillRepository`), `service.py` (`SkillCrudService`), `schemas.py`, `router.py` (bare router).
-- `../skills/cache.py` — cache namespaces + invalidation helper.
-- `../skills/dependencies.py` — `SkillCrudDep` service dependency.
-- `../skills/router.py` — assembles the surface under `/skills`.
+- `cache.py` — cache namespace tuples.
+- `dependencies.py` — `SkillCrudDep` service dependency.
+- `router.py` — assembles the surface under `/skills`.
 
 ## Endpoints
 
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
-| GET | `/skills` | open | Paginated list (`Page[SkillGetAllResponse]`, no description). Filters: `search` (name, case-insensitive), repeatable `ability`. |
+| GET | `/skills` | open | Paginated list (`Page[SkillGetAllResponse]`, no description), ordered by name. Filters: `search` (name, case-insensitive, max 100 chars), repeatable `ability`. |
 | GET | `/skills/{skill_id}` | open | Full `SkillResponse`. |
-| POST | `/skills` | GM | 409 on duplicate `name`. |
-| PATCH | `/skills/{skill_id}` | GM | Partial update; duplicate `name` → 409. |
+| POST | `/skills` | GM | Duplicate `name` → 400. |
+| PATCH | `/skills/{skill_id}` | GM | Partial update; duplicate `name` → 400; explicit `null` → 422. |
 | DELETE | `/skills/{skill_id}` | Founder | Blocked with 409 while referenced anywhere (see below). |
+
+Duplicates answer **400** (`RecordAlreadyExistsError`, platform-wide), not 409. `name` is 1..100 characters, whitespace-trimmed.
 
 ## Service composition
 
-The skills catalog is a simple catalog: one capability only. `SkillCrudService` extends `CachedService[...]` over `SkillRepository` and adds no composed sub-services — its extra behavior lives in two places:
+`SkillCrudService` extends `CachedService[...]` over `SkillRepository`. Extra behaviour:
 
-- Uniqueness on `name` before create/update (`unique_fields=["name"]`) → 409 via the data layer.
-- A delete guard (`is_in_use`) checking every table whose FK is `ON DELETE RESTRICT`: the `race_skills`, `class_available_skills` and `background_skills` M2M rows, plus the unified `character_proficiencies` rows of type `SKILL` (which replaced the old per-kind `character_skill_proficiencies` table). The base `CachedService.delete` triggers it through `check_in_use_on_delete=True`.
+- Uniqueness on `name` (`unique_fields=["name"]`).
+- A delete guard (`is_in_use`, one `EXISTS` statement) over `race_skills`, `class_available_skills`, `background_skills`, the unified `character_proficiencies` rows of type `SKILL` (cascading FK), and `feature_skill_proficiency_effects` (RESTRICT FK). `delete` locks the skill row first (`SELECT ... FOR UPDATE`), so a reference inserted between the guard and the DELETE waits instead of being cascaded away silently.
 
-> Note: the router's OpenAPI description still says search matches name **and key**, but the repository's actual `search_fields=["name"]` only — keep that in mind if you extend the search.
-
-Note the catalog does NOT manage granted-skill lists themselves — those are owned by the parent catalogs (races/classes/backgrounds) via the shared `app/features/shared/skills/` mixins.
+The catalog does NOT manage granted-skill lists themselves — those are owned by the parent catalogs (races/classes/backgrounds) via the shared `app/features/shared/skills/` mixins.
 
 ## Cache
 
-`SKILL_CACHE_NAMESPACES = ("skills", "classes", "races", "backgrounds")`. Every write purges all four through `invalidate_skill_cache()`: class/race/background cached detail responses embed `SkillResponse` rows, so a skill rename must not leave stale names there. The service declares the same tuple as `cache_namespaces` so inherited `CachedService` writes purge automatically.
+`cache.py`: `SKILL_OWN_CACHE_NAMESPACES = ("skills",)` and `SKILL_DEPENDENT_CACHE_NAMESPACES` (classes, races, backgrounds, features, feats and every `*_features` list; derived from `CACHE_DEPENDENTS["skills"]` in `app/core/cache/namespaces.py`). Class/race/background details embed `SkillResponse` rows and `effects_summary` renders skill names, so:
+
+- **update** purges all of them (`SKILL_CACHE_NAMESPACES`, the service's `cache_namespaces`);
+- **create** and **delete** purge only `skills` (a new skill isn't referenced yet; a skill can only be deleted once nothing references it).
+
+All purges run after the commit.

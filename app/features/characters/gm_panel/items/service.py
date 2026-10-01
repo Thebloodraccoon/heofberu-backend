@@ -4,8 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import invalidate_character_cache
-from app.features.characters.gm_panel.exceptions import CharacterItemNotFoundException
-from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.gm_panel.exceptions import (
+    CharacterItemNotFoundException,
+    CharacterItemQuantityLimitException,
+)
+from app.features.characters.gm_panel.items.schemas import MAX_ITEM_QUANTITY, CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.items.repository import CharacterItemRepository
 from app.features.characters.items.schemas import CharacterItemResponse
 from app.features.items.crud.repository import ItemRepository
@@ -45,11 +48,13 @@ class GmPanelItemService(CharacterSubDomainService):
         if not await self.item_repository.exists_by_id(data.item_id):
             raise ItemNotFoundException(item_id=data.item_id)
 
-        existing_stack = await self.character_item_repository.get_character_item_by_item_id(
-            character_id, data.item_id
-        )
+        existing_stack = await self.character_item_repository.get_character_item_by_item_id(character_id, data.item_id)
 
         if existing_stack is not None:
+            if existing_stack.quantity + data.quantity > MAX_ITEM_QUANTITY:
+                raise CharacterItemQuantityLimitException(
+                    character_id=character_id, item_id=data.item_id, limit=MAX_ITEM_QUANTITY
+                )
             stack = await self.character_item_repository.update_character_item(
                 existing_stack, {"quantity": existing_stack.quantity + data.quantity}
             )

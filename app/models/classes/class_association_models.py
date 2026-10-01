@@ -5,7 +5,6 @@ from sqlalchemy import Column, ForeignKey, Index, Integer, Table
 from app.models.enums import AbilityScoreType, ArmorProficiencyType, WeaponProficiencyType
 from app.settings import settings
 
-# classes <-> skills (skills a class may choose proficiencies from)
 class_available_skills = Table(
     "class_available_skills",
     settings.Base.metadata,

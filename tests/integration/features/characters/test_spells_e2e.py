@@ -89,23 +89,28 @@ class TestPerLevelKnownSpellCaps:
         missile = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
         charm = await create_spell(name="Charm Person", school="ENCHANTMENT", level="LEVEL_1")
         shield = await create_spell(name="Shield", school="ABJURATION", level="LEVEL_1")
+        missile_id, charm_id, shield_id = (
+            missile.id,
+            charm.id,
+            shield.id,
+        )  # a rejected add rolls the shared test session back
 
-        first = await add_spell(client, character["id"], missile.id, player_token)
-        second = await add_spell(client, character["id"], charm.id, player_token)
+        first = await add_spell(client, character["id"], missile_id, player_token)
+        second = await add_spell(client, character["id"], charm_id, player_token)
         assert first.status_code == 201
         assert second.status_code == 201
 
-        over_cap = await add_spell(client, character["id"], shield.id, player_token)
+        over_cap = await add_spell(client, character["id"], shield_id, player_token)
         assert over_cap.status_code == 400
 
         remove_response = await client.delete(
             f"/characters/{character['id']}/spells",
-            params={"spell_id": missile.id},
+            params={"spell_id": missile_id},
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert remove_response.status_code == 204
 
-        swap = await add_spell(client, character["id"], shield.id, player_token)
+        swap = await add_spell(client, character["id"], shield_id, player_token)
         assert swap.status_code == 201
 
         list_response = await client.get(

@@ -123,19 +123,16 @@ class TestChoiceOptionEffectTypes:
                     {
                         "pick_count": 1,
                         "choice_type": "SAVING_THROW",
-                        "label": "Save",
                         "options": [{"saving_throw_effects": [{"ability": "CON"}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "ARMOR",
-                        "label": "Armor",
                         "options": [{"armor_effects": [{"armor_type": "SHIELD"}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "WEAPON",
-                        "label": "Weapon",
                         "options": [{"weapon_effects": [{"weapon_category": "SIMPLE"}]}],
                     },
                 ]
@@ -187,7 +184,6 @@ class TestChoiceOptionEffectTypes:
                     {
                         "pick_count": 1,
                         "choice_type": "WEAPON",
-                        "label": "Style",
                         "options": [
                             {"weapon_effects": [{"weapon_category": "MARTIAL"}]},
                             {"weapon_effects": [{"weapon_category": "SIMPLE"}]},
@@ -250,7 +246,7 @@ class TestSkillExpertiseFollowsPick:
 
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Skill Focus", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -260,7 +256,6 @@ class TestSkillExpertiseFollowsPick:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Focus",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id, "grants_expertise": False}]},
                             {"skill_effects": [{"skill_id": skill.id, "grants_expertise": True}]},
@@ -321,7 +316,7 @@ class TestAnswerChoicesAdditionalErrors:
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Skill Pick", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -331,7 +326,6 @@ class TestAnswerChoicesAdditionalErrors:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [{"skill_effects": [{"skill_id": skill.id}]}],
                     }
                 ]
@@ -361,7 +355,7 @@ class TestAnswerChoicesAdditionalErrors:
     ):
         feature_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skill = await create_skill(name="Athletics", ability="STR")
         feature = await create_feature(name="Double Pick", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -371,7 +365,6 @@ class TestAnswerChoicesAdditionalErrors:
                     {
                         "pick_count": 2,
                         "choice_type": "SKILL",
-                        "label": "Two Skills",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id}]},
                             {"skill_effects": [{"skill_id": skill.id}]},
@@ -419,7 +412,7 @@ class TestGmGrantInlineChoices:
 
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="INSIGHT", name="Insight", ability="WIS")
+        skill = await create_skill(name="Insight", ability="WIS")
         feature = await create_feature(name="Instant Pick", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -429,7 +422,6 @@ class TestGmGrantInlineChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [{"skill_effects": [{"skill_id": skill.id}]}],
                     }
                 ]
@@ -470,7 +462,7 @@ class TestGmGrantInlineChoices:
 
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill = await create_skill(name="Perception", ability="WIS")
         feature = await create_feature(name="Deferred Pick", source_type="CLASS", level=None)
 
         await client.put(
@@ -480,7 +472,6 @@ class TestGmGrantInlineChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [{"skill_effects": [{"skill_id": skill.id}]}],
                     }
                 ]
@@ -511,7 +502,7 @@ class TestAllPendingChoicesSurface:
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="SURVIVAL", name="Survival", ability="WIS")
+        skill = await create_skill(name="Survival", ability="WIS")
 
         pending_feature = await create_feature(name="Unanswered", source_type="CLASS", level=None)
         await client.put(
@@ -521,7 +512,6 @@ class TestAllPendingChoicesSurface:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [{"skill_effects": [{"skill_id": skill.id}]}],
                     }
                 ]
@@ -625,7 +615,6 @@ class TestSpellResolutionEdgeCases:
                     {
                         "pick_count": 1,
                         "choice_type": "SPELL",
-                        "label": "Spell",
                         "options": [
                             {"spell_effects": [{"spell_id": fireball.id}]},
                             {"spell_effects": [{"spell_id": cure_wounds.id}]},

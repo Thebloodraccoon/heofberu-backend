@@ -52,9 +52,7 @@ class ChoiceCountMismatchError(AppError):
 
     def __init__(self, group_id: int, pick_count: int, given: int):
         """Initialize with the expected vs actual count."""
-        super().__init__(
-            f"Choice group {group_id} requires exactly {pick_count} option(s); received {given}."
-        )
+        super().__init__(f"Choice group {group_id} requires exactly {pick_count} option(s); received {given}.")
 
 
 class SkillResolutionsError(AppError):
@@ -64,9 +62,7 @@ class SkillResolutionsError(AppError):
 
     def __init__(self, option_id: int):
         """Initialize with the offending option id."""
-        super().__init__(
-            f"Option {option_id} has an open ('any skill') skill effect — picking it isn't supported yet."
-        )
+        super().__init__(f"Option {option_id} has an open ('any skill') skill effect — picking it isn't supported yet.")
 
 
 class GrantChoiceRequiredException(AppError):
@@ -99,6 +95,4 @@ class SpellResolutionsError(AppError):
 
     def __init__(self, option_id: int):
         """Initialize with the offending option id."""
-        super().__init__(
-            f"Option {option_id} has an open ('any spell') spell effect — picking it isn't supported yet."
-        )
+        super().__init__(f"Option {option_id} has an open ('any spell') spell effect — picking it isn't supported yet.")

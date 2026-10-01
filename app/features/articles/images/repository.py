@@ -2,14 +2,20 @@
 
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.articles.crud.repository import ArticleRepository
+from app.features.articles.base import ArticleScopedRepository
 from app.models.articles.article_image_model import ArticleImage
 
 
-class ArticleImagesRepository(ArticleRepository):
-    """Image persistence for articles, layered on :class:`ArticleRepository`."""
+class ArticleImagesRepository(ArticleScopedRepository):
+    """Image persistence for articles (the article lookups come from :class:`ArticleScopedRepository`)."""
+
+    def __init__(self, db: AsyncSession):
+        """Bind to ``Article`` without the tags/images eager loads (only image rows are touched here)."""
+
+        super().__init__(db)
 
     async def list_images(self, article_id: int) -> list[ArticleImage]:
         """Return every image uploaded for the article, oldest first."""
@@ -18,6 +24,11 @@ class ArticleImagesRepository(ArticleRepository):
             select(ArticleImage).where(ArticleImage.article_id == article_id).order_by(ArticleImage.id)
         )
         return list(result.scalars().all())
+
+    async def count_images(self, article_id: int) -> int:
+        """Return how many images the article holds."""
+
+        return await self.db.scalar(select(func.count()).where(ArticleImage.article_id == article_id)) or 0
 
     async def get_image(self, article_id: int, image_id: int) -> ArticleImage | None:
         """Fetch a single image scoped to the article, or ``None``."""
@@ -37,7 +48,7 @@ class ArticleImagesRepository(ArticleRepository):
         The row's id and fresh random ``storage_key`` form the storage object key
         (``articles/{article_id}/{storage_key}/{image_id}.{ext}``),
         so it has to exist before the upload happens — ``set_image_url`` fills
-        ``image_url`` in immediately afterward.
+        ``image_url`` in once the upload succeeded.
         """
 
         row = ArticleImage(article_id=article_id, image_url="", storage_key=str(uuid4()))
@@ -46,13 +57,27 @@ class ArticleImagesRepository(ArticleRepository):
 
         return row
 
-    async def set_image_url(self, image: ArticleImage, url: str, *, commit: bool = True) -> ArticleImage:
-        """Persist the uploaded object's public URL onto an existing image row."""
+    async def set_image_url(
+        self, article_id: int, image_id: int, url: str, *, commit: bool = True
+    ) -> ArticleImage | None:
+        """Persist the uploaded object's public URL onto the image row; ``None`` if the row vanished meanwhile."""
+
+        image = await self.get_image(article_id, image_id)
+        if image is None:
+            return None
 
         image.image_url = url
         await self.commit_or_flush(commit=commit)
 
         return image
+
+    async def delete_image_by_id(self, image_id: int, *, commit: bool = True) -> None:
+        """Remove an image row by id (a no-op when it is already gone)."""
+
+        await self.db.execute(
+            delete(ArticleImage).where(ArticleImage.id == image_id).execution_options(synchronize_session=False)
+        )
+        await self.commit_or_flush(commit=commit)
 
     async def delete_image_row(self, image: ArticleImage, *, commit: bool = True) -> None:
         """Remove a single image row."""

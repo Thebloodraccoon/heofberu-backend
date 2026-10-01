@@ -3,18 +3,14 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
-from app.core.base.service import BaseService
 from app.core.cache import use_cache
+from app.features.backgrounds.capability import BackgroundCapabilityService
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.backgrounds.crud.schemas import BackgroundCreate, BackgroundResponse, BackgroundUpdate
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
-from app.models import Background
 
 
-class BackgroundFeatureService(
-    BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
-):
+class BackgroundFeatureService(BackgroundCapabilityService):
     """
     Read-only service for a background's BACKGROUND-source features.
 
@@ -22,17 +18,12 @@ class BackgroundFeatureService(
     service only provides the cached ``list_features`` read.
     """
 
-    repository: BackgroundRepository
-
     cache_namespaces = ("background_features",)
 
     def __init__(self, db: AsyncSession):
-        """Compose the central ``FeatureCrudService`` for the cached list."""
+        """Compose the central ``FeatureCrudService`` for the list."""
 
-        super().__init__(
-            repository=BackgroundRepository(db),
-            response_schema=BackgroundResponse,
-        )
+        super().__init__(BackgroundRepository(db))
         self._features = FeatureCrudService(db)
 
     @use_cache()

@@ -26,7 +26,7 @@ class TestNestedFeatureSummary:
         self, client, gm_token, create_background, create_feature, create_skill
     ):
         background = await create_background(name="Sage", with_suggestions=False)
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
         feature = await create_feature(name="Researcher", source_type="BACKGROUND", background_id=background.id)
 
         await set_feature_effects(client, gm_token, feature.id, skill_effects=[{"skill_id": skill.id}])
@@ -85,8 +85,8 @@ class TestParentCacheInvalidatedByEffectsEdit:
         self, client, gm_token, create_background, create_feature, create_skill
     ):
         background = await create_background(name="Hermit", with_suggestions=False)
-        skill_a = await create_skill(key="MEDICINE", name="Medicine", ability="WIS")
-        skill_b = await create_skill(key="RELIGION", name="Religion", ability="INT")
+        skill_a = await create_skill(name="Medicine", ability="WIS")
+        skill_b = await create_skill(name="Religion", ability="INT")
         feature = await create_feature(name="Discovery", source_type="BACKGROUND", background_id=background.id)
 
         await set_feature_effects(client, gm_token, feature.id, skill_effects=[{"skill_id": skill_a.id}])

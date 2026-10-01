@@ -14,3 +14,19 @@ class SuggestionNotFoundException(AppError):
         self.background_id = background_id
         self.suggestion_id = suggestion_id
         super().__init__(f"Suggestion {suggestion_id} not found for background {background_id}.")
+
+
+class LastSuggestionOfTypeError(AppError):
+    """Raised (409) when a change would leave a background without any suggestion of one type."""
+
+    status_code = 409
+
+    def __init__(self, background_id: int, suggestion_type: str):
+        """Initialize with the background and the type that would become empty."""
+
+        self.background_id = background_id
+        self.suggestion_type = suggestion_type
+        super().__init__(
+            f"Background {background_id} must keep at least one {suggestion_type} suggestion "
+            "(character creation needs one per type)."
+        )

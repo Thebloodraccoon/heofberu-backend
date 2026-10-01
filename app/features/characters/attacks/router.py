@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, status
 
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.dependencies import CharacterAttackServiceDep
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 

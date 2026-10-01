@@ -16,6 +16,21 @@ class ArticleParentCycleException(AppError):
         super().__init__(f"Article {parent_id} cannot be the parent of article {article_id}: it would create a cycle.")
 
 
+class ArticleTreeTooDeepException(AppError):
+    """Raised (400) when placing an article would push its subtree past the supported nesting depth."""
+
+    status_code = 400
+
+    def __init__(self, article_id: int, max_depth: int):
+        """Initialize with the article being placed and the maximum tree depth."""
+
+        self.article_id = article_id
+        self.max_depth = max_depth
+        super().__init__(
+            f"Article {article_id} cannot be placed there: the tree may be at most {max_depth} levels deep."
+        )
+
+
 class ArticleStatusTransitionException(AppError):
     """Raised (409) when a review-workflow action isn't allowed from the article's current status."""
 

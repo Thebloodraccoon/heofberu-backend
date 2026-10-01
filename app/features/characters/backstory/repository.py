@@ -1,6 +1,7 @@
 """Character backstory repository: single-row get/upsert (uncached)."""
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
@@ -24,15 +25,13 @@ class CharacterBackstoryRepository(BaseRepository[CharacterBackstory]):
         return result.scalar_one_or_none()
 
     async def upsert_content(self, character_id: int, content: str) -> CharacterBackstory:
-        """Create the backstory row if missing, else replace its content, and commit."""
+        """Create the backstory row or replace its content in one ``INSERT ... ON CONFLICT DO UPDATE``, and commit."""
 
-        row = await self.get_for_character(character_id)
-        if row is None:
-            row = CharacterBackstory(character_id=character_id, content=content)
-            self.db.add(row)
-        else:
-            row.content = content
+        statement = pg_insert(CharacterBackstory).values(character_id=character_id, content=content)
+        statement = statement.on_conflict_do_update(
+            index_elements=[CharacterBackstory.character_id], set_={"content": statement.excluded.content}
+        ).returning(CharacterBackstory)
 
+        row = await self.db.scalar(statement, execution_options={"populate_existing": True})
         await self.commit_or_flush()
-        await self.db.refresh(row)
         return row

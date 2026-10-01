@@ -24,7 +24,7 @@ class CharacterItemService(CharacterSubDomainService):
     async def get_items(self, character_id: int, current_user: UserResponse) -> list[CharacterItemResponse]:
         """List every item stack a character owns (GM/owner readable)."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         stacks = await self.character_item_repository.get_character_items(character_id)
         return [CharacterItemResponse.model_validate(stack) for stack in stacks]

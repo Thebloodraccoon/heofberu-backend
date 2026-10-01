@@ -7,6 +7,8 @@ from sqlalchemy.orm import selectinload
 from app.constants import FeatureSourceType
 from app.core.base.repository import BaseRepository
 from app.models.character.character_item_model import CharacterItem
+from app.models.character.character_proficiency_model import CharacterProficiency
+from app.models.features.feature_engine_models import FeatureWeaponProficiencyEffect
 from app.models.items.item_model import Item
 from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 from app.models.items.item_source_model import SourceItem
@@ -74,10 +76,28 @@ class ItemRepository(BaseRepository[Item]):
     async def is_in_use(self, item_id: int) -> bool:
         """Return whether the item is referenced anywhere that blocks deletion."""
 
-        if await self.exists_referencing(CharacterItem, "item_id", item_id):
-            return True
+        referencing = (
+            (CharacterItem, "item_id"),
+            (CharacterProficiency, "item_id"),
+            (FeatureWeaponProficiencyEffect, "item_id"),
+            (SourceItem, "item_id"),
+            (SourceItemChoiceOption, "item_id"),
+        )
+        for model, column in referencing:
+            if await self.exists_referencing(model, column, item_id):
+                return True
 
-        if await self.exists_referencing(SourceItem, "item_id", item_id):
-            return True
+        return False
 
-        return await self.exists_referencing(SourceItemChoiceOption, "item_id", item_id)
+    async def delete(self, db_obj: Item) -> bool:
+        """
+        Delete the item unless something references it.
+
+        ``character_proficiencies.item_id`` cascades, so a reference added
+        between the guard and the DELETE would be wiped silently. Locking the
+        item row first makes a concurrent insert (which takes a key-share
+        lock on it) wait for this transaction.
+        """
+
+        await self.db.execute(select(Item.id).where(Item.id == db_obj.id).with_for_update())
+        return await super().delete(db_obj)

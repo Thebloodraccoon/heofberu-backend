@@ -8,7 +8,7 @@ from app.features.articles.subtypes.schemas import (
     ArticleSubtypeResponse,
     ArticleSubtypeUpdate,
 )
-from app.features.users.security import FounderDep, GmUserDep
+from app.features.auth.dependencies import FounderDep, GmUserDep
 
 router = APIRouter()
 

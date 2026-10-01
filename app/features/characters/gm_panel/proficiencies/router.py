@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
+from app.features.auth.dependencies import GmUserDep
 from app.features.characters.gm_panel.dependencies import GmPanelProficienciesDep
 from app.features.characters.gm_panel.exceptions import InvalidWeaponProficiencyTargetException
 from app.features.characters.gm_panel.proficiencies.schemas import (
@@ -12,6 +13,7 @@ from app.features.characters.gm_panel.proficiencies.schemas import (
     SavingThrowProficiencyAdd,
     SkillExpertiseUpdate,
     SkillProficiencyAdd,
+    SkillProficiencyResponse,
     WeaponProficiencyAdd,
 )
 from app.features.characters.grants.schemas import (
@@ -19,8 +21,6 @@ from app.features.characters.grants.schemas import (
     CharacterSavingThrowProficiencyResponse,
     CharacterWeaponProficiencyResponse,
 )
-from app.features.characters.schemas import SkillProficiencyResponse
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -35,7 +35,11 @@ _NOT_A_GM = {403: {"description": "You are not a GM."}}
     response_model=SkillProficiencyResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Grant a character proficiency in a skill",
-    responses={**_NOT_A_GM, 404: {"description": "No character exists with the given ID."}, 409: {"description": "The character is already proficient."}},
+    responses={
+        **_NOT_A_GM,
+        404: {"description": "No character exists with the given ID."},
+        409: {"description": "The character is already proficient."},
+    },
 )
 async def add_character_skill_proficiency(
     character_id: int, data: SkillProficiencyAdd, service: GmPanelProficienciesDep, current_user: GmUserDep
@@ -105,7 +109,11 @@ async def set_character_skill_expertise(
     response_model=CharacterSavingThrowProficiencyResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Grant a character proficiency in a saving throw",
-    responses={**_NOT_A_GM, 404: {"description": "No character exists with the given ID."}, 409: {"description": "The character is already proficient."}},
+    responses={
+        **_NOT_A_GM,
+        404: {"description": "No character exists with the given ID."},
+        409: {"description": "The character is already proficient."},
+    },
 )
 async def add_character_saving_throw_proficiency(
     character_id: int, data: SavingThrowProficiencyAdd, service: GmPanelProficienciesDep, current_user: GmUserDep
@@ -119,7 +127,10 @@ async def add_character_saving_throw_proficiency(
     "/proficiencies/saving-throws",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke a character's proficiency in a saving throw",
-    responses={**_NOT_A_GM, 404: {"description": "No character exists, or it has no proficiency in this saving throw."}},
+    responses={
+        **_NOT_A_GM,
+        404: {"description": "No character exists, or it has no proficiency in this saving throw."},
+    },
 )
 async def remove_character_saving_throw_proficiency(
     character_id: int,
@@ -141,7 +152,11 @@ async def remove_character_saving_throw_proficiency(
     response_model=CharacterArmorProficiencyResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Grant a character proficiency in an armor category",
-    responses={**_NOT_A_GM, 404: {"description": "No character exists with the given ID."}, 409: {"description": "The character is already proficient."}},
+    responses={
+        **_NOT_A_GM,
+        404: {"description": "No character exists with the given ID."},
+        409: {"description": "The character is already proficient."},
+    },
 )
 async def add_character_armor_proficiency(
     character_id: int, data: ArmorProficiencyAdd, service: GmPanelProficienciesDep, current_user: GmUserDep
@@ -155,7 +170,10 @@ async def add_character_armor_proficiency(
     "/proficiencies/armor",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke a character's proficiency in an armor category",
-    responses={**_NOT_A_GM, 404: {"description": "No character exists, or it has no proficiency in this armor category."}},
+    responses={
+        **_NOT_A_GM,
+        404: {"description": "No character exists, or it has no proficiency in this armor category."},
+    },
 )
 async def remove_character_armor_proficiency(
     character_id: int,

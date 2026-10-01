@@ -14,25 +14,20 @@ from contextlib import asynccontextmanager
 from typing import Any, Generic, Protocol, TypeVar
 
 from sqlalchemy import String, Text, delete, func, inspect, or_, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
 
+_UNSEARCHABLE_SUFFIXES = ("password", "token", "secret", "_url")
 
-async def _commit_or_rollback(db: AsyncSession) -> None:
-    """
-    Commit pending changes, rolling back and re-raising on a ``SQLAlchemyError``.
 
-    Standalone helper for code that does not extend :class:`BaseRepository`
-    (e.g. ``NestedSourceItemService``, ``CharacterSkillProficiencyRepository``).
-    """
+def _is_id_clause(clause: Any, model: Any) -> bool:
+    """Whether an ORDER BY ``clause`` already orders by ``model.id`` (plain or ``.asc()``/``.desc()``)."""
 
-    try:
-        await db.commit()
-    except SQLAlchemyError:
-        await db.rollback()
-        raise
+    element = getattr(clause, "element", clause)
+    element = getattr(element, "expression", element)
+    return str(element) == str(model.id.expression)
 
 
 class ModelProtocol(Protocol):
@@ -102,10 +97,14 @@ class BaseRepository(Generic[ModelType]):
         self._check_in_use_on_delete = check_in_use_on_delete
 
     def _detect_text_fields(self) -> list[str]:
-        """Auto-detect ``String``/``Text`` column names on ``self.model``."""
+        """Auto-detect searchable ``String``/``Text`` columns (secrets and URL columns are never searched)."""
 
         mapper = inspect(self.model)
-        return [column.key for column in mapper.columns if isinstance(column.type, String | Text)]
+        return [
+            column.key
+            for column in mapper.columns
+            if isinstance(column.type, String | Text) and not column.key.endswith(_UNSEARCHABLE_SUFFIXES)
+        ]
 
     def _apply_filters(self, stmt: Any, filters: dict[str, Any] | None) -> Any:
         """
@@ -163,9 +162,8 @@ class BaseRepository(Generic[ModelType]):
 
         stmt = stmt.where(self.model.id == model_id)
 
-        # Repopulate an existing identity-map instance instead of returning its
-        # stale state: mutation flows (child-row replacement, ``db.expire`` after
-        # feature edits) leave in-memory collections out of sync with the DB.
+        # populate_existing: child-row replacement and ``db.expire`` flows leave
+        # identity-map instances out of sync with the DB.
         return await self.db.scalar(stmt.execution_options(populate_existing=True))
 
     async def get_all(
@@ -189,7 +187,7 @@ class BaseRepository(Generic[ModelType]):
             limit: Max records to return. ``None`` disables the limit.
             filters: Exact-match filters against ``self.model``.
             search: Substring match against ``self._search_fields``.
-            order_by: Optional column(s) to order by; defaults to ``self.model.id``.
+            order_by: Optional column(s) to order by; ``self.model.id`` is always the final tie-break.
         """
 
         stmt = select(self.model)
@@ -199,7 +197,7 @@ class BaseRepository(Generic[ModelType]):
         stmt = self._apply_filters(stmt, filters)
         stmt = self._apply_search(stmt, search)
 
-        stmt = stmt.order_by(order_by if order_by is not None else self.model.id)
+        stmt = stmt.order_by(*self._ordering(order_by))
 
         if skip:
             stmt = stmt.offset(skip)
@@ -222,6 +220,9 @@ class BaseRepository(Generic[ModelType]):
         """
         Retrieve a paginated page of specific columns (no relationship loading).
 
+        Ordering is deterministic: ``order_by`` (if given) with ``model.id`` as
+        the tie-break, so OFFSET/LIMIT pages never overlap or skip rows.
+
         Args:
             *columns: Model columns to select.
             order_by: Optional column(s) to order by.
@@ -238,17 +239,19 @@ class BaseRepository(Generic[ModelType]):
         stmt = self._apply_filters(stmt, filters)
         stmt = self._apply_search(stmt, search)
 
-        if order_by is not None:
-            stmt = stmt.order_by(order_by)
+        stmt = stmt.order_by(*self._ordering(order_by))
 
         result = await self.db.execute(stmt.offset(skip).limit(limit))
         return list(result.all())
 
-    async def count_all(self) -> int:
-        """Count all records in the table."""
+    def _ordering(self, order_by: Any = None) -> list[Any]:
+        """``order_by`` columns followed by ``model.id`` (unless already present) as a stable tie-break."""
 
-        stmt = select(func.count()).select_from(self.model)
-        return (await self.db.scalar(stmt)) or 0
+        clauses = list(order_by) if isinstance(order_by, list | tuple) else ([order_by] if order_by is not None else [])
+        if not any(_is_id_clause(clause, self.model) for clause in clauses):
+            clauses.append(self.model.id)
+
+        return clauses
 
     async def count(self, *, filters: dict[str, Any] | None = None, search: str | None = None) -> int:
         """Count records matching ``filters``/``search`` (same conditions as :meth:`get_all`)."""
@@ -278,12 +281,12 @@ class BaseRepository(Generic[ModelType]):
 
     @asynccontextmanager
     async def _commit_or_rollback(self) -> AsyncGenerator[None, None]:
-        """Commit on success, rollback and re-raise on SQLAlchemyError."""
+        """Commit on success; roll back and re-raise on any exception."""
 
         try:
             yield
             await self.db.commit()
-        except SQLAlchemyError:
+        except Exception:
             await self.db.rollback()
             raise
 
@@ -326,17 +329,32 @@ class BaseRepository(Generic[ModelType]):
 
         return db_obj
 
-    async def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
-        """Apply ``update_data`` onto ``db_obj`` and commit. Unknown keys are ignored."""
+    def _uniqueness_scope(self, db_obj: ModelType) -> dict[str, Any]:
+        """
+        Extra values merged into the uniqueness check of an update (none by default).
 
-        await self._check_uniqueness(update_data, exclude_id=db_obj.id)
+        Lets a repository scope the check by the existing row (e.g. subclass names are unique
+        per class), which a partial PATCH payload cannot do on its own.
+        """
+
+        return {}
+
+    async def update(
+        self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False, commit: bool = True
+    ) -> ModelType:
+        """
+        Apply ``update_data`` onto ``db_obj`` and commit. Unknown keys are ignored.
+
+        ``commit=False`` only flushes, leaving the transaction to the caller (inside ``_atomic()``).
+        """
+
+        await self._check_uniqueness({**self._uniqueness_scope(db_obj), **update_data}, exclude_id=db_obj.id)
 
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        async with self._commit_or_rollback():
-            pass
+        await self.commit_or_flush(commit=commit)
         if refresh:
             await self.db.refresh(db_obj)
 
@@ -376,9 +394,8 @@ class BaseRepository(Generic[ModelType]):
             async with self._commit_or_rollback():
                 await self.db.delete(db_obj)
         except IntegrityError:
-            # A RESTRICT-guarded FK tripped between the is_in_use check and
-            # the delete. Any OTHER SQLAlchemyError (deadlock, connectivity,
-            # ...) must NOT be masked as "in use" — let it propagate.
+            # RESTRICT FK tripped between the check and the delete; other
+            # SQLAlchemyErrors must not be masked as "in use".
             raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
 
         return True

@@ -1,16 +1,15 @@
 """
-Unit tests for CharacterCrudService (one-shot creation contract, PATCH/delete).
+Unit tests for the character crud service (creation contract, PATCH/delete, HP, rest).
 
-Exercises ``CharacterService.create_character`` against composition-style
-fakes: every collaborator repository/service is replaced with a recording
-stand-in, the session is a ``FakeAsyncSession``, and a shared event log
-asserts cross-collaborator ORDER (feature sync before starting-HP
-math, cache purge after the atomic commit). No database, no Redis.
+Exercises ``CharacterService`` against composition-style fakes: every
+collaborator repository/service is replaced with a recording stand-in, the
+session is a ``FakeAsyncSession``, and a shared event log asserts
+cross-collaborator ORDER (feature sync before starting-HP math, cache purge
+only after the commit). No database, no Redis.
 """
 
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 from pydantic import ValidationError
 import pytest
@@ -25,39 +24,44 @@ from app.constants import (
     UserRole,
     WeaponProficiency,
 )
+from app.core.base.transaction import after_commit
+from app.features.characters import base as base_module
 from app.features.characters.ability_score.calculator import DerivedStats
-from app.features.characters.crud import service as crud_service_module
+from app.features.characters.crud import creation as creation_module
 from app.features.characters.crud.exceptions import (
+    InvalidHpUpdateException,
     ItemChoiceNotAvailableException,
     ItemChoicesWithoutGroupsException,
     SkillNotAvailableForClassException,
     TooFewItemChoicesException,
     TooManySkillChoicesException,
 )
+from app.features.characters.crud.rules import starting_max_hp, validate_chosen_skills
+from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.crud.service import CharacterService
-from app.features.characters.exceptions import BackgroundNotFoundException, CharacterAccessDeniedException
+from app.features.characters.exceptions import (
+    BackgroundNotFoundException,
+    CharacterAccessDeniedException,
+    CharacterNotFoundException,
+    GmOnlyFieldException,
+)
 from app.features.characters.schemas import CharacterCreate, CharacterUpdate
-from app.features.classes.exceptions import ClassNotFoundException
-from app.features.races.exceptions import RaceNotFoundException
+from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
+from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models import Character
+from app.models.character.character_backstory_model import CharacterBackstory
 from app.models.character.character_item_model import CharacterItem
 from app.models.character.character_proficiency_model import CharacterProficiency
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 
-@pytest.fixture(autouse=True)
-def no_redis_invalidate(monkeypatch):
-    """Stop generic cache invalidation from touching Redis."""
-    monkeypatch.setattr("app.core.base.service.invalidate", AsyncMock())
-
-
-def make_user(user_id=7):
+def make_user(user_id=7, role=UserRole.PLAYER):
     return UserResponse(
         id=user_id,
         username="player",
         email="player@example.com",
-        role=UserRole.PLAYER,
+        role=role,
         created_at=datetime(2026, 1, 1),
     )
 
@@ -93,11 +97,11 @@ def make_background_suggestions():
     ]
 
 
-def make_background():
+def make_background(description=""):
     return SimpleNamespace(
         id=3,
         granted_skills=[SimpleNamespace(id=2)],
-        description="",
+        description=description,
         suggestions=make_background_suggestions(),
     )
 
@@ -127,40 +131,42 @@ def make_create_payload(**overrides):
     return CharacterCreate(**payload)
 
 
-def make_owned_character(owner_id=7, character_id=5):
-    return Character(
-        id=character_id,
-        owner_id=owner_id,
-        name="Grog",
-        class_id=1,
-        race_id=5,
-        level=1,
-        current_hp=10,
-        max_hp=10,
-        temp_hp=0,
-        speed=30,
-        armor_class=10,
-        shield=0,
-        inspiration=0,
-        notes="",
-        personality_traits="",
-        ideals="",
-        bonds="",
-        flaws="",
-        money_gold=0,
-        money_silver=0,
-        money_copper=0,
-        strength=14,
-        dexterity=10,
-        constitution=12,
-        intelligence=10,
-        wisdom=10,
-        charisma=10,
-    )
+def make_owned_character(owner_id=7, character_id=5, **overrides):
+    fields = {
+        "id": character_id,
+        "owner_id": owner_id,
+        "name": "Grog",
+        "class_id": 1,
+        "race_id": 5,
+        "level": 1,
+        "current_hp": 10,
+        "max_hp": 10,
+        "temp_hp": 0,
+        "speed": 30,
+        "armor_class": 10,
+        "shield": 0,
+        "inspiration": 0,
+        "notes": "",
+        "personality_traits": "",
+        "ideals": "",
+        "bonds": "",
+        "flaws": "",
+        "money_gold": 0,
+        "money_silver": 0,
+        "money_copper": 0,
+        "strength": 14,
+        "dexterity": 10,
+        "constitution": 12,
+        "intelligence": 10,
+        "wisdom": 10,
+        "charisma": 10,
+    }
+    fields.update(overrides)
+    return Character(**fields)
 
 
 class RecordingSession(FakeAsyncSession):
-    """FakeAsyncSession that logs commits into the shared event list."""
+    """FakeAsyncSession that logs commits and rollbacks into the shared event list."""
 
     def __init__(self, events):
         super().__init__()
@@ -169,6 +175,10 @@ class RecordingSession(FakeAsyncSession):
     async def commit(self):
         self.events.append("commit")
         await super().commit()
+
+    async def rollback(self):
+        self.events.append("rollback")
+        await super().rollback()
 
 
 class FakeCharacterRepository(FakeRepository):
@@ -180,6 +190,7 @@ class FakeCharacterRepository(FakeRepository):
         self.events = events
         self.last_create_payload = None
         self.last_update_fields = None
+        self.hp_updates = []
 
     async def create(self, payload, *, commit=True):
         if self.events is not None:
@@ -187,34 +198,36 @@ class FakeCharacterRepository(FakeRepository):
         self.last_create_payload = dict(payload)
         row = await super().create(payload, commit=commit)
         row.character_class = self.character_class_on_create
-        # _to_response reads these feature-engine-materialized collections;
-        # the fake row is a bare SimpleNamespace, so default them to empty
-        # like a freshly-created (never-granted-anything) character has.
-        row.saving_throw_proficiencies = []
-        row.armor_proficiencies = []
-        row.weapon_proficiencies = []
-        row.granted_spells = []
         return row
 
     async def update(self, db_obj, update_data, *, refresh=False):
         self.last_update_fields = dict(update_data)
         return await super().update(db_obj, update_data, refresh=refresh)
 
+    async def get_for_update(self, character_id):
+        self.events.append("lock_row")
+        return await self.get_by_id(character_id)
+
+    async def update_hp(self, character, current_hp, temp_hp, *, commit=True):
+        self.hp_updates.append((current_hp, temp_hp, commit))
+        character.current_hp = current_hp
+        character.temp_hp = temp_hp
+        await self.commit_or_flush(commit=commit)
+        return character
+
 
 class FakeClassRepository:
-    def __init__(self, character_class, class_exists=True):
+    def __init__(self, character_class, class_exists=True, subclass_exists=True):
         self.character_class = character_class
         self.class_exists = class_exists
+        self.subclass_exists = subclass_exists
         self.slot_progression_calls = []
 
-    async def exists_by_id(self, class_id):
-        return self.class_exists
-
     async def get_subclass(self, class_id, subclass_id):
-        return SimpleNamespace(id=subclass_id)
+        return SimpleNamespace(id=subclass_id) if self.subclass_exists else None
 
     async def get_by_id(self, class_id):
-        return self.character_class
+        return self.character_class if self.class_exists else None
 
     async def get_spell_slot_progression(self, class_id, level):
         self.slot_progression_calls.append((class_id, level))
@@ -222,18 +235,16 @@ class FakeClassRepository:
 
 
 class FakeRaceRepository:
-    def __init__(self, race, race_exists=True):
+    def __init__(self, race, race_exists=True, subrace_exists=True):
         self.race = race
         self.race_exists = race_exists
-
-    async def exists_by_id(self, race_id):
-        return self.race_exists
+        self.subrace_exists = subrace_exists
 
     async def get_subrace(self, race_id, subrace_id):
-        return SimpleNamespace(id=subrace_id)
+        return SimpleNamespace(id=subrace_id) if self.subrace_exists else None
 
     async def get_by_id(self, race_id):
-        return self.race
+        return self.race if self.race_exists else None
 
 
 class FakeBackgroundRepo:
@@ -241,38 +252,8 @@ class FakeBackgroundRepo:
         self.background = background
         self.background_exists = background_exists
 
-    async def exists_by_id(self, background_id):
-        return self.background_exists
-
     async def get_by_id(self, background_id):
-        return self.background
-
-
-class FakeFeatGrantRepository:
-    def __init__(self, events):
-        self.events = events
-        self.calls = []
-
-    async def add_character_feat(self, character_id, feat_id, asi_id, *, source_type, commit):
-        self.events.append("feat_grant")
-        self.calls.append((character_id, feat_id, asi_id, source_type, commit))
-
-
-class FakeAsiRepository:
-    def __init__(self):
-        self.calls = []
-
-    async def add(
-        self,
-        character_id,
-        class_level,
-        choice,
-        *,
-        feat_id=None,
-        ability_score_increase_id=None,
-        commit=True,
-    ):
-        self.calls.append((character_id, class_level, choice, feat_id, ability_score_increase_id, commit))
+        return self.background if self.background_exists else None
 
 
 class FakeMaxLevelRepository:
@@ -283,6 +264,17 @@ class FakeMaxLevelRepository:
     async def create_for_character(self, character_id, level, *, commit):
         self.events.append("seed_max_level")
         self.calls.append((character_id, level, commit))
+
+
+class FakeSlotUsageRepository:
+    def __init__(self):
+        self.resets = []
+        self.fail = False
+
+    async def reset_all_spell_slots(self, character_id, *, commit=True):
+        if self.fail:
+            raise RuntimeError("slot reset failed")
+        self.resets.append((character_id, commit))
 
 
 class FakeSpellSlotRepository:
@@ -312,26 +304,30 @@ class FakeItemRepository:
 
 
 class FakeStatsService:
-    """Records compute calls in the shared event log (HP-math marker)."""
+    """Records stats calls in the shared event log (starting-HP marker)."""
 
     def __init__(self, events, constitution_total=14):
         self.events = events
         self.constitution_total = constitution_total
-        self.compute_calls = []
+        self.refresh_calls = []
 
-    async def compute(self, character):
-        self.events.append("compute_hp")
-        self.compute_calls.append(character)
-        return {"constitution_total": self.constitution_total}
+    async def refresh(self, character, *, commit=True):
+        self.events.append("refresh_stats")
+        self.refresh_calls.append((character, commit))
+        return SimpleNamespace(
+            strength_total=14,
+            dexterity_total=10,
+            constitution_total=self.constitution_total,
+            intelligence_total=10,
+            wisdom_total=10,
+            charisma_total=10,
+        )
 
-    async def resolve_ability_caps(self, character):
-        return dict.fromkeys(AbilityScore, 20)
-
-    async def for_response(self, character, *, refresh=False):
+    async def get_or_stale(self, character_id):
         return None
 
     async def compute_derived(self, character):
-        return DerivedStats(hit_dice="D10", speed=30)
+        return DerivedStats(hit_dice="D10")
 
 
 def make_service(
@@ -342,35 +338,42 @@ def make_service(
     background=None,
     race=None,
     class_exists=True,
+    subclass_exists=True,
     race_exists=True,
+    subrace_exists=True,
     background_exists=True,
     constitution_total=14,
     equipment_entries=None,
     choice_groups=None,
     existing_characters=None,
 ):
+    events = events if events is not None else []
     db = RecordingSession(events)
     character_class = character_class if character_class is not None else make_class()
     service = CharacterService(db)
+    creation = service.creation
 
-    service.repository = FakeCharacterRepository(
+    service.repository = creation.repository = FakeCharacterRepository(
         db,
         existing_by_id=existing_characters or {},
         character_class=character_class,
         events=events,
     )
-    service.class_repository = FakeClassRepository(character_class, class_exists=class_exists)
-    service.race_repository = FakeRaceRepository(race if race is not None else make_race(), race_exists=race_exists)
-    service.background_repository = FakeBackgroundRepo(
+    creation.class_repository = FakeClassRepository(
+        character_class, class_exists=class_exists, subclass_exists=subclass_exists
+    )
+    creation.race_repository = FakeRaceRepository(
+        race if race is not None else make_race(), race_exists=race_exists, subrace_exists=subrace_exists
+    )
+    creation.background_repository = FakeBackgroundRepo(
         background if background is not None else make_background(),
         background_exists=background_exists,
     )
-    service.item_repository = FakeItemRepository(events, entries=equipment_entries, choice_groups=choice_groups)
-    service.stats_service = FakeStatsService(events, constitution_total=constitution_total)
-    service.feat_grant_repository = FakeFeatGrantRepository(events)
-    service.asi_repository = FakeAsiRepository()
-    service.max_level_repository = FakeMaxLevelRepository(events)
-    service.character_spell_slot_repository = FakeSpellSlotRepository()
+    creation.item_repository = FakeItemRepository(events, entries=equipment_entries, choice_groups=choice_groups)
+    service.stats_service = creation.stats_service = FakeStatsService(events, constitution_total=constitution_total)
+    creation.max_level_repository = FakeMaxLevelRepository(events)
+    creation.spell_slot_repository = FakeSpellSlotRepository()
+    service.character_spell_slot_repository = FakeSlotUsageRepository()
 
     if monkeypatch is not None:
 
@@ -378,11 +381,14 @@ def make_service(
             events.append("sync_features")
             return []
 
-        async def fake_invalidate(character_id):
-            events.append("invalidate")
+        async def fake_invalidate(character_id, *, db=None):
+            async def purge():
+                events.append(f"invalidate:{character_id}")
 
-        monkeypatch.setattr(crud_service_module, "sync_progression_features", fake_sync)
-        monkeypatch.setattr(crud_service_module, "invalidate_character_cache", fake_invalidate)
+            await after_commit(db, purge)
+
+        monkeypatch.setattr(creation_module, "sync_progression_features", fake_sync)
+        monkeypatch.setattr(base_module, "invalidate_character_cache", fake_invalidate)
     return service, db
 
 
@@ -425,31 +431,28 @@ class TestCharacterCreateSchema:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 class TestValidateChosenSkills:
-    async def test_unknown_skill_raises_skill_not_available(self):
-        service, _ = make_service(None, [])
-
+    def test_unknown_skill_raises_skill_not_available(self):
         with pytest.raises(SkillNotAvailableForClassException) as exc_info:
-            service._validate_chosen_skills([99], make_class())
+            validate_chosen_skills([99], make_class())
 
         assert exc_info.value.skill_id == 99
         assert exc_info.value.class_id == 1
 
-    async def test_too_many_choices_raises(self):
-        service, _ = make_service(None, [])
+    def test_too_many_choices_raises(self):
         klass = make_class(skill_choice_count=2, available_skills=[SimpleNamespace(id=i) for i in range(1, 5)])
 
         with pytest.raises(TooManySkillChoicesException) as exc_info:
-            service._validate_chosen_skills([1, 2, 3], klass)
+            validate_chosen_skills([1, 2, 3], klass)
 
         assert exc_info.value.allowed == 2
         assert exc_info.value.requested == 3
 
-    async def test_empty_choices_pass_without_validation(self):
-        service, _ = make_service(None, [])
+    def test_empty_choices_pass_without_validation(self):
+        assert validate_chosen_skills([], make_class()) == []
 
-        assert service._validate_chosen_skills([], make_class()) == []
+    def test_fewer_choices_than_the_class_allows_are_accepted(self):
+        assert validate_chosen_skills([1], make_class(skill_choice_count=2)) == [1]
 
 
 def make_choice_group(group_id=1, pick_count=1, options=None):
@@ -466,26 +469,26 @@ class TestResolveItemChoices:
     async def test_no_sources_and_empty_choice_returns_empty(self):
         service, _ = make_service(None, [])
 
-        assert await service._resolve_item_choices(None, None, []) == []
+        assert await service.creation._resolve_item_choices(None, None, []) == []
 
     async def test_choice_without_sources_raises(self):
         service, _ = make_service(None, [])
 
         with pytest.raises(ItemChoicesWithoutGroupsException):
-            await service._resolve_item_choices(None, None, [100])
+            await service.creation._resolve_item_choices(None, None, [100])
 
     async def test_choice_when_sources_define_no_groups_raises(self):
         service, _ = make_service(None, [], choice_groups=[])
 
         with pytest.raises(ItemChoicesWithoutGroupsException):
-            await service._resolve_item_choices(1, 3, [100])
+            await service.creation._resolve_item_choices(1, 3, [100])
 
     async def test_foreign_option_raises(self):
         group = make_choice_group(options=[make_choice_option(option_id=100), make_choice_option(option_id=101)])
         service, _ = make_service(None, [], choice_groups=[group])
 
         with pytest.raises(ItemChoiceNotAvailableException) as exc_info:
-            await service._resolve_item_choices(1, 3, [999])
+            await service.creation._resolve_item_choices(1, 3, [999])
 
         assert exc_info.value.option_id == 999
 
@@ -495,10 +498,10 @@ class TestResolveItemChoices:
         group = make_choice_group(pick_count=1, options=[option_a, option_b])
         service, _ = make_service(None, [], choice_groups=[group])
 
-        resolved = await service._resolve_item_choices(1, None, [100])
+        resolved = await service.creation._resolve_item_choices(1, None, [100])
 
         assert resolved == [option_a]
-        assert service.item_repository.choice_group_calls == [[(FeatureSourceType.CLASS, 1)]]
+        assert service.creation.item_repository.choice_group_calls == [[(FeatureSourceType.CLASS, 1)]]
 
     async def test_fewer_than_pick_count_raises(self):
         group = make_choice_group(
@@ -512,7 +515,7 @@ class TestResolveItemChoices:
         service, _ = make_service(None, [], choice_groups=[group])
 
         with pytest.raises(TooFewItemChoicesException) as exc_info:
-            await service._resolve_item_choices(1, None, [100])
+            await service.creation._resolve_item_choices(1, None, [100])
 
         assert exc_info.value.group_id == 1
         assert exc_info.value.pick_count == 2
@@ -538,7 +541,7 @@ class TestResolveItemChoices:
         service, _ = make_service(None, [], choice_groups=[group_a, group_b])
 
         with pytest.raises(TooFewItemChoicesException) as exc_info:
-            await service._resolve_item_choices(1, None, [100])
+            await service.creation._resolve_item_choices(1, None, [100])
 
         assert exc_info.value.group_id == 2
 
@@ -551,31 +554,21 @@ class TestResolveItemChoices:
         ]
         service, _ = make_service(None, [], choice_groups=groups)
 
-        resolved = await service._resolve_item_choices(1, 3, [100, 200])
+        resolved = await service.creation._resolve_item_choices(1, 3, [100, 200])
 
         assert resolved == [class_option, background_option]
-        assert service.item_repository.choice_group_calls == [
+        assert service.creation.item_repository.choice_group_calls == [
             [(FeatureSourceType.CLASS, 1), (FeatureSourceType.BACKGROUND, 3)]
         ]
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-class TestComputeStartingMaxHp:
-    async def test_hit_die_faces_plus_con_modifier(self):
-        service, _ = make_service(None, [], constitution_total=14)
+class TestStartingMaxHp:
+    def test_hit_die_faces_plus_con_modifier(self):
+        assert starting_max_hp(DiceType.D10, 14) == 12
 
-        result = await service._compute_starting_max_hp(SimpleNamespace(id=1), make_class())
-
-        assert result == 12
-
-    async def test_clamped_to_at_least_one(self):
-        service, _ = make_service(None, [], constitution_total=-4)
-        klass = make_class(hit_dice=DiceType.D6)
-
-        result = await service._compute_starting_max_hp(SimpleNamespace(id=1), klass)
-
-        assert result == 1
+    def test_clamped_to_at_least_one(self):
+        assert starting_max_hp(DiceType.D6, -4) == 1
 
 
 @pytest.mark.unit
@@ -640,18 +633,16 @@ class TestCreateCharacterHappyPath:
 
         item_rows = [row for row in db.added if isinstance(row, CharacterItem)]
         assert sorted((row.item_id, row.quantity) for row in item_rows) == [(10, 3), (11, 1)]
-        assert service.item_repository.source_calls == [
+        assert service.creation.item_repository.source_calls == [
             [(FeatureSourceType.CLASS, 1), (FeatureSourceType.BACKGROUND, 3)]
         ]
 
-        assert service.max_level_repository.calls == [(1, 1, False)]
-        assert service.class_repository.slot_progression_calls == [(1, 1)]
-        assert service.character_spell_slot_repository.calls == [(1, {}, False)]
-        assert service.feat_grant_repository.calls == []
-        assert service.asi_repository.calls == []
+        assert service.creation.max_level_repository.calls == [(1, 1, False)]
+        assert service.creation.class_repository.slot_progression_calls == [(1, 1)]
+        assert service.creation.spell_slot_repository.calls == [(1, {}, False)]
+        assert service.stats_service.refresh_calls == [(character, False)]
 
         assert db.commits == 1
-        assert db.flushes == 6
         assert result.id == 1
         assert result.level == 1
         assert result.temp_hp == 0
@@ -659,33 +650,29 @@ class TestCreateCharacterHappyPath:
         assert result.max_hp == 12
         assert result.hit_dice == "D10"
         assert result.speed == 30
+        assert result.ability_scores.constitution_total == 14
 
     async def test_speed_is_seeded_from_the_race(self, monkeypatch):
         service, db = make_service(monkeypatch, [], race=make_race(speed=35))
-        user = make_user()
 
-        result = await service.create_character(make_create_payload(), user)
+        result = await service.create_character(make_create_payload(), make_user())
 
-        character = service.repository.created[0]
-        assert character.speed == 35
+        assert service.repository.created[0].speed == 35
         assert result.speed == 35
 
     async def test_speed_falls_back_to_default_without_a_race(self, monkeypatch):
         service, db = make_service(monkeypatch, [])
-        user = make_user()
 
-        result = await service.create_character(make_create_payload(race_id=None), user)
+        result = await service.create_character(make_create_payload(race_id=None), make_user())
 
-        character = service.repository.created[0]
-        assert character.speed == 30
+        assert service.repository.created[0].speed == 30
         assert result.speed == 30
 
     async def test_class_with_no_armor_or_weapon_proficiencies_writes_no_rows(self, monkeypatch):
         klass = make_class(armor_proficiencies=[], weapon_proficiencies=[])
         service, db = make_service(monkeypatch, [], character_class=klass)
-        user = make_user()
 
-        await service.create_character(make_create_payload(), user)
+        await service.create_character(make_create_payload(), make_user())
 
         armor_or_weapon_rows = [
             row
@@ -696,26 +683,18 @@ class TestCreateCharacterHappyPath:
         assert armor_or_weapon_rows == []
 
     async def test_creation_grants_chosen_item_options_merged_with_guaranteed(self, monkeypatch):
-        events = []
         guaranteed = [SimpleNamespace(item_id=10, quantity=1)]
         option = make_choice_option(option_id=100, group_id=1, item_id=10, quantity=2)
         group = make_choice_group(
             pick_count=1, options=[option, make_choice_option(option_id=101, group_id=1, item_id=21)]
         )
-        service, db = make_service(monkeypatch, events, equipment_entries=guaranteed, choice_groups=[group])
-        user = make_user()
+        service, db = make_service(monkeypatch, [], equipment_entries=guaranteed, choice_groups=[group])
 
-        result = await service.create_character(make_create_payload(item_choice_ids=[100]), user)
+        await service.create_character(make_create_payload(item_choice_ids=[100]), make_user())
 
-        # Item 10 is granted both as guaranteed equipment (qty 1) and as
-        # the chosen option (qty 2) — merged into a single stack of three.
         item_rows = [row for row in db.added if isinstance(row, CharacterItem)]
         assert sorted((row.item_id, row.quantity) for row in item_rows) == [(10, 3)]
         assert "item_choice_ids" not in service.repository.last_create_payload
-        assert service.item_repository.choice_group_calls == [
-            [(FeatureSourceType.CLASS, 1), (FeatureSourceType.BACKGROUND, 3)]
-        ]
-        assert result.ability_scores is None
 
     async def test_creation_rejects_unanswered_choice_group(self, monkeypatch):
         group = make_choice_group(
@@ -726,24 +705,63 @@ class TestCreateCharacterHappyPath:
             ],
         )
         service, db = make_service(monkeypatch, [], choice_groups=[group])
-        user = make_user()
 
         with pytest.raises(TooFewItemChoicesException):
-            await service.create_character(make_create_payload(item_choice_ids=[]), user)
+            await service.create_character(make_create_payload(item_choice_ids=[]), make_user())
 
         assert not service.repository.created
         assert db.added == []
 
-    async def test_order_feature_sync_before_hp_math_commit_before_invalidate(self, monkeypatch):
+    async def test_background_description_becomes_the_backstory_capped_at_the_limit(self, monkeypatch):
+        service, db = make_service(monkeypatch, [], background=make_background(description="x" * 20_000))
+
+        await service.create_character(make_create_payload(), make_user())
+
+        backstories = [row for row in db.added if isinstance(row, CharacterBackstory)]
+        assert len(backstories) == 1
+        assert len(backstories[0].content) == 12_000
+
+    async def test_background_suggestions_replace_the_personality_fields(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [])
+
+        result = await service.create_character(make_create_payload(personality_traits="mine"), make_user())
+
+        assert result.personality_traits == "PERSONALITY_TRAIT text"
+        assert result.flaws == "FLAW text"
+
+    async def test_order_feature_sync_before_hp_math_all_before_the_single_commit(self, monkeypatch):
         events = []
         service, _ = make_service(monkeypatch, events)
 
         await service.create_character(make_create_payload(), make_user())
 
-        assert "feat_grant" not in events
-        assert events.index("sync_features") < events.index("compute_hp")
-        assert events.index("compute_hp") < events.index("grant_equipment")
-        assert events.index("commit") < events.index("invalidate")
+        assert events.index("sync_features") < events.index("refresh_stats")
+        assert events.index("refresh_stats") < events.index("grant_equipment")
+        assert events.index("grant_equipment") < events.index("commit")
+        assert events.count("commit") == 1
+
+    async def test_creation_purges_no_cache_for_the_brand_new_character(self, monkeypatch):
+        events = []
+        service, _ = make_service(monkeypatch, events)
+
+        await service.create_character(make_create_payload(), make_user())
+
+        assert not any(event.startswith("invalidate") for event in events)
+
+    async def test_failure_midway_rolls_back_and_returns_nothing(self, monkeypatch):
+        events = []
+        service, db = make_service(monkeypatch, events)
+
+        async def broken_refresh(character, *, commit=True):
+            raise RuntimeError("stats failed")
+
+        service.stats_service.refresh = broken_refresh
+
+        with pytest.raises(RuntimeError):
+            await service.create_character(make_create_payload(), make_user())
+
+        assert db.commits == 0
+        assert db.rollbacks >= 1
 
 
 @pytest.mark.unit
@@ -758,11 +776,29 @@ class TestCreateCharacterReferenceValidation:
         assert db.commits == 0
         assert service.repository.created == []
 
+    async def test_missing_subclass_reference_raises(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [], subclass_exists=False)
+
+        with pytest.raises(SubclassNotFoundException):
+            await service.create_character(make_create_payload(subclass_id=9), make_user())
+
     async def test_missing_race_reference_raises(self, monkeypatch):
         service, _ = make_service(monkeypatch, [], race_exists=False)
 
         with pytest.raises(RaceNotFoundException):
             await service.create_character(make_create_payload(), make_user())
+
+    async def test_subrace_of_another_race_raises(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [], subrace_exists=False)
+
+        with pytest.raises(SubraceNotFoundException):
+            await service.create_character(make_create_payload(subrace_id=9), make_user())
+
+    async def test_subrace_without_race_raises(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [])
+
+        with pytest.raises(SubraceNotFoundException):
+            await service.create_character(make_create_payload(race_id=None, subrace_id=9), make_user())
 
     async def test_missing_background_reference_raises(self, monkeypatch):
         service, _ = make_service(monkeypatch, [], background_exists=False)
@@ -777,13 +813,20 @@ class TestUpdateAndDelete:
     async def test_update_applies_only_provided_fields(self, monkeypatch):
         character = make_owned_character()
         service, _ = make_service(monkeypatch, [], existing_characters={5: character})
-        data = CharacterUpdate(name="NewName", armor_class=16)
 
-        result = await service.update_character(5, data, make_user())
+        result = await service.update_character(5, CharacterUpdate(name="NewName", armor_class=16), make_user())
 
         assert service.repository.last_update_fields == {"name": "NewName", "armor_class": 16}
         assert result.name == "NewName"
         assert result.armor_class == 16
+
+    async def test_update_purges_the_cache_after_the_write(self, monkeypatch):
+        events = []
+        service, _ = make_service(monkeypatch, events, existing_characters={5: make_owned_character()})
+
+        await service.update_character(5, CharacterUpdate(name="X"), make_user())
+
+        assert events == ["commit", "invalidate:5"]
 
     async def test_update_denied_for_other_player(self, monkeypatch):
         character = make_owned_character(owner_id=7)
@@ -794,12 +837,49 @@ class TestUpdateAndDelete:
 
         assert service.repository.last_update_fields is None
 
-    async def test_delete_owner_returns_true_and_removes_row(self, monkeypatch):
-        character = make_owned_character(owner_id=7)
+    async def test_current_hp_patch_is_clamped_to_max_hp(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [], existing_characters={5: make_owned_character(max_hp=10)})
+
+        result = await service.update_character(5, CharacterUpdate(current_hp=99), make_user())
+
+        assert service.repository.last_update_fields == {"current_hp": 10}
+        assert result.current_hp == 10
+
+    async def test_player_cannot_raise_inspiration(self, monkeypatch):
+        character = make_owned_character(inspiration=1)
         service, _ = make_service(monkeypatch, [], existing_characters={5: character})
 
+        with pytest.raises(GmOnlyFieldException):
+            await service.update_character(5, CharacterUpdate(inspiration=2), make_user())
+
+        assert service.repository.last_update_fields is None
+
+    async def test_player_can_spend_inspiration_down_or_keep_it(self, monkeypatch):
+        character = make_owned_character(inspiration=3)
+        service, _ = make_service(monkeypatch, [], existing_characters={5: character})
+
+        await service.update_character(5, CharacterUpdate(inspiration=2), make_user())
+        await service.update_character(5, CharacterUpdate(inspiration=2), make_user())
+
+        assert character.inspiration == 2
+
+    async def test_gm_can_raise_inspiration_on_any_character(self, monkeypatch):
+        character = make_owned_character(inspiration=0)
+        service, _ = make_service(monkeypatch, [], existing_characters={5: character})
+
+        result = await service.update_character(5, CharacterUpdate(inspiration=4), make_user(99, UserRole.GM))
+
+        assert result.inspiration == 4
+
+    async def test_delete_owner_returns_true_removes_row_and_purges_cache(self, monkeypatch):
+        events = []
+        character = make_owned_character(owner_id=7)
+        service, _ = make_service(monkeypatch, events, existing_characters={5: character})
+
         assert await service.delete_character(5, make_user()) is True
+
         assert service.repository.deleted == [character]
+        assert events == ["invalidate:5"]
 
     async def test_delete_denied_for_other_player(self, monkeypatch):
         character = make_owned_character(owner_id=7)
@@ -809,3 +889,112 @@ class TestUpdateAndDelete:
             await service.delete_character(5, make_user(user_id=8))
 
         assert service.repository.deleted == []
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestUpdateHp:
+    async def test_damage_locks_the_row_and_commits_once_before_purging(self, monkeypatch):
+        events = []
+        character = make_owned_character(current_hp=10, max_hp=10)
+        service, db = make_service(monkeypatch, events, existing_characters={5: character})
+
+        result = await service.update_hp(5, HpUpdate(delta=-4), make_user())
+
+        assert result.current_hp == 6
+        assert service.repository.hp_updates == [(6, 0, False)]
+        assert events == ["lock_row", "commit", "invalidate:5"]
+        assert db.commits == 1
+
+    async def test_damage_drains_temp_hp_first(self, monkeypatch):
+        character = make_owned_character(current_hp=10, max_hp=10, temp_hp=3)
+        service, _ = make_service(monkeypatch, [], existing_characters={5: character})
+
+        result = await service.update_hp(5, HpUpdate(delta=-5), make_user())
+
+        assert (result.current_hp, result.temp_hp) == (8, 0)
+
+    async def test_healing_is_clamped_to_max_hp(self, monkeypatch):
+        character = make_owned_character(current_hp=8, max_hp=10)
+        service, _ = make_service(monkeypatch, [], existing_characters={5: character})
+
+        result = await service.update_hp(5, HpUpdate(delta=50), make_user())
+
+        assert result.current_hp == 10
+
+    async def test_mixed_delta_and_absolute_is_rejected_without_writing(self, monkeypatch):
+        events = []
+        service, db = make_service(monkeypatch, events, existing_characters={5: make_owned_character()})
+
+        with pytest.raises(InvalidHpUpdateException):
+            await service.update_hp(5, HpUpdate(delta=-1, current_hp=3), make_user())
+
+        assert service.repository.hp_updates == []
+        assert db.commits == 0
+        assert "invalidate:5" not in events
+
+    async def test_empty_update_is_rejected(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [], existing_characters={5: make_owned_character()})
+
+        with pytest.raises(InvalidHpUpdateException):
+            await service.update_hp(5, HpUpdate(), make_user())
+
+    async def test_other_players_character_is_denied_before_validation(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [], existing_characters={5: make_owned_character(owner_id=7)})
+
+        with pytest.raises(CharacterAccessDeniedException):
+            await service.update_hp(5, HpUpdate(), make_user(user_id=8))
+
+    async def test_unknown_character_is_404(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [])
+
+        with pytest.raises(CharacterNotFoundException):
+            await service.update_hp(404, HpUpdate(delta=-1), make_user())
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRest:
+    async def test_long_rest_restores_hp_and_resets_slots_in_one_transaction(self, monkeypatch):
+        events = []
+        character = make_owned_character(current_hp=2, max_hp=10, temp_hp=4)
+        service, db = make_service(monkeypatch, events, existing_characters={5: character})
+
+        result = await service.rest(5, RestRequest(type="long"), make_user())
+
+        assert (result.current_hp, result.temp_hp) == (10, 0)
+        assert service.repository.hp_updates == [(10, 0, False)]
+        assert service.character_spell_slot_repository.resets == [(5, False)]
+        assert events == ["lock_row", "commit", "invalidate:5"]
+        assert db.commits == 1
+
+    async def test_failed_slot_reset_rolls_the_hp_restore_back(self, monkeypatch):
+        events = []
+        character = make_owned_character(current_hp=2, max_hp=10)
+        service, db = make_service(monkeypatch, events, existing_characters={5: character})
+        service.character_spell_slot_repository.fail = True
+
+        with pytest.raises(RuntimeError):
+            await service.rest(5, RestRequest(type="long"), make_user())
+
+        assert db.commits == 0
+        assert db.rollbacks >= 1
+        assert "invalidate:5" not in events
+
+    async def test_short_rest_writes_nothing(self, monkeypatch):
+        events = []
+        character = make_owned_character(current_hp=2, max_hp=10)
+        service, db = make_service(monkeypatch, events, existing_characters={5: character})
+
+        result = await service.rest(5, RestRequest(type="short"), make_user())
+
+        assert result.current_hp == 2
+        assert service.repository.hp_updates == []
+        assert db.commits == 0
+        assert events == []
+
+    async def test_rest_on_other_players_character_is_denied(self, monkeypatch):
+        service, _ = make_service(monkeypatch, [], existing_characters={5: make_owned_character(owner_id=7)})
+
+        with pytest.raises(CharacterAccessDeniedException):
+            await service.rest(5, RestRequest(type="long"), make_user(user_id=8))

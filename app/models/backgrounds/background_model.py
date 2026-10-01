@@ -54,7 +54,7 @@ class Background(settings.Base):  # type: ignore
         passive_deletes=True,
         order_by="SourceItemChoiceGroup.sort_order",
     )
-    characters = relationship("Character", back_populates="background")
+    characters = relationship("Character", back_populates="background", passive_deletes=True)
     tags = relationship(
         "Tag",
         secondary=background_tags,

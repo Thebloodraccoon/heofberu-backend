@@ -86,7 +86,7 @@ class TestPendingChoiceGroups:
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Skill Training", source_type="CLASS", level=None)
 
         # Add a choice group with two options, each granting a skill
@@ -97,7 +97,6 @@ class TestPendingChoiceGroups:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Choose a skill",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id}]},
                             {"skill_effects": [{"skill_id": skill.id}]},
@@ -174,7 +173,7 @@ class TestAnswerChoices:
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Skill Pick", source_type="CLASS", level=None)
 
         # Set up a choice group with two skill options
@@ -185,7 +184,6 @@ class TestAnswerChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id}]},
                             {"skill_effects": [{"skill_id": skill.id}]},
@@ -231,7 +229,7 @@ class TestAnswerChoices:
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Skill Pick", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -241,7 +239,6 @@ class TestAnswerChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id}]},
                         ],
@@ -274,7 +271,7 @@ class TestAnswerChoices:
     ):
         feature_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill1 = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skill1 = await create_skill(name="Athletics", ability="STR")
         feature = await create_feature(name="Double Pick", source_type="CLASS", level=None)
 
         # Group requires pick_count=2
@@ -285,7 +282,6 @@ class TestAnswerChoices:
                     {
                         "pick_count": 2,
                         "choice_type": "SKILL",
-                        "label": "Two Skills",
                         "options": [
                             {"skill_effects": [{"skill_id": skill1.id}]},
                             {"skill_effects": [{"skill_id": skill1.id}]},
@@ -320,8 +316,8 @@ class TestAnswerChoices:
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill_a = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
-        skill_b = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill_a = await create_skill(name="Stealth", ability="DEX")
+        skill_b = await create_skill(name="Perception", ability="WIS")
         feature = await create_feature(name="Skill Switch", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -331,7 +327,6 @@ class TestAnswerChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [
                             {"skill_effects": [{"skill_id": skill_a.id}]},
                             {"skill_effects": [{"skill_id": skill_b.id}]},
@@ -425,7 +420,7 @@ class TestAnswerChoices:
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
         feature = await create_feature(name="Any Skill Resolve", source_type="CLASS", level=None)
 
         # Pre-existing open ("any") skill effect (skill_id=null) — authoring one
@@ -455,7 +450,7 @@ class TestAnswerChoices:
     ):
         feature_class = await create_class(name="Bard")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        skill = await create_skill(key="PERSUASION", name="Persuasion", ability="CHA")
+        skill = await create_skill(name="Persuasion", ability="CHA")
         feature = await create_feature(name="Multi Group", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -465,7 +460,6 @@ class TestAnswerChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Group A",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id}]},
                         ],
@@ -473,7 +467,6 @@ class TestAnswerChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Group B",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id}]},
                         ],
@@ -508,7 +501,7 @@ class TestAnswerChoices:
         feature_class = await create_class(name="Fighter")
         char_a = await create_character(owner_id=gm.id, class_id=feature_class.id, name="Char A")
         char_b = await create_character(owner_id=gm.id, class_id=feature_class.id, name="Char B")
-        skill = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skill = await create_skill(name="Athletics", ability="STR")
         feature = await create_feature(name="Switcheroo", source_type="CLASS", level=None)
 
         cg_resp = await client.put(
@@ -518,7 +511,6 @@ class TestAnswerChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "label": "Skill",
                         "options": [
                             {"skill_effects": [{"skill_id": skill.id}]},
                         ],

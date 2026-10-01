@@ -4,7 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.features.characters.grants.effects import grant_effects, pending_groups
+from app.constants import WeaponProficiency
+from app.features.characters.grants.effects import (
+    GrantEffects,
+    _to_response,
+    get_grant_effects_map,
+    grant_effects,
+    pending_groups,
+)
+from tests.unit.fakes import FakeAsyncSession
 
 
 def make_holder(option_id=None, *, skills=(), saves=(), armor=(), weapons=(), spells=()) -> SimpleNamespace:
@@ -65,3 +73,33 @@ class TestPendingGroups:
 
     def test_filled_group_is_not_pending(self):
         assert pending_groups(make_feature(), [SimpleNamespace(choice_group_id=1)]) == []
+
+
+@pytest.mark.unit
+class TestWeaponOrdering:
+    def test_weapon_proficiencies_are_sorted_categories_first_then_items(self):
+        effects = GrantEffects(
+            weapons={(WeaponProficiency.SIMPLE, None), (None, 9), (WeaponProficiency.MARTIAL, None), (None, 2)}
+        )
+
+        weapons = _to_response(effects, {}).weapons
+
+        assert [(weapon.weapon_category, weapon.item_id) for weapon in weapons] == [
+            (WeaponProficiency.MARTIAL, None),
+            (WeaponProficiency.SIMPLE, None),
+            (None, 2),
+            (None, 9),
+        ]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestGrantEffectsMapFromLoadedTrees:
+    async def test_effects_come_from_the_preloaded_feature_and_picks_with_only_the_spell_lookup(self):
+        feature = make_feature()
+        grant = SimpleNamespace(id=7, feature=feature, choices=[SimpleNamespace(choice_option_id=11)])
+
+        effects = await get_grant_effects_map(FakeAsyncSession(), [grant])
+
+        assert [(skill.skill_id, skill.is_expertise) for skill in effects[7].skills] == [(1, False), (7, True)]
+        assert [saving_throw.ability for saving_throw in effects[7].saving_throws] == ["STR"]

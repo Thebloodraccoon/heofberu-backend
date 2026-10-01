@@ -1,16 +1,27 @@
 """Article relations repository: per-article combined listing and per-relation CRUD."""
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, exists, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
-from app.features.articles.crud.repository import ArticleRepository
+from app.constants import ArticleVisibility
+from app.features.articles.base import ArticleScopedRepository
 from app.features.articles.relations.schemas import ArticleRelationCreate
+from app.features.articles.visibility import visibility_conditions
 from app.models.articles.article_model import Article
 from app.models.articles.article_relation_model import ArticleRelation
 
+#: Cap on the unpaginated relation list, so a hub article can't return its whole graph.
+RELATIONS_LIMIT = 500
 
-class ArticleRelationsRepository(ArticleRepository):
-    """Relation persistence for articles, layered on :class:`ArticleRepository`."""
+
+class ArticleRelationsRepository(ArticleScopedRepository):
+    """Relation persistence for articles (the article lookups come from :class:`ArticleScopedRepository`)."""
+
+    def __init__(self, db: AsyncSession):
+        """Bind to ``Article`` without the tags/images eager loads (relations never serialize them)."""
+
+        super().__init__(db)
 
     async def relation_exists(
         self, from_article_id: int, to_article_id: int, relation_type: str, *, exclude_id: int | None = None
@@ -27,22 +38,38 @@ class ArticleRelationsRepository(ArticleRepository):
 
         return await self.db.scalar(stmt) is not None
 
-    async def list_relations(self, article_id: int) -> list[ArticleRelation]:
-        """Return every relation touching the article (either direction), newest first."""
+    async def list_relations(self, article_id: int, *, include_hidden: bool) -> list[ArticleRelation]:
+        """
+        Return the relations touching the article (either direction), newest first, at most ``RELATIONS_LIMIT``.
 
-        # The response and the visibility filter only need these columns, never body_markdown.
+        For non-GM readers (``include_hidden=False``) GM-only relations and relations whose far side isn't a
+        published, public article are filtered out in SQL.
+        """
+
+        conditions = [or_(ArticleRelation.from_article_id == article_id, ArticleRelation.to_article_id == article_id)]
+        if not include_hidden:
+            other_id = case(
+                (ArticleRelation.from_article_id == article_id, ArticleRelation.to_article_id),
+                else_=ArticleRelation.from_article_id,
+            )
+            conditions += [
+                ArticleRelation.visibility == ArticleVisibility.PUBLIC,
+                exists(select(Article.id).where(Article.id == other_id, *visibility_conditions(False))),
+            ]
+
         other_side_columns = load_only(
             Article.id, Article.slug, Article.title, Article.article_type, Article.subtype_id,
             Article.status, Article.visibility,
-        )
+        )  # fmt: skip
         result = await self.db.execute(
             select(ArticleRelation)
-            .where(or_(ArticleRelation.from_article_id == article_id, ArticleRelation.to_article_id == article_id))
+            .where(*conditions)
             .options(
                 selectinload(ArticleRelation.from_article).options(other_side_columns),
                 selectinload(ArticleRelation.to_article).options(other_side_columns),
             )
-            .order_by(ArticleRelation.created_at.desc())
+            .order_by(ArticleRelation.created_at.desc(), ArticleRelation.id.desc())
+            .limit(RELATIONS_LIMIT)
         )
         return list(result.scalars().all())
 

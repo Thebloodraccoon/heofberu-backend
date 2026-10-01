@@ -19,12 +19,8 @@ class CharacterFeatureChoice(settings.Base):  # type: ignore
     __tablename__ = "character_feature_choices"
 
     id = Column(Integer, primary_key=True)
-    character_feature_id = Column(
-        Integer,
-        ForeignKey("character_features.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    # No own index: the unique (character_feature_id, ...) already leads with this column.
+    character_feature_id = Column(Integer, ForeignKey("character_features.id", ondelete="CASCADE"), nullable=False)
     choice_group_id = Column(
         Integer,
         ForeignKey("feature_choice_groups.id", ondelete="RESTRICT"),

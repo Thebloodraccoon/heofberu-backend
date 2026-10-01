@@ -3,36 +3,18 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
-from app.core.base.service import BaseService
-from app.core.cache import use_cache
-from app.features.features.crud.schemas import NestedFeatureResponse
-from app.features.features.crud.service import FeatureCrudService
+from app.features.features.crud.source_features import SourceFeaturesService
 from app.features.subraces.crud.repository import SubraceRepository
-from app.features.subraces.crud.schemas import SubraceCreate, SubraceResponse, SubraceUpdate
-from app.models.races.subrace_model import Subrace
 
 
-class SubraceFeatureService(
-    BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
-):
-    """Read-only cached listing for a subrace's SUBRACE-source features."""
-
-    repository: SubraceRepository
+class SubraceFeatureService(SourceFeaturesService):
+    """Cached listing of the SUBRACE-source features of a subrace."""
 
     cache_namespaces = ("subrace_features",)
+    source_type = FeatureSourceType.SUBRACE
+    model_name = "Subrace"
 
     def __init__(self, db: AsyncSession):
-        """Initialize with a subrace repository and a composed feature CRUD service."""
+        """Initialize with a subrace repository and a composed feature reader."""
 
-        super().__init__(
-            repository=SubraceRepository(db),
-            response_schema=SubraceResponse,
-        )
-        self._features = FeatureCrudService(db)
-
-    @use_cache()
-    async def list_features(self, subrace_id: int) -> list[NestedFeatureResponse]:
-        """Return every SUBRACE-source feature of the subrace (cached)."""
-
-        await self._exists_or_404(subrace_id)
-        return await self._features.list_for_source(FeatureSourceType.SUBRACE, subrace_id)
+        super().__init__(SubraceRepository(db), db)

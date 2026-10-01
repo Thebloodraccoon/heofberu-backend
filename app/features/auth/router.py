@@ -1,10 +1,10 @@
-"""Auth endpoints: register, login, logout, refresh."""
+"""Auth endpoints: register, login, logout, refresh, forgot/reset password."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 
-from app.features.auth.dependencies import AuthServiceDep
+from app.features.auth.dependencies import AuthServiceDep, CurrentUserDep, TokenDep
 from app.features.auth.schemas import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -17,8 +17,7 @@ from app.features.auth.schemas import (
     ResetPasswordRequest,
     ResetPasswordResponse,
 )
-from app.features.auth.service import REFRESH_COOKIE_NAME
-from app.features.users.security import CurrentUserDep, TokenDep
+from app.features.auth.service import REFRESH_COOKIE_NAME, delete_refresh_cookie
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -125,7 +124,7 @@ async def logout(
     refresh_token_str = request.cookies.get(REFRESH_COOKIE_NAME)
 
     logout_response = await auth_service.logout(token, refresh_token_str)
-    response.delete_cookie(key=REFRESH_COOKIE_NAME, httponly=True, samesite="none", secure=True, path="/api/auth")
+    delete_refresh_cookie(response)
 
     return logout_response
 
@@ -135,14 +134,19 @@ async def logout(
     response_model=RefreshResponse,
     summary="Refresh the access token",
     responses={
-        401: {"description": "Refresh cookie missing, invalid, expired, or revoked (e.g. by a prior logout)."},
+        401: {
+            "description": (
+                "Refresh cookie missing, invalid, expired, already used, or revoked "
+                "(by a prior logout, rotation or password reset)."
+            )
+        },
     },
 )
-async def refresh_tokens(http_request: Request, auth_service: AuthServiceDep):
-    """Exchange the refresh-token cookie for a fresh access token. Open endpoint."""
+async def refresh_tokens(http_request: Request, response: Response, auth_service: AuthServiceDep):
+    """Rotate the refresh-token cookie: returns a fresh access token and sets a new refresh cookie. Open endpoint."""
 
     refresh_token = http_request.cookies.get(REFRESH_COOKIE_NAME, "")
-    return await auth_service.refresh_tokens(refresh_token)
+    return await auth_service.refresh_tokens(refresh_token, response)
 
 
 @router.post(
@@ -169,10 +173,11 @@ async def forgot_password(
         ),
     ],
     auth_service: AuthServiceDep,
+    background_tasks: BackgroundTasks,
 ):
     """Request a password-reset email; neutral response prevents enumeration. Open endpoint."""
 
-    return await auth_service.forgot_password(data)
+    return await auth_service.forgot_password(data, background_tasks)
 
 
 @router.post(

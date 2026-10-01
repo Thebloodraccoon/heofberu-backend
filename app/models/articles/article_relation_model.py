@@ -22,7 +22,8 @@ class ArticleRelation(settings.Base):  # type: ignore
     )
 
     id = Column(Integer, primary_key=True)
-    from_article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True)
+    # No own index: ``uq_article_relation`` (from, to, type) already leads with ``from_article_id``.
+    from_article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
     to_article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True)
 
     relation_type = Column(String(50), nullable=False, index=True)

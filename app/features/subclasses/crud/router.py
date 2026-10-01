@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.subclasses.crud.schemas import (
     SubclassCreate,
     SubclassGetAllResponse,
@@ -11,7 +12,6 @@ from app.features.subclasses.crud.schemas import (
     SubclassUpdate,
 )
 from app.features.subclasses.dependencies import SubclassCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -23,12 +23,12 @@ router = APIRouter()
     responses={404: {"description": "No class exists with the given ID."}},
 )
 async def list_subclasses(
+    subclass_service: SubclassCrudDep,
     class_id: int | None = Query(None, gt=0, description="Filter by class ID."),
-    class_service: SubclassCrudDep = ...,
 ):
-    """Return all subclasses, optionally filtered by ``class_id``. Open endpoint."""
+    """Return all subclasses, optionally filtered by ``class_id`` (404 when that class does not exist). Open endpoint."""
 
-    return await class_service.list_for_class(class_id)
+    return await subclass_service.list_for_class(class_id)
 
 
 @router.get(
@@ -37,10 +37,10 @@ async def list_subclasses(
     summary="Get a subclass by ID",
     responses={404: {"description": "Subclass not found."}},
 )
-async def get_subclass(subclass_id: int, class_service: SubclassCrudDep):
+async def get_subclass(subclass_id: int, subclass_service: SubclassCrudDep):
     """Full subclass detail, including its own SUBCLASS-source ``features``. Open endpoint."""
 
-    return await class_service.get_by_id(subclass_id)
+    return await subclass_service.get_by_id(subclass_id)
 
 
 @router.post(
@@ -50,7 +50,7 @@ async def get_subclass(subclass_id: int, class_service: SubclassCrudDep):
     summary="Create a subclass",
     responses={
         404: {"description": "No class exists with the given ID."},
-        409: {"description": "A subclass with this name already exists for this class."},
+        400: {"description": "A subclass with this name already exists for this class."},
     },
 )
 async def create_subclass(
@@ -69,19 +69,22 @@ async def create_subclass(
             }
         ),
     ],
-    class_service: SubclassCrudDep,
+    subclass_service: SubclassCrudDep,
     _: GmUserDep,
 ):
     """Create a subclass. ``class_id`` is required in the body. **GM only.**"""
 
-    return await class_service.create_subclass(data)
+    return await subclass_service.create_subclass(data)
 
 
 @router.patch(
     "/{subclass_id:int}",
     response_model=SubclassResponse,
     summary="Update a subclass",
-    responses={404: {"description": "Subclass not found."}},
+    responses={
+        400: {"description": "Another subclass of the same class already uses the requested name."},
+        404: {"description": "Subclass not found."},
+    },
 )
 async def update_subclass(
     subclass_id: int,
@@ -99,12 +102,12 @@ async def update_subclass(
             }
         ),
     ],
-    class_service: SubclassCrudDep,
+    subclass_service: SubclassCrudDep,
     _: GmUserDep,
 ):
-    """Partially update a subclass's base fields. **GM only.**"""
+    """Partially update a subclass's name/description (neither accepts `null`). The class cannot change. **GM only.**"""
 
-    return await class_service.update(subclass_id, data)
+    return await subclass_service.update(subclass_id, data)
 
 
 @router.delete(
@@ -114,10 +117,11 @@ async def update_subclass(
     responses={
         403: {"description": "Caller is not the founder."},
         404: {"description": "Subclass not found."},
+        409: {"description": "A character still uses the subclass."},
     },
 )
-async def delete_subclass(subclass_id: int, class_service: SubclassCrudDep, _: FounderDep):
+async def delete_subclass(subclass_id: int, subclass_service: SubclassCrudDep, _: FounderDep):
     """Delete a subclass and all its features. **Founder only.**"""
 
-    await class_service.delete(subclass_id)
+    await subclass_service.delete(subclass_id)
     return None

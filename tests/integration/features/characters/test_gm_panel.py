@@ -226,7 +226,7 @@ class TestGmPanelSkillExpertise:
     ):
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         db_session.add(
             CharacterProficiency(
                 character_id=character.id,
@@ -270,7 +270,7 @@ class TestGmPanelSkillExpertise:
     ):
         character_class = await create_class(name="Rogue")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         db_session.add(
             CharacterProficiency(
                 character_id=character.id,
@@ -298,7 +298,7 @@ class TestGmPanelSkillExpertise:
         """Expertise requires an existing proficiency row — no row means a 404."""
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=character_class.id)
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
 
         response = await client.patch(
             f"/characters/{character.id}/gm-panel/proficiencies/skills/expertise",

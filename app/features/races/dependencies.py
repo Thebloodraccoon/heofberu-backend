@@ -14,10 +14,10 @@ from app.features.races.skills.service import RaceSkillService
 from app.features.races.tags.service import RaceTagService
 
 
-def get_race_crud_service(db: DatabaseDep) -> RaceCrudService:
+def get_race_crud_service(db: DatabaseDep, storage: StorageServiceDep) -> RaceCrudService:
     """Get the race CRUD service instance."""
 
-    return RaceCrudService(db)
+    return RaceCrudService(db, storage)
 
 
 RaceCrudDep = Annotated[RaceCrudService, Depends(get_race_crud_service)]

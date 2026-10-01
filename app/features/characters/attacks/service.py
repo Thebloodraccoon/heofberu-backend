@@ -2,12 +2,14 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.characters.attacks.exceptions import AttackNotFoundException
+from app.features.characters.attacks.exceptions import AttackLimitReachedException, AttackNotFoundException
 from app.features.characters.attacks.repository import CharacterAttackRepository
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.base import CharacterSubDomainService
 from app.features.users.schemas import UserResponse
 from app.models.character.character_attack_model import Attack
+
+MAX_ATTACKS_PER_CHARACTER = 100
 
 
 class CharacterAttackService(CharacterSubDomainService):
@@ -22,7 +24,7 @@ class CharacterAttackService(CharacterSubDomainService):
     async def get_attacks(self, character_id: int, current_user: UserResponse) -> list[AttackResponse]:
         """List all attacks belonging to a character."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         attacks = await self.attack_repository.get_all_by_character(character_id)
         return [AttackResponse.model_validate(attack) for attack in attacks]
@@ -30,7 +32,10 @@ class CharacterAttackService(CharacterSubDomainService):
     async def create_attack(self, character_id: int, data: AttackCreate, current_user: UserResponse) -> AttackResponse:
         """Add a new attack/weapon entry to a character."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
+
+        if await self.attack_repository.count_for_character(character_id) >= MAX_ATTACKS_PER_CHARACTER:
+            raise AttackLimitReachedException(character_id=character_id, limit=MAX_ATTACKS_PER_CHARACTER)
 
         payload = data.model_dump()
         payload["character_id"] = character_id
@@ -42,7 +47,7 @@ class CharacterAttackService(CharacterSubDomainService):
     ) -> AttackResponse:
         """Update an existing attack/weapon entry."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         attack = await self._get_attack_or_404(character_id, attack_id)
         fields = data.model_dump(exclude_unset=True)
@@ -52,7 +57,7 @@ class CharacterAttackService(CharacterSubDomainService):
     async def delete_attack(self, character_id: int, attack_id: int, current_user: UserResponse) -> bool:
         """Remove an attack/weapon entry from a character."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         attack = await self._get_attack_or_404(character_id, attack_id)
         return await self.attack_repository.delete(attack)

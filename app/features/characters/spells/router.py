@@ -8,13 +8,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterSpellServiceDep
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
     CharacterSpellsResponse,
 )
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 

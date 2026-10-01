@@ -84,9 +84,14 @@ class FakeStatsService:
         self.totals = totals or dict(TOTALS)
         self.caps = caps if caps is not None else dict.fromkeys(AbilityScore, 20)
         self.refresh_calls = []
+        self.refresh_commits = []
+        self.refresh_error = None
 
-    async def refresh(self, character):
+    async def refresh(self, character, *, commit=True):
+        if self.refresh_error is not None:
+            raise self.refresh_error
         self.refresh_calls.append(character)
+        self.refresh_commits.append(commit)
 
     async def compute(self, character):
         return self.totals
@@ -111,17 +116,23 @@ class FakeFeatGrantRepository:
     async def get_character_feat_by_id(self, character_id, character_feat_id):
         return self._by_id.get(character_feat_id)
 
-    async def add_character_feat(self, character, feat_id, ability_score_increase_id, *, source_type=GrantSource.GM, commit=True):
+    async def add_character_feat(
+        self, character, feat_id, ability_score_increase_id, *, source_type=GrantSource.GM, commit=True
+    ):
         self.add_calls.append((character, feat_id, ability_score_increase_id, source_type, commit))
         return make_grant(7, feat_id, ability_score_increase_id)
 
-    async def set_character_feat_ability_score_increase(self, character, grant, ability_score_increase_id):
+    async def set_character_feat_ability_score_increase(
+        self, character, grant, ability_score_increase_id, *, commit=True
+    ):
         self.set_calls.append((grant, ability_score_increase_id))
+        self.set_commits = [*getattr(self, "set_commits", []), commit]
         grant.choices = [make_choice(ability_score_increase_id)] if ability_score_increase_id is not None else []
         return grant
 
-    async def remove_character_feat(self, grant):
+    async def remove_character_feat(self, grant, *, commit=True):
         self.remove_calls.append(grant)
+        self.remove_commits = [*getattr(self, "remove_commits", []), commit]
         return True
 
 
@@ -201,7 +212,9 @@ class TestAddFeat:
         assert service.stats_service.refresh_calls == [character]
         service.get_character_for_user.assert_awaited_once()
         no_feature_sync.assert_awaited_once_with(service.repository.db, character)
-        no_cache_invalidate.assert_awaited_once_with(character.id)
+        no_cache_invalidate.assert_awaited_once_with(character.id, db=service.repository.db)
+        assert service.stats_service.refresh_commits == [False]
+        assert service.repository.db.commits == 1
 
     async def test_add_feat_with_choice_writes_audit_and_refreshes_stats(self):
         character = make_character()
@@ -234,7 +247,9 @@ class TestAddFeat:
         stats = FakeStatsService(totals={**TOTALS, "strength_total": 20})
         service = make_service(make_character(), feat=feat, stats=stats)
 
-        result = await service.add_feat(1, CharacterFeatAdd(feat_id=2, ability_score_increase_id=200), SimpleNamespace())
+        result = await service.add_feat(
+            1, CharacterFeatAdd(feat_id=2, ability_score_increase_id=200), SimpleNamespace()
+        )
 
         assert result.id == 7
         add_call = service.feat_grant_repository.add_calls[0]
@@ -270,16 +285,17 @@ class TestUpdateFeat:
     async def test_updates_choice_and_refreshes_cache(self):
         character = make_character()
         grant = make_grant(3, 2, 200)
-        feat = make_feat(
-            ability_effects=[(AbilityScore.STR, 1), (AbilityScore.DEX, 1)]
-        )
+        feat = make_feat(ability_effects=[(AbilityScore.STR, 1), (AbilityScore.DEX, 1)])
         service = make_service(character, feat=feat, grants_by_id={3: grant})
 
         result = await service.update_feat(1, 3, CharacterFeatUpdate(ability_score_increase_id=201), SimpleNamespace())
 
         assert result.choices[0].ability_effects[0].id == 201
         assert service.feat_grant_repository.set_calls == [(grant, 201)]
+        assert service.feat_grant_repository.set_commits == [False]
         assert service.stats_service.refresh_calls == [character]
+        assert service.stats_service.refresh_commits == [False]
+        assert service.repository.db.commits == 1
 
     async def test_clearing_choice_on_asi_offering_feat_is_rejected(self):
         feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])
@@ -310,11 +326,65 @@ class TestRemoveFeat:
 
         assert result is True
         assert service.feat_grant_repository.remove_calls == [grant]
+        assert service.feat_grant_repository.remove_commits == [False]
         assert service.repository.db.commits == 1
         assert service.stats_service.refresh_calls == [character]
+        assert service.stats_service.refresh_commits == [False]
 
     async def test_missing_grant_raises(self):
         service = make_service(make_character())
 
         with pytest.raises(CharacterFeatNotFoundException):
             await service.remove_feat(1, 42, SimpleNamespace())
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRefreshFailureIsAtomic:
+    """The ability-score refresh shares the grant's transaction: a failing refresh leaves nothing behind."""
+
+    @pytest.fixture
+    def real_purge(self, monkeypatch, no_cache_invalidate):
+        from app.features.characters.cache import invalidate_character_cache
+
+        purge = AsyncMock()
+        monkeypatch.setattr("app.features.characters.cache.cache_delete_key", purge)
+        monkeypatch.setattr(
+            "app.features.characters.gm_panel.feats.service.invalidate_character_cache", invalidate_character_cache
+        )
+        return purge
+
+    async def test_add_feat_rolls_back_and_purges_nothing(self, real_purge):
+        stats = FakeStatsService()
+        stats.refresh_error = RuntimeError("refresh failed")
+        service = make_service(make_character(), feat=make_feat(), stats=stats)
+
+        with pytest.raises(RuntimeError):
+            await service.add_feat(1, CharacterFeatAdd(feat_id=2), SimpleNamespace())
+
+        assert (service.repository.db.commits, service.repository.db.rollbacks) == (0, 1)
+        real_purge.assert_not_awaited()
+
+    async def test_remove_feat_rolls_back_and_purges_nothing(self, real_purge):
+        stats = FakeStatsService()
+        stats.refresh_error = RuntimeError("refresh failed")
+        service = make_service(make_character(), grants_by_id={3: make_grant(3, 2)}, stats=stats)
+
+        with pytest.raises(RuntimeError):
+            await service.remove_feat(1, 3, SimpleNamespace())
+
+        assert (service.repository.db.commits, service.repository.db.rollbacks) == (0, 1)
+        real_purge.assert_not_awaited()
+
+    async def test_purge_runs_only_after_the_commit(self, real_purge):
+        service = make_service(make_character(), grants_by_id={3: make_grant(3, 2)})
+        order = []
+
+        async def record(key):
+            order.append(("purge", service.repository.db.commits))
+
+        real_purge.side_effect = record
+
+        await service.remove_feat(1, 3, SimpleNamespace())
+
+        assert order == [("purge", 1)]

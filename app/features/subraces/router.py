@@ -1,4 +1,4 @@
-"""Assembled ``/races/subraces`` router (query-style parent ID)."""
+"""Assembled ``/subraces`` router."""
 
 from fastapi import APIRouter
 

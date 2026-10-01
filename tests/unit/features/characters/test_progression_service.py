@@ -7,11 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import (
-    ABILITY_SCORE_CAP,
     ASI_LEVELS,
     AbilityScore,
     ASILevelChoice,
-    CharacterFeatSource,
     GrantSource,
     ProficiencyType,
     UserRole,
@@ -19,14 +17,17 @@ from app.constants import (
 from app.features.characters.crud.exceptions import SkillNotAvailableForClassException, TooManySkillChoicesException
 from app.features.characters.exceptions import BackgroundNotFoundException
 from app.features.characters.feats.exceptions import (
+    AbilityScoreCapExceededException,
     CharacterFeatAlreadyKnownException,
+    FeatAsiChoiceRequiredException,
+    FeatMinLevelNotMetException,
     FeatPrerequisiteNotMetException,
     InvalidAbilityScoreIncreaseException,
 )
 from app.features.characters.grants.exceptions import GrantChoiceRequiredException
 from app.features.characters.progression.exceptions import (
-    AbilityScoreCapExceededException,
     BackgroundAlreadySetException,
+    BackgroundItemChoicesNotSupportedException,
     CharacterAlreadyAtMaxLevelException,
     InvalidHitPointGainException,
     InvalidRebuildMaxHpException,
@@ -97,26 +98,28 @@ def default_totals() -> dict[str, int]:
     }
 
 
+class FakeStatsRepository:
+    def __init__(self):
+        self.upsert_calls = []
+
+    async def upsert(self, character_id, totals, *, commit=True):
+        self.upsert_calls.append((character_id, dict(totals), commit))
+
+
 class FakeStatsService:
     """Stands in for CharacterStatsService inside the progression service."""
 
-    def __init__(self, totals=None, caps=None):
+    def __init__(self, totals=None):
         self.totals = totals or default_totals()
-        self.caps = caps or dict.fromkeys(AbilityScore, ABILITY_SCORE_CAP)
         self.compute_calls = []
-        self.resolve_caps_calls = []
-        self.refresh_calls = []
+        self.repository = FakeStatsRepository()
 
     async def compute(self, character):
         self.compute_calls.append(character)
         return dict(self.totals)
 
-    async def resolve_ability_caps(self, character):
-        self.resolve_caps_calls.append(character)
-        return dict(self.caps)
-
-    async def refresh(self, character):
-        self.refresh_calls.append(character)
+    async def store(self, character, totals, *, commit=True):
+        return await self.repository.upsert(character.id, totals, commit=commit)
 
 
 class FakeCharacterRepository:
@@ -151,10 +154,9 @@ class FakeClassRepository:
 
 
 class FakeRaceRepository:
-    def __init__(self, race=None, subrace_row=None, exists=True):
+    def __init__(self, race=None, subrace_row=None):
         self.race = race
         self.subrace_row = subrace_row
-        self.exists = exists
 
     async def get_subrace(self, race_id, subrace_id):
         return self.subrace_row
@@ -162,20 +164,13 @@ class FakeRaceRepository:
     async def get_by_id(self, race_id):
         return self.race
 
-    async def exists_by_id(self, race_id):
-        return self.exists
-
 
 class FakeBackgroundRepository:
-    def __init__(self, background=None, exists=None):
+    def __init__(self, background=None):
         self.background = background
-        self.exists = (background is not None) if exists is None else exists
 
     async def get_by_id(self, background_id):
         return self.background
-
-    async def exists_by_id(self, background_id):
-        return self.exists
 
 
 class FakeCharacterSpellRepository:
@@ -219,6 +214,7 @@ class FakeFeatGrantRepository:
         self, character, feat_id, ability_score_increase_id=None, *, source_type=GrantSource.ASI, commit=True
     ):
         self.add_calls.append((character, feat_id, ability_score_increase_id, source_type, commit))
+        return SimpleNamespace(id=900 + len(self.add_calls), feature_id=feat_id)
 
     async def remove_feats_by_source(self, character_id, source_type, *, commit=True):
         self.remove_by_source_calls.append((character_id, source_type, commit))
@@ -263,6 +259,19 @@ class FakeMaxLevelRepository:
         return self.row
 
 
+class FakeGrantService:
+    """Records the batched choice resolution; optionally raises."""
+
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    async def resolve_grants_choices(self, grants, answers_by_feature, *, enforce=True):
+        self.calls.append((list(grants), answers_by_feature, enforce))
+        if self.error is not None:
+            raise self.error
+
+
 def make_service(
     character=None,
     *,
@@ -271,42 +280,72 @@ def make_service(
     subclass_row=None,
     race=None,
     subrace_row=None,
-    race_exists=True,
     background=None,
-    background_exists=None,
     feat=None,
     known_feat_ids=(),
     asi_choices=None,
     item_entries=None,
+    item_choice_groups=None,
     totals=None,
-    caps=None,
+    execute_results=None,
+    grant_error=None,
 ):
     character = character or make_character()
-    db = FakeAsyncSession()
+    db = FakeAsyncSession(execute_results=execute_results)
     service = CharacterProgressionService(db)
     service.repository = FakeCharacterRepository(db, character)
     service.character_service = FakeCharacterService()
     service.class_repository = FakeClassRepository(class_row=class_row, subclass_row=subclass_row)
-    service.race_repository = FakeRaceRepository(race=race, subrace_row=subrace_row, exists=race_exists)
-    service.background_repository = FakeBackgroundRepository(background=background, exists=background_exists)
-    service.item_repository = FakeItemRepository(entries=item_entries)
-    service.feat_repository = FakeFeatRepository(feat=feat)
-    service.feat_grant_repository = FakeFeatGrantRepository(known_feat_ids=known_feat_ids)
-    service.asi_repository = FakeASIRepository(choices=asi_choices)
+    service.race_repository = FakeRaceRepository(race=race, subrace_row=subrace_row)
+    service.background_repository = FakeBackgroundRepository(background=background)
     service.max_level_repository = FakeMaxLevelRepository(row=max_level_row)
-    service.stats_service = FakeStatsService(totals=totals, caps=caps)
-    service.character_spell_repository = FakeCharacterSpellRepository()
+    service.stats_service = FakeStatsService(totals=totals)
+    service.grant_service = FakeGrantService(error=grant_error)
+
+    service.asi.feat_repository = FakeFeatRepository(feat=feat)
+    service.asi.feat_grant_repository = FakeFeatGrantRepository(known_feat_ids=known_feat_ids)
+    service.asi.asi_repository = FakeASIRepository(choices=asi_choices)
+    service.background_grants.item_repository = FakeItemRepository(
+        entries=item_entries, choice_groups=item_choice_groups
+    )
+
+    rebuilder = service.rebuilder
+    rebuilder.asi = service.asi
+    rebuilder.stats_service = service.stats_service
+    rebuilder.character_service = service.character_service
+    rebuilder.class_repository = service.class_repository
+    rebuilder.race_repository = service.race_repository
+    rebuilder.background_repository = service.background_repository
+    rebuilder.character_spell_repository = FakeCharacterSpellRepository()
+
+    service._lock_character = AsyncMock()
+    service._hit_die_sides = AsyncMock(
+        side_effect=lambda class_id: int(class_row.hit_dice.value[1:]) if class_row is not None else 0
+    )
     return service, db
 
 
 @pytest.fixture(autouse=True)
 def no_feature_sync(monkeypatch):
-    monkeypatch.setattr("app.features.characters.progression.service.sync_progression_features", AsyncMock())
+    sync = AsyncMock(return_value=[])
+    monkeypatch.setattr("app.features.characters.progression.service.sync_progression_features", sync)
+    monkeypatch.setattr("app.features.characters.progression.rebuild.sync_progression_features", sync)
+    return sync
 
 
 @pytest.fixture(autouse=True)
-def no_cache_invalidate(monkeypatch):
-    monkeypatch.setattr("app.features.characters.progression.service.invalidate_character_cache", AsyncMock())
+def cache_purge(monkeypatch):
+    purge = AsyncMock()
+    monkeypatch.setattr("app.features.characters.base.invalidate_character_cache", purge)
+    return purge
+
+
+def assert_purged(purge, db):
+    """The character's cache purge was requested exactly once, bound to the writing session (so it defers to the commit)."""
+
+    purge.assert_awaited_once()
+    assert purge.await_args.args == (1,)
+    assert purge.await_args.kwargs == {"db": db}
 
 
 @pytest.mark.unit
@@ -342,7 +381,7 @@ class TestCanLevelUp:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestLevelUpGate:
-    async def test_level_up_at_max_level_raises_and_never_commits(self):
+    async def test_level_up_at_max_level_raises_and_never_commits(self, cache_purge):
         character = make_character(level=5)
         service, db = make_service(character, max_level_row=SimpleNamespace(max_level=5))
 
@@ -351,7 +390,15 @@ class TestLevelUpGate:
 
         assert character.level == 5
         assert db.commits == 0
-        assert db.rollbacks == 0
+        cache_purge.assert_not_awaited()
+
+    async def test_character_row_is_locked_before_validation(self):
+        service, _ = make_service(make_character(level=5), max_level_row=SimpleNamespace(max_level=5))
+
+        with pytest.raises(CharacterAlreadyAtMaxLevelException):
+            await service.level_up(1, LevelUpRequest(), make_user())
+
+        service._lock_character.assert_awaited_once_with(service.repository.character)
 
     async def test_choice_required_at_asi_level(self):
         service, _ = make_service(make_character(level=3), max_level_row=SimpleNamespace(max_level=20))
@@ -379,14 +426,15 @@ class TestLevelUpGate:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestLevelUpHappyPath:
-    def make_ready_service(self, level=2, hit_dice="D10"):
+    def make_ready_service(self, level=2, hit_dice="D10", **kwargs):
         return make_service(
             make_character(level=level),
             max_level_row=SimpleNamespace(max_level=20),
             class_row=SimpleNamespace(hit_dice=SimpleNamespace(value=hit_dice)),
+            **kwargs,
         )
 
-    async def test_default_hp_gain_is_half_die_plus_one_plus_con_modifier(self):
+    async def test_default_hp_gain_is_half_die_plus_one_plus_con_modifier(self, cache_purge):
         service, db = self.make_ready_service()
         character = service.repository.character
 
@@ -395,9 +443,18 @@ class TestLevelUpHappyPath:
         assert character.level == 3
         assert character.max_hp == 28
         assert db.commits == 1
-        assert service.stats_service.refresh_calls == [character]
-        assert service.asi_repository.add_calls == []
+        assert service.asi.asi_repository.add_calls == []
         assert service.character_service.reapply_calls == [(1, False)]
+        assert_purged(cache_purge, db)
+
+    async def test_stats_are_computed_once_and_stored_in_the_transaction(self):
+        service, _ = self.make_ready_service()
+        character = service.repository.character
+
+        await service.level_up(1, LevelUpRequest(), make_user())
+
+        assert service.stats_service.compute_calls == [character]
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
 
     async def test_explicit_hit_points_gained_within_bounds_is_used(self):
         service, _ = self.make_ready_service()
@@ -406,17 +463,17 @@ class TestLevelUpHappyPath:
 
         assert service.repository.character.max_hp == 23
 
-    async def test_explicit_hit_points_gained_above_die_plus_con_raises(self):
+    async def test_explicit_hit_points_gained_above_die_plus_con_raises(self, cache_purge):
         service, db = self.make_ready_service()
 
         with pytest.raises(InvalidHitPointGainException):
             await service.level_up(1, LevelUpRequest(hit_points_gained=13), make_user())
 
         assert db.commits == 0
+        cache_purge.assert_not_awaited()
 
     async def test_default_hp_gain_floors_at_one(self):
-        service, _ = self.make_ready_service(hit_dice="D6")
-        service.stats_service.totals["constitution_total"] = 1
+        service, _ = self.make_ready_service(hit_dice="D6", totals={**default_totals(), "constitution_total": 1})
 
         await service.level_up(1, LevelUpRequest(), make_user())
 
@@ -436,11 +493,12 @@ class TestLevelUpHappyPath:
         assert character.current_hp == 28
         assert character.temp_hp == 0
 
-    async def test_features_synced_and_spell_slots_reapplied_without_own_commit(self):
+    async def test_features_synced_and_spell_slots_reapplied_in_one_commit(self, no_feature_sync):
         service, db = self.make_ready_service()
 
         await service.level_up(1, LevelUpRequest(), make_user())
 
+        no_feature_sync.assert_awaited_once()
         assert db.commits == 1
         assert service.character_service.reapply_calls == [(1, False)]
 
@@ -448,12 +506,12 @@ class TestLevelUpHappyPath:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestLevelUpAsi:
-    def make_asi_service(self, totals=None, caps=None):
+    def make_asi_service(self, totals=None):
         return make_service(
             make_character(level=3),
             max_level_row=SimpleNamespace(max_level=20),
+            class_row=SimpleNamespace(hit_dice=SimpleNamespace(value="D8")),
             totals=totals,
-            caps=caps,
         )
 
     async def test_valid_increase_records_audit_row_with_commit_false(self):
@@ -463,8 +521,8 @@ class TestLevelUpAsi:
         await service.level_up(1, LevelUpRequest(choice=choice), make_user())
 
         assert service.repository.character.level == 4
-        assert len(service.asi_repository.add_calls) == 1
-        call = service.asi_repository.add_calls[0]
+        assert len(service.asi.asi_repository.add_calls) == 1
+        call = service.asi.asi_repository.add_calls[0]
         assert call[0] == 1
         assert call[1] == 4
         assert call[2] == ASILevelChoice.ASI
@@ -472,20 +530,22 @@ class TestLevelUpAsi:
         assert call[6] is False
         assert db.commits == 1
 
+    async def test_stats_computed_before_and_after_the_choice_only(self):
+        service, _ = self.make_asi_service()
+        choice = ASIChoice(increases=[ASIIncreaseItem(ability=AbilityScore.STR, amount=2)])
+
+        await service.level_up(1, LevelUpRequest(choice=choice), make_user())
+
+        assert len(service.stats_service.compute_calls) == 2
+
     async def test_increase_is_capped_at_twenty_even_when_a_feature_raises_the_cap(self):
-        service, db = self.make_asi_service(
-            totals={**default_totals(), "strength_total": 21},
-            caps={**dict.fromkeys(AbilityScore, ABILITY_SCORE_CAP), AbilityScore.STR: 24},
-        )
+        service, _ = self.make_asi_service(totals={**default_totals(), "strength_total": 21})
         choice = ASIChoice(increases=[ASIIncreaseItem(ability=AbilityScore.STR, amount=2)])
 
         with pytest.raises(AbilityScoreCapExceededException):
             await service.level_up(1, LevelUpRequest(choice=choice), make_user())
 
-        # The player's ASI is hard-capped at 20 (ABILITY_SCORE_CAP): the
-        # stats service's per-ability caps (feature new_cap) are NOT consulted.
-        assert service.stats_service.resolve_caps_calls == []
-        assert service.asi_repository.add_calls == []
+        assert service.asi.asi_repository.add_calls == []
 
     async def test_increase_exceeding_cap_raises_and_rolls_back(self):
         service, db = self.make_asi_service(totals={**default_totals(), "strength_total": 19})
@@ -495,141 +555,159 @@ class TestLevelUpAsi:
             await service.level_up(1, LevelUpRequest(choice=choice), make_user())
 
         assert exc_info.value.status_code == 400
-        assert service.asi_repository.add_calls == []
+        assert service.asi.asi_repository.add_calls == []
         assert db.commits == 0
         assert db.rollbacks == 1
+
+
+def make_asi_feat(*, feat_id=13, ability=AbilityScore.STR, amount=1, **overrides):
+    """A feat offering one ASI option (effect id 31)."""
+
+    base = {
+        "id": feat_id,
+        "choice_groups": [
+            SimpleNamespace(
+                id=1,
+                pick_count=1,
+                options=[
+                    SimpleNamespace(
+                        id=31,
+                        sort_order=0,
+                        ability_effects=[SimpleNamespace(id=31, ability=ability, amount=amount)],
+                    )
+                ],
+            )
+        ],
+        "prerequisite_ability": None,
+        "prerequisite_minimum_score": None,
+        "min_level": None,
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestLevelUpFeat:
     @staticmethod
-    def make_feat_service(feat, known_feat_ids=(), totals=None, caps=None):
+    def make_feat_service(feat, known_feat_ids=(), totals=None, level=3):
         return make_service(
-            make_character(level=3),
+            make_character(level=level),
             max_level_row=SimpleNamespace(max_level=20),
+            class_row=SimpleNamespace(hit_dice=SimpleNamespace(value="D8")),
             feat=feat,
             known_feat_ids=known_feat_ids,
             totals=totals,
-            caps=caps,
         )
 
     @staticmethod
-    def plain_feat():
-        return SimpleNamespace(
-            id=12, choice_groups=[], prerequisite_ability=None, prerequisite_minimum_score=None
-        )
+    def plain_feat(**overrides):
+        base = {
+            "id": 12,
+            "choice_groups": [],
+            "prerequisite_ability": None,
+            "prerequisite_minimum_score": None,
+            "min_level": None,
+        }
+        base.update(overrides)
+        return SimpleNamespace(**base)
 
     async def test_valid_feat_grants_grant_and_audit_row_as_asi_source(self):
-        feat = self.plain_feat()
-        service, db = self.make_feat_service(feat)
-        request = LevelUpRequest(choice=FeatChoice(feat_id=12))
+        service, db = self.make_feat_service(self.plain_feat())
         character = service.repository.character
 
-        await service.level_up(1, request, make_user())
+        await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=12)), make_user())
 
-        assert service.repository.character.level == 4
-        assert service.feat_grant_repository.add_calls == [(character, 12, None, GrantSource.ASI, False)]
-        audit_call = service.asi_repository.add_calls[0]
+        assert character.level == 4
+        assert service.asi.feat_grant_repository.add_calls == [(character, 12, None, GrantSource.ASI, False)]
+        audit_call = service.asi.asi_repository.add_calls[0]
         assert audit_call[2] == ASILevelChoice.FEAT
         assert audit_call[3] == 12
         assert audit_call[6] is False
         assert db.commits == 1
 
-    async def test_asi_offering_feat_without_choice_grants_with_none(self):
-        feat = SimpleNamespace(
-            id=13,
-            choice_groups=[SimpleNamespace(
-                id=1,
-                pick_count=1,
-                options=[SimpleNamespace(
-                    id=31, sort_order=0,
-                    ability_effects=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
-                )],
-            )],
-            prerequisite_ability=None,
-            prerequisite_minimum_score=None,
-        )
-        service, db = self.make_feat_service(feat)
+    async def test_the_feats_grant_joins_the_batched_choice_resolution(self):
+        service, _ = self.make_feat_service(self.plain_feat())
+
+        await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=12)), make_user())
+
+        grants, _, enforce = service.grant_service.calls[0]
+        assert [grant.feature_id for grant in grants] == [12]
+        assert enforce is True
+
+    async def test_asi_offering_feat_without_choice_is_left_to_the_choice_group_check(self):
+        service, db = self.make_feat_service(make_asi_feat())
         character = service.repository.character
 
         await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=13)), make_user())
 
-        assert service.feat_grant_repository.add_calls == [(character, 13, None, GrantSource.ASI, False)]
+        assert service.asi.feat_grant_repository.add_calls == [(character, 13, None, GrantSource.ASI, False)]
         assert db.commits == 1
 
     async def test_unknown_ability_score_increase_id_rejected_before_grant(self):
-        feat = SimpleNamespace(
-            id=13,
-            choice_groups=[SimpleNamespace(
-                id=1,
-                pick_count=1,
-                options=[SimpleNamespace(
-                    id=31, sort_order=0,
-                    ability_effects=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
-                )],
-            )],
-            prerequisite_ability=None,
-            prerequisite_minimum_score=None,
-        )
-        service, _ = self.make_feat_service(feat)
+        service, _ = self.make_feat_service(make_asi_feat())
 
         with pytest.raises(InvalidAbilityScoreIncreaseException):
             await service.level_up(
                 1, LevelUpRequest(choice=FeatChoice(feat_id=13, ability_score_increase_id=99)), make_user()
             )
 
-        assert service.feat_grant_repository.add_calls == []
+        assert service.asi.feat_grant_repository.add_calls == []
 
-    async def test_feat_grant_does_not_enforce_ability_score_cap(self):
-        feat = SimpleNamespace(
-            id=13,
-            choice_groups=[SimpleNamespace(
-                id=1,
-                pick_count=1,
-                options=[SimpleNamespace(
-                    id=31, sort_order=0,
-                    ability_effects=[SimpleNamespace(id=31, ability=AbilityScore.STR, amount=1)],
-                )],
-            )],
-            prerequisite_ability=None,
-            prerequisite_minimum_score=None,
-        )
-        service, _ = self.make_feat_service(feat, totals={**default_totals(), "strength_total": 20})
+    async def test_feat_asi_option_within_cap_is_granted(self):
+        service, _ = self.make_feat_service(make_asi_feat(), totals={**default_totals(), "strength_total": 19})
         character = service.repository.character
 
         await service.level_up(
             1, LevelUpRequest(choice=FeatChoice(feat_id=13, ability_score_increase_id=31)), make_user()
         )
 
-        assert service.feat_grant_repository.add_calls == [(character, 13, 31, GrantSource.ASI, False)]
+        assert service.asi.feat_grant_repository.add_calls == [(character, 13, 31, GrantSource.ASI, False)]
+
+    async def test_feat_asi_option_above_twenty_is_rejected(self):
+        service, db = self.make_feat_service(make_asi_feat(), totals={**default_totals(), "strength_total": 20})
+
+        with pytest.raises(AbilityScoreCapExceededException):
+            await service.level_up(
+                1, LevelUpRequest(choice=FeatChoice(feat_id=13, ability_score_increase_id=31)), make_user()
+            )
+
+        assert service.asi.feat_grant_repository.add_calls == []
+        assert service.asi.asi_repository.add_calls == []
+        assert db.commits == 0
+
+    async def test_feat_below_its_min_level_is_rejected(self):
+        service, _ = self.make_feat_service(self.plain_feat(min_level=8))
+
+        with pytest.raises(FeatMinLevelNotMetException) as exc_info:
+            await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=12)), make_user())
+
+        assert (exc_info.value.min_level, exc_info.value.level) == (8, 4)
+        assert service.asi.feat_grant_repository.add_calls == []
+
+    async def test_feat_at_exactly_its_min_level_is_granted(self):
+        service, _ = self.make_feat_service(self.plain_feat(min_level=4))
+
+        await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=12)), make_user())
+
+        assert len(service.asi.feat_grant_repository.add_calls) == 1
 
     async def test_unmet_prerequisite_rejected(self):
-        feat = SimpleNamespace(
-            id=14,
-            choice_groups=[],
-            prerequisite_ability=AbilityScore.STR,
-            prerequisite_minimum_score=18,
-        )
+        feat = self.plain_feat(id=14, prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=18)
         service, _ = self.make_feat_service(feat)
 
         with pytest.raises(FeatPrerequisiteNotMetException):
             await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=14)), make_user())
 
-        assert service.feat_grant_repository.add_calls == []
+        assert service.asi.feat_grant_repository.add_calls == []
 
     async def test_met_prerequisite_allows_grant(self):
-        feat = SimpleNamespace(
-            id=14,
-            choice_groups=[],
-            prerequisite_ability=AbilityScore.STR,
-            prerequisite_minimum_score=13,
-        )
+        feat = self.plain_feat(id=14, prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=13)
         service, _ = self.make_feat_service(feat)
 
         await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=14)), make_user())
 
-        assert service.feat_grant_repository.add_calls[0][:2] == (service.repository.character, 14)
+        assert service.asi.feat_grant_repository.add_calls[0][:2] == (service.repository.character, 14)
 
     async def test_already_known_feat_conflicts(self):
         service, _ = self.make_feat_service(self.plain_feat(), known_feat_ids={12})
@@ -637,7 +715,7 @@ class TestLevelUpFeat:
         with pytest.raises(CharacterFeatAlreadyKnownException):
             await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=12)), make_user())
 
-        assert service.feat_grant_repository.add_calls == []
+        assert service.asi.feat_grant_repository.add_calls == []
 
     async def test_unknown_feat_not_found(self):
         service, _ = self.make_feat_service(None)
@@ -649,7 +727,7 @@ class TestLevelUpFeat:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestSetSubclass:
-    async def test_set_subclass_assigns_syncs_and_commits_once(self):
+    async def test_set_subclass_assigns_syncs_and_commits_once(self, cache_purge):
         character = make_character(subclass_id=None)
         service, db = make_service(character, subclass_row=SimpleNamespace(id=7, class_id=1))
 
@@ -657,16 +735,18 @@ class TestSetSubclass:
 
         assert character.subclass_id == 7
         assert db.commits == 1
-        assert service.stats_service.refresh_calls == [character]
-        assert service.repository.db is db
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
+        service._lock_character.assert_awaited_once_with(character)
+        assert_purged(cache_purge, db)
 
-    async def test_subclass_of_other_class_raises_without_writes(self):
+    async def test_subclass_of_other_class_raises_without_writes(self, cache_purge):
         service, db = make_service(subclass_row=None)
 
         with pytest.raises(SubclassNotFoundException):
             await service.set_subclass(1, SubclassChange(subclass_id=7), make_user())
 
         assert db.commits == 0
+        cache_purge.assert_not_awaited()
 
     async def test_second_patch_while_set_overwrites_without_conflict(self):
         character = make_character(subclass_id=7)
@@ -689,7 +769,7 @@ class TestSetSubclass:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestSetSubrace:
-    async def test_set_subrace_assigns_syncs_and_commits_once(self):
+    async def test_set_subrace_assigns_syncs_and_commits_once(self, cache_purge):
         character = make_character(race_id=5, subrace_id=None)
         service, db = make_service(character, subrace_row=SimpleNamespace(id=2, race_id=5))
 
@@ -697,7 +777,9 @@ class TestSetSubrace:
 
         assert character.subrace_id == 2
         assert db.commits == 1
-        assert service.stats_service.refresh_calls == [character]
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
+        service._lock_character.assert_awaited_once_with(character)
+        assert_purged(cache_purge, db)
 
     async def test_subrace_of_other_race_raises(self):
         service, _ = make_service(subrace_row=None)
@@ -717,23 +799,14 @@ class TestSetSubrace:
 @pytest.mark.asyncio
 class TestSetBackground:
     def make_background_service(self, character=None, background=None, item_entries=None, execute_results=None):
-        character = character or make_character(background_id=None)
-        db = FakeAsyncSession(execute_results=execute_results)
-        service = CharacterProgressionService(db)
-        service.repository = FakeCharacterRepository(db, character)
-        service.character_service = FakeCharacterService()
-        service.class_repository = FakeClassRepository()
-        service.race_repository = FakeRaceRepository()
-        service.background_repository = FakeBackgroundRepository(background=background)
-        service.item_repository = FakeItemRepository(entries=item_entries)
-        service.feat_repository = FakeFeatRepository()
-        service.feat_grant_repository = FakeFeatGrantRepository()
-        service.asi_repository = FakeASIRepository()
-        service.max_level_repository = FakeMaxLevelRepository(row=SimpleNamespace(max_level=20))
-        service.stats_service = FakeStatsService()
-        return service, db
+        return make_service(
+            character or make_character(background_id=None),
+            background=background,
+            item_entries=item_entries,
+            execute_results=execute_results,
+        )
 
-    async def test_sets_background_and_grants_skills_equipment_features(self):
+    async def test_sets_background_and_grants_skills_equipment_features(self, cache_purge):
         existing_stack = SimpleNamespace(item_id=100, quantity=1)
         background = SimpleNamespace(
             id=3,
@@ -749,12 +822,18 @@ class TestSetBackground:
         await service.set_background(1, BackgroundChange(background_id=3), make_user())
 
         assert character.background_id == 3
-        added_proficiencies = [row for row in db.added if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL]
+        added_proficiencies = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL
+        ]
         assert [row.skill_id for row in added_proficiencies] == [10, 11]
         assert all(row.is_expertise is False for row in added_proficiencies)
         assert existing_stack.quantity == 3
         assert db.commits == 1
-        assert service.stats_service.refresh_calls == [character]
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
+        service._lock_character.assert_awaited_once_with(character)
+        assert_purged(cache_purge, db)
 
     async def test_background_already_set_conflicts_with_409(self):
         character = make_character(background_id=3)
@@ -771,6 +850,18 @@ class TestSetBackground:
 
         with pytest.raises(BackgroundNotFoundException):
             await service.set_background(1, BackgroundChange(background_id=99), make_user())
+
+        assert db.commits == 0
+
+    async def test_background_with_equipment_choice_groups_is_rejected(self):
+        service, db = make_service(
+            make_character(background_id=None),
+            background=SimpleNamespace(id=3, granted_skills=[]),
+            item_choice_groups=[SimpleNamespace(id=1)],
+        )
+
+        with pytest.raises(BackgroundItemChoicesNotSupportedException):
+            await service.set_background(1, BackgroundChange(background_id=3), make_user())
 
         assert db.commits == 0
 
@@ -816,7 +907,7 @@ class TestRebuildCharacter:
         race = kwargs.pop("race", SimpleNamespace(id=7, granted_skills=[]))
         return make_service(character, class_row=class_row, race=race, **kwargs)
 
-    async def test_rebuild_replaces_build_fields_and_recomputes_derived_state(self):
+    async def test_rebuild_replaces_build_fields_and_recomputes_derived_state(self, cache_purge):
         race = SimpleNamespace(id=7, granted_skills=[SimpleNamespace(id=20)])
         background = SimpleNamespace(id=9, granted_skills=[SimpleNamespace(id=21)])
         service, db = self.make_ready_service(
@@ -835,7 +926,11 @@ class TestRebuildCharacter:
         assert character.subrace_id is None
         assert character.constitution == 14
 
-        added_proficiencies = [row for row in db.added if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL]
+        added_proficiencies = [
+            row
+            for row in db.added
+            if isinstance(row, CharacterProficiency) and row.proficiency_type == ProficiencyType.SKILL
+        ]
         assert {row.skill_id for row in added_proficiencies} == {10, 20, 21}
         assert all(row.is_expertise is False for row in added_proficiencies)
 
@@ -844,13 +939,28 @@ class TestRebuildCharacter:
         assert character.current_hp == 8
         assert character.temp_hp == 0
 
-        assert service.character_spell_repository.clear_calls == [(1, False)]
+        assert service.rebuilder.character_spell_repository.clear_calls == [(1, False)]
         assert service.character_service.reapply_calls == [(1, False)]
-        assert service.feat_grant_repository.remove_by_source_calls == [(1, CharacterFeatSource.ASI, False)]
-        assert service.asi_repository.clear_calls == [(1, False)]
-        assert service.stats_service.refresh_calls == [character]
+        assert service.asi.feat_grant_repository.remove_by_source_calls == [(1, GrantSource.ASI, False)]
+        assert service.asi.asi_repository.clear_calls == [(1, False)]
+        assert service.stats_service.repository.upsert_calls[0][0] == 1
         assert db.commits == 1
         assert db.rollbacks == 0
+        service._lock_character.assert_awaited_once_with(character)
+        assert_purged(cache_purge, db)
+
+    async def test_stats_are_computed_once_for_a_rebuild_without_feats(self):
+        service, _ = self.make_ready_service(character=make_character(level=5, max_hp=99))
+        data = self.make_data(
+            max_hp=14,
+            asi_choices=[
+                {"class_level": 4, "choice": {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}},
+            ],
+        )
+
+        await service.rebuild_character(1, data, make_user())
+
+        assert len(service.stats_service.compute_calls) == 1
 
     async def test_reached_asi_choices_are_replaced_and_applied_in_level_order(self):
         service, db = self.make_ready_service(
@@ -866,12 +976,74 @@ class TestRebuildCharacter:
 
         await service.rebuild_character(1, data, make_user())
 
-        assert len(service.asi_repository.add_calls) == 1
-        call = service.asi_repository.add_calls[0]
+        assert len(service.asi.asi_repository.add_calls) == 1
+        call = service.asi.asi_repository.add_calls[0]
         assert call[1] == 4
         assert call[5] == [{"ability": "STR", "amount": 2}]
-        assert service.feat_grant_repository.remove_by_source_calls == [(1, CharacterFeatSource.ASI, False)]
-        assert service.asi_repository.clear_calls == [(1, False)]
+        assert service.asi.feat_grant_repository.remove_by_source_calls == [(1, GrantSource.ASI, False)]
+        assert service.asi.asi_repository.clear_calls == [(1, False)]
+        assert db.commits == 1
+
+    async def test_two_asi_choices_see_each_others_increases_for_the_cap(self):
+        service, db = self.make_ready_service(
+            character=make_character(level=9, max_hp=99),
+            totals={**default_totals(), "strength_total": 17},
+        )
+        increase = {"type": "ASI", "increases": [{"ability": "STR", "amount": 2}]}
+        data = self.make_data(
+            max_hp=50,
+            asi_choices=[{"class_level": 8, "choice": increase}, {"class_level": 4, "choice": increase}],
+        )
+
+        with pytest.raises(AbilityScoreCapExceededException) as exc_info:
+            await service.rebuild_character(1, data, make_user())
+
+        assert (exc_info.value.current_total, exc_info.value.requested) == (19, 21)
+        assert [call[1] for call in service.asi.asi_repository.add_calls] == [4]
+        assert db.commits == 0
+
+    async def test_feat_with_asi_options_requires_a_pick(self):
+        service, db = self.make_ready_service(character=make_character(level=5, max_hp=99), feat=make_asi_feat())
+        data = self.make_data(max_hp=14, asi_choices=[{"class_level": 4, "choice": {"type": "FEAT", "feat_id": 13}}])
+
+        with pytest.raises(FeatAsiChoiceRequiredException):
+            await service.rebuild_character(1, data, make_user())
+
+        assert service.asi.feat_grant_repository.add_calls == []
+        assert db.commits == 0
+
+    async def test_feat_below_its_min_level_is_rejected_in_a_rebuild(self):
+        service, _ = self.make_ready_service(
+            character=make_character(level=5, max_hp=99),
+            feat=make_asi_feat(min_level=8),
+        )
+        data = self.make_data(
+            max_hp=14,
+            asi_choices=[
+                {"class_level": 4, "choice": {"type": "FEAT", "feat_id": 13, "ability_score_increase_id": 31}}
+            ],
+        )
+
+        with pytest.raises(FeatMinLevelNotMetException):
+            await service.rebuild_character(1, data, make_user())
+
+    async def test_stats_are_re_read_after_a_feat_grant(self):
+        service, db = self.make_ready_service(
+            character=make_character(level=5, max_hp=99),
+            feat=make_asi_feat(),
+            totals={**default_totals(), "constitution_total": 10},
+        )
+        data = self.make_data(
+            max_hp=14,
+            asi_choices=[
+                {"class_level": 4, "choice": {"type": "FEAT", "feat_id": 13, "ability_score_increase_id": 31}}
+            ],
+        )
+
+        await service.rebuild_character(1, data, make_user())
+
+        assert len(service.stats_service.compute_calls) == 2
+        assert service.asi.feat_grant_repository.add_calls[0][1:3] == (13, 31)
         assert db.commits == 1
 
     async def test_missing_reached_asi_choice_rejected(self):
@@ -929,6 +1101,7 @@ class TestRebuildCharacter:
             await service.rebuild_character(1, self.make_data(class_id=99), make_user())
 
         assert db.commits == 0
+        service._lock_character.assert_not_awaited()
 
     async def test_unknown_subclass_raises(self):
         service, db = self.make_ready_service(subclass_row=None)
@@ -939,7 +1112,7 @@ class TestRebuildCharacter:
         assert db.commits == 0
 
     async def test_unknown_race_raises(self):
-        service, db = self.make_ready_service(race_exists=False)
+        service, db = self.make_ready_service(race=None)
 
         with pytest.raises(RaceNotFoundException):
             await service.rebuild_character(1, self.make_data(race_id=55), make_user())
@@ -955,7 +1128,7 @@ class TestRebuildCharacter:
         assert db.commits == 0
 
     async def test_unknown_background_raises(self):
-        service, db = self.make_ready_service(background_exists=False)
+        service, db = self.make_ready_service(background=None)
 
         with pytest.raises(BackgroundNotFoundException):
             await service.rebuild_character(1, self.make_data(background_id=42), make_user())
@@ -1005,40 +1178,22 @@ class TestAsiChoicesAudit:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestLevelUpFeatureChoices:
-    """Unit tests for _resolve_new_feature_choices: newly-granted features with choice groups."""
+    """Newly-granted features with choice groups are resolved through the grant service in one batch."""
 
-    def _make_service_with_grants(self, new_grants, *, feature=None, pending_groups=None, answer_result=None):
-        """Build a progression service where sync_progression_features returns *new_grants*."""
+    def make_level_up_service(self, **kwargs):
         service, db = make_service(
             make_character(level=2),
             max_level_row=SimpleNamespace(max_level=20),
             class_row=SimpleNamespace(hit_dice=SimpleNamespace(value="D10")),
+            **kwargs,
         )
-        # Override the autouse no_feature_sync fixture to return the desired grants
-        import app.features.characters.progression.service as svc_mod
-        svc_mod.sync_progression_features = AsyncMock(return_value=new_grants)
         return service, db
 
-    async def test_unanswered_choice_group_raises(self, monkeypatch):
-        """A newly-granted feature with a choice group and NO matching feature_choices -> raises."""
-        feature_with_group = SimpleNamespace(
-            id=10,
-            name="Choose a Skill",
-            choice_groups=[SimpleNamespace(id=50, pick_count=1, options=[SimpleNamespace(id=100)])],
-        )
+    async def test_unanswered_choice_group_raises_and_rolls_back(self, no_feature_sync, cache_purge):
         grant = SimpleNamespace(id=1000, feature_id=10)
-        service, db = self._make_service_with_grants([grant])
-
-        monkeypatch.setattr(
-            "app.features.characters.progression.service.FeatureGrantService",
-            lambda db: SimpleNamespace(
-                resolve_grant_choices=AsyncMock(
-                    side_effect=GrantChoiceRequiredException(
-                        feature_id=10, feature_name="Choose a Skill", pending_group_ids=[50]
-                    )
-                )
-            ),
-        )
+        no_feature_sync.return_value = [grant]
+        error = GrantChoiceRequiredException(feature_id=10, feature_name="Choose a Skill", pending_group_ids=[50])
+        service, db = self.make_level_up_service(grant_error=error)
 
         with pytest.raises(GrantChoiceRequiredException) as exc_info:
             await service.level_up(1, LevelUpRequest(), make_user())
@@ -1046,71 +1201,85 @@ class TestLevelUpFeatureChoices:
         assert exc_info.value.feature_id == 10
         assert exc_info.value.pending_group_ids == [50]
         assert db.commits == 0
+        cache_purge.assert_not_awaited()
 
-    async def test_correct_answers_succeeds(self, monkeypatch):
-        """feature_choices that answer all groups -> succeeds, level increases."""
-        feature_with_group = SimpleNamespace(
-            id=10,
-            name="Choose a Skill",
-            choice_groups=[SimpleNamespace(id=50, pick_count=1, options=[SimpleNamespace(id=100)])],
-        )
+    async def test_answers_are_grouped_by_feature_and_passed_with_the_new_grants(self, no_feature_sync):
         grant = SimpleNamespace(id=1000, feature_id=10)
-        service, db = self._make_service_with_grants([grant])
+        no_feature_sync.return_value = [grant]
+        service, _ = self.make_level_up_service()
 
-        monkeypatch.setattr(
-            "app.features.characters.progression.service.FeatureGrantService",
-            lambda db: SimpleNamespace(resolve_grant_choices=AsyncMock(return_value=None)),
-        )
+        answer = LevelUpFeatureChoiceAnswer(feature_id=10, choice_group_id=50, choice_option_id=100)
+        await service.level_up(1, LevelUpRequest(feature_choices=[answer]), make_user())
 
-        answer = LevelUpFeatureChoiceAnswer(
-            feature_id=10, choice_group_id=50, choice_option_id=100
-        )
+        grants, answers_by_feature, enforce = service.grant_service.calls[0]
+        assert grants == [grant]
+        assert {
+            feature_id: [(a.choice_group_id, a.choice_option_id) for a in items]
+            for feature_id, items in answers_by_feature.items()
+        } == {10: [(50, 100)]}
+        assert enforce is True
+        assert service.repository.character.level == 3
+
+    async def test_answer_for_a_feature_not_granted_by_this_level_is_ignored(self, no_feature_sync):
+        no_feature_sync.return_value = [SimpleNamespace(id=1001, feature_id=20)]
+        service, _ = self.make_level_up_service()
+
+        answer = LevelUpFeatureChoiceAnswer(feature_id=999, choice_group_id=50, choice_option_id=100)
         await service.level_up(1, LevelUpRequest(feature_choices=[answer]), make_user())
 
         assert service.repository.character.level == 3
 
-    async def test_extra_answer_for_nonexistent_grant_is_ignored(self, monkeypatch):
-        """A feature_choices entry whose feature_id matches NO new grant is silently ignored."""
-        feature_without_groups = SimpleNamespace(
-            id=20, name="Extra Attack", choice_groups=[],
-        )
-        grant = SimpleNamespace(id=1001, feature_id=20)
-        service, db = self._make_service_with_grants([grant])
-
-        monkeypatch.setattr(
-            "app.features.characters.grants.service.load_feature_effect_tree",
-            AsyncMock(return_value=feature_without_groups),
-        )
-
-        # Provide an answer for a different feature_id -- should be ignored
-        answer = LevelUpFeatureChoiceAnswer(
-            feature_id=999, choice_group_id=50, choice_option_id=100
-        )
-        await service.level_up(1, LevelUpRequest(feature_choices=[answer]), make_user())
-
-        assert service.repository.character.level == 3
-
-    async def test_feature_without_choice_groups_needs_no_entry(self, monkeypatch):
-        """A feature without choice groups passes without any feature_choices entry."""
-        feature_no_groups = SimpleNamespace(
-            id=30, name="Extra Attack", choice_groups=[],
-        )
-        grant = SimpleNamespace(id=1002, feature_id=30)
-        service, db = self._make_service_with_grants([grant])
-
-        monkeypatch.setattr(
-            "app.features.characters.grants.service.load_feature_effect_tree",
-            AsyncMock(return_value=feature_no_groups),
-        )
+    async def test_no_new_grants_still_levels_up(self):
+        service, _ = self.make_level_up_service()
 
         await service.level_up(1, LevelUpRequest(), make_user())
 
         assert service.repository.character.level == 3
+        assert service.grant_service.calls[0][0] == []
 
-    async def test_no_new_grants_passes_without_answers(self, monkeypatch):
-        """No new grants at all -> no feature_choices needed, level up succeeds."""
-        service, db = self._make_service_with_grants([])
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestCachePurgeIsDeferredToTheCommit:
+    """With the real ``invalidate_character_cache`` the Redis delete runs only after COMMIT, never on rollback."""
+
+    @staticmethod
+    def use_real_purge(monkeypatch, db_holder):
+        from app.features.characters.cache import invalidate_character_cache
+
+        events = []
+
+        async def delete_key(key):
+            events.append(db_holder["db"].commits)
+
+        monkeypatch.setattr("app.features.characters.base.invalidate_character_cache", invalidate_character_cache)
+        monkeypatch.setattr("app.features.characters.cache.cache_delete_key", delete_key)
+        return events
+
+    async def test_purge_happens_after_the_commit(self, monkeypatch):
+        holder = {}
+        events = self.use_real_purge(monkeypatch, holder)
+        service, holder["db"] = make_service(
+            make_character(level=2),
+            max_level_row=SimpleNamespace(max_level=20),
+            class_row=SimpleNamespace(hit_dice=SimpleNamespace(value="D8")),
+        )
 
         await service.level_up(1, LevelUpRequest(), make_user())
 
-        assert service.repository.character.level == 3
+        assert events == [1]
+
+    async def test_purge_is_dropped_when_the_use_case_fails(self, monkeypatch):
+        holder = {}
+        events = self.use_real_purge(monkeypatch, holder)
+        service, holder["db"] = make_service(
+            make_character(level=2),
+            max_level_row=SimpleNamespace(max_level=20),
+            class_row=SimpleNamespace(hit_dice=SimpleNamespace(value="D8")),
+        )
+
+        with pytest.raises(InvalidHitPointGainException):
+            await service.level_up(1, LevelUpRequest(hit_points_gained=50), make_user())
+
+        assert events == []
+        assert holder["db"].commits == 0

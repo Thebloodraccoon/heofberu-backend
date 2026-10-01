@@ -119,3 +119,71 @@ class TestApplySearchWildcardEscaping:
 
         results = self._search(sync_session, None)
         assert len(results) == 2
+
+
+class Widget(Base):
+    __tablename__ = "test_widgets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    image_url: Mapped[str] = mapped_column(String(200), default="")
+    hashed_password: Mapped[str] = mapped_column(String(200), default="")
+
+
+def _sql(stmt) -> str:
+    return " ".join(str(stmt).split())
+
+
+@pytest.mark.unit
+class TestDefaultSearchFields:
+    def test_secrets_and_urls_are_never_auto_searched(self, sync_session):
+        repo = BaseRepository(Widget, sync_session)
+
+        assert repo._search_fields == ["name"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDeterministicOrdering:
+    async def test_get_brief_defaults_to_id_order(self):
+        from tests.unit.fakes import FakeAsyncSession, FakeResult
+
+        db = FakeAsyncSession(execute_results=[FakeResult([])])
+
+        await BaseRepository(Widget, db).get_brief(Widget.id, Widget.name)
+
+        assert "ORDER BY test_widgets.id" in _sql(db.executes[0])
+
+    async def test_get_brief_adds_id_as_tie_break(self):
+        from tests.unit.fakes import FakeAsyncSession, FakeResult
+
+        db = FakeAsyncSession(execute_results=[FakeResult([])])
+
+        await BaseRepository(Widget, db).get_brief(Widget.id, Widget.name, order_by=Widget.name)
+
+        assert "ORDER BY test_widgets.name, test_widgets.id" in _sql(db.executes[0])
+
+    async def test_get_all_adds_id_as_tie_break(self):
+        from tests.unit.fakes import FakeAsyncSession, FakeResult
+
+        db = FakeAsyncSession(execute_results=[FakeResult([])])
+
+        await BaseRepository(Widget, db).get_all(order_by=Widget.name)
+
+        assert "ORDER BY test_widgets.name, test_widgets.id" in _sql(db.executes[0])
+
+    async def test_explicit_id_order_is_not_duplicated(self):
+        from tests.unit.fakes import FakeAsyncSession, FakeResult
+
+        db = FakeAsyncSession(execute_results=[FakeResult([])])
+
+        await BaseRepository(Widget, db).get_all(order_by=Widget.id.desc())
+
+        assert "ORDER BY test_widgets.id DESC" in _sql(db.executes[0])
+        assert "test_widgets.id DESC, test_widgets.id" not in _sql(db.executes[0])
+
+    async def test_multiple_order_columns_keep_their_order(self):
+        repo = BaseRepository(Widget, None)
+
+        clauses = repo._ordering([Widget.name, Widget.image_url])
+
+        assert clauses == [Widget.name, Widget.image_url, Widget.id]

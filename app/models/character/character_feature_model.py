@@ -35,7 +35,8 @@ class CharacterFeature(settings.Base):  # type: ignore
     __table_args__ = (UniqueConstraint("character_id", "feature_id", name="uq_character_features_character_feature"),)
 
     id = Column(Integer, primary_key=True)
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    # No own index: the unique (character_id, feature_id) already leads with ``character_id``.
+    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
     feature_id = Column(Integer, ForeignKey("features.id", ondelete="CASCADE"), nullable=False, index=True)
     grant_source = Column(GrantSourceType, nullable=False, default="AUTO")
 

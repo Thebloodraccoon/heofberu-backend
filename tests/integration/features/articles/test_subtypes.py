@@ -169,4 +169,3 @@ class TestArticleSubtypes:
         response = await client.get("/articles/search", params={"q": "Old", "subtype_id": tavern["subtype"]["id"]})
 
         assert [a["title"] for a in response.json()["items"]] == ["Old Pony"]
-

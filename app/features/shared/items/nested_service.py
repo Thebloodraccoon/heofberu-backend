@@ -5,8 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.core.base.nested_service import NestedCollectionService
-from app.core.base.repository import _commit_or_rollback
 from app.core.base.service import BaseService
+from app.core.base.transaction import commit_or_rollback
 from app.features.items.crud.repository import SOURCE_ITEM_FK_BY_SOURCE_TYPE, ItemRepository
 from app.features.shared.items.schemas import (
     ChoiceGroupEntry,
@@ -38,37 +38,6 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
 
         return SOURCE_ITEM_FK_BY_SOURCE_TYPE[source_type]
 
-    async def create_items_for_source(
-        self,
-        source_type: FeatureSourceType,
-        source_id: int,
-        entries: list[SourceItemEntry] | None,
-        *,
-        commit: bool = False,
-    ) -> None:
-        """Insert starting-equipment entries for ``source_id``; caller controls commit."""
-
-        if not entries:
-            return
-
-        await self._validate_item_ids(entries)
-        fk_name = self.fk_for(source_type)
-
-        for entry in entries:
-            self.db.add(
-                SourceItem(
-                    source_type=source_type,
-                    item_id=entry.item_id,
-                    quantity=entry.quantity,
-                    **{fk_name: source_id},
-                )
-            )
-
-        if commit:
-            await _commit_or_rollback(self.db)
-        else:
-            await self.db.flush()
-
     async def set_items_for_source(
         self,
         source_type: FeatureSourceType,
@@ -83,7 +52,13 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
         fk_name = self.fk_for(source_type)
 
         await self.db.execute(delete(SourceItem).where(getattr(SourceItem, fk_name) == source_id))
+        self._add_source_items(source_type, source_id, entries)
+        await self._persist(commit)
 
+    def _add_source_items(self, source_type: FeatureSourceType, source_id: int, entries: list[SourceItemEntry]) -> None:
+        """Add one ``SourceItem`` row per entry for ``source_id`` (no flush)."""
+
+        fk_name = self.fk_for(source_type)
         for entry in entries:
             self.db.add(
                 SourceItem(
@@ -94,8 +69,11 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
                 )
             )
 
+    async def _persist(self, commit: bool) -> None:
+        """Commit (rollback-safe) or flush when the caller owns the transaction."""
+
         if commit:
-            await _commit_or_rollback(self.db)
+            await commit_or_rollback(self.db)
         else:
             await self.db.flush()
 
@@ -173,9 +151,6 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
                 )
                 self.db.add(option)
 
-        if commit:
-            await _commit_or_rollback(self.db)
-        else:
-            await self.db.flush()
+        await self._persist(commit)
 
         return await self.list_choice_groups_for_source(source_type, source_id)

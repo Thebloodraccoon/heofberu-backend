@@ -28,7 +28,7 @@ class TestRaceCrud:
         assert body["ability_bonuses"] == []
 
     async def test_create_race_with_ability_bonuses_and_skills(self, client, gm_token, create_skill):
-        skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill = await create_skill(name="Perception", ability="WIS")
 
         response = await client.post(
             "/races",
@@ -129,7 +129,7 @@ class TestRaceCrud:
 
     async def test_gm_can_set_granted_skills(self, client, gm_token, create_race, create_skill):
         race = await create_race(name="Skillful")
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
 
         response = await client.put(
             f"/races/{race.id}/skills",

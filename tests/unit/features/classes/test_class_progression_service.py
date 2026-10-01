@@ -1,95 +1,60 @@
 """
-Unit tests for ClassProgressionService: the per-level spell-slot full
-replace (including the CANTRIP known-cantrips row), class_level validation,
-and the 1-20 progression-table composition.
-
-The repository is faked so the tests trace only the service logic; two
-repository-level tests cover ``set_spell_slots``/``get_spell_slot_progression``
-against the shared ``replace_child_rows`` machinery.
+Unit tests for ClassProgressionService: the per-level spell-slot full replace
+(including the CANTRIP known-cantrips row) and the 1-20 progression table
+composition; plus the repository's spell-slot helpers.
 """
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 
-from app.constants import DiceType, SpellLevel
+from app.constants import SpellLevel
 from app.core.exceptions import RecordNotFoundError
 from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.exceptions import InvalidClassLevelException
-from app.features.classes.progression.schemas import SpellSlotEntry, SpellSlotProgressionUpdate
+from app.features.classes.progression.schemas import (
+    ProgressionSubclassFeature,
+    SpellSlotEntry,
+    SpellSlotProgressionUpdate,
+)
 from app.features.classes.progression.service import ClassProgressionService
-from app.models.classes.class_model import Class
 from app.models.classes.class_spell_slot_progression_model import ClassSpellSlotProgression
-from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
-
-
-def make_class_row(**overrides) -> SimpleNamespace:
-    base = {
-        "id": 1,
-        "name": "Wizard",
-        "hit_dice": DiceType.D6,
-        "skill_choice_count": 2,
-        "spellcasting_ability": None,
-        "description": "",
-        "saving_throws": [],
-        "armor_proficiencies": [],
-        "weapon_proficiencies": [],
-        "available_skills": [],
-        "starting_items": [],
-        "spell_slot_progression": [],
-        "subclasses": [],
-    }
-    base.update(overrides)
-    return SimpleNamespace(**base)
+from tests.unit.fakes import FakeAsyncSession, FakeResult
+from tests.unit.features.classes.helpers import FakeClassRepository, make_class_row, purged_namespaces
 
 
 def make_slot_row(class_level: int, spell_level: SpellLevel, slots: int) -> SimpleNamespace:
     return SimpleNamespace(class_level=class_level, spell_level=spell_level, slots=slots)
 
 
-class FakeProgressionRepository(FakeRepository):
-    """Class repository stand-in with the slot write and progression read."""
-
-    def __init__(self, db, existing_by_id=None):
-        super().__init__(db, existing_by_id=existing_by_id, model=Class)
-        self.slot_calls = []
-        self.progression_features = []
-
-    async def set_spell_slots(self, character_class, class_level, slots_by_spell_level, *, commit=True):
-        self.slot_calls.append((character_class, class_level, slots_by_spell_level, commit))
-        return character_class
-
-    async def get_progression_features(self, class_id):
-        return self.progression_features
-
-
-@pytest.fixture(autouse=True)
-def no_redis_invalidate(monkeypatch):
-    monkeypatch.setattr("app.core.base.service.invalidate", AsyncMock())
-    monkeypatch.setattr("app.features.classes.progression.service.invalidate_class_cache", AsyncMock())
-
-
-@pytest.fixture
-def invalidated(monkeypatch) -> AsyncMock:
-    mock = AsyncMock()
-    monkeypatch.setattr("app.features.classes.progression.service.invalidate_class_cache", mock)
-    return mock
+def make_feature(
+    feature_id: int, level: int | None, subclass_id: int | None = None, name: str = "F"
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=feature_id,
+        name=name,
+        description="",
+        level=level,
+        subclass_id=subclass_id,
+        choice_groups=[],
+        static_groups=[],
+        has_static_effects=False,
+        has_choices=False,
+        effects_summary="",
+    )
 
 
 def make_service(existing_by_id=None):
     db = FakeAsyncSession()
     service = ClassProgressionService(db)
-    service.repository = FakeProgressionRepository(db, existing_by_id=existing_by_id)
+    service.repository = FakeClassRepository(db, existing_by_id=existing_by_id)
     return service, db
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestSetSpellSlots:
-    async def test_set_spell_slots_replaces_only_that_class_level(self, invalidated):
-        character_class = make_class_row()
-        service, _ = make_service(existing_by_id={1: character_class})
+    async def test_replaces_only_that_class_level_and_purges_class_reads(self, purged):
+        service, _ = make_service(existing_by_id={1: make_class_row()})
         data = SpellSlotProgressionUpdate(
             slots=[
                 SpellSlotEntry(spell_level=SpellLevel.CANTRIP, slots=2),
@@ -97,34 +62,21 @@ class TestSetSpellSlots:
             ]
         )
 
-        result = await service.set_spell_slots(1, 1, data)
+        result = await service.set_spell_slots(1, 3, data)
 
         assert result.id == 1
-        assert service.repository.slot_calls == [(character_class, 1, {"CANTRIP": 2, "LEVEL_1": 4}, True)]
-        assert invalidated.await_count == 1
+        assert service.repository.slot_calls == [(1, 3, {"CANTRIP": 2, "LEVEL_1": 4}, True)]
+        assert purged_namespaces(purged) == ["classes"]
 
-    async def test_cantrip_is_a_valid_slot_row_for_the_known_cantrip_cap(self, invalidated):
-        character_class = make_class_row()
-        service, _ = make_service(existing_by_id={1: character_class})
+    async def test_cantrip_is_a_valid_slot_row_for_the_known_cantrip_cap(self, purged):
+        service, _ = make_service(existing_by_id={1: make_class_row()})
         data = SpellSlotProgressionUpdate(slots=[SpellSlotEntry(spell_level=SpellLevel.CANTRIP, slots=3)])
 
         await service.set_spell_slots(1, 1, data)
 
-        assert service.repository.slot_calls == [(character_class, 1, {"CANTRIP": 3}, True)]
+        assert service.repository.slot_calls == [(1, 1, {"CANTRIP": 3}, True)]
 
-    @pytest.mark.parametrize("class_level", [0, 21, -1])
-    async def test_set_spell_slots_rejects_class_level_outside_1_20(self, class_level, invalidated):
-        service, _ = make_service(existing_by_id={1: make_class_row()})
-        data = SpellSlotProgressionUpdate(slots=[SpellSlotEntry(spell_level=SpellLevel.LEVEL_1, slots=2)])
-
-        with pytest.raises(InvalidClassLevelException) as exc_info:
-            await service.set_spell_slots(1, class_level, data)
-
-        assert exc_info.value.class_level == class_level
-        assert service.repository.slot_calls == []
-        assert invalidated.await_count == 0
-
-    async def test_set_spell_slots_raises_when_class_missing(self, invalidated):
+    async def test_raises_when_class_missing(self, purged):
         service, _ = make_service(existing_by_id={})
         data = SpellSlotProgressionUpdate(slots=[SpellSlotEntry(spell_level=SpellLevel.LEVEL_1, slots=2)])
 
@@ -132,26 +84,23 @@ class TestSetSpellSlots:
             await service.set_spell_slots(99, 1, data)
 
         assert service.repository.slot_calls == []
-        assert invalidated.await_count == 0
+        assert purged.await_count == 0
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestGetProgression:
-    async def test_get_progression_builds_twenty_rows_with_slot_indexing(self):
-        character_class = make_class_row(
-            spell_slot_progression=[
-                make_slot_row(1, SpellLevel.CANTRIP, 2),
-                make_slot_row(1, SpellLevel.LEVEL_1, 2),
-                make_slot_row(5, SpellLevel.LEVEL_3, 2),
-            ]
-        )
-        service, db = make_service(existing_by_id={1: character_class})
+    async def test_builds_twenty_rows_with_slot_indexing(self):
+        service, db = make_service(existing_by_id={1: make_class_row(name="Wizard")})
+        service.repository.slot_rows = [
+            make_slot_row(1, SpellLevel.CANTRIP, 2),
+            make_slot_row(1, SpellLevel.LEVEL_1, 2),
+            make_slot_row(5, SpellLevel.LEVEL_3, 2),
+        ]
 
         result = await service.get_progression(1)
 
-        assert result.class_id == 1
-        assert result.class_name == "Wizard"
+        assert (result.class_id, result.class_name) == (1, "Wizard")
         assert len(result.rows) == 20
         assert result.rows[0].spell_slots == {"CANTRIP": 2, "LEVEL_1": 2}
         assert result.rows[0].proficiency_bonus == 2
@@ -161,11 +110,43 @@ class TestGetProgression:
         assert all(row.class_features == [] and row.subclass_features == [] for row in result.rows)
         assert db.commits == 0
 
-    async def test_get_progression_raises_when_class_missing(self):
+    async def test_places_class_and_subclass_features_on_their_levels(self):
+        service, _ = make_service(existing_by_id={1: make_class_row()})
+        service.repository.progression_features = [
+            make_feature(1, 1, name="Second Wind"),
+            make_feature(2, 3, subclass_id=5, name="Improved Critical"),
+            make_feature(3, 3, subclass_id=6, name="Combat Superiority"),
+            make_feature(4, None, name="Orphan"),
+        ]
+
+        result = await service.get_progression(1)
+
+        assert [f.name for f in result.rows[0].class_features] == ["Second Wind"]
+        level_three = result.rows[2]
+        assert [(f.name, f.subclass_id) for f in level_three.subclass_features] == [
+            ("Improved Critical", 5),
+            ("Combat Superiority", 6),
+        ]
+        assert all(isinstance(f, ProgressionSubclassFeature) for f in level_three.subclass_features)
+        assert level_three.class_features == []
+        assert sum(len(row.class_features) for row in result.rows) == 1
+
+    async def test_raises_when_class_missing(self):
         service, _ = make_service(existing_by_id={})
 
         with pytest.raises(RecordNotFoundError):
             await service.get_progression(99)
+
+
+@pytest.mark.unit
+class TestSlotEntryValidation:
+    def test_negative_slots_rejected(self):
+        with pytest.raises(ValueError):
+            SpellSlotEntry(spell_level=SpellLevel.LEVEL_1, slots=-1)
+
+    def test_absurd_slot_count_rejected(self):
+        with pytest.raises(ValueError):
+            SpellSlotEntry(spell_level=SpellLevel.LEVEL_1, slots=1000)
 
 
 @pytest.mark.unit
@@ -174,18 +155,13 @@ class TestClassRepositorySlotHelpers:
     async def test_set_spell_slots_scopes_delete_to_class_level_and_commits(self):
         session = FakeAsyncSession()
         repository = ClassRepository(session)
-        character_class = make_class_row()
 
-        result = await repository.set_spell_slots(character_class, 1, {"CANTRIP": 2})
+        await repository.set_spell_slots(1, 1, {"CANTRIP": 2})
 
-        assert result is character_class
         assert len(session.added) == 1
         added = session.added[0]
         assert isinstance(added, ClassSpellSlotProgression)
-        assert added.class_id == 1
-        assert added.class_level == 1
-        assert added.spell_level == SpellLevel.CANTRIP
-        assert added.slots == 2
+        assert (added.class_id, added.class_level, added.spell_level, added.slots) == (1, 1, SpellLevel.CANTRIP, 2)
         assert len(session.executes) == 1
         assert session.commits == 1
 
@@ -193,7 +169,7 @@ class TestClassRepositorySlotHelpers:
         session = FakeAsyncSession()
         repository = ClassRepository(session)
 
-        await repository.set_spell_slots(make_class_row(), 2, {"LEVEL_1": 2}, commit=False)
+        await repository.set_spell_slots(1, 2, {"LEVEL_1": 2}, commit=False)
 
         assert session.flushes == 1
         assert session.commits == 0
@@ -203,15 +179,11 @@ class TestClassRepositorySlotHelpers:
             ClassSpellSlotProgression(class_id=1, class_level=1, spell_level=SpellLevel.CANTRIP, slots=2),
             ClassSpellSlotProgression(class_id=1, class_level=1, spell_level=SpellLevel.LEVEL_1, slots=2),
         ]
-        session = FakeAsyncSession(execute_results=[FakeResult(rows)])
-        repository = ClassRepository(session)
+        repository = ClassRepository(FakeAsyncSession(execute_results=[FakeResult(rows)]))
 
-        result = await repository.get_spell_slot_progression(1, 1)
-
-        assert result == {"CANTRIP": 2, "LEVEL_1": 2}
+        assert await repository.get_spell_slot_progression(1, 1) == {"CANTRIP": 2, "LEVEL_1": 2}
 
     async def test_get_spell_slot_progression_empty_when_no_rows(self):
-        session = FakeAsyncSession(execute_results=[FakeResult([])])
-        repository = ClassRepository(session)
+        repository = ClassRepository(FakeAsyncSession(execute_results=[FakeResult([])]))
 
         assert await repository.get_spell_slot_progression(1, 7) == {}

@@ -18,7 +18,8 @@ class Subrace(settings.Base):  # type: ignore
 
     id = Column(Integer, primary_key=True)
 
-    race_id = Column(Integer, ForeignKey("races.id", ondelete="CASCADE"), nullable=False, index=True)
+    # No own index: ``uq_subrace_race_id_name`` already leads with ``race_id``.
+    race_id = Column(Integer, ForeignKey("races.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False, index=True)
     description = Column(Text, nullable=False, default="")
     image_url = Column(String(512), nullable=True)

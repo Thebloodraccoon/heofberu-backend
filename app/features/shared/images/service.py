@@ -1,7 +1,7 @@
 """Shared base for per-entity catalog image services (upload/replace/delete via Supabase Storage)."""
 
-import logging
 from collections.abc import Awaitable, Callable
+import logging
 
 from fastapi import UploadFile
 from sqlalchemy import select
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordNotFoundError
 from app.core.storage.service import ImageStorageService
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,14 @@ class EntityImageService:
         self._invalidate_cache_fn = invalidate_cache
 
     async def upload(self, entity_id: int, image: UploadFile) -> str:
-        """Read ``image`` off the wire, upload it, and persist its public URL."""
+        """
+        Read ``image`` off the wire, upload it, and persist its public URL.
 
-        content = await image.read()
+        At most ``IMAGE_UPLOAD_MAX_BYTES + 1`` bytes are read: anything larger is
+        rejected by the storage validation without buffering the whole upload.
+        """
+
+        content = await image.read(settings.IMAGE_UPLOAD_MAX_BYTES + 1)
         try:
             return await self.upload_image(entity_id, content, image.content_type or "")
         finally:

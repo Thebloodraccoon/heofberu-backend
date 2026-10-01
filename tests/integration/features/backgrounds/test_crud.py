@@ -37,7 +37,7 @@ class TestBackgroundCrud:
 
     async def test_gm_can_set_granted_skills(self, client, gm_token, create_background, create_skill):
         background = await create_background(name="Sage")
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
 
         response = await client.put(
             f"/backgrounds/{background.id}/skills",

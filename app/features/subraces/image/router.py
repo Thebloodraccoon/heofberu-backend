@@ -4,8 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile, status
 
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
 from app.features.subraces.dependencies import SubraceImageDep
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -20,7 +21,7 @@ router = APIRouter()
     },
 )
 async def upload_subrace_image(
-    subrace_id: int,
+    subrace_id: EntityIdPath,
     image_service: SubraceImageDep,
     _: GmUserDep,
     image: Annotated[UploadFile, File(description="Image file (JPEG, PNG, WebP or GIF, max 5 MB).")],
@@ -40,7 +41,7 @@ async def upload_subrace_image(
     responses={404: {"description": "No subrace exists with the given ID."}},
 )
 async def delete_subrace_image(
-    subrace_id: int,
+    subrace_id: EntityIdPath,
     image_service: SubraceImageDep,
     _: GmUserDep,
 ):

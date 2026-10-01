@@ -16,30 +16,24 @@ import asyncio
 import hashlib
 import logging
 
-from supabase import AsyncClient, create_async_client
+import httpx
+from supabase import AsyncClient, AsyncClientOptions, create_async_client
 
 from app.core.exceptions import AppError
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
-#: Timeout (seconds) applied to every Supabase Storage network call.
 STORAGE_CALL_TIMEOUT = 15.0
-
-#: Number of attempts for storage calls that support retrying (1 = no retry).
 STORAGE_MAX_ATTEMPTS = 3
-
-#: Backoff (seconds) between retry attempts, multiplied by attempt number.
 STORAGE_RETRY_BACKOFF = 0.5
 
 SUPABASE_URL = settings.SUPABASE_URL
 SUPABASE_KEY = settings.SUPABASE_KEY
 STORAGE_BUCKET = settings.STORAGE_BUCKET
 
-#: Max accepted image body size (bytes), stage-tuned (5 MB dev / 2 MB prod).
 IMAGE_MAX_BYTES = settings.IMAGE_UPLOAD_MAX_BYTES
 
-#: Allowed content types for catalog images.
 ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -61,9 +55,15 @@ _MAGIC_BYTES: dict[str, tuple[bytes, ...]] = {
 
 
 class ImageUploadError(AppError):
-    """Raised when a catalog image cannot be uploaded or removed."""
+    """Raised (400) when a catalog image is invalid or rejected by storage."""
 
     status_code = 400
+
+
+class ImageStorageUnavailableError(ImageUploadError):
+    """Raised (502) when the storage provider fails; the message never carries provider text."""
+
+    status_code = 502
 
 
 class _ClientState:
@@ -71,6 +71,7 @@ class _ClientState:
 
     _lock: asyncio.Lock | None = None
     _client: AsyncClient | None = None
+    _http: httpx.AsyncClient | None = None
     _loop: asyncio.AbstractEventLoop | None = None
 
     @classmethod
@@ -100,7 +101,12 @@ class _ClientState:
             if cls._client is None or cls._loop is not current_loop:
                 if cls._client is not None:
                     await cls._client.aclose()
-                cls._client = await create_async_client(SUPABASE_URL, SUPABASE_KEY)
+                if cls._http is not None:
+                    await cls._http.aclose()
+                cls._http = httpx.AsyncClient(timeout=STORAGE_CALL_TIMEOUT)
+                cls._client = await create_async_client(
+                    SUPABASE_URL, SUPABASE_KEY, options=AsyncClientOptions(httpx_client=cls._http)
+                )
                 cls._loop = current_loop
 
             return cls._client
@@ -157,6 +163,15 @@ def _public_url(path: str) -> str:
     return f"{SUPABASE_URL}/storage/v1/object/public/{STORAGE_BUCKET}/{path}"
 
 
+def _is_client_error(exc: Exception) -> bool:
+    """Whether a provider error is a 4xx (a retry cannot help)."""
+
+    try:
+        return 400 <= int(getattr(exc, "status", 0)) < 500
+    except (TypeError, ValueError):
+        return False
+
+
 async def _with_timeout_and_retry(coro_factory, *, operation: str, retry: bool = True):
     """
     Run a storage call with a network timeout and optional retry-with-backoff.
@@ -174,21 +189,12 @@ async def _with_timeout_and_retry(coro_factory, *, operation: str, retry: bool =
             return await asyncio.wait_for(coro_factory(), timeout=STORAGE_CALL_TIMEOUT)
         except asyncio.TimeoutError as exc:
             last_exc = exc
-            logger.warning(
-                "Supabase storage %s timed out (attempt %d/%d)",
-                operation,
-                attempt,
-                attempts,
-            )
-        except Exception as exc:  # noqa: BLE001 - retry on any provider/network failure
+            logger.warning("Supabase storage %s timed out (attempt %d/%d)", operation, attempt, attempts)
+        except Exception as exc:  # noqa: BLE001 - provider/network failure
             last_exc = exc
-            logger.warning(
-                "Supabase storage %s failed (attempt %d/%d): %s",
-                operation,
-                attempt,
-                attempts,
-                exc,
-            )
+            logger.warning("Supabase storage %s failed (attempt %d/%d): %s", operation, attempt, attempts, exc)
+            if _is_client_error(exc):
+                break
 
         if attempt < attempts:
             await asyncio.sleep(STORAGE_RETRY_BACKOFF * attempt)
@@ -244,9 +250,11 @@ class ImageStorageService:
                 ),
                 operation=f"upload({path})",
             )
-        except Exception as exc:  # noqa: BLE001 - surface any provider failure uniformly
+        except Exception as exc:  # noqa: BLE001 - provider text stays in the log, never in the response
             logger.error("Failed to upload image at %s: %s", path, exc)
-            raise ImageUploadError(f"Failed to upload image: {exc}") from exc
+            if _is_client_error(exc):
+                raise ImageUploadError("The image was rejected by the storage provider.") from exc
+            raise ImageStorageUnavailableError("Image storage is temporarily unavailable.") from exc
 
         return f"{_public_url(path)}?v={hashlib.md5(content).hexdigest()[:8]}"
 

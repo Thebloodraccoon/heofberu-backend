@@ -6,9 +6,9 @@ applies the ``/characters`` prefix).
 
 from fastapi import APIRouter
 
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterProficiencyServiceDep
 from app.features.characters.proficiencies.schemas import CharacterProficienciesResponse
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 

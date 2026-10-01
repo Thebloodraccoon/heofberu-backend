@@ -1,9 +1,10 @@
-"""Feature effects endpoints: read + diff-based write of a feature's fixed effects and choice groups (Phase 3)."""
+"""Feature effects endpoints: read + diff-based write of a feature's fixed effects and choice groups."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.auth.dependencies import GmUserDep
 from app.features.features.dependencies import FeatureEffectsDep
 from app.features.features.effects.schemas import (
     ChoiceGroupResponse,
@@ -11,7 +12,6 @@ from app.features.features.effects.schemas import (
     FeatureEffectsResponse,
     FeatureEffectsUpdate,
 )
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -40,7 +40,12 @@ async def get_feature_effects(
     responses={
         403: {"description": "You are not a GM."},
         404: {"description": "No feature exists with the given ID."},
-        422: {"description": "Invalid effect payload, or an item's id doesn't belong to this feature."},
+        422: {
+            "description": (
+                "Invalid effect payload (duplicates, a fixed skill/spell without its id, out-of-range values, "
+                "unknown skill/item/spell id, unknown key), or an item's id doesn't belong to this feature."
+            )
+        },
     },
 )
 async def set_feature_effects(
@@ -81,17 +86,18 @@ async def set_feature_effects(
     _: GmUserDep,
 ):
     """
-    Diff-update all fixed effects for a feature. **GM only.**
+    Diff-update a feature's fixed effects. **GM only.**
 
-    Each list becomes the complete set of that effect type, but existing
-    rows aren't deleted and recreated wholesale: an item with an existing
-    row's ``id`` updates that row in place, an item with no ``id`` inserts a
-    new row, and an existing row whose ``id`` is missing from the list is
-    deleted (send ``[]`` to clear a type entirely). An ``id`` that doesn't
-    belong to this feature is a 422. Effects apply automatically to every
-    character the feature is granted to (existing characters are
-    re-materialized in the same transaction). Choice groups are managed via
-    ``PUT /features/{id}/choice-groups``.
+    Every effect type that is **present** in the body becomes the complete
+    set of that type, diffed by id: an item with an existing row's ``id``
+    updates it in place, an item with no ``id`` inserts a new row, and an
+    existing row whose ``id`` is missing from the list is deleted (send ``[]``
+    to clear a type). An effect type that is **omitted** is left untouched.
+    An ``id`` that doesn't belong to this feature, a repeated id/effect, a
+    fixed skill/spell effect without its ``skill_id``/``spell_id`` and an
+    unknown skill/item/spell id are all a 422. When something changed, every
+    character the feature is granted to is refreshed in the same transaction.
+    Choice groups are managed via ``PUT /features/{id}/choice-groups``.
     """
 
     return await service.set_fixed_effects(feature_id, data)
@@ -121,7 +127,13 @@ async def get_feature_choice_groups(
     responses={
         403: {"description": "You are not a GM."},
         404: {"description": "No feature exists with the given ID."},
-        422: {"description": "Invalid choice-group payload, or a group/option id doesn't belong to this feature."},
+        409: {"description": "A removed option/group is still referenced by a character's answered choice."},
+        422: {
+            "description": (
+                "Invalid choice-group payload (pick_count outside 1-50, duplicates, unknown skill/item/spell id, "
+                "unknown key, missing choice_groups), or a group/option id doesn't belong to this feature."
+            )
+        },
     },
 )
 async def set_feature_choice_groups(
@@ -156,7 +168,8 @@ async def set_feature_choice_groups(
     _: GmUserDep,
 ):
     """
-    Diff-update all choice groups for a feature. **GM only.**
+    Diff-update all choice groups for a feature. **GM only.** ``choice_groups`` is required
+    (``[]`` removes every group).
 
     The given tree becomes the complete set, but existing rows aren't
     deleted and recreated wholesale: a group/option with an existing ``id``

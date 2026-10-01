@@ -60,9 +60,7 @@ class Class(settings.Base):  # type: ignore
         passive_deletes=True,
         order_by="Subclass.name, Subclass.id",
     )
-    # CLASS-source features granted by this class across all levels.
-    # Subclass features are excluded from this relationship — they are
-    # exposed through ``Subclass.features``.
+    # CLASS-source only: subclass features are exposed through ``Subclass.features``.
     features = relationship(
         "Feature",
         viewonly=True,

@@ -21,7 +21,7 @@ class CharacterCondition(settings.Base):  # type: ignore
     condition = Column(ConditionTypeType, primary_key=True)
 
     exhaustion_level = Column(Integer, nullable=True)
-    source = Column(Text, nullable=False, default="")  # e.g. "Poisoned by Giant Spider bite"
+    source = Column(Text, nullable=False, default="")
 
     __table_args__ = (
         CheckConstraint(

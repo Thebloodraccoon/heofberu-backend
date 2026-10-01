@@ -1,18 +1,23 @@
 """Article CRUD service: cached catalog CRUD plus composed capability reads."""
 
 import asyncio
-from datetime import datetime, timezone
 from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ArticleStatus, is_article_publicly_visible
 from app.core.base.cached_service import CachedService
-from app.core.base.service import Page
+from app.core.base.service import BaseService, Page
 from app.core.cache import use_cache
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.core.storage.service import ImageStorageService
-from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES, invalidate_article, invalidate_article_cache
+from app.features.articles.cache import (
+    ARTICLE_CACHE_NAMESPACES,
+    ARTICLE_TREE_NAMESPACE,
+    invalidate_all_articles,
+    invalidate_article_trees,
+    invalidate_articles,
+)
 from app.features.articles.crud.repository import ArticleRepository
 from app.features.articles.crud.schemas import (
     ArticleBrief,
@@ -31,11 +36,10 @@ from app.features.articles.images.service import storage_entity
 from app.features.articles.secrets import strip_gm_blocks
 from app.models.articles.article_model import Article
 
-
 ArticleAction = Literal["submit", "publish", "reject", "archive", "restore"]
 
 #: Review workflow: action -> (statuses it's allowed from, resulting status). New articles start as DRAFT.
-ARTICLE_TRANSITIONS: dict[str, tuple[frozenset[ArticleStatus], ArticleStatus]] = {
+ARTICLE_TRANSITIONS: dict[ArticleAction, tuple[frozenset[ArticleStatus], ArticleStatus]] = {
     "submit": (frozenset({ArticleStatus.DRAFT}), ArticleStatus.IN_REVIEW),
     "publish": (frozenset({ArticleStatus.IN_REVIEW}), ArticleStatus.PUBLISHED),
     "reject": (frozenset({ArticleStatus.IN_REVIEW}), ArticleStatus.DRAFT),
@@ -45,6 +49,11 @@ ARTICLE_TRANSITIONS: dict[str, tuple[frozenset[ArticleStatus], ArticleStatus]] =
     ),
     "restore": (frozenset({ArticleStatus.ARCHIVED}), ArticleStatus.DRAFT),
 }
+
+#: ``get_by_id`` cache lifetime: actively-edited lore shouldn't stay stale a full day (the platform default).
+GET_BY_ID_TTL_SECONDS = 1800
+#: Deleting an article with more direct children than this purges the namespace instead of listing every key.
+MAX_POINT_INVALIDATIONS = 500
 
 
 def _nest_subtype(row) -> dict:
@@ -59,7 +68,12 @@ def _nest_subtype(row) -> dict:
 class ArticleCrudService(
     CachedService[Article, ArticleCreate, ArticleUpdate, ArticleResponse, ArticleGetAllResponse],
 ):
-    """Article catalog CRUD."""
+    """
+    Article catalog CRUD.
+
+    Editing policy: any GM may edit any article, including a published one, in place; an edit never changes
+    ``status`` (only the review actions do), so a published article stays published while it is edited.
+    """
 
     repository: ArticleRepository
 
@@ -76,11 +90,11 @@ class ArticleCrudService(
         )
         self._storage = storage or ImageStorageService()
 
-    @use_cache(ttl=1800)
+    @use_cache(ttl=GET_BY_ID_TTL_SECONDS)
     async def get_by_id(self, item_id: int) -> ArticleResponse:
-        """Cached fetch, 30 min TTL (vs. the 24 h default) — actively-edited lore shouldn't stay stale a full day."""
+        """Cached fetch (see ``GET_BY_ID_TTL_SECONDS``); goes straight to ``BaseService`` so it is cached once, not twice."""
 
-        return await super().get_by_id(item_id)
+        return await BaseService.get_by_id(self, item_id)
 
     async def create_article(self, data: ArticleCreate, author_id: int | None = None) -> ArticleResponse:
         """
@@ -89,17 +103,25 @@ class ArticleCrudService(
 
         ``tags``/``images`` are not seeded here — attached afterwards through
         their own capability endpoints, mirroring ``RaceCrudService.create_race``.
+        A slug taken by a concurrent create is retried with the next free suffix.
         """
 
-        await self._validate_parent(data.parent_id)
         await self._validate_subtype(data.subtype_id, data.article_type)
+        if data.parent_id is not None and not await self.repository.exists_by_id(data.parent_id):
+            raise RecordIdsInvalidError(model_name="Article", ids=[data.parent_id])
+
+        async def write(slug: str) -> Article:
+            item = await self.repository.create(
+                {**data.model_dump(), "slug": slug, "author_id": author_id}, commit=False
+            )
+            await self.repository.set_path(item.id, data.parent_id, commit=False)
+            return item
 
         async with self._atomic():
-            slug = await self.repository.generate_unique_slug(data.title)
-            item = await self.repository.create({**data.model_dump(), "slug": slug, "author_id": author_id}, commit=False)
-            await self.repository.set_path(item.id, data.parent_id, commit=False)
-
-        await invalidate_article(item.id)
+            if data.parent_id is not None:
+                await self.repository.lock_tree()
+            item = await self.repository.write_with_unique_slug(data.title, write)
+            await invalidate_article_trees(self.repository.db)
 
         return await self._get_response(item.id)
 
@@ -109,7 +131,8 @@ class ArticleCrudService(
 
         Including ``parent_id`` re-roots ``path`` for the article and every
         existing descendant, and is rejected if it would create a cycle or
-        point at a missing article. The field update and the path rewrite share
+        point at a missing article; the cycle check and the rewrite run under one tree lock, so two
+        concurrent moves can't together form a cycle. The field update and the path rewrite share
         one transaction. ``status`` never changes here — see ``transition``.
 
         A new ``title`` re-generates ``slug`` only while the article has never been
@@ -118,25 +141,34 @@ class ArticleCrudService(
         """
 
         fields = data.model_dump(exclude_unset=True)
-        item = await self._get_or_404(article_id)
-
-        if "parent_id" in fields:
-            await self._validate_parent(fields["parent_id"], article_id)
+        state = await self.repository.get_write_state(article_id)
+        if state is None:
+            raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
 
         if "subtype_id" in fields or "article_type" in fields:
             await self._validate_subtype(
-                fields.get("subtype_id", item.subtype_id), fields.get("article_type", item.article_type)
+                fields.get("subtype_id", state.subtype_id), fields.get("article_type", state.article_type)
             )
 
-        if "title" in fields and item.published_at is None:
-            fields["slug"] = await self.repository.generate_unique_slug(fields["title"], exclude_id=article_id)
-
         async with self._atomic():
-            await self.repository.apply_update(item, fields, commit=False)
+            if "parent_id" in fields:
+                await self.repository.lock_tree()
+                await self._validate_parent(fields["parent_id"], article_id)
+
+            if "title" in fields and state.published_at is None:
+
+                async def write(slug: str) -> None:
+                    await self.repository.update_fields(article_id, {**fields, "slug": slug}, commit=False)
+
+                await self.repository.write_with_unique_slug(fields["title"], write, exclude_id=article_id)
+            else:
+                await self.repository.update_fields(article_id, fields, commit=False)
+
             if "parent_id" in fields:
                 await self.repository.set_path(article_id, fields["parent_id"], commit=False)
 
-        await invalidate_article(article_id)
+            await invalidate_articles(self.repository.db, article_id)
+            await invalidate_article_trees(self.repository.db)
 
         return await self._get_response(article_id)
 
@@ -146,22 +178,23 @@ class ArticleCrudService(
         """
         Apply a review-workflow ``action`` (see ``ARTICLE_TRANSITIONS``); 409 if the current status forbids it.
 
-        ``publish``/``reject`` record ``actor_id`` as ``reviewed_by_id``; the first publish stamps ``published_at``.
+        The status check and the write are one conditional UPDATE, so concurrent actions can't both pass a
+        stale check. ``actor_id`` is recorded as ``reviewed_by_id``; the first publish stamps ``published_at``.
         """
 
         allowed_from, target = ARTICLE_TRANSITIONS[action]
-        item = await self._get_or_404(article_id)
-        if item.status not in allowed_from:
-            raise ArticleStatusTransitionException(article_id, action, ArticleStatus(item.status).value)
 
-        fields: dict = {"status": target}
-        if action in ("publish", "reject"):
-            fields["reviewed_by_id"] = actor_id
-        if target == ArticleStatus.PUBLISHED and item.published_at is None:
-            fields["published_at"] = datetime.now(timezone.utc)
+        async with self._atomic():
+            moved = await self.repository.transition_status(article_id, allowed_from, target, reviewer_id=actor_id)
+            if moved:
+                await invalidate_articles(self.repository.db, article_id)
+                await invalidate_article_trees(self.repository.db)
 
-        await self.repository.apply_update(item, fields)
-        await invalidate_article(article_id)
+        if not moved:
+            state = await self.repository.get_write_state(article_id)
+            if state is None:
+                raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
+            raise ArticleStatusTransitionException(article_id, action, ArticleStatus(state.status).value)
 
         return await self._get_response(article_id)
 
@@ -169,9 +202,9 @@ class ArticleCrudService(
         """
         Delete an article, then best-effort remove its gallery images from storage.
 
-        The row delete and every child's path fix-up share one ``_atomic()``
-        transaction, so a failure partway through leaves nothing half-applied.
-        Cache invalidation runs once, after that transaction commits.
+        The row delete and the re-rooting of the children's subtrees share one ``_atomic()``
+        transaction, so a failure partway through leaves nothing half-applied. Cache invalidation
+        (the article's and its children's exact keys) runs after that transaction commits.
 
         Storage cleanup for gallery images runs last and outside the
         transaction — Storage knows nothing about Postgres rollback, so the
@@ -180,22 +213,24 @@ class ArticleCrudService(
         never raised).
 
         Direct children are detached, not deleted (``ondelete="SET NULL"``) —
-        that FK action only clears their ``parent_id``, so each child's
-        (and its whole existing subtree's) ``path`` is re-rooted in the same
-        transaction via ``set_path``, otherwise it would keep pointing under
-        the deleted article's now-stale path.
+        that FK action only clears their ``parent_id``, so their whole
+        existing subtrees' ``path`` is re-rooted by one UPDATE in the same
+        transaction, otherwise it would keep pointing under the deleted article's now-stale path.
         """
 
-        item = await self._get_or_404(item_id)
         image_keys = await self.repository.list_image_keys(item_id)
-        child_ids = await self.repository.list_child_ids(item_id)
 
         async with self._atomic():
-            await self.repository.db.delete(item)
-            for child_id in child_ids:
-                await self.repository.set_path(child_id, None, commit=False)
+            await self.repository.lock_tree()
+            child_ids = await self.repository.detach_children(item_id)
+            if not await self.repository.delete_row(item_id):
+                raise RecordNotFoundError(model_name="Article", model_id=str(item_id))
 
-        await self._invalidate_cache()
+            if len(child_ids) > MAX_POINT_INVALIDATIONS:
+                await invalidate_all_articles(self.repository.db)
+            else:
+                await invalidate_articles(self.repository.db, item_id, *child_ids)
+                await invalidate_article_trees(self.repository.db)
 
         await asyncio.gather(
             *(self._storage.delete_image(storage_entity(item_id, key), image_id) for image_id, key in image_keys)
@@ -205,15 +240,20 @@ class ArticleCrudService(
 
     async def get_article(self, article_id: int, *, include_hidden: bool) -> ArticleResponse:
         """
-        Cached detail read, with the visibility check applied AFTER the cache so one
-        cached payload serves every reader. Hidden articles 404 (not 403) for non-GMs,
-        so their existence isn't revealed.
+        Cached detail read, with the visibility applied around the cache so one cached
+        payload serves every reader: a non-GM first passes a live status/visibility check
+        (a lost or late invalidation can never keep a withdrawn article public), then the
+        cached payload is masked. Hidden articles 404 (not 403) for non-GMs, so their
+        existence isn't revealed.
 
         ``parent_id`` is likewise nulled out for a non-GM reader when the parent
         itself isn't visible, so a hidden article's id/existence can't leak
         through a public child's detail response, GM-only ``:::gm`` blocks
         are stripped from ``body_markdown``/``excerpt``, and ``images`` is emptied.
         """
+
+        if not include_hidden:
+            await self._exists_visible_or_404(article_id, False)
 
         article = await self.get_by_id(article_id)
         if include_hidden:
@@ -308,13 +348,21 @@ class ArticleCrudService(
         """Return the direct children of an article. 404s if the article isn't visible to the reader."""
 
         await self._exists_visible_or_404(article_id, include_hidden)
+        return await self._cached_children(article_id, include_hidden=include_hidden)
+
+    @use_cache(namespace=ARTICLE_TREE_NAMESPACE)
+    async def _cached_children(self, article_id: int, *, include_hidden: bool) -> list[ArticleBrief]:
         rows = await self.repository.list_children(article_id, include_hidden=include_hidden)
         return [ArticleBrief.model_validate(row) for row in rows]
 
     async def get_descendants(self, article_id: int, *, include_hidden: bool) -> list[ArticleBrief]:
-        """Return every descendant of an article at any depth. 404s if the article isn't visible to the reader."""
+        """Return the descendants of an article at any depth (capped, see the repository). 404s if it isn't visible."""
 
         await self._exists_visible_or_404(article_id, include_hidden)
+        return await self._cached_descendants(article_id, include_hidden=include_hidden)
+
+    @use_cache(namespace=ARTICLE_TREE_NAMESPACE)
+    async def _cached_descendants(self, article_id: int, *, include_hidden: bool) -> list[ArticleBrief]:
         rows = await self.repository.list_descendants(article_id, include_hidden=include_hidden)
         return [ArticleBrief.model_validate(row) for row in rows]
 
@@ -322,6 +370,10 @@ class ArticleCrudService(
         """Return the breadcrumb chain (root-first) above an article. 404s if the article isn't visible."""
 
         await self._exists_visible_or_404(article_id, include_hidden)
+        return await self._cached_ancestors(article_id, include_hidden=include_hidden)
+
+    @use_cache(namespace=ARTICLE_TREE_NAMESPACE)
+    async def _cached_ancestors(self, article_id: int, *, include_hidden: bool) -> list[ArticleBrief]:
         rows = await self.repository.list_ancestors(article_id, include_hidden=include_hidden)
         return [ArticleBrief.model_validate(row) for row in rows]
 
@@ -343,8 +395,8 @@ class ArticleCrudService(
         if subtype_type != article_type:
             raise ArticleSubtypeTypeMismatchException(subtype_id, subtype_type, article_type)
 
-    async def _validate_parent(self, parent_id: int | None, article_id: int | None = None) -> None:
-        """Reject a ``parent_id`` that doesn't exist or (when ``article_id`` is given) would create a cycle."""
+    async def _validate_parent(self, parent_id: int | None, article_id: int) -> None:
+        """Reject a ``parent_id`` that doesn't exist or would make ``article_id`` its own ancestor (400)."""
 
         if parent_id is None:
             return
@@ -352,5 +404,5 @@ class ArticleCrudService(
         if not await self.repository.exists_by_id(parent_id):
             raise RecordIdsInvalidError(model_name="Article", ids=[parent_id])
 
-        if article_id is not None and await self.repository.is_self_or_descendant(article_id, parent_id):
+        if await self.repository.is_self_or_descendant(article_id, parent_id):
             raise ArticleParentCycleException(article_id=article_id, parent_id=parent_id)

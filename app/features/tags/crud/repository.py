@@ -60,114 +60,143 @@ class TagRepository(TagLookupMixin, BaseRepository[Tag]):
             raise RecordAlreadyExistsError(model_name=self.model.__name__, field="name", value=name)
 
     @staticmethod
-    def _usage_counts(include_hidden: bool):
+    def _carried_by_visible_record(tag_id):
+        """
+        Boolean clause: the tag is attached to at least one record a non-GM reader may see.
+
+        Races/subraces/backgrounds are always public; articles count only when published and public.
+        ``tag_id`` is either a literal id or the outer ``Tag.id`` column (the clause then correlates to it).
+        """
+
+        return or_(
+            exists().where(race_tags.c.tag_id == tag_id),
+            exists().where(subrace_tags.c.tag_id == tag_id),
+            exists().where(background_tags.c.tag_id == tag_id),
+            exists().where(
+                article_tags.c.tag_id == tag_id,
+                article_tags.c.article_id == Article.id,
+                Article.status == ArticleStatus.PUBLISHED,
+                Article.visibility == ArticleVisibility.PUBLIC,
+            ),
+        )
+
+    @staticmethod
+    def _usage_counts(include_hidden: bool, tag_filter=None):
         """
         Subquery: one row per tag that's used at least once, with its total usage across all four
-        catalogs — a single grouped aggregate instead of up to 4 correlated ``COUNT(*)`` subqueries
-        (in SELECT, WHERE and a separate total ``COUNT(*)``) per tag.
+        catalogs — a single grouped aggregate instead of up to 4 correlated ``COUNT(*)`` subqueries.
+
+        ``tag_filter`` (a list of ids or a ``select`` of ids) restricts every link table to those tags, so a
+        listing page or a suggestion list aggregates only the rows it shows instead of all four tables.
 
         For non-GM readers (``include_hidden=False``) only published, public articles count — a
         draft's or GM-only article's tags must not show up (or be counted) for players.
         Races/subraces/backgrounds are always public.
         """
 
-        article_links = select(article_tags.c.tag_id)
+        link_columns = [race_tags.c.tag_id, subrace_tags.c.tag_id, background_tags.c.tag_id, article_tags.c.tag_id]
+        branches = [select(column) for column in link_columns]
         if not include_hidden:
-            article_links = article_links.join(Article, Article.id == article_tags.c.article_id).where(
-                Article.status == ArticleStatus.PUBLISHED, Article.visibility == ArticleVisibility.PUBLIC
+            branches[3] = (
+                branches[3]
+                .join(Article, Article.id == article_tags.c.article_id)
+                .where(Article.status == ArticleStatus.PUBLISHED, Article.visibility == ArticleVisibility.PUBLIC)
             )
+        if tag_filter is not None:
+            branches = [
+                branch.where(column.in_(tag_filter)) for branch, column in zip(branches, link_columns, strict=False)
+            ]
 
-        all_links = (
-            select(race_tags.c.tag_id)
-            .union_all(select(subrace_tags.c.tag_id), select(background_tags.c.tag_id), article_links)
-            .subquery()
-        )
+        all_links = branches[0].union_all(*branches[1:]).subquery()
 
         return select(all_links.c.tag_id, func.count().label("usage_count")).group_by(all_links.c.tag_id).subquery()
 
-    @classmethod
-    def _usage_source(cls, include_hidden: bool):
-        """
-        ``(joined Tag+usage source, usage_count column)`` for a listing query.
+    def _visible_conditions(self, include_hidden: bool) -> list:
+        """Row filter on ``Tag``: non-GM readers only see tags carried by a record they can see."""
 
-        Non-GM: INNER join, so a tag with zero visible usage is dropped entirely (``usage_count``
-        then always non-null). GM: LEFT join so every tag appears, ``usage_count`` coalesced to 0.
-        """
-
-        usage = cls._usage_counts(include_hidden)
-        if include_hidden:
-            source = Tag.__table__.outerjoin(usage, usage.c.tag_id == Tag.id)
-            usage_count = func.coalesce(usage.c.usage_count, 0).label("usage_count")
-        else:
-            source = Tag.__table__.join(usage, usage.c.tag_id == Tag.id)
-            usage_count = usage.c.usage_count.label("usage_count")
-
-        return source, usage_count
+        return [] if include_hidden else [self._carried_by_visible_record(Tag.id)]
 
     async def is_visible(self, tag_id: int) -> bool:
         """Whether a non-GM reader may see the tag: it's carried by at least one record visible to them."""
 
-        query = select(
-            or_(
-                exists().where(race_tags.c.tag_id == tag_id),
-                exists().where(subrace_tags.c.tag_id == tag_id),
-                exists().where(background_tags.c.tag_id == tag_id),
-                exists().where(
-                    article_tags.c.tag_id == tag_id,
-                    article_tags.c.article_id == Article.id,
-                    Article.status == ArticleStatus.PUBLISHED,
-                    Article.visibility == ArticleVisibility.PUBLIC,
-                ),
-            )
-        )
-        return bool(await self.db.scalar(query))
+        return bool(await self.db.scalar(select(self._carried_by_visible_record(tag_id))))
 
     @staticmethod
     def _escape_like(term: str) -> str:
-        """Escape LIKE wildcards so ``term`` is matched literally (paired with ``escape="\\"``)."""
+        """Escape LIKE wildcards so ``term`` is matched literally (paired with a backslash ``escape``)."""
 
         return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     async def list_with_usage(
         self, *, page: int, size: int, search: str | None, sort: str, include_hidden: bool
-    ) -> tuple[list[Any], int]:
+    ) -> tuple[list[dict[str, Any]], int]:
         """
         Paginated tags with their ``usage_count``; ``sort`` is ``name`` (A-Z) or ``popular`` (most used first).
 
-        Non-GM readers get counts over visible records only, and tags with none are left out.
+        Non-GM readers get counts over visible records only, and tags with none are left out. The total
+        never needs the counts; by name only the returned page is aggregated, by popularity every
+        matching tag is.
         """
 
-        source, usage_count = self._usage_source(include_hidden)
-
-        conditions = []
+        conditions = self._visible_conditions(include_hidden)
         if search:
             conditions.append(Tag.name.ilike(f"%{self._escape_like(search)}%", escape="\\"))
 
-        order_by = [usage_count.desc(), func.lower(Tag.name)] if sort == "popular" else [func.lower(Tag.name), Tag.id]
+        total = await self.db.scalar(select(func.count()).select_from(Tag).where(*conditions)) or 0
+        offset = (page - 1) * size
 
-        base = select(Tag.id, Tag.name, usage_count).select_from(source).where(*conditions)
-        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
-        result = await self.db.execute(base.order_by(*order_by).offset((page - 1) * size).limit(size))
-        return list(result.all()), total or 0
+        if sort == "popular":
+            usage = self._usage_counts(include_hidden, tag_filter=select(Tag.id).where(*conditions))
+            usage_count = func.coalesce(usage.c.usage_count, 0)
+            result = await self.db.execute(
+                select(Tag.id, Tag.name, usage_count.label("usage_count"))
+                .select_from(Tag.__table__.outerjoin(usage, usage.c.tag_id == Tag.id))
+                .where(*conditions)
+                .order_by(usage_count.desc(), func.lower(Tag.name), Tag.id)
+                .offset(offset)
+                .limit(size)
+            )
+            return [dict(row._mapping) for row in result], total
 
-    async def suggest(self, query: str, limit: int, *, include_hidden: bool) -> list[Any]:
+        result = await self.db.execute(
+            select(Tag.id, Tag.name)
+            .where(*conditions)
+            .order_by(func.lower(Tag.name), Tag.id)
+            .offset(offset)
+            .limit(size)
+        )
+        page_rows = list(result.all())
+        counts = await self._counts_for([row.id for row in page_rows], include_hidden)
+
+        return [{"id": row.id, "name": row.name, "usage_count": counts.get(row.id, 0)} for row in page_rows], total
+
+    async def _counts_for(self, tag_ids: list[int], include_hidden: bool) -> dict[int, int]:
+        """``{tag_id: usage_count}`` for just ``tag_ids`` (tags without usage are absent)."""
+
+        if not tag_ids:
+            return {}
+
+        usage = self._usage_counts(include_hidden, tag_filter=tag_ids)
+        result = await self.db.execute(select(usage.c.tag_id, usage.c.usage_count))
+        return {row.tag_id: row.usage_count for row in result}
+
+    async def suggest(self, query: str, limit: int, *, include_hidden: bool) -> list[dict[str, Any]]:
         """
         Autocomplete: tags whose name contains ``query`` — prefix matches first, then most used, then A-Z.
 
-        Same visibility rule as ``list_with_usage``.
+        Same visibility rule as ``list_with_usage``; usage is aggregated only for the matching tags.
         """
 
         escaped = self._escape_like(query)
-        source, usage_count = self._usage_source(include_hidden)
-
-        prefix_match = Tag.name.ilike(f"{escaped}%", escape="\\")
-        conditions = [Tag.name.ilike(f"%{escaped}%", escape="\\")]
+        conditions = [*self._visible_conditions(include_hidden), Tag.name.ilike(f"%{escaped}%", escape="\\")]
+        usage = self._usage_counts(include_hidden, tag_filter=select(Tag.id).where(*conditions))
+        usage_count = func.coalesce(usage.c.usage_count, 0)
 
         result = await self.db.execute(
-            select(Tag.id, Tag.name, usage_count)
-            .select_from(source)
+            select(Tag.id, Tag.name, usage_count.label("usage_count"))
+            .select_from(Tag.__table__.outerjoin(usage, usage.c.tag_id == Tag.id))
             .where(*conditions)
-            .order_by(prefix_match.desc(), usage_count.desc(), func.lower(Tag.name))
+            .order_by(Tag.name.ilike(f"{escaped}%", escape="\\").desc(), usage_count.desc(), func.lower(Tag.name))
             .limit(limit)
         )
-        return list(result.all())
+        return [dict(row._mapping) for row in result]

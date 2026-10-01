@@ -1,6 +1,6 @@
 """ORM models for the reference table of discrete rules features."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from app.features.features.effects.rendering import render_effects_summary
@@ -24,6 +24,10 @@ class Feature(settings.Base):  # type: ignore
     """
 
     __tablename__ = "features"
+    __table_args__ = (
+        # A feat is addressed by name: unique among FEAT rows only (class/race/... features may repeat names).
+        Index("uq_features_feat_name", "name", unique=True, postgresql_where=text("source_type = 'FEAT'")),
+    )
 
     id = Column(Integer, primary_key=True)
 
@@ -59,13 +63,10 @@ class Feature(settings.Base):  # type: ignore
     # modeled, e.g. "The ability to cast at least one spell".
     prerequisite_description = Column(Text, nullable=False, default="")
 
-    # Denormalized off the effect/choice-group tables — maintained by every
-    # write path that touches them (``FeatureEffectsService.set_fixed_effects``
-    # / ``set_choice_groups``, ``FeatRepository.set_ability_score_increases``),
-    # never computed on read. Exists so ``GET /features``/``GET /feats``
-    # listings can column-select these two flags directly instead of
-    # eager-loading the whole effect tree or running the batched
-    # ``load_effect_flags`` existence queries per page.
+    # Denormalized off the effect/choice-group tables: refreshed by every write
+    # path that touches them (``FeatureEffectsService``,
+    # ``FeatRepository.set_ability_score_increases``), never computed on read,
+    # so listings can column-select them instead of loading the effect tree.
     has_static_effects = Column(Boolean, nullable=False, default=False, server_default="false")
     has_choices = Column(Boolean, nullable=False, default=False, server_default="false")
 

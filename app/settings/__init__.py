@@ -1,24 +1,14 @@
+"""``settings`` is the stage module (``dev``/``test``/``staging``/``prod``) selected by ``STAGE``."""
+
 from importlib import import_module
 import os
 
 from dotenv import load_dotenv  # type: ignore
 
+from app.settings.stage import VALID_STAGES, resolve_stage
+
 load_dotenv()
 
-VALID_STAGES = {
-    "dev": "app.settings.dev",
-    "test": "app.settings.test",
-    "staging": "app.settings.staging",
-    "prod": "app.settings.prod",
-}
-
-STAGE = os.getenv("STAGE", "dev").lower()
-
-if STAGE not in VALID_STAGES:
-    valid_stages = ", ".join(VALID_STAGES.keys())
-    raise ValueError(
-        f"Invalid STAGE environment: {STAGE!r}. Supported stages are: {valid_stages}"
-    )
-
+STAGE = resolve_stage(os.environ)
 
 settings = import_module(VALID_STAGES[STAGE])

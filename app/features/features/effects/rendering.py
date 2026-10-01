@@ -9,8 +9,12 @@ that make this synchronous, no query at render time). This is the read-side
 replacement for hand-typed choice-option labels: the option's *effects* are
 the single source of truth for what it grants, so this text can never drift
 from what actually gets materialized (see ``FeatureGrantMaterializer``).
+
+The result is HTML (``<p>``/``<ul>``/``<li>``/``<a>``): every catalog name that
+is interpolated into it is HTML-escaped, so a name can never inject markup.
 """
 
+from html import escape
 from typing import TYPE_CHECKING
 
 from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
@@ -18,30 +22,8 @@ from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
 if TYPE_CHECKING:
     from app.models.features.feature_model import Feature
 
-_ABILITY_NAMES_RU = {
-    AbilityScore.STR: "Силу",
-    AbilityScore.DEX: "Ловкость",
-    AbilityScore.CON: "Телосложение",
-    AbilityScore.INT: "Интеллект",
-    AbilityScore.WIS: "Мудрость",
-    AbilityScore.CHA: "Харизму",
-}
-
-_ARMOR_NAMES_RU = {
-    ArmorProficiency.LIGHT: "лёгкими доспехами",
-    ArmorProficiency.MEDIUM: "средними доспехами",
-    ArmorProficiency.HEAVY: "тяжёлыми доспехами",
-    ArmorProficiency.SHIELD: "щитами",
-}
-
-_WEAPON_NAMES_RU = {
-    WeaponProficiency.SIMPLE: "простым оружием",
-    WeaponProficiency.MARTIAL: "воинским оружием",
-}
-
-# Nominative-case names, used in the grouped static-effects <ul> where the
-# group <li> header already supplies the case ("Изменение характеристик:
-# Сила +1", not "... владение Силу").
+# Nominative names: the grouped static-effects <ul> supplies the case via its
+# <li> header ("Изменение характеристик: Сила +1").
 _ABILITY_NAMES_NOM_RU = {
     AbilityScore.STR: "Сила",
     AbilityScore.DEX: "Ловкость",
@@ -51,6 +33,16 @@ _ABILITY_NAMES_NOM_RU = {
     AbilityScore.CHA: "Харизма",
 }
 
+# Genitive: "спасбросок Силы".
+_ABILITY_NAMES_GEN_RU = {
+    AbilityScore.STR: "Силы",
+    AbilityScore.DEX: "Ловкости",
+    AbilityScore.CON: "Телосложения",
+    AbilityScore.INT: "Интеллекта",
+    AbilityScore.WIS: "Мудрости",
+    AbilityScore.CHA: "Харизмы",
+}
+
 _ARMOR_NAMES_NOM_RU = {
     ArmorProficiency.LIGHT: "лёгкие доспехи",
     ArmorProficiency.MEDIUM: "средние доспехи",
@@ -58,63 +50,49 @@ _ARMOR_NAMES_NOM_RU = {
     ArmorProficiency.SHIELD: "щиты",
 }
 
+# Instrumental: "владение лёгкими доспехами".
+_ARMOR_NAMES_INS_RU = {
+    ArmorProficiency.LIGHT: "лёгкими доспехами",
+    ArmorProficiency.MEDIUM: "средними доспехами",
+    ArmorProficiency.HEAVY: "тяжёлыми доспехами",
+    ArmorProficiency.SHIELD: "щитами",
+}
+
 _WEAPON_NAMES_NOM_RU = {
     WeaponProficiency.SIMPLE: "простое оружие",
     WeaponProficiency.MARTIAL: "воинское оружие",
 }
 
+_WEAPON_NAMES_INS_RU = {
+    WeaponProficiency.SIMPLE: "простым оружием",
+    WeaponProficiency.MARTIAL: "воинским оружием",
+}
 
-def _render_bundle(
-    ability_effects,
-    skill_effects,
-    saving_throw_effects,
-    armor_effects,
-    weapon_effects,
-    spell_effects,
-) -> list[str]:
-    """Render one effect bundle (a feature's fixed effects, or one choice option) into readable parts."""
 
-    parts: list[str] = []
+def _skill_name(effect) -> str:
+    """HTML-escaped catalog name of a skill effect's skill (id fallback)."""
 
-    parts.extend(_render_ability_short(ability_effects))
+    return escape(effect.skill.name if effect.skill is not None else f"навык #{effect.skill_id}")
 
-    for effect in skill_effects:
-        expertise = " с экспертизой" if effect.grants_expertise else ""
-        if effect.skill_id is None:
-            parts.append(f"владение любым навыком на выбор{expertise}")
-            continue
-        name = effect.skill.name if effect.skill is not None else f"навык #{effect.skill_id}"
-        parts.append(f"владение навыком «{name}»{expertise}")
 
-    for effect in saving_throw_effects:
-        parts.append(f"спасбросок {_ABILITY_NAMES_RU.get(effect.ability, effect.ability.value)}")
+def _item_name(effect) -> str:
+    """HTML-escaped catalog name of a weapon effect's item (id fallback)."""
 
-    for effect in armor_effects:
-        parts.append(f"владение {_ARMOR_NAMES_RU.get(effect.armor_type, effect.armor_type.value)}")
+    return escape(effect.item.name if effect.item is not None else f"предмет #{effect.item_id}")
 
-    for effect in weapon_effects:
-        if effect.item_id is not None:
-            name = effect.item.name if effect.item is not None else f"предмет #{effect.item_id}"
-            parts.append(f"владение оружием «{name}»")
-        elif effect.weapon_category is not None:
-            parts.append(f"владение {_WEAPON_NAMES_RU.get(effect.weapon_category, effect.weapon_category.value)}")
 
-    for effect in spell_effects:
-        if effect.spell_id is not None:
-            name = effect.spell.name if effect.spell is not None else f"заклинание #{effect.spell_id}"
-            parts.append(f"заклинание «{name}»")
-        else:
-            parts.append("любое заклинание на выбор")
+def _spell_name(effect) -> str:
+    """HTML-escaped catalog name of a spell effect's spell (id fallback)."""
 
-    return parts
+    return escape(effect.spell.name if effect.spell is not None else f"заклинание #{effect.spell_id}")
 
 
 def _render_ability_short(effects) -> list[str]:
-    """Nominative ``"Сила +1"`` items for the grouped "Изменение характеристик" <li>."""
+    """Nominative signed ``"Сила +1"`` / ``"Сила -1"`` items for the grouped "Изменение характеристик" <li>."""
 
     parts: list[str] = []
     for effect in effects:
-        text = f"{_ABILITY_NAMES_NOM_RU.get(effect.ability, effect.ability.value)} +{effect.amount}"
+        text = f"{_ABILITY_NAMES_NOM_RU.get(effect.ability, effect.ability.value)} {effect.amount:+d}"
         if effect.new_cap is not None:
             text += f" (потолок {effect.new_cap})"
         parts.append(text)
@@ -133,11 +111,9 @@ def _render_skill_short(effects) -> list[str]:
     parts: list[str] = []
     for effect in effects:
         expertise = " с экспертизой" if effect.grants_expertise else ""
-        if effect.skill_id is None:
-            parts.append(f"любым навыком на выбор{expertise}")
-            continue
-        name = effect.skill.name if effect.skill is not None else f"навык #{effect.skill_id}"
-        parts.append(f"«{name}»{expertise}")
+        parts.append(
+            f"любым навыком на выбор{expertise}" if effect.skill_id is None else f"«{_skill_name(effect)}»{expertise}"
+        )
     return parts
 
 
@@ -153,8 +129,7 @@ def _render_weapon_short(effects) -> list[str]:
     parts: list[str] = []
     for effect in effects:
         if effect.item_id is not None:
-            name = effect.item.name if effect.item is not None else f"предмет #{effect.item_id}"
-            parts.append(f"«{name}»")
+            parts.append(f"«{_item_name(effect)}»")
         elif effect.weapon_category is not None:
             parts.append(_WEAPON_NAMES_NOM_RU.get(effect.weapon_category, effect.weapon_category.value))
     return parts
@@ -166,10 +141,45 @@ def _render_spell_short(effects) -> list[str]:
     parts: list[str] = []
     for effect in effects:
         if effect.spell_id is not None:
-            name = effect.spell.name if effect.spell is not None else f"заклинание #{effect.spell_id}"
-            parts.append(f'<a href="/spells/{effect.spell_id}">{name}</a>')
+            parts.append(f'<a href="/spells/{effect.spell_id}">{_spell_name(effect)}</a>')
         else:
             parts.append("любое на выбор")
+    return parts
+
+
+def _render_bundle(
+    ability_effects,
+    skill_effects,
+    saving_throw_effects,
+    armor_effects,
+    weapon_effects,
+    spell_effects,
+) -> list[str]:
+    """Render one choice option's effect bundle into readable parts (full sentences, not grouped under a <li> header)."""
+
+    parts = _render_ability_short(ability_effects)
+
+    for effect, short in zip(skill_effects, _render_skill_short(skill_effects), strict=True):
+        parts.append(f"владение {short}" if effect.skill_id is None else f"владение навыком {short}")
+
+    parts.extend(
+        f"спасбросок {_ABILITY_NAMES_GEN_RU.get(effect.ability, effect.ability.value)}"
+        for effect in saving_throw_effects
+    )
+
+    parts.extend(
+        f"владение {_ARMOR_NAMES_INS_RU.get(effect.armor_type, effect.armor_type.value)}" for effect in armor_effects
+    )
+
+    for effect in weapon_effects:
+        if effect.item_id is not None:
+            parts.append(f"владение оружием «{_item_name(effect)}»")
+        elif effect.weapon_category is not None:
+            parts.append(f"владение {_WEAPON_NAMES_INS_RU.get(effect.weapon_category, effect.weapon_category.value)}")
+
+    for effect in spell_effects:
+        parts.append("любое заклинание на выбор" if effect.spell_id is None else f"заклинание «{_spell_name(effect)}»")
+
     return parts
 
 

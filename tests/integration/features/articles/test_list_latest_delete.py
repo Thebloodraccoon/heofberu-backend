@@ -125,9 +125,7 @@ class TestArticleDelete:
     async def test_gm_cannot_delete_article(self, client, create_article, gm_token):
         article = await create_article(title="Khazad-dum")
 
-        response = await client.delete(
-            f"/articles/{article['id']}", headers={"Authorization": f"Bearer {gm_token}"}
-        )
+        response = await client.delete(f"/articles/{article['id']}", headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 403
 
@@ -140,9 +138,7 @@ class TestArticleDelete:
 
         assert response.status_code == 204
 
-        fetched = await client.get(
-            f"/articles/{article['id']}", headers={"Authorization": f"Bearer {founder_token}"}
-        )
+        fetched = await client.get(f"/articles/{article['id']}", headers={"Authorization": f"Bearer {founder_token}"})
         assert fetched.status_code == 404
 
     async def test_delete_detaches_children_instead_of_blocking(self, client, create_article, founder_token, gm_token):
@@ -160,8 +156,6 @@ class TestArticleDelete:
         assert fetched_child.json()["parent_id"] is None
 
     async def test_delete_missing_article_returns_404(self, client, founder_token):
-        response = await client.delete(
-            "/articles/999999", headers={"Authorization": f"Bearer {founder_token}"}
-        )
+        response = await client.delete("/articles/999999", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 404

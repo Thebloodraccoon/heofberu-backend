@@ -1,19 +1,15 @@
 """
 Generic base for "per-source nested collection" services: a cached,
-FK-scoped listing plus namespace invalidation.
+FK-scoped listing behind one cache namespace.
 
 ``NestedSourceItemService`` (app/features/shared/items/nested_service.py)
 is this shape:
 
     SELECT <Model> WHERE <fk> == source_id ORDER BY id  -->  cached list
 
-Per-source feature LISTINGS no longer use this base — the catalogs cache
-their own ``GET /{source}/features`` lists under dedicated namespaces
-(``race_features``, ``class_features``, ...) via the central
-``FeatureCrudService``, which owns every feature write. Only the
-read + cache-namespace boilerplate that both domains share is kept here;
-the feature domain's row-level ownership rules live in
-``FeatureCrudService``.
+Per-source feature listings do not use this base: the catalogs cache their
+own ``GET /{source}/features`` lists under dedicated namespaces via the
+central ``FeatureCrudService``, which owns every feature write.
 """
 
 from typing import Any, Generic
@@ -22,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import TypeVar
 
-from app.core.cache import invalidate, use_cache
+from app.core.cache import use_cache
 
 Model = TypeVar("Model")
 ResponseSchema = TypeVar("ResponseSchema")
@@ -37,10 +33,8 @@ class NestedCollectionService(Generic[Model, ResponseSchema]):
     Subclasses set:
       - ``model``: the SQLAlchemy model to select from.
       - ``response_schema``: schema each row is validated into.
-      - ``cache_namespaces``: passed through unchanged to ``use_cache``/
-        ``invalidate`` — kept as a tuple (not a single string) because
-        that's the shape ``BaseService.cache_namespaces`` already uses
-        everywhere else.
+      - ``cache_namespaces``: tuple, same shape as ``BaseService.cache_namespaces``;
+        purge through ``app.core.cache.invalidate`` / the owning service.
       - ``fk_for(source_type)``: resolves the polymorphic FK column name
         for a given source type (``"race_id"``, ``"background_id"``, ...).
         Raise inside it (rather than returning ``None``) for source types
@@ -75,7 +69,7 @@ class NestedCollectionService(Generic[Model, ResponseSchema]):
         """
         Return every row owned by ``source_id`` (ordered by id).
 
-        Cached under ``cache_namespaces``; purged by :meth:`invalidate`.
+        Cached under ``cache_namespaces``.
         """
 
         fk_name = self.fk_for(source_type)
@@ -87,9 +81,3 @@ class NestedCollectionService(Generic[Model, ResponseSchema]):
         result = await self.db.execute(query)
         rows = result.scalars().unique().all() if self.load_options else result.scalars().all()
         return [self.response_schema.model_validate(row) for row in rows]
-
-    async def invalidate(self) -> None:
-        """Purge every cached listing under this service's namespaces."""
-
-        for namespace in self.cache_namespaces:
-            await invalidate(namespace)

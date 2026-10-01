@@ -14,9 +14,7 @@ class TestTagCrud:
         assert response.status_code == 403
 
     async def test_gm_can_create_tag(self, client, gm_token):
-        response = await client.post(
-            "/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"}
-        )
+        response = await client.post("/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 201
         body = response.json()
@@ -39,17 +37,13 @@ class TestTagCrud:
         assert response.json()["name"] == "Dwarven Kingdom"
 
     async def test_create_tag_rejects_blank_name(self, client, gm_token):
-        response = await client.post(
-            "/tags", json={"name": "   "}, headers={"Authorization": f"Bearer {gm_token}"}
-        )
+        response = await client.post("/tags", json={"name": "   "}, headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 422
 
     async def test_get_tag_by_id(self, client, gm_token):
         created = (
-            await client.post(
-                "/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"}
-            )
+            await client.post("/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"})
         ).json()
 
         response = await client.get(f"/tags/{created['id']}", headers={"Authorization": f"Bearer {gm_token}"})
@@ -73,9 +67,7 @@ class TestTagCrud:
 
     async def test_player_cannot_rename_tag(self, client, gm_token, player_token):
         created = (
-            await client.post(
-                "/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"}
-            )
+            await client.post("/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"})
         ).json()
 
         response = await client.patch(
@@ -97,14 +89,10 @@ class TestTagCrud:
 
     async def test_founder_can_delete_unused_tag(self, client, gm_token, founder_token):
         created = (
-            await client.post(
-                "/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"}
-            )
+            await client.post("/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"})
         ).json()
 
-        response = await client.delete(
-            f"/tags/{created['id']}", headers={"Authorization": f"Bearer {founder_token}"}
-        )
+        response = await client.delete(f"/tags/{created['id']}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 204
 
@@ -113,14 +101,10 @@ class TestTagCrud:
 
     async def test_gm_cannot_delete_tag(self, client, gm_token):
         created = (
-            await client.post(
-                "/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"}
-            )
+            await client.post("/tags", json={"name": "Dwarven"}, headers={"Authorization": f"Bearer {gm_token}"})
         ).json()
 
-        response = await client.delete(
-            f"/tags/{created['id']}", headers={"Authorization": f"Bearer {gm_token}"}
-        )
+        response = await client.delete(f"/tags/{created['id']}", headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 403
 
@@ -129,9 +113,7 @@ class TestTagCrud:
         tag = (await client.post("/tags", json={"name": "Dwarven"}, headers=headers)).json()
         await create_article(title="Khazad-dum", tag_ids=[tag["id"]])
 
-        response = await client.delete(
-            f"/tags/{tag['id']}", headers={"Authorization": f"Bearer {founder_token}"}
-        )
+        response = await client.delete(f"/tags/{tag['id']}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
 

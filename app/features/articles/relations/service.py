@@ -2,10 +2,11 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ArticleVisibility, is_article_publicly_visible
-from app.core.base.service import BaseService
+from app.core.cache import use_cache
 from app.core.exceptions import RecordAlreadyExistsError, RecordIdsInvalidError, RecordNotFoundError
-from app.features.articles.crud.schemas import ArticleBrief, ArticleCreate, ArticleResponse, ArticleUpdate
+from app.features.articles.base import ArticleScopedService
+from app.features.articles.cache import ARTICLE_TREE_NAMESPACE, invalidate_article_trees
+from app.features.articles.crud.schemas import ArticleBrief
 from app.features.articles.relations.exceptions import ArticleRelationNotFoundException, ArticleSelfRelationException
 from app.features.articles.relations.repository import ArticleRelationsRepository
 from app.features.articles.relations.schemas import (
@@ -14,11 +15,10 @@ from app.features.articles.relations.schemas import (
     ArticleRelationUpdate,
 )
 from app.features.articles.secrets import strip_gm_blocks
-from app.models.articles.article_model import Article
 from app.models.articles.article_relation_model import ArticleRelation
 
 
-class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate, ArticleResponse, None]):
+class ArticleRelationsService(ArticleScopedService):
     """
     Article relation graph: combined incoming+outgoing listing plus
     per-relation create/delete (everything that doesn't fit the
@@ -30,14 +30,11 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
     def __init__(self, db: AsyncSession):
         """Initialize the service with the relations repository."""
 
-        super().__init__(
-            repository=ArticleRelationsRepository(db),
-            response_schema=ArticleResponse,
-        )
+        super().__init__(ArticleRelationsRepository(db))
 
     async def list_relations(self, article_id: int, *, include_hidden: bool) -> list[ArticleRelationResponse]:
         """
-        Return every relation touching the article, from the article's point of view.
+        Return the relations touching the article, from the article's point of view.
 
         For non-GM readers the article itself must be visible, and GM-only relations plus
         relations pointing at a draft/GM-only article are dropped (so their existence isn't leaked).
@@ -46,14 +43,11 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
         if not await self.repository.exists_visible(article_id, include_hidden):
             raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
 
-        rows = await self.repository.list_relations(article_id)
-        if not include_hidden:
-            rows = [
-                row
-                for row in rows
-                if row.visibility == ArticleVisibility.PUBLIC and self._other_is_public(article_id, row)
-            ]
+        return await self._cached_relations(article_id, include_hidden=include_hidden)
 
+    @use_cache(namespace=ARTICLE_TREE_NAMESPACE)
+    async def _cached_relations(self, article_id: int, *, include_hidden: bool) -> list[ArticleRelationResponse]:
+        rows = await self.repository.list_relations(article_id, include_hidden=include_hidden)
         return [self._to_response(article_id, row, strip_secrets=not include_hidden) for row in rows]
 
     async def create_relation(self, article_id: int, data: ArticleRelationCreate) -> ArticleRelationResponse:
@@ -75,6 +69,7 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
             )
 
         row = await self.repository.create_relation(article_id, data)
+        await invalidate_article_trees(self.repository.db)
 
         return self._to_response(article_id, row)
 
@@ -99,6 +94,7 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
                 )
 
         updated = await self.repository.update_relation(relation, fields)
+        await invalidate_article_trees(self.repository.db)
 
         return self._to_response(article_id, updated)
 
@@ -108,6 +104,7 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
         await self._exists_or_404(article_id)
         relation = await self._get_relation_or_404(article_id, relation_id)
         await self.repository.delete_relation(relation)
+        await invalidate_article_trees(self.repository.db)
 
     async def _get_relation_or_404(self, article_id: int, relation_id: int) -> ArticleRelation:
         """Fetch a relation scoped to the article, or raise ``ArticleRelationNotFoundException``."""
@@ -117,14 +114,6 @@ class ArticleRelationsService(BaseService[Article, ArticleCreate, ArticleUpdate,
             raise ArticleRelationNotFoundException(article_id=article_id, relation_id=relation_id)
 
         return relation
-
-    @staticmethod
-    def _other_is_public(article_id: int, relation: ArticleRelation) -> bool:
-        """Whether the article on the far side of ``relation`` is published and public."""
-
-        other = relation.to_article if relation.from_article_id == article_id else relation.from_article
-
-        return is_article_publicly_visible(other.status, other.visibility)
 
     @staticmethod
     def _to_response(

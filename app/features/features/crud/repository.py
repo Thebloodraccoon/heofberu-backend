@@ -1,10 +1,13 @@
-"""Feature repository: base CRUD plus engine-effect management."""
+"""Feature repository: base CRUD plus the effect-tree loaders shared by every catalog."""
 
-from sqlalchemy import select
+from sqlalchemy import literal_column, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.base.repository import BaseRepository
+from app.models.character.character_asi_choice_model import CharacterASIChoice
+from app.models.character.character_feature_model import CharacterFeature
 from app.models.features.feature_engine_models import (
     FeatureAbilityScoreEffect,
     FeatureArmorProficiencyEffect,
@@ -17,8 +20,6 @@ from app.models.features.feature_engine_models import (
 )
 from app.models.features.feature_model import Feature
 
-# The six fixed-effect models a feature's ``has_static_effects`` checks —
-# shared between ``feature_summary_loads`` (below) and ``load_effect_flags``.
 _STATIC_EFFECT_MODELS = (
     FeatureAbilityScoreEffect,
     FeatureSkillProficiencyEffect,
@@ -28,14 +29,66 @@ _STATIC_EFFECT_MODELS = (
     FeatureSpellGrantEffect,
 )
 
+# The catalog relationship each effect type resolves its display name
+# through — shared between a feature's FIXED rows and its choice-OPTION
+# rows (same model classes either way, see feature_engine_models.py).
+_NAME_RELATIONSHIP_BY_EFFECT_ATTR = {
+    "skill_effects": FeatureSkillProficiencyEffect.skill,
+    "weapon_effects": FeatureWeaponProficiencyEffect.item,
+    "spell_effects": FeatureSpellGrantEffect.spell,
+}
+
+EFFECT_ATTRS = (
+    "ability_effects",
+    "skill_effects",
+    "saving_throw_effects",
+    "armor_effects",
+    "weapon_effects",
+    "spell_effects",
+)
+
+
+def feature_summary_loads(base=None, *, with_names: bool = True) -> list:
+    """
+    Full eager-load set for a ``Feature``'s engine effect tree — fixed
+    effects, choice groups/options with their own effects, and (unless
+    ``with_names=False``) the skill/spell/item relationships those effects
+    need to render a NAME. Every response exposing ``static_groups``/
+    ``effects_summary`` needs the names: they're plain ``Feature``
+    properties, populated off whatever's eager-loaded here, so nothing async
+    happens at serialization time. The effect-engine endpoints return ids
+    only and pass ``with_names=False`` (6 queries fewer).
+
+    Pass a ``base`` loader (a ``selectinload`` for a ``Feature``-valued
+    relationship, e.g. ``selectinload(Background.features)``) to chain onto
+    it when querying a parent that embeds features; omit it when querying
+    ``Feature`` rows directly.
+    """
+
+    def load(attr):
+        return selectinload(attr) if base is None else base.selectinload(attr)
+
+    def with_name(loader, effect_attr):
+        name_relationship = _NAME_RELATIONSHIP_BY_EFFECT_ATTR.get(effect_attr)
+        return loader.selectinload(name_relationship) if with_names and name_relationship is not None else loader
+
+    loads = [with_name(load(getattr(Feature, attr)), attr) for attr in EFFECT_ATTRS]
+
+    options_load = load(Feature.choice_groups).selectinload(FeatureChoiceGroup.options)
+    loads.extend(
+        with_name(options_load.selectinload(getattr(FeatureChoiceOption, attr)), attr) for attr in EFFECT_ATTRS
+    )
+
+    return loads
+
 
 class FeatureRepository(BaseRepository[Feature]):
     """
     Feature-specific repository built on :class:`BaseRepository`.
 
-    Listing and detail reads both eager-load the whole effect tree
-    via ``default_load_options`` so ``FeatureResponse`` serializes
-    without lazy loads.
+    ``get_by_id`` eager-loads the whole effect tree so ``FeatureResponse``
+    serializes without lazy loads; ``get_plain`` is the cheap fetch for code
+    that only needs the row (404 checks, scalar edits, deletes).
     """
 
     def __init__(self, db: AsyncSession):
@@ -49,118 +102,104 @@ class FeatureRepository(BaseRepository[Feature]):
         )
 
     async def get_by_id(self, model_id: int) -> Feature | None:
-        """Fetch a feature by id with its full engine effect tree eager-loaded."""
+        """Fetch a feature with its full engine effect tree eager-loaded."""
 
+        return await self._select_one(model_id, feature_summary_loads())
+
+    async def get_with_effect_ids(self, feature_id: int) -> Feature | None:
+        """Fetch a feature with the effect tree an id-only response needs (no skill/item/spell names)."""
+
+        return await self._select_one(feature_id, feature_summary_loads(with_names=False))
+
+    async def _select_one(self, feature_id: int, options: list) -> Feature | None:
         result = await self.db.execute(
-            select(Feature)
-            .where(Feature.id == model_id)
-            .options(*feature_summary_loads())
-            .execution_options(populate_existing=True)
+            select(Feature).where(Feature.id == feature_id).options(*options).execution_options(populate_existing=True)
         )
         return result.scalars().first()
 
-    async def get_with_effects(self, feature_id: int, *, fallback: Feature | None = None) -> Feature:
+    async def get_plain(self, feature_id: int, *, for_update: bool = False) -> Feature | None:
         """
-        Fetch a feature with its full engine effect tree loaded.
+        Fetch the bare feature row, no relationships loaded.
 
-        ``fallback`` is the already-fetched row (used so callers that got a
-        404 signal can re-raise); when the eager query returns nothing the
-        fallback row is returned as-is.
+        ``for_update=True`` takes a row lock held until the transaction ends,
+        serializing concurrent effect writes on the same feature.
         """
 
-        result = await self.db.execute(select(Feature).where(Feature.id == feature_id).options(*feature_summary_loads()))
-        feature = result.scalars().first()
-        return feature if feature is not None else fallback
+        return await self.db.get(Feature, feature_id, with_for_update=for_update or None)
 
+    async def list_for_source(self, fk_name: str, source_id: int) -> list[Feature]:
+        """Every feature whose ``fk_name`` source column equals ``source_id`` (ordered by id, full tree)."""
 
-# The catalog relationship each effect type resolves its display name
-# through — shared between a feature's FIXED rows and its choice-OPTION
-# rows (same model classes either way, see feature_engine_models.py).
-_NAME_RELATIONSHIP_BY_EFFECT_ATTR = {
-    "skill_effects": FeatureSkillProficiencyEffect.skill,
-    "weapon_effects": FeatureWeaponProficiencyEffect.item,
-    "spell_effects": FeatureSpellGrantEffect.spell,
-}
+        result = await self.db.execute(
+            select(Feature)
+            .where(getattr(Feature, fk_name) == source_id)
+            .options(*feature_summary_loads())
+            .order_by(Feature.id)
+        )
+        return list(result.scalars().all())
 
-_EFFECT_ATTRS = (
-    "ability_effects",
-    "skill_effects",
-    "saving_throw_effects",
-    "armor_effects",
-    "weapon_effects",
-    "spell_effects",
-)
+    async def is_granted(self, feature_id: int) -> bool:
+        """Whether any character holds a grant of this feature or an ASI log row points at it (as a feat)."""
 
+        return await self.exists_referencing(
+            CharacterFeature, "feature_id", feature_id
+        ) or await self.exists_referencing(CharacterASIChoice, "feat_id", feature_id)
 
-def feature_summary_loads(base=None) -> list:
-    """
-    Full eager-load set for a ``Feature``'s engine effect tree — fixed
-    effects, choice groups/options with their own effects, and the
-    skill/spell/item relationships those effects need to render a NAME
-    (not just an id). Every response exposing ``static_groups``/
-    ``effects_summary`` needs this: they're plain ``Feature`` properties,
-    populated by ``from_attributes`` off whatever's eager-loaded here —
-    nothing async happens at serialization time. ``has_static_effects``/
-    ``has_choices`` are real columns now and don't need this eager-load at
-    all (see ``load_effect_flags`` for how they're kept in sync on write).
+    async def holder_character_ids(self, feature_id: int) -> list[int]:
+        """Ids of every character currently granted this feature."""
 
-    Pass a ``base`` loader (a ``selectinload`` for a ``Feature``-valued
-    relationship, e.g. ``selectinload(Background.features)``) to chain onto
-    it when querying a parent that embeds features; omit it when querying
-    ``Feature`` rows directly.
-    """
+        result = await self.db.execute(
+            select(CharacterFeature.character_id).where(CharacterFeature.feature_id == feature_id)
+        )
+        return list(result.scalars().all())
 
-    def load(attr):
-        return selectinload(attr) if base is None else base.selectinload(attr)
+    async def delete(self, db_obj: Feature, *, commit: bool = True) -> bool:
+        """Delete a feature; ``commit=False`` flushes and leaves the transaction to the caller."""
 
-    loads = []
-    for attr in _EFFECT_ATTRS:
-        fixed_load = load(getattr(Feature, attr))
-        name_relationship = _NAME_RELATIONSHIP_BY_EFFECT_ATTR.get(attr)
-        if name_relationship is not None:
-            fixed_load = fixed_load.selectinload(name_relationship)
-        loads.append(fixed_load)
+        await self.db.delete(db_obj)
+        await self.commit_or_flush(commit=commit)
+        return True
 
-    options_load = load(Feature.choice_groups).selectinload(FeatureChoiceGroup.options)
-    for attr in _EFFECT_ATTRS:
-        option_load = options_load.selectinload(getattr(FeatureChoiceOption, attr))
-        name_relationship = _NAME_RELATIONSHIP_BY_EFFECT_ATTR.get(attr)
-        if name_relationship is not None:
-            option_load = option_load.selectinload(name_relationship)
-        loads.append(option_load)
+    @staticmethod
+    def mark_effects_empty(feature: Feature) -> None:
+        """
+        Tell the ORM a just-created feature's effect collections are loaded
+        and empty, so serializing it (``static_groups``, ``effects_summary``)
+        never lazy-loads on the async session.
+        """
 
-    return loads
+        for attr in (*EFFECT_ATTRS, "choice_groups"):
+            set_committed_value(feature, attr, [])
 
 
 async def load_effect_flags(db, feature_ids: list[int]) -> dict[int, dict[str, bool]]:
     """
     Recompute ``has_static_effects``/``has_choices`` for every id in
-    ``feature_ids`` straight from the effect/choice-group tables — 7 cheap
-    ``SELECT DISTINCT feature_id`` queries total (one per fixed-effect
-    type, one for choice groups), regardless of how many ids are passed.
+    ``feature_ids`` straight from the effect/choice-group tables, in one
+    ``UNION ALL`` round trip regardless of how many ids are passed.
 
-    ``Feature.has_static_effects``/``has_choices`` are real columns now
-    (denormalized, not computed on read) — this is the write-side source of
-    truth every effect/choice-group mutation calls to refresh them
-    (``FeatureEffectsService._refresh_effect_flags``), not a listing-time
-    fallback. Detail reads (``FeatResponse``, ``NestedFeatureResponse``)
-    still need the full tree via ``feature_summary_loads`` for
-    ``static_groups``/``effects_summary``, independent of these two flags.
+    The two flags are real, denormalized ``Feature`` columns: this is the
+    write-side source of truth every effect/choice-group mutation calls to
+    refresh them (``FeatureEffectsService``), never a listing-time fallback.
     """
 
     flags = {feature_id: {"has_static_effects": False, "has_choices": False} for feature_id in feature_ids}
     if not feature_ids:
         return flags
 
-    for model in _STATIC_EFFECT_MODELS:
-        result = await db.execute(select(model.feature_id).where(model.feature_id.in_(feature_ids)).distinct())
-        for (feature_id,) in result.all():
-            flags[feature_id]["has_static_effects"] = True
-
-    result = await db.execute(
-        select(FeatureChoiceGroup.feature_id).where(FeatureChoiceGroup.feature_id.in_(feature_ids)).distinct()
+    selects = [
+        select(model.feature_id.label("feature_id"), literal_column("'has_static_effects'").label("flag"))
+        .where(model.feature_id.in_(feature_ids))
+        .distinct()
+        for model in _STATIC_EFFECT_MODELS
+    ]
+    selects.append(
+        select(FeatureChoiceGroup.feature_id.label("feature_id"), literal_column("'has_choices'").label("flag"))
+        .where(FeatureChoiceGroup.feature_id.in_(feature_ids))
+        .distinct()
     )
-    for (feature_id,) in result.all():
-        flags[feature_id]["has_choices"] = True
+
+    for feature_id, flag in (await db.execute(union_all(*selects))).all():
+        flags[feature_id][flag] = True
 
     return flags

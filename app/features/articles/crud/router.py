@@ -3,6 +3,7 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Query, status
+from pydantic import StringConstraints
 
 from app.constants import ArticleStatus
 from app.core.base.service import Page
@@ -15,22 +16,29 @@ from app.features.articles.crud.schemas import (
     ArticleUpdate,
 )
 from app.features.articles.dependencies import ArticleCrudDep
-from app.features.users.security import FounderDep, GmUserDep, OptionalUserDep, can_see_hidden
+from app.features.auth.dependencies import FounderDep, GmUserDep, OptionalUserDep, can_see_hidden
 
 router = APIRouter()
 
+#: Upper bound on the repeated filter keys of the open list/search endpoints (each becomes an ``IN (...)`` entry).
+MAX_FILTER_VALUES = 50
+
 TagIdsQuery = Annotated[
     list[int] | None,
-    Query(description="Tag ids (repeat the key: `?tag_id=3&tag_id=7`). See `tag_match` for any/all semantics."),
+    Query(
+        max_length=MAX_FILTER_VALUES,
+        description="Tag ids (repeat the key: `?tag_id=3&tag_id=7`). See `tag_match` for any/all semantics.",
+    ),
 ]
 TagMatchQuery = Annotated[
     Literal["any", "all"],
     Query(description="`any` = article has at least one of the tags, `all` = it has every one of them."),
 ]
 ArticleTypesQuery = Annotated[
-    list[str] | None,
+    list[Annotated[str, StringConstraints(max_length=50)]] | None,
     Query(
         alias="article_type",
+        max_length=MAX_FILTER_VALUES,
         description="Restrict to one or more article_type values (repeat the key: "
         "`?article_type=lore&article_type=npc`). See ARTICLE_TYPES. Omit for any type.",
     ),
@@ -39,6 +47,7 @@ SubtypeQuery = Annotated[
     list[int] | None,
     Query(
         alias="subtype_id",
+        max_length=MAX_FILTER_VALUES,
         description="Subtype ids (repeat the key; see `GET /articles/subtypes`). A subtype refines only its own "
         "type: `?article_type=location&article_type=npc&subtype_id=5` (5 = a location subtype) → those locations "
         "plus every NPC.",
@@ -105,7 +114,7 @@ async def search_articles(
         ...,
         min_length=2,
         max_length=200,
-        description="Search text; supports `\"phrases\"`, `-exclude` and `or`.",
+        description='Search text; supports `"phrases"`, `-exclude` and `or`.',
     ),
     tag_id: TagIdsQuery = None,
     tag_match: TagMatchQuery = "any",
@@ -208,7 +217,7 @@ async def get_article_ancestors(article_id: int, article_service: ArticleCrudDep
     status_code=status.HTTP_201_CREATED,
     summary="Create an article",
     responses={
-        400: {"description": "article_type is not one of the known ARTICLE_TYPES, or parent_id doesn't exist."},
+        400: {"description": "parent_id/subtype_id doesn't exist or the subtype belongs to another article_type."},
     },
 )
 async def create_article(
@@ -240,8 +249,11 @@ async def create_article(
     Create a new article. **GM only.**
 
     Identity/content fields only — `tags` are attached afterwards through
-    `PUT /articles/{article_id}/tags`. `slug` is generated from the title (never sent by the client), `status` starts at `DRAFT`, `author_id` is the
-    calling GM, and `path` is derived server-side from `parent_id`.
+    `PUT /articles/{article_id}/tags`. `slug` is generated from the title (never sent by the client), `status`
+    starts at `DRAFT`, `author_id` is the calling GM, and `path` is derived server-side from `parent_id`.
+
+    The title is trimmed and may not be blank. A `:::gm` block in `excerpt`/`body_markdown` must be flat: it
+    may not contain another `:::` container (422); close it with `:::` first.
     """
 
     return await article_service.create_article(data, gm_user.id)
@@ -252,7 +264,10 @@ async def create_article(
     response_model=ArticleResponse,
     summary="Update an article's fields",
     responses={
-        400: {"description": "parent_id doesn't exist, or would make the article its own ancestor."},
+        400: {
+            "description": "parent_id doesn't exist, would make the article its own ancestor or nest the tree "
+            "too deeply, or subtype_id doesn't fit the article_type."
+        },
         404: {"description": "No article exists with the given ID."},
     },
 )
@@ -282,7 +297,8 @@ async def update_article(
     Only fields included in the request body are changed; use
     `PUT /articles/{article_id}/tags` for tags. Including `parent_id`
     re-roots `path` for this article and its whole existing subtree. `status` can't be
-    changed here — use the `submit`/`publish`/`reject`/`archive`/`restore` actions.
+    changed here — use the `submit`/`publish`/`reject`/`archive`/`restore` actions. Any GM may edit any
+    article, a published one included (it stays published); same title/`:::gm` rules as on create.
     """
 
     return await article_service.update_article(article_id, data)

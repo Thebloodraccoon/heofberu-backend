@@ -1,6 +1,6 @@
 """Schemas for character spell slots and known spells."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.features.spells.crud.schemas import SpellBase
 
@@ -22,7 +22,7 @@ class SpellSlotResponse(BaseModel):
 class CharacterSpellAdd(BaseModel):
     """Payload for adding a known spell to a character."""
 
-    spell_id: int
+    spell_id: int = Field(gt=0)
 
 
 class CharacterSpellResponse(SpellBase):

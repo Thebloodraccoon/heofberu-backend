@@ -2,13 +2,7 @@
 Shared enums and helper constants used across the application.
 
 Contains the canonical domain enumerations (roles, dice, spell and item
-metadata, conditions, ...) together with backward-compatible string lists
-and helpers that build raw SQL check constraints.
-
-This is the Feature/Feat engine revision: ``FeatureSourceType`` regains the
-``FEAT`` value (it was always reserved in the Postgres ENUM), a new
-``GrantSource`` enum models where a character's feature grant came from, and
-the plain string lists are kept in sync.
+metadata, conditions, ...) together with shared string lists and numeric limits.
 """
 
 from enum import Enum
@@ -422,7 +416,9 @@ ARTICLE_TYPES = (
 
 #: Postgres ARE for a GM-only block in ``body_markdown``: ``:::gm`` ... ``:::``. An unclosed
 #: block hides everything to the end of the text (fail closed). ``(?i)`` = case-insensitive
-#: (``:::GM`` too). Must stay equivalent to ``GM_BLOCK_RE`` in ``app/features/articles/secrets.py``.
+#: (``:::GM`` too). Flat pattern: nested containers inside ``:::gm`` are rejected on write
+#: (``has_nested_gm_container``) and handled in ``app/features/articles/secrets.py``
+#: (``strip_gm_blocks``, ``gm_stripped_sql``). Used by generated columns and migrations.
 ARTICLE_GM_BLOCK_SQL_PATTERN = "(?i):::gm.*?(:::|$)"
 RELATION_TYPES = (
     "LOCATED_IN",
@@ -462,38 +458,3 @@ CHARACTER_MAX_LEVEL = 20
 # Word text. Enforced by both the backstory schema (422) and a DB check
 # constraint on ``character_backstories.content``.
 BACKSTORY_MAX_LENGTH = 12000
-
-# Minimum character level for a FEAT-source feature to be selectable. Mirror
-# of the old ``Feat.min_level`` (NULL = no level requirement).
-FEAT_MIN_LEVEL_MIN = 1
-FEAT_MIN_LEVEL_MAX = 20
-
-# ``new_cap`` validation range on a feature's ability-score effects.
-FEATURE_NEW_CAP_MIN = ABILITY_SCORE_CAP
-FEATURE_NEW_CAP_MAX = MAX_ABILITY_SCORE_CAP
-
-ON_DELETE_SET_NULL = "SET NULL"
-ON_DELETE_CASCADE = "CASCADE"
-ON_DELETE_RESTRICT = "RESTRICT"
-
-
-def create_enum_constraint(field_name: str, values: list, nullable: bool = True) -> str:
-    """Creates a line for CheckConstraint with ENUM values."""
-
-    values_str = ", ".join(repr(v) for v in values)
-
-    if nullable:
-        return f"{field_name} IS NULL OR {field_name} IN ({values_str})"
-    else:
-        return f"{field_name} IN ({values_str})"
-
-
-def create_range_constraint(field_name: str, min_val: int, max_val: int, nullable: bool = True) -> str:
-    """Creates a line for CheckConstraint with a numerical range."""
-
-    constraint = f"({field_name} >= {min_val} AND {field_name} <= {max_val})"
-
-    if nullable:
-        return f"{field_name} IS NULL OR {constraint}"
-    else:
-        return constraint

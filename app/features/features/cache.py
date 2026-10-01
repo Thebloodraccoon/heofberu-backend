@@ -1,7 +1,7 @@
 """Feature cache coordination: one invalidation point shared by every capability."""
 
 from app.constants import FeatureSourceType
-from app.core.cache import invalidate
+from app.core.base.transaction import invalidate_after_commit
 
 FEATURE_CACHE_NAMESPACES = ("features",)
 
@@ -35,30 +35,19 @@ SOURCE_PARENT_READ_NAMESPACE: dict[FeatureSourceType, str | None] = {
 }
 
 
-async def invalidate_feature_cache() -> None:
-    """Purge the shared ``features`` namespace (``GET /features`` + ``GET /features/{id}``)."""
+def feature_namespaces(source_type: FeatureSourceType) -> list[str]:
+    """Every cache namespace a write touching one ``source_type`` feature can make stale."""
 
-    for namespace in FEATURE_CACHE_NAMESPACES:
-        await invalidate(namespace)
+    namespaces = list(FEATURE_CACHE_NAMESPACES)
+    for mapping in (SOURCE_FEATURE_LIST_NAMESPACE, SOURCE_PARENT_READ_NAMESPACE):
+        namespace = mapping.get(source_type)
+        if namespace is not None:
+            namespaces.append(namespace)
+
+    return namespaces
 
 
-async def purge_feature_cache_for_source(source_type: FeatureSourceType) -> None:
-    """
-    Purge every cache namespace a write touching ONE feature of
-    ``source_type`` can make stale: the shared ``features`` namespace, the
-    owning catalog's feature-list namespace, and the owning catalog's own
-    parent-read namespace. Every write that changes a feature's identity,
-    fixed effects, or choice groups must call this — not just
-    ``invalidate_feature_cache`` — or the parent catalog's cached detail/
-    list reads keep serving the pre-edit feature payload.
-    """
+async def invalidate_feature_cache_after_commit(db, source_type: FeatureSourceType) -> None:
+    """Schedule the purge of :func:`feature_namespaces` for after the surrounding transaction commits."""
 
-    await invalidate_feature_cache()
-
-    list_namespace = SOURCE_FEATURE_LIST_NAMESPACE.get(source_type)
-    if list_namespace is not None:
-        await invalidate(list_namespace)
-
-    parent_namespace = SOURCE_PARENT_READ_NAMESPACE.get(source_type)
-    if parent_namespace is not None:
-        await invalidate(parent_namespace)
+    await invalidate_after_commit(db, *feature_namespaces(source_type))

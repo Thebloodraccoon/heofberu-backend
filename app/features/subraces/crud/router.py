@@ -4,6 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
+from app.core.types import INT32_MAX, EntityIdPath
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.subraces.crud.schemas import (
     SubraceCreate,
     SubraceGetAllResponse,
@@ -11,7 +13,6 @@ from app.features.subraces.crud.schemas import (
     SubraceUpdate,
 )
 from app.features.subraces.dependencies import SubraceCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -22,10 +23,10 @@ router = APIRouter()
     summary="List a race's subraces",
     responses={404: {"description": "No race exists with the given ID."}},
 )
-async def list_subraces(race_id: Annotated[int, Query(gt=0)], race_service: SubraceCrudDep):
+async def list_subraces(race_id: Annotated[int, Query(gt=0, le=INT32_MAX)], subrace_service: SubraceCrudDep):
     """Return every subrace belonging to the race. Open endpoint."""
 
-    return await race_service.list_for_race(race_id)
+    return await subrace_service.list_for_race(race_id)
 
 
 @router.post(
@@ -35,7 +36,7 @@ async def list_subraces(race_id: Annotated[int, Query(gt=0)], race_service: Subr
     summary="Create a subrace",
     responses={
         404: {"description": "No race exists with the given ID."},
-        409: {"description": "The race already has a subrace with this name."},
+        400: {"description": "The race already has a subrace with this name."},
     },
 )
 async def create_subrace(
@@ -61,7 +62,7 @@ async def create_subrace(
             },
         ),
     ],
-    race_service: SubraceCrudDep,
+    subrace_service: SubraceCrudDep,
     _: GmUserDep,
 ):
     """
@@ -72,22 +73,22 @@ async def create_subrace(
     only via ``PUT /subraces/{id}/image``.
     """
 
-    return await race_service.create_subrace(data)
+    return await subrace_service.create_subrace(data)
 
 
 @router.get(
     "/{subrace_id:int}",
     response_model=SubraceResponse,
     summary="Get a subrace by ID",
-    responses={404: {"description": "No subrace exists with the given ID under this race."}},
+    responses={404: {"description": "No subrace exists with the given ID."}},
 )
 async def get_subrace(
-    subrace_id: int,
-    race_service: SubraceCrudDep,
+    subrace_id: EntityIdPath,
+    subrace_service: SubraceCrudDep,
 ):
-    """Return a single subrace with its ability bonuses and features (scoped to the given race). Open endpoint."""
+    """Return a single subrace with its ability bonuses, tags and features. Open endpoint."""
 
-    return await race_service.get_by_id(subrace_id)
+    return await subrace_service.get_by_id(subrace_id)
 
 
 @router.patch(
@@ -95,12 +96,12 @@ async def get_subrace(
     response_model=SubraceResponse,
     summary="Update a subrace's base fields",
     responses={
-        404: {"description": "No subrace exists with the given ID under this race."},
-        409: {"description": "Another subrace of the same race already uses the requested name."},
+        404: {"description": "No subrace exists with the given ID."},
+        400: {"description": "Another subrace of the same race already uses the requested name."},
     },
 )
 async def update_subrace(
-    subrace_id: int,
+    subrace_id: EntityIdPath,
     data: Annotated[
         SubraceUpdate,
         Body(
@@ -115,12 +116,12 @@ async def update_subrace(
             }
         ),
     ],
-    race_service: SubraceCrudDep,
+    subrace_service: SubraceCrudDep,
     _: GmUserDep,
 ):
     """Partially update a subrace's base fields. **GM only.**"""
 
-    return await race_service.update(subrace_id, data)
+    return await subrace_service.update(subrace_id, data)
 
 
 @router.delete(
@@ -128,16 +129,16 @@ async def update_subrace(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a subrace",
     responses={
-        400: {"description": "The subrace is still assigned to one or more characters."},
-        404: {"description": "No subrace exists with the given ID under this race."},
+        409: {"description": "The subrace is still assigned to one or more characters."},
+        404: {"description": "No subrace exists with the given ID."},
     },
 )
 async def delete_subrace(
-    subrace_id: int,
-    race_service: SubraceCrudDep,
+    subrace_id: EntityIdPath,
+    subrace_service: SubraceCrudDep,
     _: FounderDep,
 ):
     """Delete a subrace. **Founder only.**"""
 
-    await race_service.delete(subrace_id)
+    await subrace_service.delete(subrace_id)
     return None

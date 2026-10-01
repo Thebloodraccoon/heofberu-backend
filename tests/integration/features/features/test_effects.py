@@ -83,7 +83,9 @@ class TestFeatureEffectsCrud:
     async def test_foreign_id_returns_422(self, client, gm_token, create_feature):
         feature_a = await create_feature(name="Owner A")
         feature_b = await create_feature(name="Owner B")
-        set_a = await set_effects(client, gm_token, feature_a.id, {"ability_effects": [{"ability": "STR", "amount": 1}]})
+        set_a = await set_effects(
+            client, gm_token, feature_a.id, {"ability_effects": [{"ability": "STR", "amount": 1}]}
+        )
         stray_id = static_items(set_a.json(), "ability")[0]["id"]
 
         response = await set_effects(
@@ -138,10 +140,12 @@ class TestFeatureEffectsCrud:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestFeatureEffectsAllTypes:
-    async def test_put_all_six_effect_types(self, client, gm_token, create_feature, create_skill, create_item, create_spell):
+    async def test_put_all_six_effect_types(
+        self, client, gm_token, create_feature, create_skill, create_item, create_spell
+    ):
         feature = await create_feature(name="Epic Feature", source_type="CLASS", level=None)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
-        item = await create_item(name="Longsword", item_type="WEAPON")
+        skill = await create_skill(name="Stealth", ability="DEX")
+        await create_item(name="Longsword", item_type="WEAPON")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
         response = await set_effects(
@@ -173,9 +177,7 @@ class TestFeatureEffectsAllTypes:
         feature = await create_feature(name="Elf Weapon Training")
         item = await create_item(name="Longsword", item_type="WEAPON")
 
-        response = await set_effects(
-            client, gm_token, feature.id, {"weapon_effects": [{"item_id": item.id}]}
-        )
+        response = await set_effects(client, gm_token, feature.id, {"weapon_effects": [{"item_id": item.id}]})
 
         assert response.status_code == 200
         weapon = static_items(response.json(), "weapon")[0]
@@ -206,26 +208,18 @@ class TestFeatureEffectsAllTypes:
         feature = await create_feature(name="Spell Grantor")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
-        response = await set_effects(
-            client, gm_token, feature.id, {"spell_effects": [{"spell_id": spell.id}]}
-        )
+        response = await set_effects(client, gm_token, feature.id, {"spell_effects": [{"spell_id": spell.id}]})
 
         assert response.status_code == 200
         assert static_items(response.json(), "spell")[0]["spell_id"] == spell.id
 
-    async def test_spell_effect_open_choice(self, client, gm_token, create_feature):
+    async def test_fixed_spell_effect_without_spell_id_is_rejected(self, client, gm_token, create_feature):
         feature = await create_feature(name="Any Spell Grant")
 
-        response = await set_effects(
-            client,
-            gm_token,
-            feature.id,
-            {"spell_effects": [{}]},
-        )
+        response = await set_effects(client, gm_token, feature.id, {"spell_effects": [{}]})
 
-        assert response.status_code == 200
-        effect = static_items(response.json(), "spell")[0]
-        assert effect["spell_id"] is None
+        assert response.status_code == 422
+        assert (await client.get(f"/features/{feature.id}/effects")).json()["static_groups"] == []
 
 
 @pytest.mark.integration
@@ -329,9 +323,7 @@ class TestChoiceGroups:
                         "id": group["id"],
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [
-                            {"id": option["id"], "ability_effects": [{"ability": "STR", "amount": 2}]}
-                        ],
+                        "options": [{"id": option["id"], "ability_effects": [{"ability": "STR", "amount": 2}]}],
                     }
                 ]
             },
@@ -408,7 +400,7 @@ class TestFeatureResponsesEmbedEffectTree:
         self, client, gm_token, create_feature, create_skill, create_item, create_spell
     ):
         feature = await create_feature(name="Primal Champion")
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         item = await create_item(name="Longsword", item_type="WEAPON")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
@@ -533,15 +525,11 @@ class TestFeatureEffectsReMaterialization:
         self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         feature_class = await create_class(name="Fighter")
-        character = await create_character(
-            owner_id=gm.id, class_id=feature_class.id, name="Refresher", strength=14
-        )
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id, name="Refresher", strength=14)
         feature = await create_feature(name="Mighty", source_type="CLASS", level=None)
 
         # Set initial fixed effect: STR +2
-        resp = await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 2}]}
-        )
+        resp = await set_effects(client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 2}]})
         assert resp.status_code == 200
 
         # GM-grant the feature to the character
@@ -563,9 +551,7 @@ class TestFeatureEffectsReMaterialization:
         assert any(c["amount"] == 2 for c in stats["strength"]["contributions"])
 
         # Change the effect to STR +5 (no character-side write)
-        await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 5}]}
-        )
+        await set_effects(client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 5}]})
 
         # STR total now reflects +5
         stats_after = (
@@ -591,14 +577,10 @@ class TestFeatureEffectsReMaterialization:
         self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         feature_class = await create_class(name="Wizard")
-        character = await create_character(
-            owner_id=gm.id, class_id=feature_class.id, name="Clearer", strength=14
-        )
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id, name="Clearer", strength=14)
         feature = await create_feature(name="Temporary", source_type="CLASS", level=None)
 
-        await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 3}]}
-        )
+        await set_effects(client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 3}]})
         grant_resp = await client.post(
             f"/characters/{character.id}/gm-panel/features",
             json={"feature_id": feature.id},
@@ -682,9 +664,7 @@ class TestChoiceGroupEditRevertsAnsweredPickToPending:
                         "id": group["id"],
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [
-                            {"id": dex_option["id"], "ability_effects": [{"ability": "DEX", "amount": 1}]}
-                        ],
+                        "options": [{"id": dex_option["id"], "ability_effects": [{"ability": "DEX", "amount": 1}]}],
                     }
                 ]
             },

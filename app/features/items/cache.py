@@ -1,13 +1,14 @@
-"""Item cache coordination: one invalidation point shared by every capability."""
+"""Item cache namespaces: what each kind of item write has to purge."""
 
-from app.core.cache import invalidate
+from app.core.cache.namespaces import dependents
 
-# Classes/backgrounds embed ItemBriefResponse rows and nest item listings.
-ITEM_CACHE_NAMESPACES = ("items", "nested_items", "classes", "backgrounds")
+# Class/race/background details embed item briefs and cache per-source equipment
+# under ``nested_items``; every cached feature payload renders weapon-proficiency
+# item names in ``effects_summary``. An item edit must purge all of them.
+ITEM_DEPENDENT_CACHE_NAMESPACES = dependents("items")
 
+# A brand-new item is not referenced anywhere yet, and an item can only be
+# deleted once nothing references it: both only change the item listings.
+ITEM_OWN_CACHE_NAMESPACES = ("items",)
 
-async def invalidate_item_cache() -> None:
-    """Purge every cache namespace an item read can hit."""
-
-    for namespace in ITEM_CACHE_NAMESPACES:
-        await invalidate(namespace)
+ITEM_CACHE_NAMESPACES = ITEM_OWN_CACHE_NAMESPACES + ITEM_DEPENDENT_CACHE_NAMESPACES

@@ -5,13 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import ConditionType
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.conditions.schemas import (
     CharacterConditionAdd,
     CharacterConditionResponse,
     CharacterConditionUpdate,
 )
 from app.features.characters.dependencies import CharacterConditionServiceDep
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 

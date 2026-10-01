@@ -31,9 +31,14 @@ class FakeStatsService:
 
     def __init__(self):
         self.refresh_calls = []
+        self.refresh_commits = []
+        self.refresh_error = None
 
-    async def refresh(self, character):
+    async def refresh(self, character, *, commit=True):
+        if self.refresh_error is not None:
+            raise self.refresh_error
         self.refresh_calls.append(character)
+        self.refresh_commits.append(commit)
 
 
 class FakeCharacterFeatureRepository:
@@ -62,8 +67,9 @@ class FakeCharacterFeatureRepository:
         self.add_calls.append(grant)
         return grant
 
-    async def remove_character_feature(self, grant):
+    async def remove_character_feature(self, grant, *, commit=True):
         self.remove_calls.append(grant)
+        self.remove_commits = [*getattr(self, "remove_commits", []), commit]
         return True
 
 
@@ -118,7 +124,8 @@ class TestAddFeature:
         assert service.feature_grant_repository.add_calls[0].feature_id == 4
         assert service.feature_grant_repository.add_calls[0].grant_source == GrantSource.GM
         assert service.stats_service.refresh_calls == [character]
-        assert service.repository.db.commits >= 1
+        assert service.stats_service.refresh_commits == [False]
+        assert service.repository.db.commits == 1
 
     async def test_unknown_feature_raises(self):
         service = make_service(feature_exists=False)
@@ -166,7 +173,20 @@ class TestRemoveFeature:
 
         assert result is True
         assert service.feature_grant_repository.remove_calls == [grant]
+        assert service.feature_grant_repository.remove_commits == [False]
         assert service.stats_service.refresh_calls == [character]
+        assert service.stats_service.refresh_commits == [False]
+        assert service.repository.db.commits == 1
+
+    async def test_failing_refresh_rolls_the_removal_back(self):
+        grant = make_grant()
+        service = make_service(SimpleNamespace(id=1), grants_by_id={grant.id: grant})
+        service.stats_service.refresh_error = RuntimeError("refresh failed")
+
+        with pytest.raises(RuntimeError):
+            await service.remove_feature(1, grant.id, SimpleNamespace())
+
+        assert (service.repository.db.commits, service.repository.db.rollbacks) == (0, 1)
 
     async def test_missing_grant_raises(self):
         service = make_service()

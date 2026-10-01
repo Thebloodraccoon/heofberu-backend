@@ -4,8 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile, status
 
+from app.features.auth.dependencies import GmUserDep
 from app.features.classes.dependencies import ClassImageDep
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

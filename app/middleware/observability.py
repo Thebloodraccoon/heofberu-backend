@@ -1,14 +1,7 @@
 """
-Merged request-id / logging / timing middleware.
-
-Was three separate ``BaseHTTPMiddleware`` layers (``RequestIDMiddleware``,
-``LoggingMiddleware``, ``TimingMiddleware``), each paying Starlette's
-per-layer ``BaseHTTPMiddleware`` overhead (a fresh ``anyio`` task group +
-memory-object-stream per request to bridge ``call_next`` back to ``send``)
-on top of each other for what is really one concern: per-request
-instrumentation. Merged into a single ``dispatch`` so that overhead is paid
-once instead of three times, with identical externally-observable behavior
-(same headers, same log lines, same skip-path semantics).
+Request-id tagging, request/response logging and the processing-time header in
+one ``BaseHTTPMiddleware`` layer (one layer instead of three avoids paying
+Starlette's per-layer task-group overhead repeatedly).
 """
 
 from collections.abc import Callable
@@ -24,7 +17,15 @@ from app.middleware.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_LOG_SKIP_PATHS = ["/api/ping", "/api/health", "/docs", "/openapi.json", "/redoc"]
+
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+def _sanitize(value: str) -> str:
+    """Strip CR/LF so a client-controlled header cannot forge log lines."""
+
+    return value.replace("\r", " ").replace("\n", " ")
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
@@ -44,7 +45,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         self.request_id_header = request_id_header
         self.log_requests = log_requests
         self.log_responses = log_responses
-        self.log_skip_paths = log_skip_paths or ["/ping", "/health", "/docs", "/openapi.json", "/redoc"]
+        self.log_skip_paths = log_skip_paths if log_skip_paths is not None else DEFAULT_LOG_SKIP_PATHS
         self.log_slow_requests = log_slow_requests
         self.slow_threshold = slow_threshold
 
@@ -59,11 +60,13 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
 
         if self.log_requests and not skip_logging:
             logger.info(
-                f"Incoming request: {request.method} {request.url.path} - "
-                f"Request ID: {request_id} - "
-                f"User-Agent: {request.headers.get('user-agent', 'Unknown')} - "
-                f"Client IP: {get_client_ip(request)} - "
-                f"Query params: {dict(request.query_params)}"
+                "Incoming request: %s %s - Request ID: %s - User-Agent: %s - Client IP: %s - Query params: %s",
+                request.method,
+                request.url.path,
+                request_id,
+                _sanitize(request.headers.get("user-agent", "Unknown")),
+                get_client_ip(request),
+                dict(request.query_params),
             )
 
         start_time = time.time()
@@ -74,12 +77,13 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             if not skip_logging:
                 process_time = time.time() - start_time
                 logger.error(
-                    f"Request failed: {str(e)} - "
-                    f"Request ID: {request_id} - "
-                    f"Processing time: {process_time:.4f}s - "
-                    f"Path: {request.url.path} - "
-                    f"Method: {request.method} - "
-                    f"Client IP: {get_client_ip(request)}",
+                    "Request failed: %s - Request ID: %s - Processing time: %.4fs - Path: %s - Method: %s - Client IP: %s",
+                    e,
+                    request_id,
+                    process_time,
+                    request.url.path,
+                    request.method,
+                    get_client_ip(request),
                     exc_info=True,
                 )
             raise
@@ -91,18 +95,21 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
 
         if self.log_responses and not skip_logging:
             logger.info(
-                f"Outgoing response: {response.status_code} - "
-                f"Request ID: {request_id} - "
-                f"Processing time: {process_time:.4f}s - "
-                f"Content-Length: {response.headers.get('content-length',  'Unknown')} - "
-                f"Content-Type: {response.headers.get('content-type', 'Unknown')}"
+                "Outgoing response: %s - Request ID: %s - Processing time: %.4fs - Content-Length: %s - Content-Type: %s",
+                response.status_code,
+                request_id,
+                process_time,
+                response.headers.get("content-length", "Unknown"),
+                response.headers.get("content-type", "Unknown"),
             )
 
         if self.log_slow_requests and process_time > self.slow_threshold:
             logger.warning(
-                f"Slow request detected: {request.method} {request.url.path} - "
-                f"Processing time: {process_time:.4f}s - "
-                f"Response status: {response.status_code}"
+                "Slow request detected: %s %s - Processing time: %.4fs - Response status: %s",
+                request.method,
+                request.url.path,
+                process_time,
+                response.status_code,
             )
 
         return response

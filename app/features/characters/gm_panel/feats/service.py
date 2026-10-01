@@ -23,6 +23,7 @@ from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.exceptions import FeatNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_model import Character
 from app.models.features.feature_model import Feature
 
 
@@ -88,9 +89,7 @@ class GmPanelFeatService(CharacterSubDomainService):
             )
             await sync_progression_features(self.repository.db, character)
             await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
-
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
+            await self._refresh_stats(character)
 
         return to_character_feat_response(grant)
 
@@ -110,12 +109,12 @@ class GmPanelFeatService(CharacterSubDomainService):
         feat = await self.feat_repository.get_by_id(grant.feature_id)
         self._validate_asi_choice(feat, data.ability_score_increase_id)
 
-        updated_grant = await self.feat_grant_repository.set_character_feat_ability_score_increase(
-            character, grant, data.ability_score_increase_id
-        )
+        async with self._atomic():
+            updated_grant = await self.feat_grant_repository.set_character_feat_ability_score_increase(
+                character, grant, data.ability_score_increase_id, commit=False
+            )
+            await self._refresh_stats(character)
 
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
         return to_character_feat_response(updated_grant)
 
     async def remove_feat(self, character_id: int, character_feat_id: int, current_user: UserResponse) -> bool:
@@ -124,14 +123,19 @@ class GmPanelFeatService(CharacterSubDomainService):
         character = await self.get_character_for_user(character_id, current_user)
 
         grant = await self._get_feat_grant_or_404(character_id, character_feat_id)
-        result = await self.feat_grant_repository.remove_character_feat(grant)
-        await sync_progression_features(self.repository.db, character)
-        await self.repository.db.commit()
 
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
+        async with self._atomic():
+            result = await self.feat_grant_repository.remove_character_feat(grant, commit=False)
+            await sync_progression_features(self.repository.db, character)
+            await self._refresh_stats(character)
 
         return result
+
+    async def _refresh_stats(self, character: Character) -> None:
+        """Recompute the ability-score cache in the caller's transaction; purge the payload after its commit."""
+
+        await self.stats_service.refresh(character, commit=False)
+        await invalidate_character_cache(character.id, db=self.repository.db)
 
     @staticmethod
     def _validate_asi_choice(feat: Feature, ability_score_increase_id: int | None) -> None:

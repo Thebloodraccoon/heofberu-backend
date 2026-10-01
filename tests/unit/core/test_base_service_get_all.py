@@ -129,8 +129,8 @@ class TestGetAllColumnSelect:
         page = await service.get_all(page=2, size=2)
 
         assert [item.id for item in page.items] == [3, 4]
-        assert repo.get_brief_calls[0][2] == 2  # skip
-        assert repo.get_brief_calls[0][3] == 2  # limit
+        assert repo.get_brief_calls[0][2] == 2
+        assert repo.get_brief_calls[0][3] == 2
         assert repo.count_calls == [(None, None)]
 
     async def test_filters_and_search_forwarded_to_repository(self):

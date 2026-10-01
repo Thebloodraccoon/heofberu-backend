@@ -103,3 +103,45 @@ class TestObservabilityMiddlewareRequestId:
 
         assert "X-Process-Time" in response.headers
         assert float(response.headers["X-Process-Time"]) >= 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestObservabilityLogging:
+    async def test_health_probe_is_not_logged_by_default(self, caplog):
+        middleware = ObservabilityMiddleware(app=SimpleNamespace())
+        request = _make_request()
+        request.url = SimpleNamespace(path="/api/ping")
+
+        with caplog.at_level("INFO"):
+            await middleware.dispatch(request, _call_next)
+
+        assert "Incoming request" not in caplog.text
+
+    async def test_regular_path_is_logged(self, caplog):
+        middleware = ObservabilityMiddleware(app=SimpleNamespace())
+
+        with caplog.at_level("INFO"):
+            await middleware.dispatch(_make_request(), _call_next)
+
+        assert "Incoming request: GET /api/test" in caplog.text
+
+    async def test_user_agent_cannot_forge_log_lines(self, caplog):
+        middleware = ObservabilityMiddleware(app=SimpleNamespace())
+        request = _make_request({"user-agent": "evil\r\nINFO forged line"})
+
+        with caplog.at_level("INFO"):
+            await middleware.dispatch(request, _call_next)
+
+        assert "evil\r\n" not in caplog.text
+        assert "\nINFO forged line" not in caplog.text
+
+    async def test_slow_requests_are_logged(self, caplog):
+        middleware = ObservabilityMiddleware(
+            app=SimpleNamespace(), log_requests=False, log_responses=False, slow_threshold=-1
+        )
+
+        with caplog.at_level("WARNING"):
+            await middleware.dispatch(_make_request(), _call_next)
+
+        assert "Slow request detected" in caplog.text

@@ -10,17 +10,22 @@ other helpers stay synchronous since they are pure JWT operations.
 """
 
 from datetime import datetime, timedelta, timezone
+import logging
 import uuid
 
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
-from app.core.exceptions import InvalidTokenException
+from app.core.exceptions import InvalidTokenException, ServiceUnavailableError
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
 REFRESH_TOKEN_EXPIRES = timedelta(days=30)
 RESET_TOKEN_EXPIRES = timedelta(minutes=15)
+
+_TOKEN_LIFETIMES = {"access": ACCESS_TOKEN_EXPIRES, "refresh": REFRESH_TOKEN_EXPIRES, "reset": RESET_TOKEN_EXPIRES}
 
 _BLACKLIST_KEY_PREFIX = "token_blacklist:"
 
@@ -33,12 +38,18 @@ def create_token(data: dict, token_type: str, expires_delta: timedelta) -> str:
     other data in ``data`` — this is what lets a single token be targeted
     for revocation (see ``blacklist_token``) without blacklisting every
     token ever issued to the same user.
+
+    ``iat`` (seconds) and ``iat_ms`` (milliseconds) record the issue time;
+    values already present in ``data`` win, which lets tests mint tokens
+    with a chosen issue time.
     """
 
     to_encode = data.copy()
     to_encode.update({"token_type": token_type, "jti": str(uuid.uuid4())})
-    expire = datetime.now(timezone.utc) + expires_delta
-    to_encode.update({"exp": expire})
+    now = datetime.now(timezone.utc)
+    to_encode.setdefault("iat", int(now.timestamp()))
+    to_encode.setdefault("iat_ms", int(now.timestamp() * 1000))
+    to_encode.update({"exp": now + expires_delta})
 
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
@@ -73,14 +84,41 @@ def decode_token(token: str) -> dict:
 class DecodedToken:
     """
     Parsed, validated token payload plus the fields callers actually need
-    (email, jti, remaining TTL) — replaces passing a bare ``str`` (email)
-    around once callers also need ``jti`` for blacklist checks/writes.
+    (subject, jti, remaining TTL, issue time) — replaces passing a bare
+    ``str`` around once callers also need ``jti`` for blacklist checks/writes.
+
+    ``subject`` is the raw ``sub`` claim: a user id string for current
+    tokens, an email for tokens minted before ids were used.
     """
 
-    def __init__(self, email: str, jti: str, expires_at: datetime):
-        self.email = email
+    def __init__(
+        self,
+        subject: str,
+        jti: str,
+        expires_at: datetime,
+        token_type: str = "access",
+        iat_ms: int | None = None,
+    ):
+        self.subject = subject
         self.jti = jti
         self.expires_at = expires_at
+        self.token_type = token_type
+        self._iat_ms = iat_ms
+
+    @property
+    def issued_at_ms(self) -> int:
+        """
+        Issue time in milliseconds.
+
+        Uses the ``iat_ms`` claim; tokens minted before it existed fall back
+        to ``exp`` minus the lifetime of their type (whole-second precision).
+        """
+
+        if self._iat_ms is not None:
+            return self._iat_ms
+
+        lifetime = _TOKEN_LIFETIMES.get(self.token_type, ACCESS_TOKEN_EXPIRES)
+        return int((self.expires_at - lifetime).timestamp() * 1000)
 
     @property
     def remaining_seconds(self) -> int:
@@ -130,21 +168,30 @@ def _verify_token_str(token_str: str, required_token_type: str) -> DecodedToken:
 
     payload = decode_token(token_str)
 
-    email: str | None = payload.get("sub")
+    subject: str | None = payload.get("sub")
     token_type: str | None = payload.get("token_type")
     jti: str | None = payload.get("jti")
     exp: int | None = payload.get("exp")
 
-    if email is None or jti is None or exp is None:
+    if subject is None or jti is None or exp is None:
         raise InvalidTokenException()
 
     if token_type != required_token_type:
         raise InvalidTokenException()
 
-    return DecodedToken(email=email, jti=jti, expires_at=datetime.fromtimestamp(exp, tz=timezone.utc))
+    claimed_iat_ms = payload.get("iat_ms")
+    return DecodedToken(
+        subject=subject,
+        jti=jti,
+        expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
+        token_type=token_type,
+        iat_ms=claimed_iat_ms if isinstance(claimed_iat_ms, int) else None,
+    )
 
 
-def _blacklist_key(jti: str) -> str:
+def blacklist_key(jti: str) -> str:
+    """Redis key under which a revoked or single-use token ``jti`` is stored."""
+
     return f"{_BLACKLIST_KEY_PREFIX}{jti}"
 
 
@@ -168,12 +215,25 @@ async def blacklist_token(jti: str, ttl_seconds: int, *, reason: str = "revoked"
     if ttl_seconds <= 0:
         return
 
-    async with settings.get_redis() as redis:
-        await redis.set(_blacklist_key(jti), reason, ex=ttl_seconds)
+    try:
+        async with settings.get_redis() as redis:
+            await redis.set(blacklist_key(jti), reason, ex=ttl_seconds)
+    except Exception as exc:
+        logger.error("Token blacklist write failed: %s", exc)
+        raise ServiceUnavailableError("Authentication service temporarily unavailable") from exc
 
 
 async def is_token_blacklisted(jti: str) -> bool:
-    """Return whether ``jti`` has been revoked and hasn't expired yet."""
+    """
+    Return whether ``jti`` has been revoked and hasn't expired yet.
 
-    async with settings.get_redis() as redis:
-        return await redis.exists(_blacklist_key(jti)) > 0
+    Fails closed: if Redis cannot answer, the request gets a 503 rather than
+    letting a possibly revoked token through (or an opaque 500).
+    """
+
+    try:
+        async with settings.get_redis() as redis:
+            return await redis.exists(blacklist_key(jti)) > 0
+    except Exception as exc:
+        logger.error("Token blacklist lookup failed: %s", exc)
+        raise ServiceUnavailableError("Authentication service temporarily unavailable") from exc

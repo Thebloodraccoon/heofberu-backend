@@ -29,7 +29,7 @@ class TestClassCrud:
         assert body["spellcasting_ability"] is None
 
     async def test_gm_can_create_caster_class(self, client, gm_token, create_skill):
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
 
         response = await client.post(
             "/classes",
@@ -202,7 +202,7 @@ class TestClassCrud:
 
     async def test_gm_can_set_available_skills(self, client, gm_token, create_class, create_skill):
         character_class = await create_class(name="Skillful")
-        skill = await create_skill(key="PERSUASION", name="Persuasion", ability="CHA")
+        skill = await create_skill(name="Persuasion", ability="CHA")
 
         response = await client.put(
             f"/classes/{character_class.id}/available-skills",
@@ -225,7 +225,7 @@ class TestClassCrud:
 
         assert response.status_code == 200
 
-    async def test_set_spell_slots_invalid_level_returns_400(self, client, gm_token, create_class):
+    async def test_set_spell_slots_invalid_level_returns_422(self, client, gm_token, create_class):
         character_class = await create_class(name="Wizard", spellcasting_ability="INT")
 
         response = await client.put(
@@ -235,7 +235,7 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_gm_can_create_class_with_armor_proficiencies(self, client, gm_token):
         response = await client.post(

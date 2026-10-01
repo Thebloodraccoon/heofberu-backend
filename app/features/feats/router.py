@@ -1,8 +1,9 @@
 """Assembled ``/feats`` router."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.features.feats.crud.router import router as crud_router
+from app.features.feats.dependencies import require_feat
 from app.features.features.effects.router import router as effects_router
 
 router = APIRouter()
@@ -10,9 +11,7 @@ router = APIRouter()
 router.include_router(crud_router, prefix="/feats", tags=["Feats"])
 
 # A feat IS a Feature (source_type=FEAT) — reuse the feature engine's effect
-# endpoints verbatim rather than reimplementing skill/save/armor/weapon/spell
-# effect CRUD for feats. FeatureEffectsService is source_type-agnostic, so
-# mounting the same router under /feats just gives feats a discoverable
-# write surface for effects beyond the ASI choice (e.g. Skilled's 3 skill
-# picks, Magic Initiate's granted spells) at their own path.
-router.include_router(effects_router, prefix="/feats", tags=["Feats"])
+# endpoints rather than reimplementing effect CRUD for feats. The engine is
+# source_type-agnostic, so ``require_feat`` keeps this mount from reaching
+# class/race/background features through a ``/feats`` URL.
+router.include_router(effects_router, prefix="/feats", tags=["Feats"], dependencies=[Depends(require_feat)])

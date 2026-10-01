@@ -2,6 +2,8 @@
 
 import pytest
 
+from app.models import CharacterASIChoice
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -105,6 +107,23 @@ class TestFeatCrud:
 
         assert response.status_code == 409
         assert (await client.get(f"/feats/{feat.id}")).status_code == 200
+
+    async def test_delete_feat_referenced_only_by_an_asi_log_row_returns_409(
+        self, client, db_session, founder_token, player, create_class, create_character, create_feat
+    ):
+        feat = await create_feat(name="Logged Feat")
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        db_session.add(
+            CharacterASIChoice(character_id=character.id, class_level=4, choice_type="FEAT", feat_id=feat.id)
+        )
+        await db_session.commit()
+        feat_id = feat.id
+
+        response = await client.delete(f"/feats/{feat_id}", headers={"Authorization": f"Bearer {founder_token}"})
+
+        assert response.status_code == 409
+        assert (await client.get(f"/feats/{feat_id}")).status_code == 200
 
     async def test_feats_have_no_feature_endpoints(self, client, gm_token, create_feat):
         """Feats own no nested feature collection — a feat IS a feature, so the nested endpoints are gone."""

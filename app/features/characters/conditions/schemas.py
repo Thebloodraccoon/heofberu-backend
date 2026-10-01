@@ -1,8 +1,13 @@
 """Schemas for conditions on a character."""
 
+from typing import Annotated
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.constants import ConditionType
+from app.features.characters.schemas import PatchModel
+
+ConditionSource = Annotated[str, Field(max_length=1_000)]
 
 
 class CharacterConditionAdd(BaseModel):
@@ -10,7 +15,7 @@ class CharacterConditionAdd(BaseModel):
 
     condition: ConditionType
     exhaustion_level: int | None = Field(default=None, ge=1, le=6)
-    source: str = ""
+    source: ConditionSource = ""
 
     @model_validator(mode="after")
     def _validate_exhaustion_level(self):
@@ -23,11 +28,16 @@ class CharacterConditionAdd(BaseModel):
         return self
 
 
-class CharacterConditionUpdate(BaseModel):
-    """Change a condition's ``exhaustion_level`` or ``source`` (the condition itself is fixed by the path)."""
+class CharacterConditionUpdate(PatchModel):
+    """
+    Change a condition's ``exhaustion_level`` or ``source`` (the condition
+    itself is fixed by the query). ``source`` cannot be ``null``.
+    """
+
+    nullable_fields = frozenset({"exhaustion_level"})
 
     exhaustion_level: int | None = Field(default=None, ge=1, le=6)
-    source: str | None = None
+    source: ConditionSource | None = None
 
 
 class CharacterConditionResponse(BaseModel):

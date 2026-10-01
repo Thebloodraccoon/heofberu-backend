@@ -29,7 +29,7 @@ class TestGmProficiencyChecksSeeFeatureGrants:
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
     ):
         character = await create_character(owner_id=gm.id, class_id=(await create_class(name="Rogue")).id)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Sneaky", source_type="CLASS", level=None)
         await _grant_feature_with_effects(
             client, gm_token, character.id, feature.id, {"skill_effects": [{"skill_id": skill.id}]}
@@ -51,7 +51,7 @@ class TestGmProficiencyChecksSeeFeatureGrants:
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
     ):
         character = await create_character(owner_id=gm.id, class_id=(await create_class(name="Rogue")).id)
-        skill = await create_skill(key="ACROBATICS", name="Acrobatics", ability="DEX")
+        skill = await create_skill(name="Acrobatics", ability="DEX")
         feature = await create_feature(name="Nimble", source_type="CLASS", level=None)
         await _grant_feature_with_effects(
             client, gm_token, character.id, feature.id, {"skill_effects": [{"skill_id": skill.id}]}

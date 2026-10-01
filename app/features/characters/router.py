@@ -29,4 +29,3 @@ router.include_router(backstory_router, prefix="/characters", tags=["Characters 
 router.include_router(progression_router, prefix="/characters", tags=["Characters Progression"])
 router.include_router(gm_panel_router, prefix="/characters", tags=["Characters GM Panel"])
 router.include_router(grants_router, prefix="/characters", tags=["Characters Feature Grants"])
-

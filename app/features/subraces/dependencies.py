@@ -13,10 +13,10 @@ from app.features.subraces.image.service import SubraceImageService
 from app.features.subraces.tags.service import SubraceTagService
 
 
-def get_subrace_crud_service(db: DatabaseDep) -> SubraceCrudService:
+def get_subrace_crud_service(db: DatabaseDep, storage: StorageServiceDep) -> SubraceCrudService:
     """Get the subrace CRUD service instance."""
 
-    return SubraceCrudService(db)
+    return SubraceCrudService(db, storage)
 
 
 SubraceCrudDep = Annotated[SubraceCrudService, Depends(get_subrace_crud_service)]

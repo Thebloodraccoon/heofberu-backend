@@ -207,9 +207,7 @@ class TestArticleRelations:
             )
         ).json()
 
-        response = await client.delete(
-            f"/articles/{from_article['id']}/relations/{relation['id']}", headers=headers
-        )
+        response = await client.delete(f"/articles/{from_article['id']}/relations/{relation['id']}", headers=headers)
 
         assert response.status_code == 204
 

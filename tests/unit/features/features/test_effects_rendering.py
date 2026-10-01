@@ -225,7 +225,7 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        assert "владение навыком «Атлетика», спасбросок Ловкость" in text
+        assert "владение навыком «Атлетика», спасбросок Ловкости" in text
 
     def test_static_and_choices_separated_by_blank_line(self):
         feature = _feature(
@@ -241,3 +241,78 @@ class TestChoiceGroupsSummary:
     def test_no_choice_groups_omits_the_block_entirely(self):
         text = render_effects_summary(_feature(ability_effects=[_ability(AbilityScore.STR, 1)]))
         assert "У вас есть выбор" not in text
+
+
+@pytest.mark.unit
+class TestSignedAmounts:
+    def test_negative_amount_is_rendered_with_a_minus_not_plus_minus(self):
+        text = render_effects_summary(_feature(ability_effects=[_ability(AbilityScore.CHA, -1)]))
+        assert "Харизма -1" in text
+        assert "+-" not in text
+
+    def test_positive_and_negative_amounts_are_signed(self):
+        text = render_effects_summary(
+            _feature(ability_effects=[_ability(AbilityScore.STR, 2), _ability(AbilityScore.DEX, -2)])
+        )
+        assert "Сила +2, Ловкость -2" in text
+
+    def test_zero_amount_with_cap_raise(self):
+        text = render_effects_summary(_feature(ability_effects=[_ability(AbilityScore.STR, 0, new_cap=24)]))
+        assert "Сила +0 (потолок 24)" in text
+
+
+@pytest.mark.unit
+class TestSavingThrowCaseInOptions:
+    @pytest.mark.parametrize(
+        ("ability", "expected"),
+        [
+            (AbilityScore.STR, "спасбросок Силы"),
+            (AbilityScore.DEX, "спасбросок Ловкости"),
+            (AbilityScore.CON, "спасбросок Телосложения"),
+            (AbilityScore.INT, "спасбросок Интеллекта"),
+            (AbilityScore.WIS, "спасбросок Мудрости"),
+            (AbilityScore.CHA, "спасбросок Харизмы"),
+        ],
+    )
+    def test_option_saving_throw_uses_genitive(self, ability, expected):
+        feature = _feature(choice_groups=[_group(options=[_option(saving_throw_effects=[_save(ability)])])])
+        assert expected in render_effects_summary(feature)
+
+
+@pytest.mark.unit
+class TestHtmlEscaping:
+    def test_skill_name_is_escaped(self):
+        skill = SimpleNamespace(name='<img src=x onerror="alert(1)">')
+        text = render_effects_summary(_feature(skill_effects=[_skill(1, skill=skill)]))
+        assert "<img" not in text
+        assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in text
+
+    def test_item_name_is_escaped(self):
+        item = SimpleNamespace(name="Sword & <b>Board</b>")
+        text = render_effects_summary(_feature(weapon_effects=[_weapon(item_id=1, item=item)]))
+        assert "Sword &amp; &lt;b&gt;Board&lt;/b&gt;" in text
+
+    def test_spell_link_name_is_escaped_and_markup_kept(self):
+        spell = SimpleNamespace(name="</a><script>x</script>")
+        text = render_effects_summary(_feature(spell_effects=[_spell(spell_id=4, spell=spell)]))
+        assert "<script>" not in text
+        assert '<a href="/spells/4">&lt;/a&gt;&lt;script&gt;x&lt;/script&gt;</a>' in text
+
+    def test_names_inside_choice_options_are_escaped(self):
+        skill = SimpleNamespace(name="<i>x</i>")
+        spell = SimpleNamespace(name="A&B")
+        feature = _feature(
+            choice_groups=[
+                _group(
+                    options=[_option(skill_effects=[_skill(1, skill=skill)]), _option(spell_effects=[_spell(2, spell)])]
+                )
+            ]
+        )
+        text = render_effects_summary(feature)
+        assert "<i>" not in text
+        assert "владение навыком «&lt;i&gt;x&lt;/i&gt;»" in text
+        assert "заклинание «A&amp;B»" in text
+
+    def test_plain_cyrillic_names_are_untouched(self):
+        skill = SimpleNamespace(name="Скрытность")
+        assert "«Скрытность»" in render_effects_summary(_feature(skill_effects=[_skill(1, skill=skill)]))

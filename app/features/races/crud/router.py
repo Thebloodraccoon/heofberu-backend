@@ -6,9 +6,10 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.constants import RaceSize
 from app.core.base.service import Page
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.races.crud.schemas import RaceCreate, RaceGetAllResponse, RaceResponse, RaceUpdate
 from app.features.races.dependencies import RaceCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -41,7 +42,7 @@ async def get_races(
         404: {"description": "Race with id not found."},
     },
 )
-async def get_race(race_id: int, race_service: RaceCrudDep):
+async def get_race(race_id: EntityIdPath, race_service: RaceCrudDep):
     """Return a single race by ID with full detail. Open endpoint."""
 
     return await race_service.get_by_id(race_id)
@@ -53,7 +54,7 @@ async def get_race(race_id: int, race_service: RaceCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a race",
     responses={
-        409: {"description": "A race with this name already exists."},
+        400: {"description": "A race with this name already exists."},
     },
 )
 async def create_race(
@@ -98,11 +99,11 @@ async def create_race(
     summary="Update a race's base fields",
     responses={
         404: {"description": "No race exists with the given ID."},
-        409: {"description": "Another race already uses the requested name."},
+        400: {"description": "Another race already uses the requested name."},
     },
 )
 async def update_race(
-    race_id: int,
+    race_id: EntityIdPath,
     data: Annotated[
         RaceUpdate,
         Body(
@@ -138,7 +139,7 @@ async def update_race(
         409: {"description": "Race is still in use by one or more characters."},
     },
 )
-async def delete_race(race_id: int, race_service: RaceCrudDep, _: FounderDep):
+async def delete_race(race_id: EntityIdPath, race_service: RaceCrudDep, _: FounderDep):
     """Delete a race. **Founder only.**"""
 
     await race_service.delete(race_id)

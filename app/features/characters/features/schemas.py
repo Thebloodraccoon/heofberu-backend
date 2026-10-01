@@ -1,6 +1,6 @@
 """Response schemas for a character's granted (non-feat) features."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import FeatureSourceType, GrantSource
 from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
@@ -27,7 +27,7 @@ class CharacterFeatureBriefResponse(BaseModel):
 class CharacterFeatureResponse(BaseModel):
     """
     Aggregates a character's feature grant with a brief feature summary,
-    everything it materialized on the character (``effects``), and the
+    everything it applies to the character (``effects``), and the
     player's resolved picks for its choice groups (``choices``).
     """
 
@@ -38,5 +38,5 @@ class CharacterFeatureResponse(BaseModel):
     feature_id: int
     grant_source: GrantSource = GrantSource.AUTO
     feature: CharacterFeatureBriefResponse
-    effects: GrantEffectsResponse = GrantEffectsResponse()
-    choices: list[ChosenOptionResponse] = []
+    effects: GrantEffectsResponse = Field(default_factory=GrantEffectsResponse)
+    choices: list[ChosenOptionResponse] = Field(default_factory=list)

@@ -4,10 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.auth.dependencies import GmUserDep
 from app.features.classes.crud.schemas import ClassResponse
 from app.features.classes.dependencies import ClassSkillsDep
 from app.features.classes.skills.schemas import AvailableSkillsUpdate
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

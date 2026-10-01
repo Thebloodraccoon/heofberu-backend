@@ -328,8 +328,7 @@ class TestPerAbilityCap:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "label": "Ability Score Increase",
-                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 2}]}],
+                        "options": [{"ability_effects": [{"ability": "STR", "amount": 2}]}],
                     }
                 ]
             },
@@ -360,8 +359,7 @@ class TestPerAbilityCap:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "label": "Ability Score Increase",
-                        "options": [{"label": "STR", "ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
                     }
                 ]
             },

@@ -10,7 +10,7 @@ from app.features.articles.relations.schemas import (
     ArticleRelationResponse,
     ArticleRelationUpdate,
 )
-from app.features.users.security import GmUserDep, OptionalUserDep, can_see_hidden
+from app.features.auth.dependencies import GmUserDep, OptionalUserDep, can_see_hidden
 
 router = APIRouter()
 
@@ -58,7 +58,11 @@ async def create_article_relation(
                 },
                 "located_in": {
                     "summary": "This article is located in another",
-                    "value": {"to_article_id": 4, "relation_type": "LOCATED_IN", "note": "Deep beneath the Misty Mountains."},
+                    "value": {
+                        "to_article_id": 4,
+                        "relation_type": "LOCATED_IN",
+                        "note": "Deep beneath the Misty Mountains.",
+                    },
                 },
                 "secret_membership": {
                     "summary": "Secret membership, hidden from players",
@@ -124,7 +128,9 @@ async def update_article_relation(
     summary="Remove a relation",
     responses={404: {"description": "No article or relation exists with the given IDs."}},
 )
-async def delete_article_relation(article_id: int, relation_id: int, article_service: ArticleRelationsDep, _: GmUserDep):
+async def delete_article_relation(
+    article_id: int, relation_id: int, article_service: ArticleRelationsDep, _: GmUserDep
+):
     """Remove a single relation touching the article (either direction). **GM only.**"""
 
     await article_service.delete_relation(article_id, relation_id)

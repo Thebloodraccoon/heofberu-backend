@@ -44,7 +44,7 @@ class TestMultiGrantDedup:
         the other's.
         """
 
-        skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill = await create_skill(name="Perception", ability="WIS")
         character_class = await create_class(name="Fighter")
         race = await create_race(name="Human")
 
@@ -100,7 +100,7 @@ class TestMultiGrantExpertiseIndependence:
         ``on_keep`` touch the other's row, or merge/OR them).
         """
 
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         character_class = await create_class(name="Rogue")
         race = await create_race(name="Halfling")
 
@@ -165,7 +165,7 @@ class TestMultiGrantSyncPreservesSiblingRows:
         new class grant's row is added in the same call.
         """
 
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
         character_class = await create_class(name="Wizard")
         race = await create_race(name="Gnome")
 

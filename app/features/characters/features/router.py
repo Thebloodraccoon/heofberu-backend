@@ -6,9 +6,9 @@ and live in ``app.features.characters.gm_panel.features``.
 
 from fastapi import APIRouter
 
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterFeatureServiceDep
 from app.features.characters.features.schemas import CharacterFeatureResponse
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 

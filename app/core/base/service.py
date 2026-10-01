@@ -6,19 +6,20 @@ top of :class:`BaseRepository`), the paginated :class:`Page` envelope, and
 the schema type variables services bind to.
 
 Async stack: every orchestration method is ``async`` (repository calls are
-awaited); ``_atomic`` wraps multistep writes in a savepoint transaction.
+awaited); ``_atomic`` / ``_unit_of_work`` wrap multistep writes in one
+transaction (see ``app.core.base.transaction``).
 """
 
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Generic
 
 from pydantic import BaseModel
 from sqlalchemy import inspect
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import TypeVar
 
 from app.core.base.repository import BaseRepository, ModelType
+from app.core.base.transaction import UnitOfWork, after_commit, atomic, unit_of_work
 from app.core.cache.invalidation import invalidate
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 
@@ -32,26 +33,6 @@ ItemSchema = TypeVar("ItemSchema", bound=BaseModel)
 ResolvedItem = TypeVar("ResolvedItem")
 
 
-@asynccontextmanager
-async def atomic(db: AsyncSession) -> AsyncGenerator[None, None]:
-    """
-    Wrap a multistep write on ``db`` in a single all-or-nothing transaction.
-
-    Every repository write inside the ``async with`` block MUST pass
-    ``commit=False``. Commits once on success; rolls back and re-raises on
-    any exception. This is the single shared implementation — both
-    ``BaseService._atomic`` and character sub-domain services delegate here.
-    """
-
-    try:
-        async with db.begin_nested():
-            yield
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
-
-
 class Page(BaseModel, Generic[ItemSchema]):
     """Generic ``{items, total, page, size}`` envelope for a paginated listing."""
 
@@ -61,11 +42,20 @@ class Page(BaseModel, Generic[ItemSchema]):
     size: int
 
 
-def paginate(page: int, size: int) -> tuple[int, int]:
-    """Convert a 1-indexed ``(page, size)`` into the repository's 0-indexed ``(skip, limit)``."""
+MAX_PAGE_SIZE = 1000
 
-    skip = (page - 1) * size
-    return skip, size
+
+def paginate(page: int, size: int) -> tuple[int, int]:
+    """
+    Convert a 1-indexed ``(page, size)`` into the repository's 0-indexed ``(skip, limit)``.
+
+    Defensive clamp: ``page >= 1`` and ``1 <= size <= MAX_PAGE_SIZE`` even if a
+    router forgot to bound the query parameters.
+    """
+
+    page = max(page, 1)
+    size = min(max(size, 1), MAX_PAGE_SIZE)
+    return (page - 1) * size, size
 
 
 class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):
@@ -84,10 +74,12 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     Caching: services that should be cached transparently declare
     ``cache_namespaces`` and decorate read methods with
-    ``app.crud.cache.use_cache``. Every write here
+    ``app.core.cache.use_cache``. Every write here
     (:meth:`create`/:meth:`update`/:meth:`delete`) purges those namespaces
     automatically via :meth:`_invalidate_cache`; subclasses with compound
-    write methods must call ``self._invalidate_cache()`` themselves.
+    write methods must call ``self._invalidate_cache()`` themselves. Inside
+    :meth:`_atomic` / :meth:`_unit_of_work` the purge is deferred until the
+    transaction has committed.
 
     Example::
 
@@ -106,11 +98,8 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     cache_namespaces: tuple[str, ...] = ()
 
-    # Optional default ordering for ``get_all`` listings: the NAME of the
-    # model column to order by (e.g. ``"name"`` for alphabetical catalog
-    # listings). Set to ``None`` to keep the default ``model.id`` order.
-    # Stored as a string (not a resolved column) so it never embeds a
-    # mapped ``InstrumentedAttribute`` as a class attribute.
+    # NAME of the model column ``get_all`` listings are ordered by (e.g. ``"name"``);
+    # ``None`` keeps ``model.id`` order. A string so no mapped attribute lives on the class.
     get_all_order_by: str | None = None
 
     def __init__(
@@ -251,8 +240,18 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         return result
 
     async def _invalidate_cache(self) -> None:
-        """Purge all cached entries for this service's namespaces after a write."""
+        """
+        Purge all cached entries for this service's namespaces after a write.
 
+        Inside :meth:`_atomic` / :meth:`_unit_of_work` the purge runs only
+        after the transaction commits (and is dropped on rollback); outside
+        it runs immediately, the repository having already committed.
+        """
+
+        if self.cache_namespaces:
+            await after_commit(self.repository.db, self._purge_namespaces)
+
+    async def _purge_namespaces(self) -> None:
         for namespace in self.cache_namespaces:
             await invalidate(namespace)
 
@@ -284,7 +283,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     @staticmethod
     async def resolve_ids(
-        lookup_fn: Callable[[list[int]], list[ResolvedItem]], ids: list[int], model_name: str
+        lookup_fn: Callable[[list[int]], Awaitable[list[ResolvedItem]]], ids: list[int], model_name: str
     ) -> list[ResolvedItem]:
         """Resolve ``ids`` via ``lookup_fn``, raising ``RecordIdsInvalidError`` if any don't resolve."""
 
@@ -306,13 +305,17 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         Wrap a multistep write in a single all-or-nothing transaction.
 
         Every repository write inside the ``async with`` block MUST pass
-        ``commit=False``. Commits once on success; rolls back and
-        re-raises on any exception.
-
-        See also: ``BaseRepository._commit_or_rollback`` for the single-write
-        case — use that (indirectly, via ``commit=True``) when only one
-        repository call is involved; use ``_atomic()`` when more than one is.
+        ``commit=False``. Commits once on success and then runs the deferred
+        cache purges; rolls back and re-raises on any exception. For a single
+        repository call, ``commit=True`` (the default) is enough.
         """
 
         async with atomic(self.repository.db):
             yield
+
+    @asynccontextmanager
+    async def _unit_of_work(self) -> AsyncGenerator[UnitOfWork, None]:
+        """:meth:`_atomic` that yields a :class:`UnitOfWork` for scheduling post-commit work."""
+
+        async with unit_of_work(self.repository.db) as uow:
+            yield uow

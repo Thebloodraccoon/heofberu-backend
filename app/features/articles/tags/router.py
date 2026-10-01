@@ -6,8 +6,8 @@ from fastapi import APIRouter, Body
 
 from app.features.articles.crud.schemas import ArticleResponse
 from app.features.articles.dependencies import ArticleTagsDep
+from app.features.auth.dependencies import GmUserDep
 from app.features.shared.tags.schemas import TagsUpdate
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 

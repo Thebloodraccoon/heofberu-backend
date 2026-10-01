@@ -41,10 +41,9 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
     ) -> list[CharacterSpellSlot]:
         """
         Sync the character's ``total`` per level to ``slots_by_level``
-        (from the class/level spell-slot progression): upsert each row,
-        clamp ``used`` down to the new ``total`` if needed, and zero rows
-        for levels the character no longer has (rather than delete them,
-        keeping history stable — "0 total = no slots").
+        (from the class/level spell-slot progression): upsert each row and
+        zero rows for levels the character no longer has (rather than delete
+        them, keeping history stable — "0 total = no slots").
         """
 
         existing = {slot.spell_level: slot for slot in await self.get_all_spell_slots(character_id)}
@@ -52,23 +51,13 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
         for level, total in slots_by_level.items():
             slot = existing.get(level)
             if slot is None:
-                self.db.add(
-                    CharacterSpellSlot(
-                        character_id=character_id,
-                        spell_level=level,
-                        total=total,
-                        used=0,
-                    )
-                )
+                self.db.add(CharacterSpellSlot(character_id=character_id, spell_level=level, total=total))
             else:
                 slot.total = total
-                if slot.used > total:
-                    slot.used = total
 
         for level, slot in existing.items():
             if level not in slots_by_level:
                 slot.total = 0
-                slot.used = 0
 
         if commit:
             await self.commit_or_flush()
@@ -77,7 +66,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
 
         return await self.get_all_spell_slots(character_id)
 
-    async def reset_all_spell_slots(self, character_id: int) -> None:
+    async def reset_all_spell_slots(self, character_id: int, *, commit: bool = True) -> None:
         """Set used=0 for every spell slot entry of the character (long rest)."""
 
         await self.db.execute(
@@ -85,7 +74,7 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
             .where(CharacterSpellSlot.character_id == character_id)
             .values({CharacterSpellSlot.used: 0})
         )
-        await self.commit_or_flush()
+        await self.commit_or_flush(commit=commit)
 
 
 class CharacterSpellRepository(BaseRepository[CharacterSpell]):
@@ -124,28 +113,18 @@ class CharacterSpellRepository(BaseRepository[CharacterSpell]):
         return result.scalar_one_or_none()
 
     async def add_known_spell(self, character_id: int, spell_id: int) -> CharacterSpell:
-        """Add a spell to the character's known spells."""
+        """Add a spell to the character's known spells (flushed; the caller commits)."""
 
         character_spell = CharacterSpell(character_id=character_id, spell_id=spell_id)
         self.db.add(character_spell)
-        await self.commit_or_flush()
+        await self.db.flush()
+        return character_spell
 
-        result = await self.db.execute(
-            select(CharacterSpell)
-            .options(*self._spell_load_options())
-            .where(
-                CharacterSpell.character_id == character_id,
-                CharacterSpell.spell_id == spell_id,
-            )
-        )
-        return result.scalar_one()
-
-    async def remove_known_spell(self, character_spell: CharacterSpell) -> bool:
-        """Remove a spell from the character's known spells."""
+    async def remove_known_spell(self, character_spell: CharacterSpell) -> None:
+        """Remove a spell from the character's known spells (flushed; the caller commits)."""
 
         await self.db.delete(character_spell)
-        await self.commit_or_flush()
-        return True
+        await self.db.flush()
 
     async def clear_known_spells(self, character_id: int, *, commit: bool = True) -> None:
         """
@@ -213,24 +192,25 @@ class CharacterGrantedSpellRepository(BaseRepository[CharacterGrantedSpell]):
         )
         return result.scalar_one_or_none()
 
+    async def get_spell(self, spell_id: int) -> Spell | None:
+        """Fetch a plain ``Spell`` row (no availability relationships), or ``None``."""
+
+        return await self.db.get(Spell, spell_id)
+
     async def add_granted_spell(self, character_id: int, spell_id: int) -> CharacterGrantedSpell:
         """
         Grant a spell directly to a character (a free-form, GM-authored
-        grant — no feature/feat behind it; only the GM removes it).
+        grant — no feature/feat behind it; only the GM removes it). Flushed;
+        the caller commits.
         """
 
         row = CharacterGrantedSpell(character_id=character_id, spell_id=spell_id)
         self.db.add(row)
-        await self.commit_or_flush()
+        await self.db.flush()
+        return row
 
-        result = await self.db.execute(
-            select(CharacterGrantedSpell).options(*self._spell_load_options()).where(CharacterGrantedSpell.id == row.id)
-        )
-        return result.scalar_one()
-
-    async def remove_granted_spell(self, row: CharacterGrantedSpell) -> bool:
-        """Remove a granted-spell row from a character."""
+    async def remove_granted_spell(self, row: CharacterGrantedSpell) -> None:
+        """Remove a granted-spell row from a character (flushed; the caller commits)."""
 
         await self.db.delete(row)
-        await self.commit_or_flush()
-        return True
+        await self.db.flush()

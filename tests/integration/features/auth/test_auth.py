@@ -3,6 +3,7 @@
 import pytest
 
 from app.core.security.token import decode_token, is_token_blacklisted
+from app.features.users.repository import UserRepository
 
 
 @pytest.mark.integration
@@ -17,7 +18,8 @@ class TestRegister:
         assert response.status_code == 201
         body = response.json()
         assert "access_token" in body
-        assert decode_token(body["access_token"])["sub"] == "newbie@example.com"
+        created = await UserRepository(db_session).get_by_email("newbie@example.com")
+        assert decode_token(body["access_token"])["sub"] == str(created.id)
 
     async def test_register_sets_refresh_cookie(self, client):
         response = await client.post(

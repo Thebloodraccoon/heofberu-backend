@@ -9,12 +9,15 @@ class/subclass/race/subrace/background feature.
 """
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ChoiceType, FeatureSourceType
 from app.core.base.repository import BaseRepository
+from app.core.db_errors import is_unique_violation
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.features.crud.repository import feature_summary_loads
+from app.models.character.character_asi_choice_model import CharacterASIChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.features.feature_engine_models import (
     FeatureAbilityScoreEffect,
@@ -23,15 +26,18 @@ from app.models.features.feature_engine_models import (
 )
 from app.models.features.feature_model import Feature
 
-# Same full engine-effect-tree eager load ``/features`` uses: a feat's
-# ``FeatResponse`` exposes ``static_groups``/``effects_summary`` (plain
-# ``Feature`` properties reading every fixed-effect relationship and the
-# choice-group tree), so ``get_by_id`` needs the whole tree loaded up
-# front — anything narrower lazy-loads during response serialization and
-# 500s in the async engine. ``FeatGetAllResponse`` no longer needs this:
-# ``has_static_effects``/``has_choices`` are real columns, column-selected
-# directly by ``FeatCrudService.get_all``.
-_FEAT_LOAD_OPTIONS = feature_summary_loads()
+
+def _feat_scope(filters: dict | None) -> dict:
+    """``filters`` pinned to FEAT-source rows."""
+
+    return {**(filters or {}), "source_type": FeatureSourceType.FEAT}
+
+
+def _raise_if_name_conflict(exc: IntegrityError, data: dict) -> None:
+    """Turn a unique violation (a concurrent duplicate name) into ``RecordAlreadyExistsError``."""
+
+    if is_unique_violation(exc) and data.get("name") is not None:
+        raise RecordAlreadyExistsError(model_name="Feat", field="name", value=data["name"]) from exc
 
 
 def feat_ability_score_effects(feature: Feature) -> list[FeatureAbilityScoreEffect]:
@@ -39,7 +45,7 @@ def feat_ability_score_effects(feature: Feature) -> list[FeatureAbilityScoreEffe
     The flattened list of a FEAT feature's ability-score-increase
     alternatives, in display order — one entry per option in its (at most
     one) choice group. Requires ``choice_groups.options.ability_effects``
-    eager-loaded (see ``_FEAT_LOAD_OPTIONS``). Shared by the feat CRUD
+    eager-loaded (see ``feature_summary_loads``). Shared by the feat CRUD
     response builder and the character-side grant validation, so both read
     the same "what can this feat's ASI pick be" logic.
     """
@@ -64,14 +70,21 @@ class FeatRepository(BaseRepository[Feature]):
         super().__init__(
             Feature,
             db,
-            default_load_options=_FEAT_LOAD_OPTIONS,
             search_fields=["name"],
             unique_fields=["name"],
             check_in_use_on_delete=True,
         )
 
     async def get_by_id(self, model_id: int) -> Feature | None:
-        """Fetch a FEAT-source feature by id, or ``None`` (including when it exists but isn't a FEAT)."""
+        """
+        Fetch a FEAT-source feature with its whole effect tree, or ``None``
+        (including when it exists but isn't a FEAT).
+
+        A feat's response exposes ``static_groups``/``effects_summary`` (plain
+        ``Feature`` properties reading every effect relationship and the
+        choice-group tree), so anything narrower would lazy-load during
+        serialization and fail on the async engine.
+        """
 
         result = await self.db.execute(
             select(Feature)
@@ -81,17 +94,29 @@ class FeatRepository(BaseRepository[Feature]):
         )
         return result.scalars().first()
 
-    async def get_all(self, *, skip=0, limit=100, filters=None, search=None, order_by=None):
-        """List FEAT-source features only (see :class:`BaseRepository`)."""
+    async def get_row(self, model_id: int) -> Feature | None:
+        """Fetch the FEAT-source feature row alone, without its effect tree (enough for update/delete)."""
 
-        filters = {**(filters or {}), "source_type": FeatureSourceType.FEAT}
-        return await super().get_all(skip=skip, limit=limit, filters=filters, search=search, order_by=order_by)
+        result = await self.db.execute(
+            select(Feature).where(Feature.id == model_id, Feature.source_type == FeatureSourceType.FEAT)
+        )
+        return result.scalars().first()
+
+    async def exists_by_id(self, model_id: int) -> bool:
+        """Whether ``model_id`` is a FEAT-source feature."""
+
+        stmt = select(Feature.id).where(Feature.id == model_id, Feature.source_type == FeatureSourceType.FEAT)
+        return await self.db.scalar(stmt.limit(1)) is not None
+
+    async def get_brief(self, *columns, filters=None, **kwargs) -> list:
+        """Column-select page of FEAT-source features only (see :class:`BaseRepository`)."""
+
+        return await super().get_brief(*columns, filters=_feat_scope(filters), **kwargs)
 
     async def count(self, *, filters=None, search=None) -> int:
         """Count FEAT-source features only (see :class:`BaseRepository`)."""
 
-        filters = {**(filters or {}), "source_type": FeatureSourceType.FEAT}
-        return await super().count(filters=filters, search=search)
+        return await super().count(filters=_feat_scope(filters), search=search)
 
     async def _check_uniqueness(self, data, exclude_id: int | None = None) -> None:
         """
@@ -115,12 +140,40 @@ class FeatRepository(BaseRepository[Feature]):
     async def create(self, obj_data: dict, *, commit: bool = True) -> Feature:
         """Create a FEAT-source feature (``source_type`` is pinned, never taken from the payload)."""
 
-        return await super().create({**obj_data, "source_type": FeatureSourceType.FEAT}, commit=commit)
+        try:
+            return await super().create({**obj_data, "source_type": FeatureSourceType.FEAT}, commit=commit)
+        except IntegrityError as exc:
+            _raise_if_name_conflict(exc, obj_data)
+            raise
+
+    async def update(self, db_obj: Feature, update_data: dict, *, refresh: bool = False) -> Feature:
+        """Apply ``update_data``; a concurrent duplicate name surfaces as ``RecordAlreadyExistsError``."""
+
+        try:
+            return await super().update(db_obj, update_data, refresh=refresh)
+        except IntegrityError as exc:
+            _raise_if_name_conflict(exc, update_data)
+            raise
 
     async def is_in_use(self, feat_id: int) -> bool:
-        """Check whether the feat is currently granted to any character, which blocks deletion."""
+        """Check whether a character holds the feat or an ASI log row points at it (both block deletion)."""
 
-        return await self.exists_referencing(CharacterFeature, "feature_id", feat_id)
+        return await self.exists_referencing(CharacterFeature, "feature_id", feat_id) or await self.exists_referencing(
+            CharacterASIChoice, "feat_id", feat_id
+        )
+
+    async def delete(self, db_obj: Feature) -> bool:
+        """
+        Delete the feat unless a character holds it.
+
+        ``character_features.feature_id`` cascades, so a grant slipping in
+        between the guard and the DELETE would be wiped silently. Locking the
+        feature row first makes a concurrent grant (which takes a key-share
+        lock on it) wait for this transaction.
+        """
+
+        await self.db.execute(select(Feature.id).where(Feature.id == db_obj.id).with_for_update())
+        return await super().delete(db_obj)
 
     async def set_ability_score_increases(
         self, feat: Feature, increases: list[dict], *, commit: bool = True

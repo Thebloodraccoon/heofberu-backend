@@ -145,6 +145,20 @@ class CharacterItemNotFoundException(AppError):
         super().__init__(f"Character {character_id} owns no item stack with id {character_item_id}.")
 
 
+class CharacterItemQuantityLimitException(AppError):
+    """Raised when merging an added quantity into a stack would exceed the per-stack limit."""
+
+    status_code = 400
+
+    def __init__(self, character_id: int, item_id: int, limit: int):
+        """Record the character, item and the per-stack limit."""
+
+        self.character_id = character_id
+        self.item_id = item_id
+        self.limit = limit
+        super().__init__(f"Character {character_id}'s stack of item {item_id} cannot exceed {limit}.")
+
+
 class CharacterGrantedSpellNotFoundException(AppError):
     """Raised when the GM never granted the given spell to the character directly."""
 

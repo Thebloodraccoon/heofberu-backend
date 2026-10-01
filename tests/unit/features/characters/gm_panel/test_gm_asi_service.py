@@ -3,16 +3,18 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from pydantic import ValidationError
 import pytest
 
 from app.constants import AbilityScore, ASILevelChoice
-from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd, GmAsiIncreaseItem
+from app.features.characters.feats.exceptions import AbilityScoreCapExceededException
+from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd
+from app.features.characters.gm_panel.asi.schemas import GmAsiIncreaseInput as GmAsiIncreaseItem
 from app.features.characters.gm_panel.asi.service import GmPanelAsiService
 from app.features.characters.gm_panel.exceptions import (
     GmAsiAdjustmentNotFoundException,
     LevelTiedAsiChoiceException,
 )
-from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
 from app.models.character.character_model import Character
 from tests.unit.fakes import FakeAsyncSession
 
@@ -47,34 +49,28 @@ TOTALS = {
 
 
 class FakeStatsService:
-    """Stands in for CharacterStatsService with precomputed totals/caps."""
+    """Stands in for CharacterStatsService: ``refresh`` returns the totals as they stand after the write."""
 
-    def __init__(self, totals=None, caps=None):
+    def __init__(self, totals=None):
         self.totals = totals or dict(TOTALS)
-        self.caps = caps if caps is not None else dict.fromkeys(AbilityScore, 20)
         self.refresh_calls = []
 
-    async def refresh(self, character):
-        self.refresh_calls.append(character)
-
-    async def compute(self, character):
-        return self.totals
-
-    async def resolve_ability_caps(self, character):
-        return self.caps
+    async def refresh(self, character, *, commit=True):
+        self.refresh_calls.append((character, commit))
+        return SimpleNamespace(**self.totals)
 
 
 class FakeASIChoiceRepository:
     """Records choice-row writes and serves configured rows."""
 
-    def __init__(self, choices_by_id=None, all_choices=None):
+    def __init__(self, choices_by_id=None, adjustments=None):
         self._by_id = choices_by_id or {}
-        self._all = all_choices or []
+        self._adjustments = adjustments or []
         self.add_calls = []
-        self.remove_calls = []
+        self.delete_calls = []
 
-    async def get_character_choices(self, character_id):
-        return self._all
+    async def get_adjustments(self, character_id):
+        return self._adjustments
 
     async def add(self, character_id, class_level, choice_type, *, increases=None, commit=True):
         row = SimpleNamespace(
@@ -89,14 +85,16 @@ class FakeASIChoiceRepository:
     async def get_choice_by_id(self, character_id, choice_id):
         return self._by_id.get(choice_id)
 
-    async def remove_choice(self, choice):
-        self.remove_calls.append(choice)
-        return True
+    async def delete_adjustment(self, choice):
+        self.delete_calls.append(choice)
 
 
 @pytest.fixture(autouse=True)
-def no_cache_invalidate(monkeypatch):
+def stub_cache_and_lock(monkeypatch):
     monkeypatch.setattr("app.features.characters.gm_panel.asi.service.invalidate_character_cache", AsyncMock())
+    lock = AsyncMock()
+    monkeypatch.setattr("app.features.characters.gm_panel.asi.service.lock_character", lock)
+    return lock
 
 
 def make_service(character, *, stats=None, asi_repository=None):
@@ -126,10 +124,10 @@ class TestAddAsiAdjustment:
         assert service.asi_repository.add_calls == [
             (1, None, ASILevelChoice.ASI, [{"ability": "STR", "amount": 2}], False)
         ]
-        assert service.stats_service.refresh_calls == [character]
+        assert service.stats_service.refresh_calls == [(character, False)]
 
     async def test_raises_when_total_would_exceed_thirty(self):
-        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 29})
+        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 31})
         service = make_service(make_character(), stats=stats)
 
         with pytest.raises(AbilityScoreCapExceededException) as exc_info:
@@ -142,11 +140,11 @@ class TestAddAsiAdjustment:
         assert exc_info.value.status_code == 400
         assert exc_info.value.current_total == 29
         assert exc_info.value.requested == 31
-        assert service.asi_repository.add_calls == []
-        assert service.stats_service.refresh_calls == []
+        assert service.repository.db.rollbacks == 1
+        assert service.repository.db.commits == 0
 
     async def test_allows_adjustments_up_to_thirty(self):
-        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 28})
+        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 30})
         service = make_service(make_character(), stats=stats)
 
         await service.add_asi_adjustment(
@@ -169,7 +167,7 @@ class TestAddAsiAdjustment:
         assert service.asi_repository.add_calls[0][3] == [{"ability": "STR", "amount": -4}]
 
     async def test_every_increase_is_checked_against_the_thirty_cap(self):
-        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 28})
+        stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 31})
         service = make_service(make_character(), stats=stats)
 
         with pytest.raises(AbilityScoreCapExceededException):
@@ -184,16 +182,89 @@ class TestAddAsiAdjustment:
                 SimpleNamespace(),
             )
 
-        assert service.asi_repository.add_calls == []
+        assert service.repository.db.rollbacks == 1
+
+    async def test_writes_and_recomputes_once_inside_one_locked_transaction(self, stub_cache_and_lock):
+        character = make_character()
+        service = make_service(character)
+
+        await service.add_asi_adjustment(
+            1,
+            GmAsiChoiceAdd(increases=[GmAsiIncreaseItem(ability=AbilityScore.STR, amount=1)]),
+            SimpleNamespace(),
+        )
+
+        stub_cache_and_lock.assert_awaited_once()
+        assert service.stats_service.refresh_calls == [(character, False)]
+        assert service.repository.db.commits == 1
+        assert service.repository.db.rollbacks == 0
+
+    async def test_cache_is_invalidated_only_after_commit(self, monkeypatch):
+        events = []
+        service = make_service(make_character())
+
+        async def commit():
+            events.append("commit")
+
+        async def invalidate(character_id):
+            events.append("invalidate")
+
+        service.repository.db.commit = commit
+        monkeypatch.setattr("app.features.characters.gm_panel.asi.service.invalidate_character_cache", invalidate)
+
+        await service.add_asi_adjustment(
+            1,
+            GmAsiChoiceAdd(increases=[GmAsiIncreaseItem(ability=AbilityScore.STR, amount=1)]),
+            SimpleNamespace(),
+        )
+
+        assert events == ["commit", "invalidate"]
+
+    async def test_cache_is_not_invalidated_when_the_cap_check_rolls_back(self, monkeypatch):
+        invalidate = AsyncMock()
+        monkeypatch.setattr("app.features.characters.gm_panel.asi.service.invalidate_character_cache", invalidate)
+        service = make_service(make_character(), stats=FakeStatsService(totals={**TOTALS, "strength_total": 31}))
+
+        with pytest.raises(AbilityScoreCapExceededException):
+            await service.add_asi_adjustment(
+                1,
+                GmAsiChoiceAdd(increases=[GmAsiIncreaseItem(ability=AbilityScore.STR, amount=1)]),
+                SimpleNamespace(),
+            )
+
+        invalidate.assert_not_awaited()
+
+
+@pytest.mark.unit
+class TestGmAsiChoiceAddBounds:
+    def test_empty_increases_are_rejected(self):
+        with pytest.raises(ValidationError):
+            GmAsiChoiceAdd(increases=[])
+
+    def test_zero_amount_is_rejected(self):
+        with pytest.raises(ValidationError):
+            GmAsiChoiceAdd(increases=[{"ability": "STR", "amount": 0}])
+
+    @pytest.mark.parametrize("amount", [31, -31, 2_000_000_000])
+    def test_amount_beyond_the_ability_cap_is_rejected(self, amount):
+        with pytest.raises(ValidationError):
+            GmAsiChoiceAdd(increases=[{"ability": "STR", "amount": amount}])
+
+    @pytest.mark.parametrize("amount", [30, -30, 1])
+    def test_amount_within_bounds_is_accepted(self, amount):
+        assert GmAsiChoiceAdd(increases=[{"ability": "STR", "amount": amount}]).increases[0].amount == amount
+
+    def test_duplicate_ability_is_rejected(self):
+        with pytest.raises(ValidationError):
+            GmAsiChoiceAdd(increases=[{"ability": "STR", "amount": 1}, {"ability": "STR", "amount": 2}])
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestGetAsiAdjustments:
-    async def test_filters_out_level_tied_choices(self):
+    async def test_lists_only_the_adjustments_the_repository_returns(self):
         gm_row = SimpleNamespace(id=3, character_id=1, class_level=None, increases=[])
-        level_tied = SimpleNamespace(id=4, character_id=1, class_level=4, increases=[])
-        repository = FakeASIChoiceRepository(all_choices=[gm_row, level_tied])
+        repository = FakeASIChoiceRepository(adjustments=[gm_row])
         character = make_character()
         service = make_service(character, asi_repository=repository)
 
@@ -212,11 +283,10 @@ class TestRemoveAsiAdjustment:
         repository = FakeASIChoiceRepository(choices_by_id={3: row})
         service = make_service(character, asi_repository=repository)
 
-        result = await service.remove_asi_adjustment(1, 3, SimpleNamespace())
+        await service.remove_asi_adjustment(1, 3, SimpleNamespace())
 
-        assert result is True
-        assert repository.remove_calls == [row]
-        assert service.stats_service.refresh_calls == [character]
+        assert repository.delete_calls == [row]
+        assert service.stats_service.refresh_calls == [(character, False)]
 
     async def test_unknown_adjustment_raises(self):
         service = make_service(make_character())
@@ -234,5 +304,5 @@ class TestRemoveAsiAdjustment:
         with pytest.raises(LevelTiedAsiChoiceException):
             await service.remove_asi_adjustment(1, 4, SimpleNamespace())
 
-        assert repository.remove_calls == []
+        assert repository.delete_calls == []
         assert service.stats_service.refresh_calls == []

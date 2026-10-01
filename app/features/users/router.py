@@ -6,9 +6,9 @@ from fastapi import APIRouter, Body, Query, status
 
 from app.constants import UserRole
 from app.core.base.service import Page
+from app.features.auth.dependencies import CurrentUserDep, FounderDep, GmUserDep
 from app.features.users.dependencies import UserServiceDep
 from app.features.users.schemas import UserCreate, UserProfileUpdate, UserResponse, UserUpdate
-from app.features.users.security import CurrentUserDep, FounderDep, GmUserDep
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -39,14 +39,13 @@ async def get_all_users(
     response_model=UserResponse,
     summary="Get the current user",
     responses={
-        401: {"description": "Access token missing, malformed, expired, blacklisted, or of the wrong type."},
-        404: {"description": "The user behind the token no longer exists."},
+        401: {"description": "Access token missing, malformed, expired, revoked, or its user no longer exists."},
     },
 )
-async def get_current_user(user_service: UserServiceDep, user: CurrentUserDep):
+async def get_current_user(user: CurrentUserDep):
     """Return the authenticated user's own profile. **Authenticated.**"""
 
-    return await user_service.get_by_id(user.id)
+    return user
 
 
 @router.put(
@@ -55,8 +54,8 @@ async def get_current_user(user_service: UserServiceDep, user: CurrentUserDep):
     summary="Update the current user's profile",
     responses={
         400: {"description": "Invalid email, or username/email already taken by another account."},
-        401: {"description": "Access token missing, malformed, expired, blacklisted, or of the wrong type."},
-        404: {"description": "The user behind the token no longer exists."},
+        401: {"description": "Access token missing, malformed, expired, revoked, or its user no longer exists."},
+        403: {"description": "The default admin's email cannot be changed."},
         422: {"description": "Validation error — payload empty, unknown fields present, or field rules violated."},
     },
 )
@@ -133,9 +132,16 @@ async def create_user(
     summary="Update a user",
     responses={
         400: {"description": "Username/email already taken, invalid email, or default admin protection applies."},
-        403: {"description": "Changing a role requires the found father; updating the default admin is forbidden."},
+        403: {
+            "description": (
+                "Changing a role or editing a non-player account requires the found father; "
+                "updating the default admin is forbidden."
+            )
+        },
         404: {"description": "No user exists with the given ID."},
-        422: {"description": "Validation error — payload empty or field rules violated."},
+        422: {
+            "description": "Validation error — payload empty, unknown fields, null in a required field, or field rules violated."
+        },
     },
 )
 async def update_user(
@@ -163,7 +169,7 @@ async def update_user(
     user_service: UserServiceDep,
     current_user: GmUserDep,
 ):
-    """Update user by ID; role changes require the found father. **GM only.**"""
+    """Update user by ID; role changes and edits of non-player accounts require the found father. **GM only.**"""
 
     return await user_service.update_user(user_id, data, current_role=current_user.role)
 

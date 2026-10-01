@@ -16,8 +16,8 @@ router = APIRouter()
 )
 async def list_subclass_features(
     subclass_id: int,
-    class_service: SubclassFeaturesDep,
+    subclass_service: SubclassFeaturesDep,
 ):
     """Return every SUBCLASS-source feature of the subclass. Open endpoint."""
 
-    return await class_service.list_features(subclass_id)
+    return await subclass_service.list_features(subclass_id)

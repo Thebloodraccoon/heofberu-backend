@@ -3,37 +3,26 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
-from app.core.base.service import BaseService
 from app.core.cache import use_cache
-from app.features.classes.crud.repository import ClassRepository
-from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
+from app.features.classes.service_base import ClassScopedService
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.features.crud.service import FeatureCrudService
-from app.models.classes.class_model import Class
 
 
-class ClassFeatureService(
-    BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None],
-):
+class ClassFeatureService(ClassScopedService):
     """
     Read-only service for a class's CLASS-source features.
 
-    Features are managed centrally through the features catalog. The
-    cached ``list_features`` list lives under the ``class_features``
-    namespace, which central feature writes invalidate.
+    Features are managed centrally through the features catalog; central feature
+    writes invalidate the cached list kept under ``class_features``.
     """
-
-    repository: ClassRepository
 
     cache_namespaces = ("class_features",)
 
     def __init__(self, db: AsyncSession):
-        """Initialize the service with its repository and the central feature catalog."""
+        """Initialize the service with the central feature catalog."""
 
-        super().__init__(
-            repository=ClassRepository(db),
-            response_schema=ClassResponse,
-        )
+        super().__init__(db)
         self._features = FeatureCrudService(db)
 
     @use_cache()

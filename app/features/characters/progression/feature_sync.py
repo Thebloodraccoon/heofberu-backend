@@ -10,10 +10,10 @@ auto-granted here.
 
 Only grants are stored: what a grant gives (skills, saves, armor/weapons,
 spells) is computed on read from the feature's effect tree plus the
-player's stored picks (``characters/grants/effects.py``), so nothing here
-writes effect rows. What still needs refreshing after a change is the
-ability-score cache (``character_ability_scores``) and the per-character
-Redis payload.
+player's stored picks (``characters/grants/effects.py``). What still needs
+refreshing after a change is the ability-score cache
+(``character_ability_scores``) and the per-character Redis payload — the
+latter is purged after the caller's commit.
 
 Never commits — callers wrap it in their own transaction:
 ``CharacterService.create_character``, ``CharacterProgressionService``,
@@ -47,10 +47,10 @@ def _level_reached():
     return or_(Feature.level.is_(None), Feature.level <= Character.level)
 
 
-async def _desired_features(db: AsyncSession, character: Character) -> list[Feature]:
+async def _desired_feature_ids(db: AsyncSession, character: Character) -> set[int]:
     """
-    The target feature set for a character: features owned by its class,
-    subclass, race, subrace, and background, all filtered to ``level``
+    Ids of the target feature set for a character: features owned by its
+    class, subclass, race, subrace, and background, filtered to ``level``
     ``NULL`` or ``<= character.level``.
     """
 
@@ -60,12 +60,12 @@ async def _desired_features(db: AsyncSession, character: Character) -> list[Feat
         if getattr(character, character_column.key) is not None
     ]
     if not conditions:
-        return []
+        return set()
 
     result = await db.execute(
-        select(Feature).where(or_(*conditions), or_(Feature.level.is_(None), Feature.level <= character.level))
+        select(Feature.id).where(or_(*conditions), or_(Feature.level.is_(None), Feature.level <= character.level))
     )
-    return list(result.scalars().unique().all())
+    return set(result.scalars().all())
 
 
 async def sync_progression_features(db: AsyncSession, character: Character) -> list[CharacterFeature]:
@@ -82,8 +82,7 @@ async def sync_progression_features(db: AsyncSession, character: Character) -> l
     for pending choice groups.
     """
 
-    desired = await _desired_features(db, character)
-    desired_ids = {feature.id for feature in desired}
+    desired_ids = await _desired_feature_ids(db, character)
 
     result = await db.execute(select(CharacterFeature).where(CharacterFeature.character_id == character.id))
     existing = list(result.scalars().unique().all())
@@ -94,14 +93,26 @@ async def sync_progression_features(db: AsyncSession, character: Character) -> l
             await db.delete(grant)
 
     new_grants = [
-        CharacterFeature(character_id=character.id, feature_id=feature.id, grant_source=GrantSource.AUTO)
-        for feature in desired
-        if feature.id not in existing_ids
+        CharacterFeature(character_id=character.id, feature_id=feature_id, grant_source=GrantSource.AUTO)
+        for feature_id in sorted(desired_ids - existing_ids)
     ]
     db.add_all(new_grants)
     await db.flush()
 
     return new_grants
+
+
+async def _refresh_after_change(db: AsyncSession, characters: list[Character]) -> None:
+    """
+    Grants can carry ability effects: refresh every affected character's
+    stat cache in this transaction (batched, see
+    ``CharacterStatsService.compute_many``) and purge their Redis payloads in
+    one round trip once it has committed.
+    """
+
+    await CharacterStatsService(db).refresh_many(characters, commit=False)
+
+    await invalidate_characters_cache((character.id for character in characters), db=db)
 
 
 async def reconcile_characters_for_source(db: AsyncSession, source_type: FeatureSourceType, source_id: int) -> None:
@@ -122,8 +133,7 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
         return
     character_column, feature_column = columns
 
-    # The set-based statements below read features straight from the DB —
-    # push the caller's pending edits (e.g. a raised ``level``) first.
+    # The statements below read features straight from the DB: push pending edits (e.g. a raised ``level``) first.
     await db.flush()
 
     characters = list(
@@ -155,11 +165,7 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
     )
     await db.flush()
 
-    # Grants can carry ability effects — refresh every affected character's
-    # stat cache (batched, see CharacterStatsService.compute_many) and drop
-    # their Redis payloads in one round trip.
-    await CharacterStatsService(db).refresh_many(characters, commit=False)
-    await invalidate_characters_cache(character.id for character in characters)
+    await _refresh_after_change(db, characters)
 
 
 async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> None:
@@ -179,5 +185,4 @@ async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> No
     if not characters:
         return
 
-    await CharacterStatsService(db).refresh_many(characters, commit=False)
-    await invalidate_characters_cache(character.id for character in characters)
+    await _refresh_after_change(db, characters)

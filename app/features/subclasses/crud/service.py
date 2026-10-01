@@ -1,15 +1,14 @@
-"""Subclass CRUD service: cached catalog CRUD plus composed feature reads."""
+"""Subclass CRUD service: cached reads plus class-scoped writes."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import FeatureSourceType
 from app.core.base.service import BaseService
+from app.core.base.transaction import invalidate_after_commit
 from app.core.cache import use_cache
 from app.core.cache.client import cache_prefix
 from app.core.exceptions import RecordNotFoundError
 from app.features.classes.crud.repository import ClassRepository
-from app.features.features.crud.service import FeatureCrudService
-from app.features.subclasses.cache import SUBCLASS_CACHE_NAMESPACES, invalidate_subclass_cache
+from app.features.subclasses.cache import SUBCLASS_CRUD_CACHE_NAMESPACES, SUBCLASS_DELETE_CACHE_NAMESPACES
 from app.features.subclasses.crud.repository import SubclassRepository
 from app.features.subclasses.crud.schemas import (
     SubclassCreate,
@@ -26,66 +25,64 @@ class SubclassCrudService(
     """
     Subclass catalog CRUD built on :class:`BaseService`.
 
-    Extends the base with class-scoped 404s, atomic creation of the
-    subclass row, and a ``get_by_id`` that returns the subclass with its
-    own SUBCLASS-source ``features``. Reads go through the central
-    :class:`FeatureCrudService`; per-subclass feature writes live in
-    ``features/``. Writes purge ``SUBCLASS_CACHE_NAMESPACES``.
+    Subclasses belong to a class: creation 404s on an unknown ``class_id`` and
+    name uniqueness is scoped to the class. ``get_by_id`` returns the subclass
+    with its SUBCLASS-source features (written through the central features
+    catalog). Every write purges ``SUBCLASS_CRUD_CACHE_NAMESPACES``.
     """
 
     repository: SubclassRepository
 
-    cache_namespaces = SUBCLASS_CACHE_NAMESPACES
+    cache_namespaces = SUBCLASS_CRUD_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
-        """Initialize the service with its repositories and the central feature catalog."""
+        """Initialize the service with its repository and a class repository for existence checks."""
 
-        super().__init__(
-            repository=SubclassRepository(db),
-            response_schema=SubclassResponse,
-        )
-        self._features = FeatureCrudService(db)
+        super().__init__(repository=SubclassRepository(db), response_schema=SubclassResponse)
         self._class_repository = ClassRepository(db)
 
     async def create_subclass(self, data: SubclassCreate) -> SubclassResponse:
-        """Create a subclass for an existing class, atomically with its nested features."""
+        """Create a subclass for an existing class."""
 
         await self._ensure_class_exists(data.class_id)
-        payload = data.model_dump(exclude={"features"})
 
-        async with self._atomic():
-            item = await self.repository.create(payload, commit=False)
+        item = await self.repository.create(data.model_dump())
+        await self._invalidate_cache()
 
-        await invalidate_subclass_cache()
-
-        return await self._get_response(item.id)
+        return await self.get_by_id(item.id)
 
     @use_cache(key_builder=lambda self, item_id: f"{cache_prefix()}:classes:subclass:get_by_id:{item_id}")
     async def get_by_id(self, item_id: int) -> SubclassResponse:
         """
-        Return the subclass plus its own SUBCLASS-source ``features``.
+        Return the subclass with its features (cached).
 
-        Cached under the ``classes`` namespace — every write in this
-        subdomain purges it via :func:`invalidate_subclass_cache`.
+        The key differs from ``ClassCrudService.get_by_id`` (same namespace, other
+        entity); every subclass write purges it through ``SUBCLASS_CRUD_CACHE_NAMESPACES``.
         """
 
-        subclass = await self._get_or_404(item_id)
-        features = await self._features.list_for_source(FeatureSourceType.SUBCLASS, item_id)
+        return await super().get_by_id(item_id)
 
-        return SubclassResponse.model_validate(
-            {**SubclassResponse.model_validate(subclass).model_dump(), "features": features}
-        )
+    async def delete(self, item_id: int) -> bool:
+        """Delete a subclass (blocked while characters use it); its cascaded features leave the cache too."""
 
-    async def get_subclass(self, subclass_id: int) -> SubclassResponse:
-        """Return a subclass's full picture, 404ing if it belongs to a different class."""
+        subclass = await self.repository.get_row(item_id)
+        if subclass is None:
+            raise RecordNotFoundError(model_name=Subclass.__name__, model_id=str(item_id))
 
-        return await self.get_by_id(subclass_id)
+        result = await self.repository.delete(subclass)
+        await invalidate_after_commit(self.repository.db, *SUBCLASS_DELETE_CACHE_NAMESPACES)
 
-    async def list_for_class(self, class_id: int) -> list[SubclassGetAllResponse]:
-        """Return all subclasses for ``class_id`` as brief rows."""
+        return result
 
-        subclasses = await self.repository.list_for_class(class_id)
-        return [SubclassGetAllResponse.model_validate(s) for s in subclasses]
+    @use_cache(namespace="classes")
+    async def list_for_class(self, class_id: int | None = None) -> list[SubclassGetAllResponse]:
+        """Return brief subclass rows (cached), for one class or, without ``class_id``, for all; 404 for an unknown class."""
+
+        if class_id is not None:
+            await self._ensure_class_exists(class_id)
+
+        rows = await self.repository.list_for_class(class_id)
+        return [SubclassGetAllResponse.model_validate(row, from_attributes=True) for row in rows]
 
     async def _ensure_class_exists(self, class_id: int) -> None:
         """Raise ``RecordNotFoundError`` when no class with ``class_id`` exists."""

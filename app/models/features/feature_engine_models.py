@@ -58,7 +58,11 @@ class FeatureChoiceGroup(settings.Base):  # type: ignore
     sort_order = Column(Integer, nullable=False, default=0)
     choice_type = Column(ChoiceTypeType, nullable=False)
 
-    __table_args__ = (CheckConstraint("pick_count >= 1", name="check_feature_choice_group_pick_count_positive"),)
+    __table_args__ = (
+        CheckConstraint("pick_count >= 1", name="check_feature_choice_group_pick_count_positive"),
+        # Upper bound = MAX_PICK_COUNT of the effects schema.
+        CheckConstraint("pick_count <= 50", name="ck_feature_choice_group_pick_count_max"),
+    )
 
     feature = relationship("Feature", back_populates="choice_groups")
     options = relationship(
@@ -159,7 +163,11 @@ class FeatureAbilityScoreEffect(settings.Base):  # type: ignore
     amount = Column(Integer, nullable=False)
     new_cap = Column(Integer, nullable=True)
 
-    __table_args__ = (CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_ability_score_effect_parent"),)
+    __table_args__ = (
+        CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_ability_score_effect_parent"),
+        # Bound = MAX_ABILITY_AMOUNT of the effects schema.
+        CheckConstraint("amount BETWEEN -30 AND 30", name="ck_feature_ability_score_effect_amount"),
+    )
 
     feature = relationship("Feature", back_populates="ability_effects")
     choice_option = relationship("FeatureChoiceOption", back_populates="ability_effects")

@@ -1,29 +1,19 @@
 """Request/response schemas for a class's available skills."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import AbilityScore
+from app.features.classes.schema_utils import unique_items
 
-
-def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
-    """Reject duplicate skill IDs."""
-
-    if len(skill_ids) != len(set(skill_ids)):
-        raise ValueError("Duplicate skill IDs are not allowed.")
-
-    return skill_ids
+MAX_AVAILABLE_SKILLS = 100
 
 
 class AvailableSkillsUpdate(BaseModel):
     """Full replacement list of skill IDs a class may choose proficiencies from."""
 
-    skill_ids: list[int]
+    skill_ids: list[int] = Field(max_length=MAX_AVAILABLE_SKILLS)
 
-    @field_validator("skill_ids")
-    def validate_unique(cls, v):
-        """Reject duplicate skill IDs."""
-
-        return _validate_unique_skill_ids(v)
+    _unique = unique_items("skill_ids", "skill IDs")
 
 
 class SkillResponse(BaseModel):

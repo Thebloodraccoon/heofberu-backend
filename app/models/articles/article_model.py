@@ -1,22 +1,29 @@
 """ORM model for world-lore articles (global lore down to a single location/faction/NPC)."""
 
-from sqlalchemy import Column, Computed, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Column, Computed, DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import deferred, relationship
 from sqlalchemy_utils import LtreeType
 
-from app.constants import (
-    ARTICLE_GM_BLOCK_SQL_PATTERN,
-    ArticleStatus,
-    ArticleVisibility,
-    is_article_publicly_visible,
-)
+from app.constants import ARTICLE_GM_BLOCK_SQL_PATTERN, ArticleStatus, ArticleVisibility
 from app.models.enums import ArticleStatusType, ArticleVisibilityType
 from app.settings import settings
 
+#: A GM block that contains another ``:::`` container: from ``:::gm`` to the end of the text (fail closed, the flat
+#: pattern would close the block at the inner ``:::``). Keep equal to ``NESTED_GM_BLOCK_SQL_PATTERN`` in
+#: ``app/features/articles/secrets.py``.
+NESTED_GM_BLOCK_SQL_PATTERN = r"(?i):::gm(?:(?!:::).)*:::[a-z].*"
 
-PUBLIC_BODY_SQL = f"regexp_replace(coalesce(body_markdown, ''), '{ARTICLE_GM_BLOCK_SQL_PATTERN}', ' ', 'g')"
-PUBLIC_EXCERPT_SQL = f"regexp_replace(coalesce(excerpt, ''), '{ARTICLE_GM_BLOCK_SQL_PATTERN}', ' ', 'g')"
+
+def _public_sql(column: str) -> str:
+    """``column`` without GM blocks: nested ones first (to the end of the text), then the flat ``:::gm ... :::``."""
+
+    without_nested = f"regexp_replace(coalesce({column}, ''), '{NESTED_GM_BLOCK_SQL_PATTERN}', ' ', 'g')"
+    return f"regexp_replace({without_nested}, '{ARTICLE_GM_BLOCK_SQL_PATTERN}', ' ', 'g')"
+
+
+PUBLIC_BODY_SQL = _public_sql("body_markdown")
+PUBLIC_EXCERPT_SQL = _public_sql("excerpt")
 
 
 def _search_vector_sql(excerpt_sql: str, body_sql: str) -> str:
@@ -37,6 +44,9 @@ SEARCH_VECTOR_SQL = _search_vector_sql(PUBLIC_EXCERPT_SQL, PUBLIC_BODY_SQL)
 SEARCH_VECTOR_GM_SQL = _search_vector_sql("coalesce(excerpt, '')", "coalesce(body_markdown, '')")
 
 
+_PUBLIC_ROW = text("status = 'PUBLISHED' AND visibility = 'PUBLIC'")
+
+
 class Article(settings.Base):  # type: ignore
     """
     Полиморфная статья о мире: от глобального лора до конкретной
@@ -53,6 +63,14 @@ class Article(settings.Base):  # type: ignore
         Index("ix_articles_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_articles_search_vector_gm", "search_vector_gm", postgresql_using="gin"),
         Index("ix_articles_title_trgm", "title", postgresql_using="gin", postgresql_ops={"title": "gin_trgm_ops"}),
+        # Non-GM listings (published + public only), sorted by title or by date: partial indexes serve the sort.
+        Index("ix_articles_public_title", "title", "id", postgresql_where=_PUBLIC_ROW),
+        Index(
+            "ix_articles_public_published",
+            text("COALESCE(published_at, created_at) DESC"),
+            text("id DESC"),
+            postgresql_where=_PUBLIC_ROW,
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -68,13 +86,12 @@ class Article(settings.Base):  # type: ignore
     parent_id = Column(Integer, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True)
     path = Column(LtreeType, nullable=True)
 
-
     status = Column(ArticleStatusType, nullable=False, default=ArticleStatus.DRAFT, index=True)
     visibility = Column(
         ArticleVisibilityType, nullable=False, default=ArticleVisibility.PUBLIC, server_default="PUBLIC", index=True
     )
     author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    reviewed_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # фаза 3
+    reviewed_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Generated columns (never written by the app): weighted title > excerpt > body, Russian + simple configs.
     # deferred: never in a response, no reason to load them on every select(Article).
@@ -85,10 +102,6 @@ class Article(settings.Base):  # type: ignore
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     published_at = Column(DateTime(timezone=True), nullable=True)
 
-    parent = relationship("Article", remote_side=[id], back_populates="children")
-    children = relationship("Article", back_populates="parent")
-    author = relationship("User", foreign_keys=[author_id])
-    reviewed_by = relationship("User", foreign_keys=[reviewed_by_id])
     # Many-to-one, always needed in responses (incl. tree/relation briefs): joined-loaded, never lazy in async.
     subtype = relationship("ArticleSubtype", lazy="joined")
     tags = relationship("Tag", secondary="article_tags", back_populates="articles", order_by="Tag.name")
@@ -102,9 +115,3 @@ class Article(settings.Base):  # type: ignore
 
     def __repr__(self):
         return f"<Article(id={self.id}, slug='{self.slug}', type='{self.article_type}')>"
-
-    @property
-    def is_publicly_visible(self) -> bool:
-        """Whether a non-GM reader may see this article (published and public)."""
-
-        return is_article_publicly_visible(self.status, self.visibility)

@@ -1,11 +1,11 @@
 services:
   heof-db:
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   heof-redis:
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
 
   heof-app:
     build:
@@ -37,7 +37,7 @@ services:
     volumes:
       - heof_test_db_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     networks:
       - app_network
 
@@ -46,7 +46,7 @@ services:
     container_name: heof-test-redis
     restart: "no"
     ports:
-      - "6381:6379"
+      - "127.0.0.1:6381:6379"
     volumes:
       - heof_test_redis_data:/data
     networks:
