@@ -1,5 +1,7 @@
 """Declarative base shared by all ORM models."""
 
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """Typed declarative base: models declare columns as ``Mapped[...] = mapped_column(...)``."""

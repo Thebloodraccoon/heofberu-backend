@@ -1,13 +1,21 @@
 """ORM models for source-owned starting-equipment choice groups."""
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import FeatureSourceType
 from app.models.enums import FeatureSourceTypeType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.items.item_model import Item
 
 
-class SourceItemChoiceGroup(settings.Base):  # type: ignore
+class SourceItemChoiceGroup(Base):
     """
     A choice group within a class's or background's starting equipment.
 
@@ -23,30 +31,29 @@ class SourceItemChoiceGroup(settings.Base):  # type: ignore
 
     __tablename__ = "source_item_choice_groups"
 
-    id = Column(Integer, primary_key=True)
-    source_type = Column(FeatureSourceTypeType, nullable=False, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_type: Mapped[FeatureSourceType] = mapped_column(FeatureSourceTypeType, index=True)
 
-    class_id = Column(Integer, ForeignKey("classes.id", ondelete="CASCADE"), nullable=True, index=True)
-    background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), nullable=True, index=True)
+    class_id: Mapped[int | None] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), index=True)
+    background_id: Mapped[int | None] = mapped_column(ForeignKey("backgrounds.id", ondelete="CASCADE"), index=True)
 
-    pick_count = Column(Integer, nullable=False, default=1)
-    sort_order = Column(Integer, nullable=False, default=0)
+    pick_count: Mapped[int] = mapped_column(default=1)
+    sort_order: Mapped[int] = mapped_column(default=0)
 
     __table_args__ = (CheckConstraint("pick_count >= 1", name="check_choice_group_pick_count_positive"),)
 
-    options = relationship(
-        "SourceItemChoiceOption",
+    options: Mapped[list[SourceItemChoiceOption]] = relationship(
         back_populates="group",
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="SourceItemChoiceOption.sort_order",
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<SourceItemChoiceGroup(id={self.id}, source_type='{self.source_type}', pick_count={self.pick_count})>"
 
 
-class SourceItemChoiceOption(settings.Base):  # type: ignore
+class SourceItemChoiceOption(Base):
     """
     One option inside a :class:`SourceItemChoiceGroup`.
 
@@ -57,21 +64,16 @@ class SourceItemChoiceOption(settings.Base):  # type: ignore
 
     __tablename__ = "source_item_choice_options"
 
-    id = Column(Integer, primary_key=True)
-    group_id = Column(
-        Integer,
-        ForeignKey("source_item_choice_groups.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="RESTRICT"), nullable=False, index=True)
-    quantity = Column(Integer, nullable=False, default=1)
-    sort_order = Column(Integer, nullable=False, default=0)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("source_item_choice_groups.id", ondelete="CASCADE"), index=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="RESTRICT"), index=True)
+    quantity: Mapped[int] = mapped_column(default=1)
+    sort_order: Mapped[int] = mapped_column(default=0)
 
-    group = relationship("SourceItemChoiceGroup", back_populates="options")
-    item = relationship("Item")
+    group: Mapped[SourceItemChoiceGroup] = relationship(back_populates="options")
+    item: Mapped[Item] = relationship()
 
     __table_args__ = (CheckConstraint("quantity >= 1", name="check_choice_option_quantity_positive"),)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<SourceItemChoiceOption(id={self.id}, group_id={self.group_id}, item_id={self.item_id})>"

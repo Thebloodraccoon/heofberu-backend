@@ -1,13 +1,21 @@
 """ORM model for source-owned starting equipment (classes, backgrounds)."""
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import FeatureSourceType
 from app.models.enums import FeatureSourceTypeType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.items.item_model import Item
 
 
-class SourceItem(settings.Base):  # type: ignore
+class SourceItem(Base):
     """
     A starting-equipment entry owned by a class or background.
 
@@ -23,18 +31,18 @@ class SourceItem(settings.Base):  # type: ignore
 
     __tablename__ = "source_items"
 
-    id = Column(Integer, primary_key=True)
-    source_type = Column(FeatureSourceTypeType, nullable=False, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_type: Mapped[FeatureSourceType] = mapped_column(FeatureSourceTypeType, index=True)
 
-    class_id = Column(Integer, ForeignKey("classes.id", ondelete="CASCADE"), nullable=True, index=True)
-    background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), nullable=True, index=True)
+    class_id: Mapped[int | None] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), index=True)
+    background_id: Mapped[int | None] = mapped_column(ForeignKey("backgrounds.id", ondelete="CASCADE"), index=True)
 
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="RESTRICT"), nullable=False, index=True)
-    quantity = Column(Integer, nullable=False, default=1)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="RESTRICT"), index=True)
+    quantity: Mapped[int] = mapped_column(default=1)
 
     __table_args__ = (CheckConstraint("quantity >= 0", name="check_source_item_quantity_nonnegative"),)
 
-    item = relationship("Item")
+    item: Mapped[Item] = relationship()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<SourceItem(id={self.id}, source_type='{self.source_type}', item_id={self.item_id}, quantity={self.quantity})>"

@@ -1,13 +1,21 @@
 """ORM models for a character's resolved Ability Score Improvement choices."""
 
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import AbilityScore, ASILevelChoice
 from app.models.enums import AbilityScoreType, ASILevelChoiceType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
 
 
-class CharacterASIChoice(settings.Base):  # type: ignore
+class CharacterASIChoice(Base):
     """
     One resolved Ability Score Improvement opportunity for a character.
 
@@ -44,25 +52,22 @@ class CharacterASIChoice(settings.Base):  # type: ignore
 
     __tablename__ = "character_asi_choices"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     # No own index: ``uq_character_asi_choice_level`` (character_id, class_level) already leads with it.
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
-    class_level = Column(Integer, nullable=True)
-    choice_type = Column(ASILevelChoiceType, nullable=False)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    class_level: Mapped[int | None] = mapped_column()
+    choice_type: Mapped[ASILevelChoice] = mapped_column(ASILevelChoiceType)
 
-    feat_id = Column(Integer, ForeignKey("features.id", ondelete="RESTRICT"), nullable=True, index=True)
-    ability_score_increase_id = Column(
-        Integer,
-        ForeignKey("feature_ability_score_effects.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
+    feat_id: Mapped[int | None] = mapped_column(ForeignKey("features.id", ondelete="RESTRICT"), index=True)
+    ability_score_increase_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feature_ability_score_effects.id", ondelete="SET NULL"), index=True
     )
 
     # True for pre-rework rows whose points were already folded into the
     # base columns — excluded from the calculator to avoid double counting.
     # All new rows are written with False (the default): their increases
     # live ONLY in the child rows below.
-    applied_to_base = Column(Boolean, nullable=False, default=False, server_default="false")
+    applied_to_base: Mapped[bool] = mapped_column(default=False, server_default="false")
 
     __table_args__ = (
         UniqueConstraint("character_id", "class_level", name="uq_character_asi_choice_level"),
@@ -71,25 +76,24 @@ class CharacterASIChoice(settings.Base):  # type: ignore
         CheckConstraint("class_level IS NULL OR class_level BETWEEN 1 AND 20", name="ck_character_asi_choice_level"),
     )
 
-    character = relationship("Character", back_populates="asi_choices")
+    character: Mapped[Character] = relationship(back_populates="asi_choices")
 
     # The counted increments of this choice (empty for FEAT-type rows,
     # whose stat effect flows through the granted feat's effect engine).
-    increases = relationship(
-        "CharacterASIChoiceIncrease",
+    increases: Mapped[list[CharacterASIChoiceIncrease]] = relationship(
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="CharacterASIChoiceIncrease.id",
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<CharacterASIChoice(character_id={self.character_id}, "
             f"class_level={self.class_level}, choice_type='{self.choice_type}')>"
         )
 
 
-class CharacterASIChoiceIncrease(settings.Base):  # type: ignore
+class CharacterASIChoiceIncrease(Base):
     """
     A single counted increment of a ``CharacterASIChoice``, e.g.
     {choice: level-4 ASI, ability: STR, amount: 2}. Mirrors the
@@ -100,16 +104,13 @@ class CharacterASIChoiceIncrease(settings.Base):  # type: ignore
 
     __tablename__ = "character_asi_choice_increases"
 
-    id = Column(Integer, primary_key=True)
-    character_asi_choice_id = Column(
-        Integer,
-        ForeignKey("character_asi_choices.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_asi_choice_id: Mapped[int] = mapped_column(
+        ForeignKey("character_asi_choices.id", ondelete="CASCADE"), index=True
     )
 
-    ability = Column(AbilityScoreType, nullable=False)
-    amount = Column(Integer, nullable=False)
+    ability: Mapped[AbilityScore] = mapped_column(AbilityScoreType)
+    amount: Mapped[int] = mapped_column()
 
     __table_args__ = (
         UniqueConstraint("character_asi_choice_id", "ability", name="uq_character_asi_inc_ability"),
@@ -117,9 +118,9 @@ class CharacterASIChoiceIncrease(settings.Base):  # type: ignore
         CheckConstraint("amount BETWEEN -30 AND 30", name="ck_character_asi_increase_amount"),
     )
 
-    choice = relationship("CharacterASIChoice", back_populates="increases")
+    choice: Mapped[CharacterASIChoice] = relationship(back_populates="increases")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<CharacterASIChoiceIncrease(choice_id={self.character_asi_choice_id}, "
             f"ability='{self.ability}', amount={self.amount})>"

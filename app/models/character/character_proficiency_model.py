@@ -28,9 +28,22 @@ that, not around the individual discriminator columns; see the composite
 index below.
 """
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, func
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import (
+    AbilityScore,
+    ArmorProficiency,
+    ProficiencyAction,
+    ProficiencySourceType,
+    ProficiencyType,
+    WeaponProficiency,
+)
 from app.models.enums import (
     AbilityScoreType,
     ArmorProficiencyType,
@@ -39,7 +52,13 @@ from app.models.enums import (
     ProficiencyTypeType,
     WeaponProficiencyType,
 )
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
+    from app.models.items.item_model import Item
+    from app.models.skill_model import Skill
+    from app.models.user_model import User
 
 _DISCRIMINATOR_SHAPE = (
     "(proficiency_type = 'SKILL' AND skill_id IS NOT NULL AND ability IS NULL "
@@ -56,7 +75,7 @@ _DISCRIMINATOR_SHAPE = (
 )
 
 
-class CharacterProficiency(settings.Base):  # type: ignore
+class CharacterProficiency(Base):
     """
     One provenance row: "character X has/had proficiency P via source S."
 
@@ -79,31 +98,31 @@ class CharacterProficiency(settings.Base):  # type: ignore
 
     __tablename__ = "character_proficiencies"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     # No index=True here: every real query filters (character_id,
     # proficiency_type) together (GM writes, the proficiency read),
     # so the composite index below covers this column too (leftmost-prefix)
     # — a separate single-column index on character_id would be redundant.
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
-    proficiency_type = Column(ProficiencyTypeType, nullable=False)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"))
+    proficiency_type: Mapped[ProficiencyType] = mapped_column(ProficiencyTypeType)
 
-    skill_id = Column(Integer, ForeignKey("skills.id", ondelete="CASCADE"), nullable=True, index=True)
-    ability = Column(AbilityScoreType, nullable=True)
-    armor_type = Column(ArmorProficiencyType, nullable=True)
-    weapon_category = Column(WeaponProficiencyType, nullable=True)
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=True, index=True)
+    skill_id: Mapped[int | None] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), index=True)
+    ability: Mapped[AbilityScore | None] = mapped_column(AbilityScoreType)
+    armor_type: Mapped[ArmorProficiency | None] = mapped_column(ArmorProficiencyType)
+    weapon_category: Mapped[WeaponProficiency | None] = mapped_column(WeaponProficiencyType)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
 
-    source_type = Column(ProficiencySourceTypeType, nullable=False)
-    action = Column(ProficiencyActionType, nullable=False, default="GRANT")
+    source_type: Mapped[ProficiencySourceType] = mapped_column(ProficiencySourceTypeType)
+    action: Mapped[ProficiencyAction] = mapped_column(ProficiencyActionType, default="GRANT")
 
-    actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    is_expertise = Column(Boolean, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    is_expertise: Mapped[bool | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    character = relationship("Character", back_populates="proficiencies")
-    skill = relationship("Skill")
-    item = relationship("Item")
-    actor = relationship("User")
+    character: Mapped[Character] = relationship(back_populates="proficiencies")
+    skill: Mapped[Skill | None] = relationship()
+    item: Mapped[Item | None] = relationship()
+    actor: Mapped[User | None] = relationship()
 
     __table_args__ = (
         CheckConstraint(_DISCRIMINATOR_SHAPE, name="ck_character_proficiency_discriminator_shape"),
@@ -152,7 +171,7 @@ class CharacterProficiency(settings.Base):  # type: ignore
         ),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<CharacterProficiency(character_id={self.character_id}, "
             f"proficiency_type='{self.proficiency_type}', source_type='{self.source_type}')>"

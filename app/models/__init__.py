@@ -1,6 +1,4 @@
 # Shared Tag dictionary. Must come before any catalog's *_tags link table (FK target).
-from app.models.tag_model import Tag  # noqa: F401
-
 from app.models.articles.article_association_models import article_tags  # noqa: F401
 
 # Article and its associations (incl. article_tags, self-referential parent/children).
@@ -85,5 +83,6 @@ from app.models.skill_model import Skill  # noqa: F401
 
 # Spell.
 from app.models.spells.spell_model import Spell  # noqa: F401
+from app.models.tag_model import Tag  # noqa: F401
 from app.models.user_model import User  # noqa: F401
 from app.settings import settings  # noqa: F401

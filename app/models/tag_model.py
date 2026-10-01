@@ -1,12 +1,22 @@
 """ORM model for the shared reference table of free-form tags."""
 
-from sqlalchemy import Column, Index, Integer, String, func
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
-from app.settings import settings
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Index, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.articles.article_model import Article
+    from app.models.backgrounds.background_model import Background
+    from app.models.races.race_model import Race
+    from app.models.races.subrace_model import Subrace
 
 
-class Tag(settings.Base):  # type: ignore
+class Tag(Base):
     """
     Shared reference table of free-form labels, reusable across unrelated
     catalogs (races, subraces, backgrounds, articles, ...). Each catalog owns
@@ -17,15 +27,15 @@ class Tag(settings.Base):  # type: ignore
 
     __tablename__ = "tags"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)  # unique ignoring case: ``uq_tags_name_lower`` below
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))  # unique ignoring case: ``uq_tags_name_lower`` below
 
-    races = relationship("Race", secondary="race_tags", back_populates="tags")
-    subraces = relationship("Subrace", secondary="subrace_tags", back_populates="tags")
-    backgrounds = relationship("Background", secondary="background_tags", back_populates="tags")
-    articles = relationship("Article", secondary="article_tags", back_populates="tags")
+    races: Mapped[list[Race]] = relationship(secondary="race_tags", back_populates="tags")
+    subraces: Mapped[list[Subrace]] = relationship(secondary="subrace_tags", back_populates="tags")
+    backgrounds: Mapped[list[Background]] = relationship(secondary="background_tags", back_populates="tags")
+    articles: Mapped[list[Article]] = relationship(secondary="article_tags", back_populates="tags")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Tag(id={self.id}, name='{self.name}')>"
 
 

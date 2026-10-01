@@ -1,14 +1,22 @@
 """ORM model for typed directed relationships between two articles."""
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.orm import relationship
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants import ArticleVisibility
 from app.models.enums import ArticleVisibilityType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.articles.article_model import Article
 
 
-class ArticleRelation(settings.Base):  # type: ignore
+class ArticleRelation(Base):
     """
     A typed directed relationship between two articles is a graph of everything
     that doesn't fit into the ``Article.parent_id`` hierarchy (membership,
@@ -21,23 +29,23 @@ class ArticleRelation(settings.Base):  # type: ignore
         UniqueConstraint("from_article_id", "to_article_id", "relation_type", name="uq_article_relation"),
     )
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     # No own index: ``uq_article_relation`` (from, to, type) already leads with ``from_article_id``.
-    from_article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
-    to_article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_article_id: Mapped[int] = mapped_column(ForeignKey("articles.id", ondelete="CASCADE"))
+    to_article_id: Mapped[int] = mapped_column(ForeignKey("articles.id", ondelete="CASCADE"), index=True)
 
-    relation_type = Column(String(50), nullable=False, index=True)
-    note = Column(String(300), nullable=True)
+    relation_type: Mapped[str] = mapped_column(String(50), index=True)
+    note: Mapped[str | None] = mapped_column(String(300))
 
     # A GM_ONLY relation is hidden from non-GMs even when both articles are public (a secret allegiance).
-    visibility = Column(
-        ArticleVisibilityType, nullable=False, default=ArticleVisibility.PUBLIC, server_default="PUBLIC"
+    visibility: Mapped[ArticleVisibility] = mapped_column(
+        ArticleVisibilityType, default=ArticleVisibility.PUBLIC, server_default="PUBLIC"
     )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    from_article = relationship("Article", foreign_keys=[from_article_id])
-    to_article = relationship("Article", foreign_keys=[to_article_id])
+    from_article: Mapped[Article] = relationship(foreign_keys=[from_article_id])
+    to_article: Mapped[Article] = relationship(foreign_keys=[to_article_id])
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<ArticleRelation(id={self.id}, {self.from_article_id}-[{self.relation_type}]->{self.to_article_id})>"

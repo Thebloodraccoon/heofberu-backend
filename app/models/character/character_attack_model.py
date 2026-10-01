@@ -1,32 +1,40 @@
 """ORM model for character attacks (weapon entries)."""
 
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import AbilityScore, AttackType, DamageType, DiceType
 from app.models.enums import AbilityScoreType, AttackTypeType, DamageTypeType, DiceTypeColumn
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
 
 
-class Attack(settings.Base):  # type: ignore
+class Attack(Base):
     """A single attack/weapon entry belonging to a character."""
 
     __tablename__ = "attacks"
 
-    id = Column(Integer, primary_key=True)
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), index=True)
 
-    name = Column(String(200), nullable=False)
-    attack_type = Column(AttackTypeType, nullable=False)
-    ability = Column(AbilityScoreType, nullable=False)
-    is_proficient = Column(Boolean, nullable=False, default=True)
+    name: Mapped[str] = mapped_column(String(200))
+    attack_type: Mapped[AttackType] = mapped_column(AttackTypeType)
+    ability: Mapped[AbilityScore] = mapped_column(AbilityScoreType)
+    is_proficient: Mapped[bool] = mapped_column(default=True)
 
-    bonus_attack = Column(Integer, nullable=False, default=0)
-    bonus_damage = Column(Integer, nullable=False, default=0)
-    damage_dice_count = Column(Integer, nullable=True)
-    damage_dice_type = Column(DiceTypeColumn, nullable=True)
-    damage_type = Column(DamageTypeType, nullable=True)
-    range = Column(String(50), nullable=False, default="")
-    notes = Column(Text, nullable=False, default="")
+    bonus_attack: Mapped[int] = mapped_column(default=0)
+    bonus_damage: Mapped[int] = mapped_column(default=0)
+    damage_dice_count: Mapped[int | None] = mapped_column()
+    damage_dice_type: Mapped[DiceType | None] = mapped_column(DiceTypeColumn)
+    damage_type: Mapped[DamageType | None] = mapped_column(DamageTypeType)
+    range: Mapped[str] = mapped_column(String(50), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
 
     __table_args__ = (
         CheckConstraint(
@@ -34,7 +42,7 @@ class Attack(settings.Base):  # type: ignore
         ),
     )
 
-    character = relationship("Character", back_populates="attacks")
+    character: Mapped[Character] = relationship(back_populates="attacks")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Attack(id={self.id}, name='{self.name}', character_id={self.character_id})>"

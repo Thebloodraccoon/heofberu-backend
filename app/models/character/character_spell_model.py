@@ -1,13 +1,22 @@
 """ORM models for a character's known spells, spell slots, and granted spells."""
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, UniqueConstraint
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import SpellLevel
 from app.models.enums import SpellLevelType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
+    from app.models.spells.spell_model import Spell
 
 
-class CharacterSpell(settings.Base):  # type: ignore
+class CharacterSpell(Base):
     """
     A spell the character has chosen/knows.
 
@@ -22,38 +31,38 @@ class CharacterSpell(settings.Base):  # type: ignore
 
     __tablename__ = "character_spells"
 
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
-    spell_id = Column(Integer, ForeignKey("spells.id", ondelete="CASCADE"), primary_key=True, index=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    spell_id: Mapped[int] = mapped_column(ForeignKey("spells.id", ondelete="CASCADE"), primary_key=True, index=True)
 
-    spell = relationship("Spell")
+    spell: Mapped[Spell] = relationship()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<CharacterSpell(character_id={self.character_id}, spell_id={self.spell_id})>"
 
 
-class CharacterSpellSlot(settings.Base):  # type: ignore
+class CharacterSpellSlot(Base):
     """A character's spell slots for a given spell level (e.g. LEVEL_3 -> 4 total, 2 used)."""
 
     __tablename__ = "character_spell_slots"
 
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
-    spell_level = Column(SpellLevelType, primary_key=True)
-    total = Column(Integer, nullable=False, default=0)
-    used = Column(Integer, nullable=False, default=0)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    spell_level: Mapped[SpellLevel] = mapped_column(SpellLevelType, primary_key=True)
+    total: Mapped[int] = mapped_column(default=0)
+    used: Mapped[int] = mapped_column(default=0)
 
     __table_args__ = (
         CheckConstraint("used >= 0", name="check_spell_slot_used_nonnegative"),
         CheckConstraint("used <= total", name="check_spell_slot_used_not_exceeding_total"),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<CharacterSpellSlot(character_id={self.character_id}, "
             f"level='{self.spell_level}', used={self.used}/{self.total})>"
         )
 
 
-class CharacterGrantedSpell(settings.Base):  # type: ignore
+class CharacterGrantedSpell(Base):
     """
     A spell the GM granted to a character directly (a homebrew boon) —
     separate from the limited "known spells" table ``character_spells`` and
@@ -66,12 +75,12 @@ class CharacterGrantedSpell(settings.Base):  # type: ignore
     __tablename__ = "character_granted_spells"
     __table_args__ = (UniqueConstraint("character_id", "spell_id", name="uq_character_granted_spell"),)
 
-    id = Column(Integer, primary_key=True)
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
-    spell_id = Column(Integer, ForeignKey("spells.id", ondelete="RESTRICT"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), index=True)
+    spell_id: Mapped[int] = mapped_column(ForeignKey("spells.id", ondelete="RESTRICT"), index=True)
 
-    character = relationship("Character", back_populates="granted_spells")
-    spell = relationship("Spell")
+    character: Mapped[Character] = relationship(back_populates="granted_spells")
+    spell: Mapped[Spell] = relationship()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<CharacterGrantedSpell(character_id={self.character_id}, spell_id={self.spell_id})>"

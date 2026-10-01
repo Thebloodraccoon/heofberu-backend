@@ -1,12 +1,20 @@
 """ORM model for images uploaded for an article (embedded in its body as markdown)."""
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
-from app.settings import settings
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.articles.article_model import Article
 
 
-class ArticleImage(settings.Base):  # type: ignore
+class ArticleImage(Base):
     """
     One image uploaded for an article.
 
@@ -17,17 +25,17 @@ class ArticleImage(settings.Base):  # type: ignore
 
     __tablename__ = "article_images"
 
-    id = Column(Integer, primary_key=True)
-    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id", ondelete="CASCADE"), index=True)
 
-    image_url = Column(String(512), nullable=False, default="")
+    image_url: Mapped[str] = mapped_column(String(512), default="")
     #: Random folder in the Storage key (``articles/{article_id}/{storage_key}/{id}.{ext}``): the bucket is
     #: public, so without it an image embedded in a ``:::gm`` block or a draft could be reached by guessing ids.
-    storage_key = Column(String(36), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(36))
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    article = relationship("Article", back_populates="images")
+    article: Mapped[Article] = relationship(back_populates="images")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<ArticleImage(id={self.id}, article_id={self.article_id})>"

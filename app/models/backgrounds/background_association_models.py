@@ -2,12 +2,12 @@
 
 from sqlalchemy import Column, ForeignKey, Index, Integer, Table
 
-from app.settings import settings
+from app.settings.base import Base
 
 # backgrounds <-> skills (which skills a background grants proficiency in)
 background_skills = Table(
     "background_skills",
-    settings.Base.metadata,
+    Base.metadata,
     Column("background_id", Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), primary_key=True),
     Column("skill_id", Integer, ForeignKey("skills.id", ondelete="RESTRICT"), primary_key=True),
     # The composite PK is (background_id, skill_id) — a lone `WHERE skill_id = ...`
@@ -18,7 +18,7 @@ background_skills = Table(
 # backgrounds <-> tags (shared Tag dictionary)
 background_tags = Table(
     "background_tags",
-    settings.Base.metadata,
+    Base.metadata,
     Column("background_id", Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), primary_key=True),
     Column("tag_id", Integer, ForeignKey("tags.id", ondelete="RESTRICT"), primary_key=True),
     # The composite PK is (background_id, tag_id) — a lone `WHERE tag_id = ...`

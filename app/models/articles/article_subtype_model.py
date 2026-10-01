@@ -1,11 +1,14 @@
 """ORM model for the GM-managed dictionary of article subtypes."""
 
-from sqlalchemy import Column, Index, Integer, String, func
+from __future__ import annotations
 
-from app.settings import settings
+from sqlalchemy import Index, String, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.settings.base import Base
 
 
-class ArticleSubtype(settings.Base):  # type: ignore
+class ArticleSubtype(Base):
     """
     A refinement of one ``article_type`` (location → «таверна», «город», «данж»).
 
@@ -15,11 +18,11 @@ class ArticleSubtype(settings.Base):  # type: ignore
 
     __tablename__ = "article_subtypes"
 
-    id = Column(Integer, primary_key=True)
-    article_type = Column(String(50), nullable=False, index=True)
-    name = Column(String(50), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_type: Mapped[str] = mapped_column(String(50), index=True)
+    name: Mapped[str] = mapped_column(String(50))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<ArticleSubtype(id={self.id}, article_type='{self.article_type}', name='{self.name}')>"
 
 

@@ -1,13 +1,21 @@
 """ORM model for a background's suggested personality-card entries."""
 
-from sqlalchemy import Column, ForeignKey, Integer, Text
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy import ForeignKey, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import BackgroundSuggestionType
 from app.models.enums import BackgroundSuggestionTypeType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.backgrounds.background_model import Background
 
 
-class BackgroundSuggestion(settings.Base):  # type: ignore
+class BackgroundSuggestion(Base):
     """
     One suggested personality-card entry for a background (e.g. Acolyte's
     "I idolize a particular hero of my faith." as a PERSONALITY_TRAIT row).
@@ -21,12 +29,12 @@ class BackgroundSuggestion(settings.Base):  # type: ignore
 
     __tablename__ = "background_suggestions"
 
-    id = Column(Integer, primary_key=True)
-    background_id = Column(Integer, ForeignKey("backgrounds.id", ondelete="CASCADE"), nullable=False, index=True)
-    suggestion_type = Column(BackgroundSuggestionTypeType, nullable=False)
-    text = Column(Text, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    background_id: Mapped[int] = mapped_column(ForeignKey("backgrounds.id", ondelete="CASCADE"), index=True)
+    suggestion_type: Mapped[BackgroundSuggestionType] = mapped_column(BackgroundSuggestionTypeType)
+    text: Mapped[str] = mapped_column(Text)
 
-    background = relationship("Background", back_populates="suggestions")
+    background: Mapped[Background] = relationship(back_populates="suggestions")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<BackgroundSuggestion(background_id={self.background_id}, suggestion_type='{self.suggestion_type}')>"

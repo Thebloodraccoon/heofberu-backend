@@ -1,15 +1,23 @@
 """ORM model for registered users."""
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, Integer, String, Text, text
-from sqlalchemy.orm import relationship
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants import UserRole
 from app.models.enums import UserRoleType
-from app.settings import settings
 from app.settings._common import utcnow
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
 
 
-class User(settings.Base):  # type: ignore
+class User(Base):
     """A registered user account (GM or player), owning characters."""
 
     __tablename__ = "users"
@@ -21,32 +29,27 @@ class User(settings.Base):  # type: ignore
         Index("uq_users_email_lower", text("lower(email)"), unique=True),
     )
 
-    id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False)
-    email = Column(String, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String, unique=True)
+    email: Mapped[str] = mapped_column()
 
-    hashed_password = Column(String, nullable=False)
-    role = Column(UserRoleType, nullable=False, default=UserRole.PLAYER, server_default="PLAYER")
+    hashed_password: Mapped[str] = mapped_column()
+    role: Mapped[UserRole] = mapped_column(UserRoleType, default=UserRole.PLAYER, server_default="PLAYER")
 
-    bio = Column(Text, nullable=True)
-    phone = Column(String(length=100), nullable=True)
-    discord = Column(String(length=100), nullable=True)
-    telegram = Column(String(length=100), nullable=True)
+    bio: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(String(length=100))
+    discord: Mapped[str | None] = mapped_column(String(length=100))
+    telegram: Mapped[str | None] = mapped_column(String(length=100))
 
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(
-        DateTime,
-        default=utcnow,
-        onupdate=utcnow,
-    )
-    last_login = Column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    last_login: Mapped[datetime | None] = mapped_column(DateTime)
 
-    characters = relationship(
-        "Character",
+    characters: Mapped[list[Character]] = relationship(
         back_populates="owner",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"

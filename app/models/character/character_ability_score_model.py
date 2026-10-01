@@ -1,13 +1,21 @@
 """ORM model for cached, precomputed effective ability scores."""
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
-from app.settings import settings
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.settings._common import utcnow
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
 
 
-class CharacterAbilityScore(settings.Base):  # type: ignore
+class CharacterAbilityScore(Base):
     """
     Cached, precomputed "effective" ability scores for a character: the base
     score (``Character.strength`` etc.) plus every applicable bonus (race,
@@ -25,22 +33,18 @@ class CharacterAbilityScore(settings.Base):  # type: ignore
 
     __tablename__ = "character_ability_scores"
 
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
 
-    strength_total = Column(Integer, nullable=False, default=10)
-    dexterity_total = Column(Integer, nullable=False, default=10)
-    constitution_total = Column(Integer, nullable=False, default=10)
-    intelligence_total = Column(Integer, nullable=False, default=10)
-    wisdom_total = Column(Integer, nullable=False, default=10)
-    charisma_total = Column(Integer, nullable=False, default=10)
+    strength_total: Mapped[int] = mapped_column(default=10)
+    dexterity_total: Mapped[int] = mapped_column(default=10)
+    constitution_total: Mapped[int] = mapped_column(default=10)
+    intelligence_total: Mapped[int] = mapped_column(default=10)
+    wisdom_total: Mapped[int] = mapped_column(default=10)
+    charisma_total: Mapped[int] = mapped_column(default=10)
 
-    updated_at = Column(
-        DateTime,
-        default=utcnow,
-        onupdate=utcnow,
-    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
-    character = relationship("Character", back_populates="ability_score_cache")
+    character: Mapped[Character] = relationship(back_populates="ability_score_cache")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<CharacterAbilityScore(character_id={self.character_id})>"

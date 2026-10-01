@@ -1,13 +1,23 @@
 """ORM model for world-lore articles (global lore down to a single location/faction/NPC)."""
 
-from sqlalchemy import Column, Computed, DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Computed, DateTime, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import TSVECTOR
-from sqlalchemy.orm import deferred, relationship
-from sqlalchemy_utils import LtreeType
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy_utils import Ltree, LtreeType
 
 from app.constants import ARTICLE_GM_BLOCK_SQL_PATTERN, ArticleStatus, ArticleVisibility
 from app.models.enums import ArticleStatusType, ArticleVisibilityType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.articles.article_image_model import ArticleImage
+    from app.models.articles.article_subtype_model import ArticleSubtype
+    from app.models.tag_model import Tag
 
 #: A GM block that contains another ``:::`` container: from ``:::gm`` to the end of the text (fail closed, the flat
 #: pattern would close the block at the inner ``:::``). Keep equal to ``NESTED_GM_BLOCK_SQL_PATTERN`` in
@@ -47,7 +57,7 @@ SEARCH_VECTOR_GM_SQL = _search_vector_sql("coalesce(excerpt, '')", "coalesce(bod
 _PUBLIC_ROW = text("status = 'PUBLISHED' AND visibility = 'PUBLIC'")
 
 
-class Article(settings.Base):  # type: ignore
+class Article(Base):
     """
     Полиморфная статья о мире: от глобального лора до конкретной
     локации/фракции/НПС. ``article_type`` — открытый список (см.
@@ -73,45 +83,50 @@ class Article(settings.Base):  # type: ignore
         ),
     )
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
-    slug = Column(String(220), nullable=False, unique=True, index=True)
-    title = Column(String(200), nullable=False, index=True)
-    excerpt = Column(String(500), nullable=True)
-    body_markdown = Column(Text, nullable=False, default="")
+    slug: Mapped[str] = mapped_column(String(220), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(200), index=True)
+    excerpt: Mapped[str | None] = mapped_column(String(500))
+    body_markdown: Mapped[str] = mapped_column(Text, default="")
 
-    article_type = Column(String(50), nullable=False, index=True)
-    subtype_id = Column(Integer, ForeignKey("article_subtypes.id", ondelete="SET NULL"), nullable=True, index=True)
+    article_type: Mapped[str] = mapped_column(String(50), index=True)
+    subtype_id: Mapped[int | None] = mapped_column(ForeignKey("article_subtypes.id", ondelete="SET NULL"), index=True)
 
-    parent_id = Column(Integer, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True)
-    path = Column(LtreeType, nullable=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id", ondelete="SET NULL"), index=True)
+    path: Mapped[Ltree | None] = mapped_column(LtreeType)
 
-    status = Column(ArticleStatusType, nullable=False, default=ArticleStatus.DRAFT, index=True)
-    visibility = Column(
-        ArticleVisibilityType, nullable=False, default=ArticleVisibility.PUBLIC, server_default="PUBLIC", index=True
+    status: Mapped[ArticleStatus] = mapped_column(ArticleStatusType, default=ArticleStatus.DRAFT, index=True)
+    visibility: Mapped[ArticleVisibility] = mapped_column(
+        ArticleVisibilityType, default=ArticleVisibility.PUBLIC, server_default="PUBLIC", index=True
     )
-    author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    reviewed_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
 
     # Generated columns (never written by the app): weighted title > excerpt > body, Russian + simple configs.
     # deferred: never in a response, no reason to load them on every select(Article).
-    search_vector = deferred(Column(TSVECTOR, Computed(SEARCH_VECTOR_SQL, persisted=True), nullable=True))
-    search_vector_gm = deferred(Column(TSVECTOR, Computed(SEARCH_VECTOR_GM_SQL, persisted=True), nullable=True))
+    search_vector: Mapped[str | None] = mapped_column(
+        TSVECTOR, Computed(SEARCH_VECTOR_SQL, persisted=True), deferred=True
+    )
+    search_vector_gm: Mapped[str | None] = mapped_column(
+        TSVECTOR, Computed(SEARCH_VECTOR_GM_SQL, persisted=True), deferred=True
+    )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    published_at = Column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Many-to-one, always needed in responses (incl. tree/relation briefs): joined-loaded, never lazy in async.
-    subtype = relationship("ArticleSubtype", lazy="joined")
-    tags = relationship("Tag", secondary="article_tags", back_populates="articles", order_by="Tag.name")
-    images = relationship(
-        "ArticleImage",
+    subtype: Mapped[ArticleSubtype | None] = relationship(lazy="joined")
+    tags: Mapped[list[Tag]] = relationship(secondary="article_tags", back_populates="articles", order_by="Tag.name")
+    images: Mapped[list[ArticleImage]] = relationship(
         back_populates="article",
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="ArticleImage.id",
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Article(id={self.id}, slug='{self.slug}', type='{self.article_type}')>"
