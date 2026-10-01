@@ -75,6 +75,22 @@ def test_session(session):
     )
 
 
+@nox.session(name="unit")
+def unit_session(session):
+    """Fast loop: unit tests only (no Postgres/Redis), no coverage."""
+    setup_test_env(session)
+    workers, rest = split_workers(session)
+    session.run("poetry", "run", "pytest", *workers, "tests/unit", *rest, external=True)
+
+
+@nox.session(name="test-fast")
+def test_fast_session(session):
+    """Fast loop: all tests without coverage (coverage with greenlet tracing adds ~50-75% wall time)."""
+    setup_test_env(session)
+    workers, rest = split_workers(session)
+    session.run("poetry", "run", "pytest", *workers, *(rest or ["tests/"]), external=True)
+
+
 @nox.session(name="all")
 def all_session(session):
     """Run all checks for CD/Ci."""

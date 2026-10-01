@@ -24,10 +24,11 @@ from tests.isolation import configure_environment  # noqa: E402  (must precede a
 ISOLATION = configure_environment()
 
 import httpx  # noqa: E402
+import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 
 from app.constants import CHARACTER_MAX_LEVEL, UserRole  # noqa: E402
-from app.core.security.password import get_password_hash  # noqa: E402
+from app.core.security.password import get_password_hash, pwd_context  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     Background,
@@ -48,6 +49,21 @@ from app.settings import settings  # noqa: E402
 
 assert settings.STAGE == "test", "Tests must run against the test stage (STAGE=test)."
 
+# bcrypt at the production cost (12) is ~0.5 s per hash/verify and dominated test time (every
+# user fixture + every login). Hashes embed their own cost, so verification stays correct;
+# 4 is bcrypt's minimum. Test process only — production code and settings are untouched.
+pwd_context.update(bcrypt__rounds=4)
+
+
+def pytest_collection_modifyitems(items):
+    """Mark tests by location so ``-m unit`` / ``-m integration`` work without per-file decorators."""
+    for item in items:
+        path = item.path.as_posix()
+        if "/tests/unit/" in path:
+            item.add_marker(pytest.mark.unit)
+        elif "/tests/integration/" in path:
+            item.add_marker(pytest.mark.integration)
+
 
 @pytest_asyncio.fixture
 async def client(db_session):
@@ -61,7 +77,7 @@ async def client(db_session):
     # Unique client IP per process: the rate limiter keys Redis counters by client IP.
     transport = httpx.ASGITransport(app=app, client=(ISOLATION.client_ip, 123))
     try:
-        async with httpx.AsyncClient(transport=transport, base_url="https://testserver/api") as test_client:
+        async with httpx.AsyncClient(transport=transport, base_url="https://testserver/api/v1") as test_client:
             yield test_client
     finally:
         app.dependency_overrides.pop(settings.get_db, None)
