@@ -9,6 +9,7 @@ from app.core.storage.dependencies import StorageServiceDep
 from app.features.articles.crud.service import ArticleCrudService
 from app.features.articles.images.service import ArticleImagesService
 from app.features.articles.relations.service import ArticleRelationsService
+from app.features.articles.revisions.service import ArticleRevisionsService
 from app.features.articles.subtypes.service import ArticleSubtypeService
 from app.features.articles.tags.service import ArticleTagService
 
@@ -56,3 +57,12 @@ def get_article_subtype_service(db: DatabaseDep) -> ArticleSubtypeService:
 
 
 ArticleSubtypesDep = Annotated[ArticleSubtypeService, Depends(get_article_subtype_service)]
+
+
+def get_article_revisions_service(db: DatabaseDep) -> ArticleRevisionsService:
+    """Get the article revisions (version history) service instance."""
+
+    return ArticleRevisionsService(db)
+
+
+ArticleRevisionsDep = Annotated[ArticleRevisionsService, Depends(get_article_revisions_service)]

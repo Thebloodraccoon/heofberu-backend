@@ -26,5 +26,9 @@ engine = make_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_recycle=No
 
 SessionLocal = make_async_session_factory(engine)
 get_db = make_get_db(SessionLocal)
-get_redis = make_get_redis(REDIS_URL)
-get_auth_redis = make_get_redis(AUTH_REDIS_URL)
+# Generous timeout: under ``nox -s test`` (coverage + several workers) a reply can take longer than the 0.5 s production
+# default, which showed up as random 503s from the auth session check.
+REDIS_TIMEOUT_SECONDS = 5.0
+
+get_redis = make_get_redis(REDIS_URL, timeout=REDIS_TIMEOUT_SECONDS)
+get_auth_redis = make_get_redis(AUTH_REDIS_URL, timeout=REDIS_TIMEOUT_SECONDS)

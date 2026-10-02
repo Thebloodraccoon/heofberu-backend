@@ -7,6 +7,7 @@ from pydantic import StringConstraints
 
 from app.constants import ArticleStatus
 from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
+from app.features.articles.access import ArticleActor
 from app.features.articles.crud.schemas import (
     ArticleBrief,
     ArticleCreate,
@@ -296,19 +297,24 @@ async def update_article(
         ),
     ],
     article_service: ArticleCrudDep,
-    _: GmUserDep,
+    gm_user: GmUserDep,
 ):
     """
-    Partially update an article's fields. **GM only.**
+    Partially update an article's fields. **Author or founder only** (403 for another GM).
 
     Only fields included in the request body are changed; use
     `PUT /articles/{article_id}/tags` for tags. Including `parent_id`
     re-roots `path` for this article and its whole existing subtree. `status` can't be
-    changed here — use the `submit`/`publish`/`reject`/`archive`/`restore` actions. Any GM may edit any
-    article, a published one included (it stays published); same title/`:::gm` rules as on create.
+    changed here — use the `submit`/`publish`/`reject`/`archive`/`restore` actions. The author may edit their
+    article in any status, a published one included (it stays published); the founder may edit any article;
+    same title/`:::gm` rules as on create.
+
+    Every change of the content fields (title, excerpt, body, type, subtype, visibility) is saved as a new
+    version (`version` in the response; history under `/articles/{article_id}/revisions`). The optional
+    `change_note` is stored with that version.
     """
 
-    return await article_service.update_article(article_id, data)
+    return await article_service.update_article(article_id, data, ArticleActor.of(gm_user))
 
 
 @router.delete(
@@ -333,8 +339,11 @@ async def delete_article(article_id: int, article_service: ArticleCrudDep, _: Fo
 
 
 TRANSITION_RESPONSES = {
+    403: {"description": "`submit` by a GM who isn't the author."},
     404: {"description": "No article exists with the given ID."},
-    409: {"description": "The action isn't allowed from the article's current status."},
+    409: {
+        "description": "The action isn't allowed from the article's current status, or (`publish`) the article was edited after the `version` you reviewed."
+    },
 }
 
 
@@ -344,10 +353,10 @@ TRANSITION_RESPONSES = {
     summary="Send a draft for review",
     responses=TRANSITION_RESPONSES,
 )
-async def submit_article(article_id: int, article_service: ArticleCrudDep, _: GmUserDep):
-    """`draft` → `in_review`. **GM only.**"""
+async def submit_article(article_id: int, article_service: ArticleCrudDep, gm_user: GmUserDep):
+    """`draft` → `in_review`. **Author or founder only** (403 for another GM)."""
 
-    return await article_service.transition(article_id, "submit")
+    return await article_service.transition(article_id, "submit", actor=ArticleActor.of(gm_user))
 
 
 @router.post(
@@ -356,10 +365,26 @@ async def submit_article(article_id: int, article_service: ArticleCrudDep, _: Gm
     summary="Approve and publish an article under review",
     responses=TRANSITION_RESPONSES,
 )
-async def publish_article(article_id: int, article_service: ArticleCrudDep, founder: FounderDep):
-    """`in_review` → `published`; records the reviewer, the first publish stamps `published_at`. **Founder only.**"""
+async def publish_article(
+    article_id: int,
+    article_service: ArticleCrudDep,
+    founder: FounderDep,
+    version: int = Query(
+        ...,
+        ge=1,
+        description="The `version` of the article you reviewed. Publishing fails with 409 if it was edited since.",
+    ),
+):
+    """
+    `in_review` → `published`; records the reviewer, the first publish stamps `published_at`. **Founder only.**
 
-    return await article_service.transition(article_id, "publish", actor_id=founder.id)
+    Pass the `version` you reviewed (`GET /articles/{id}`, changes via `GET /articles/{id}/revisions/{version}/diff`):
+    if the author edited the article after that, the response is 409 and nothing is published.
+    """
+
+    return await article_service.transition(
+        article_id, "publish", actor=ArticleActor.of(founder), expected_version=version
+    )
 
 
 @router.post(
@@ -371,7 +396,7 @@ async def publish_article(article_id: int, article_service: ArticleCrudDep, foun
 async def reject_article(article_id: int, article_service: ArticleCrudDep, founder: FounderDep):
     """`in_review` → `draft`; records the reviewer. **Founder only.**"""
 
-    return await article_service.transition(article_id, "reject", actor_id=founder.id)
+    return await article_service.transition(article_id, "reject", actor=ArticleActor.of(founder))
 
 
 @router.post(
@@ -380,10 +405,10 @@ async def reject_article(article_id: int, article_service: ArticleCrudDep, found
     summary="Archive an article",
     responses=TRANSITION_RESPONSES,
 )
-async def archive_article(article_id: int, article_service: ArticleCrudDep, _: FounderDep):
+async def archive_article(article_id: int, article_service: ArticleCrudDep, founder: FounderDep):
     """`draft` / `in_review` / `published` → `archived` (hidden from non-GMs). **Founder only.**"""
 
-    return await article_service.transition(article_id, "archive")
+    return await article_service.transition(article_id, "archive", actor=ArticleActor.of(founder))
 
 
 @router.post(
@@ -392,7 +417,7 @@ async def archive_article(article_id: int, article_service: ArticleCrudDep, _: F
     summary="Restore an archived article to draft",
     responses=TRANSITION_RESPONSES,
 )
-async def restore_article(article_id: int, article_service: ArticleCrudDep, _: FounderDep):
+async def restore_article(article_id: int, article_service: ArticleCrudDep, founder: FounderDep):
     """`archived` → `draft`. **Founder only.**"""
 
-    return await article_service.transition(article_id, "restore")
+    return await article_service.transition(article_id, "restore", actor=ArticleActor.of(founder))

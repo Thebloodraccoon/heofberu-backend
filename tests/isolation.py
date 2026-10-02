@@ -37,7 +37,7 @@ import uuid
 ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_DATABASE_URL = "postgresql://heof_user:test_secret@localhost:5433/heof_test_db"
-DEFAULT_REDIS_URL = "redis://localhost:6381/0"
+DEFAULT_REDIS_URL = "redis://127.0.0.1:6381/0"
 
 _LOCK_KEY = 0x48454F46  # advisory lock shared by every test process on this server
 _RUN_COMMENT = "heof-pytest-run:"

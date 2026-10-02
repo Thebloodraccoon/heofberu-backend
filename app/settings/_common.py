@@ -158,7 +158,7 @@ def make_get_db(session_factory: async_sessionmaker[AsyncSession]):
     return get_db
 
 
-def make_get_redis(redis_url: str):
+def make_get_redis(redis_url: str, *, timeout: float = 0.5):
     """
     Returns an async context manager that yields a connected Redis client.
 
@@ -171,6 +171,9 @@ def make_get_redis(redis_url: str):
     If the running event loop differs from the loop the singleton was
     created on (e.g. a new loop per test case), the client is rebuilt —
     redis-py connections are bound to the loop they first dialed on.
+
+    ``timeout`` is the connect/read timeout in seconds (short by default, see below; the test stage raises it so a
+    loaded CI/dev machine running coverage with several workers doesn't turn a slow reply into a 503).
     """
 
     lock = asyncio.Lock()
@@ -184,9 +187,10 @@ def make_get_redis(redis_url: str):
                 if state["client"] is not None:
                     with suppress(Exception):
                         await state["client"].aclose()
+
                 # Short timeouts: a blackholed Redis must degrade to a fast cache miss, not an OS-level TCP wait.
                 state["client"] = Redis.from_url(
-                    redis_url, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5
+                    redis_url, decode_responses=True, socket_connect_timeout=timeout, socket_timeout=timeout
                 )
                 state["loop"] = current_loop
 

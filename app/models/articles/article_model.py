@@ -117,6 +117,8 @@ class Article(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Content version, +1 per saved change of the content fields; mirrored by ``ArticleRevision.version``.
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
 
     # Many-to-one, always needed in responses (incl. tree/relation briefs): joined-loaded, never lazy in async.
     subtype: Mapped[ArticleSubtype | None] = relationship(lazy="joined")

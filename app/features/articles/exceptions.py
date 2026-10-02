@@ -45,6 +45,35 @@ class ArticleStatusTransitionException(AppError):
         super().__init__(f"Cannot {action} article {article_id}: it is {current_status}.")
 
 
+class ArticleVersionMismatchException(AppError):
+    """Raised (409) when an article is published at a version other than the current one (it was edited meanwhile)."""
+
+    status_code = 409
+
+    def __init__(self, article_id: int, expected: int, current: int):
+        """Initialize with the article, the version the reviewer confirmed and its actual current version."""
+
+        self.article_id = article_id
+        self.expected = expected
+        self.current = current
+        super().__init__(
+            f"Article {article_id} is at version {current}, not {expected}: it was edited after you reviewed it. "
+            f"Review the changes (GET /articles/{article_id}/revisions/{current}/diff) and publish again."
+        )
+
+
+class ArticleEditForbiddenException(AppError):
+    """Raised (403) when a GM edits an article they didn't write: they may only propose changes to it."""
+
+    status_code = 403
+
+    def __init__(self, article_id: int):
+        """Initialize with the article the caller may not edit."""
+
+        self.article_id = article_id
+        super().__init__(f"You can only edit your own articles; article {article_id} belongs to someone else.")
+
+
 class ArticleSubtypeTypeMismatchException(AppError):
     """Raised (400) when an article would use a subtype of a different ``article_type``."""
 

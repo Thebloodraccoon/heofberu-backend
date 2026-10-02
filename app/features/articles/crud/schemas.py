@@ -19,6 +19,8 @@ TITLE_MAX_LENGTH = 200
 EXCERPT_MAX_LENGTH = 500
 #: Upper bound on ``body_markdown`` (``Text`` column): far above real lore pages, far below the request-body cap.
 BODY_MAX_LENGTH = 200_000
+#: ``article_revisions.change_note`` is ``String(300)``.
+CHANGE_NOTE_MAX_LENGTH = 300
 
 ArticleType = Annotated[str, AfterValidator(lambda value: validate_in_list(value, ARTICLE_TYPES, "article_type"))]
 ArticleTitle = Annotated[str, Field(max_length=TITLE_MAX_LENGTH), AfterValidator(normalize_title)]
@@ -90,6 +92,11 @@ class ArticleUpdate(BaseModel):
     subtype_id: int | None = None
     parent_id: int | None = None
     visibility: ArticleVisibility | None = None
+    change_note: str | None = Field(
+        default=None,
+        max_length=CHANGE_NOTE_MAX_LENGTH,
+        description="Optional comment stored with the new version in the article history (not an article field).",
+    )
 
     @field_validator("title", "body_markdown", "article_type", "visibility")
     def validate_not_null(cls, value, info):
@@ -111,6 +118,10 @@ class ArticleResponse(ArticleBase):
     slug: str
     status: ArticleStatus
     author_id: int | None = None
+    version: int | None = Field(
+        default=None,
+        description="Content version (GM/founder only; null for other readers, who always get the latest content).",
+    )
     created_at: datetime
     updated_at: datetime
     published_at: datetime | None = None

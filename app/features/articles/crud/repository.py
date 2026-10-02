@@ -3,7 +3,21 @@
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
-from sqlalchemy import and_, delete, exists, func, literal_column, or_, select, text, update
+from sqlalchemy import (
+    Integer,
+    String,
+    and_,
+    delete,
+    exists,
+    func,
+    insert,
+    literal,
+    literal_column,
+    or_,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
@@ -20,9 +34,13 @@ from app.features.articles.visibility import visibility_conditions
 from app.models.articles.article_association_models import article_tags
 from app.models.articles.article_image_model import ArticleImage
 from app.models.articles.article_model import Article
+from app.models.articles.article_revision_model import ArticleRevision
 from app.models.articles.article_subtype_model import ArticleSubtype
 
 T = TypeVar("T")
+
+#: Content fields: a change to any of them is a new version (mirrored in ``ArticleRevision``).
+REVISED_FIELDS = ("title", "excerpt", "body_markdown", "article_type", "subtype_id", "visibility")
 
 #: Minimum ``pg_trgm`` word-similarity for a title to count as a typo/prefix-tolerant match.
 #: ``word_similarity`` (vs. plain ``similarity``) looks for the best-matching *substring* of the
@@ -64,14 +82,52 @@ class ArticleRepository(ArticleScopedRepository):
         super().__init__(db, load_tags_and_images=True, search_fields=["title", "slug"], unique_fields=["slug"])
 
     async def get_write_state(self, article_id: int) -> Any:
-        """Row ``(article_type, subtype_id, published_at, status)`` the write rules need, sans tags/images; ``None`` if absent."""
+        """Row ``(article_type, subtype_id, published_at, status, author_id, version)`` the write rules need, sans tags/images; ``None`` if absent."""
 
         result = await self.db.execute(
-            select(Article.article_type, Article.subtype_id, Article.published_at, Article.status).where(
-                Article.id == article_id
-            )
+            select(
+                Article.article_type,
+                Article.subtype_id,
+                Article.published_at,
+                Article.status,
+                Article.author_id,
+                Article.version,
+            ).where(Article.id == article_id)
         )
         return result.one_or_none()
+
+    async def record_revision(
+        self, article_id: int, *, editor_id: int | None, change_note: str | None, bump: bool
+    ) -> None:
+        """
+        Snapshot the article's current content into ``article_revisions`` (one INSERT ... SELECT, no copying in Python).
+
+        ``bump=True`` first increments ``articles.version`` (call it after the content UPDATE; that UPDATE holds
+        the row lock, so concurrent saves get distinct versions). A new article is recorded with ``bump=False``
+        (its first version is the column default, 1). The snapshot is read back from the row, so it always equals
+        what was actually stored, whatever the service normalized.
+        """
+
+        if bump:
+            await self.db.execute(
+                update(Article)
+                .where(Article.id == article_id)
+                .values(version=Article.version + 1)
+                .execution_options(synchronize_session=False)
+            )
+
+        await self.db.execute(
+            insert(ArticleRevision).from_select(
+                ["article_id", "version", *REVISED_FIELDS, "editor_id", "change_note"],
+                select(
+                    Article.id,
+                    Article.version,
+                    *(getattr(Article, field) for field in REVISED_FIELDS),
+                    literal(editor_id, Integer),
+                    literal(change_note, String),
+                ).where(Article.id == article_id),
+            )
+        )
 
     async def update_fields(self, article_id: int, fields: dict, *, commit: bool = True) -> None:
         """Write ``fields`` onto the article with one UPDATE (slug uniqueness checked), committing or flushing."""
@@ -88,13 +144,20 @@ class ArticleRepository(ArticleScopedRepository):
         await self.commit_or_flush(commit=commit)
 
     async def transition_status(
-        self, article_id: int, allowed_from: frozenset[ArticleStatus], target: ArticleStatus, *, reviewer_id: int | None
+        self,
+        article_id: int,
+        allowed_from: frozenset[ArticleStatus],
+        target: ArticleStatus,
+        *,
+        reviewer_id: int | None,
+        expected_version: int | None = None,
     ) -> bool:
         """
         Move the article to ``target`` only if it is currently in ``allowed_from`` (compare-and-set in one UPDATE).
 
         Returns whether a row moved, so two concurrent actions can't both pass a stale status check. A first
-        publish stamps ``published_at``; ``reviewer_id`` is recorded when given.
+        publish stamps ``published_at``; ``reviewer_id`` is recorded when given. With ``expected_version`` the move
+        also requires the article to still be at that content version (nothing was edited since the reviewer looked).
         """
 
         values: dict[str, Any] = {"status": target}
@@ -103,9 +166,13 @@ class ArticleRepository(ArticleScopedRepository):
         if target == ArticleStatus.PUBLISHED:
             values["published_at"] = func.coalesce(Article.published_at, func.now())
 
+        conditions = [Article.id == article_id, Article.status.in_(sorted(allowed_from, key=lambda s: s.value))]
+        if expected_version is not None:
+            conditions.append(Article.version == expected_version)
+
         result = await self.db.execute(
             update(Article)
-            .where(Article.id == article_id, Article.status.in_(sorted(allowed_from, key=lambda s: s.value)))
+            .where(*conditions)
             .values(**values)
             .returning(Article.id)
             .execution_options(synchronize_session=False)

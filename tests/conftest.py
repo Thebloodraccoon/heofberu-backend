@@ -475,7 +475,8 @@ async def create_article(client, gm_token, founder_token):
             "archived": [("archive", founder_headers)],
         }.get(status, [])
         for action, action_headers in actions:
-            moved = await client.post(f"/articles/{article['id']}/{action}", headers=action_headers)
+            params = {"version": article["version"]} if action == "publish" else None
+            moved = await client.post(f"/articles/{article['id']}/{action}", headers=action_headers, params=params)
             assert moved.status_code == 200, moved.text
             article = moved.json()
 

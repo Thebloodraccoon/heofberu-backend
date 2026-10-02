@@ -41,13 +41,16 @@ async def lifespan(app: FastAPI):
     separate deploy step (`alembic upgrade head`) before the app starts.
     The app never creates or alters tables itself.
     """
+
     logger.info("Starting up Heofberu Backend API...")
     yield
     logger.info("Shutting down Heofberu Backend API...")
+
     for provider in (settings.get_redis, settings.get_auth_redis):
         close_redis = getattr(provider, "close", None)
         if close_redis is not None:
             await close_redis()
+
     await settings.engine.dispose()
 
 
@@ -62,6 +65,7 @@ def setup_middleware(app: FastAPI) -> None:
     ``SecurityHeadersMiddleware`` sits right below it so every response,
     errors included, carries the security headers.
     """
+
     if MiddlewareConfig.should_enable_middleware("body_limit"):
         body_limit_config = MiddlewareConfig.get_body_limit_config()
         app.add_middleware(RequestBodyLimitMiddleware, **body_limit_config)

@@ -2,6 +2,8 @@
 
 import pytest
 
+from app.constants import UserRole
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -40,7 +42,9 @@ class TestArticleWorkflow:
         article = await create_article(status="in_review")
 
         response = await client.post(
-            f"/articles/{article['id']}/publish", headers={"Authorization": f"Bearer {gm_token}"}
+            f"/articles/{article['id']}/publish",
+            params={"version": article["version"]},
+            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 403
@@ -49,7 +53,9 @@ class TestArticleWorkflow:
         article = await create_article(status="in_review")
 
         response = await client.post(
-            f"/articles/{article['id']}/publish", headers={"Authorization": f"Bearer {founder_token}"}
+            f"/articles/{article['id']}/publish",
+            params={"version": article["version"]},
+            headers={"Authorization": f"Bearer {founder_token}"},
         )
 
         assert response.status_code == 200
@@ -62,7 +68,9 @@ class TestArticleWorkflow:
         article = await create_article()
 
         response = await client.post(
-            f"/articles/{article['id']}/publish", headers={"Authorization": f"Bearer {founder_token}"}
+            f"/articles/{article['id']}/publish",
+            params={"version": article["version"]},
+            headers={"Authorization": f"Bearer {founder_token}"},
         )
 
         assert response.status_code == 409
@@ -136,10 +144,66 @@ class TestArticleWorkflow:
         assert edited.json()["published_at"] == published_at
 
         for action, headers in [("archive", founder), ("restore", founder), ("submit", gm), ("publish", founder)]:
-            moved = await client.post(f"/articles/{article['id']}/{action}", headers=headers)
+            params = {"version": edited.json()["version"]} if action == "publish" else None
+            moved = await client.post(f"/articles/{article['id']}/{action}", headers=headers, params=params)
             assert moved.status_code == 200, moved.text
 
         assert moved.json()["published_at"] == published_at
+
+    async def test_publish_requires_the_reviewed_version(self, client, create_article, founder_token):
+        article = await create_article(status="in_review")
+
+        response = await client.post(
+            f"/articles/{article['id']}/publish", headers={"Authorization": f"Bearer {founder_token}"}
+        )
+
+        assert response.status_code == 422
+
+    async def test_publish_is_refused_when_edited_after_review(self, client, create_article, gm_token, founder_token):
+        article = await create_article(status="in_review")
+        reviewed_version = article["version"]
+        edited = await client.patch(
+            f"/articles/{article['id']}",
+            json={"body_markdown": "sneaky change after the review"},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert edited.status_code == 200
+
+        response = await client.post(
+            f"/articles/{article['id']}/publish",
+            params={"version": reviewed_version},
+            headers={"Authorization": f"Bearer {founder_token}"},
+        )
+
+        assert response.status_code == 409
+        assert (await client.get(f"/articles/{article['id']}")).status_code == 404
+
+        retry = await client.post(
+            f"/articles/{article['id']}/publish",
+            params={"version": edited.json()["version"]},
+            headers={"Authorization": f"Bearer {founder_token}"},
+        )
+        assert retry.status_code == 200
+        assert retry.json()["status"] == "published"
+
+    async def test_other_gm_cannot_submit(self, client, create_article, create_user, login_as):
+        article = await create_article()
+        other_gm_token = await login_as(await create_user(role=UserRole.GM))
+
+        response = await client.post(
+            f"/articles/{article['id']}/submit", headers={"Authorization": f"Bearer {other_gm_token}"}
+        )
+
+        assert response.status_code == 403
+
+    async def test_founder_can_submit_any_draft(self, client, create_article, founder_token):
+        article = await create_article()
+
+        response = await client.post(
+            f"/articles/{article['id']}/submit", headers={"Authorization": f"Bearer {founder_token}"}
+        )
+
+        assert response.status_code == 200
 
     async def test_transition_on_missing_article_is_404(self, client, gm_token):
         response = await client.post("/articles/999999/submit", headers={"Authorization": f"Bearer {gm_token}"})

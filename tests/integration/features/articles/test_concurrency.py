@@ -10,12 +10,16 @@ from sqlalchemy import select
 
 from app.constants import ArticleStatus
 from app.core.exceptions import RecordAlreadyExistsError
+from app.features.articles.access import ArticleActor
 from app.features.articles.crud.repository import SLUG_ATTEMPTS, ArticleRepository
 from app.features.articles.crud.schemas import ArticleCreate, ArticleUpdate
 from app.features.articles.crud.service import ArticleCrudService
 from app.features.articles.exceptions import ArticleParentCycleException, ArticleStatusTransitionException
 from app.models.articles.article_model import Article
+from app.models.articles.article_revision_model import ArticleRevision
 from app.settings import settings
+
+FOUNDER = ArticleActor(id=1, is_founder=True)
 
 
 async def _in_own_session(operation):
@@ -116,10 +120,10 @@ class TestParentChangeRace:
         b = await create_article(title="B")
 
         async def move_a_under_b(service):
-            return await service.update_article(a["id"], ArticleUpdate(parent_id=b["id"]))
+            return await service.update_article(a["id"], ArticleUpdate(parent_id=b["id"]), FOUNDER)
 
         async def move_b_under_a(service):
-            return await service.update_article(b["id"], ArticleUpdate(parent_id=a["id"]))
+            return await service.update_article(b["id"], ArticleUpdate(parent_id=a["id"]), FOUNDER)
 
         results = await asyncio.gather(
             _in_own_session(move_a_under_b), _in_own_session(move_b_under_a), return_exceptions=True
@@ -134,12 +138,34 @@ class TestParentChangeRace:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+class TestVersionRace:
+    async def test_concurrent_content_edits_get_distinct_versions(self, client, create_article, db_session):
+        article = await create_article(body_markdown="v1")
+
+        def edit(text):
+            async def run(service):
+                return await service.update_article(article["id"], ArticleUpdate(body_markdown=text), FOUNDER)
+
+            return run
+
+        results = await asyncio.gather(_in_own_session(edit("from A")), _in_own_session(edit("from B")))
+
+        assert sorted(r.version for r in results) == [2, 3]
+        versions = (
+            await db_session.execute(select(ArticleRevision.version).where(ArticleRevision.article_id == article["id"]))
+        ).scalars()
+        assert sorted(versions) == [1, 2, 3]
+        assert (await db_session.scalar(select(Article.version).where(Article.id == article["id"]))) == 3
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 class TestTransitionRace:
     async def test_only_one_of_two_concurrent_publishes_wins(self, client, create_article, db_session):
         article = await create_article(status="in_review")
 
         async def publish(service):
-            return await service.transition(article["id"], "publish", actor_id=1)
+            return await service.transition(article["id"], "publish", actor=FOUNDER)
 
         results = await asyncio.gather(_in_own_session(publish), _in_own_session(publish), return_exceptions=True)
 

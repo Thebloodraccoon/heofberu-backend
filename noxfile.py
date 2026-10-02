@@ -11,7 +11,7 @@ def setup_test_env(session):
     """Setup test environment variables."""
     session.env["STAGE"] = "test"
     session.env["TEST_DATABASE_URL"] = "postgresql://heof_user:test_secret@localhost:5433/heof_test_db"
-    session.env["TEST_REDIS_URL"] = "redis://localhost:6381/0"
+    session.env["TEST_REDIS_URL"] = "redis://127.0.0.1:6381/0"
     # Own DB/cache namespace per run: several nox runs can go side by side. Set TEST_RUN_ID to pin it.
     session.env["TEST_RUN_ID"] = os.environ.get("TEST_RUN_ID") or uuid.uuid4().hex[:8]
 

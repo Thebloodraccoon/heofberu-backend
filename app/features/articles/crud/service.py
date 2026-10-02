@@ -12,6 +12,7 @@ from app.core.cache import use_cache
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, paginate
 from app.core.storage.service import ImageStorageService
+from app.features.articles.access import ArticleActor
 from app.features.articles.cache import (
     ARTICLE_CACHE_NAMESPACES,
     ARTICLE_TREE_NAMESPACE,
@@ -19,7 +20,7 @@ from app.features.articles.cache import (
     invalidate_article_trees,
     invalidate_articles,
 )
-from app.features.articles.crud.repository import ArticleRepository
+from app.features.articles.crud.repository import REVISED_FIELDS, ArticleRepository
 from app.features.articles.crud.schemas import (
     ArticleBrief,
     ArticleCreate,
@@ -32,8 +33,10 @@ from app.features.articles.exceptions import (
     ArticleParentCycleException,
     ArticleStatusTransitionException,
     ArticleSubtypeTypeMismatchException,
+    ArticleVersionMismatchException,
 )
 from app.features.articles.images.service import storage_entity
+from app.features.articles.revisions.repository import ArticleRevisionRepository
 from app.features.articles.secrets import strip_gm_blocks
 from app.models.articles.article_model import Article
 
@@ -72,8 +75,10 @@ class ArticleCrudService(
     """
     Article catalog CRUD.
 
-    Editing policy: any GM may edit any article, including a published one, in place; an edit never changes
-    ``status`` (only the review actions do), so a published article stays published while it is edited.
+    Editing policy: a GM edits only the articles they wrote (any status, a published one included, in place) and
+    proposes changes to the rest; the founder edits any article. An edit never changes ``status`` (only the review
+    actions do), so a published article stays published while it is edited. Every change of the content fields is
+    recorded as a new version (``article_revisions``) and can be restored.
     """
 
     repository: ArticleRepository
@@ -90,6 +95,7 @@ class ArticleCrudService(
             get_all_schema=ArticleGetAllResponse,
         )
         self._storage = storage or ImageStorageService()
+        self._revisions = ArticleRevisionRepository(db)
 
     @use_cache(ttl=GET_BY_ID_TTL_SECONDS)
     async def get_by_id(self, item_id: int) -> ArticleResponse:
@@ -122,13 +128,17 @@ class ArticleCrudService(
             if data.parent_id is not None:
                 await self.repository.lock_tree()
             item = await self.repository.write_with_unique_slug(data.title, write)
+            await self.repository.record_revision(item.id, editor_id=author_id, change_note=None, bump=False)
             await invalidate_article_trees(self.repository.db)
 
         return await self._get_response(item.id)
 
-    async def update_article(self, article_id: int, data: ArticleUpdate) -> ArticleResponse:
+    async def update_article(self, article_id: int, data: ArticleUpdate, actor: ArticleActor) -> ArticleResponse:
         """
-        Partially update an article.
+        Partially update an article; only its author or the founder may (403 for any other GM).
+
+        A change of any content field (``REVISED_FIELDS``) bumps ``version`` and records a revision with the
+        optional ``change_note``; a move (``parent_id``) alone is not a content change.
 
         Including ``parent_id`` re-roots ``path`` for the article and every
         existing descendant, and is rejected if it would create a cycle or
@@ -142,9 +152,11 @@ class ArticleCrudService(
         """
 
         fields = data.model_dump(exclude_unset=True)
+        change_note = fields.pop("change_note", None)
         state = await self.repository.get_write_state(article_id)
         if state is None:
             raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
+        actor.ensure_can_edit(article_id, state.author_id)
 
         if "subtype_id" in fields or "article_type" in fields:
             await self._validate_subtype(
@@ -168,25 +180,72 @@ class ArticleCrudService(
             if "parent_id" in fields:
                 await self.repository.set_path(article_id, fields["parent_id"], commit=False)
 
+            if any(field in fields for field in REVISED_FIELDS):
+                await self.repository.record_revision(
+                    article_id, editor_id=actor.id, change_note=change_note, bump=True
+                )
+
             await invalidate_articles(self.repository.db, article_id)
             await invalidate_article_trees(self.repository.db)
 
         return await self._get_response(article_id)
 
+    async def restore_revision(self, article_id: int, version: int, actor: ArticleActor) -> ArticleResponse:
+        """
+        Make an old version's content current again, as a NEW version (history is never rewritten).
+
+        Same edit rights as ``update_article``. Only content is restored (see ``ArticleRevision``): status, slug and
+        position in the tree stay as they are. A subtype that has since been deleted is dropped.
+        """
+
+        revision = await self._revisions.get(article_id, version)
+        if revision is None:
+            raise RecordNotFoundError(model_name="ArticleRevision", model_id=f"{article_id}@{version}")
+
+        subtype_id = revision.subtype_id
+        if subtype_id is not None and await self.repository.get_subtype_type(subtype_id) != revision.article_type:
+            subtype_id = None
+
+        data = ArticleUpdate(
+            title=revision.title,
+            excerpt=revision.excerpt,
+            body_markdown=revision.body_markdown,
+            article_type=revision.article_type,
+            subtype_id=subtype_id,
+            visibility=revision.visibility,
+            change_note=f"Restored version {version}",
+        )
+        return await self.update_article(article_id, data, actor)
+
     async def transition(
-        self, article_id: int, action: ArticleAction, *, actor_id: int | None = None
+        self, article_id: int, action: ArticleAction, *, actor: ArticleActor, expected_version: int | None = None
     ) -> ArticleResponse:
         """
         Apply a review-workflow ``action`` (see ``ARTICLE_TRANSITIONS``); 409 if the current status forbids it.
 
         The status check and the write are one conditional UPDATE, so concurrent actions can't both pass a
-        stale check. ``actor_id`` is recorded as ``reviewed_by_id``; the first publish stamps ``published_at``.
+        stale check. ``actor`` is recorded as ``reviewed_by_id`` for ``publish``/``reject``; the first publish
+        stamps ``published_at``. Only the author or the founder may ``submit``. ``publish`` takes the
+        ``expected_version`` the founder reviewed and 409s if the article was edited since (so what gets published
+        is exactly what was read).
         """
 
         allowed_from, target = ARTICLE_TRANSITIONS[action]
 
+        if action == "submit":
+            state = await self.repository.get_write_state(article_id)
+            if state is None:
+                raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
+            actor.ensure_can_edit(article_id, state.author_id)
+
         async with self._atomic():
-            moved = await self.repository.transition_status(article_id, allowed_from, target, reviewer_id=actor_id)
+            moved = await self.repository.transition_status(
+                article_id,
+                allowed_from,
+                target,
+                reviewer_id=actor.id if action in ("publish", "reject") else None,
+                expected_version=expected_version,
+            )
             if moved:
                 await invalidate_articles(self.repository.db, article_id)
                 await invalidate_article_trees(self.repository.db)
@@ -195,6 +254,8 @@ class ArticleCrudService(
             state = await self.repository.get_write_state(article_id)
             if state is None:
                 raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
+            if ArticleStatus(state.status) in allowed_from and expected_version is not None:
+                raise ArticleVersionMismatchException(article_id, expected_version, state.version)
             raise ArticleStatusTransitionException(article_id, action, ArticleStatus(state.status).value)
 
         return await self._get_response(article_id)
@@ -250,7 +311,7 @@ class ArticleCrudService(
         ``parent_id`` is likewise nulled out for a non-GM reader when the parent
         itself isn't visible, so a hidden article's id/existence can't leak
         through a public child's detail response, GM-only ``:::gm`` blocks
-        are stripped from ``body_markdown``/``excerpt``, and ``images`` is emptied.
+        are stripped from ``body_markdown``/``excerpt``, ``images`` is emptied and ``version`` is hidden (readers only ever see the latest content).
         """
 
         if not include_hidden:
@@ -269,6 +330,7 @@ class ArticleCrudService(
             "body_markdown": strip_gm_blocks(article.body_markdown),
             "excerpt": strip_gm_blocks(article.excerpt),
             "images": [],
+            "version": None,
         }
         if article.parent_id is not None and not await self.repository.exists_visible(article.parent_id, False):
             update["parent_id"] = None

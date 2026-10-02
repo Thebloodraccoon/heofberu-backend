@@ -162,13 +162,16 @@ class AppSettings(BaseSettings):
         secret = self.JWT_SECRET_KEY
         if secret.strip().lower() in INSECURE_JWT_SECRETS:
             return ["JWT_SECRET_KEY must be overridden: a placeholder secret would let anyone forge tokens"]
+
         if len(secret) < MIN_PROD_JWT_SECRET_LENGTH:
             return [f"JWT_SECRET_KEY must be at least {MIN_PROD_JWT_SECRET_LENGTH} characters"]
+
         return []
 
     def _origin_problems(self) -> list[str]:
         if not self.CORS_ORIGINS:
             return ["CORS_ORIGINS must list the allowed browser origins (e.g. https://app.example.com)"]
+
         if "*" in self.CORS_ORIGINS:
             return ["CORS_ORIGINS must not contain a wildcard"]
 
@@ -178,6 +181,7 @@ class AppSettings(BaseSettings):
     def _host_problems(self) -> list[str]:
         if not self.ALLOWED_HOSTS:
             return ["ALLOWED_HOSTS must list the accepted Host header names (e.g. api.example.com)"]
+
         if "*" in self.ALLOWED_HOSTS:
             return ["ALLOWED_HOSTS must not contain a wildcard"]
 
@@ -187,16 +191,20 @@ class AppSettings(BaseSettings):
     def _auth_redis_problems(self) -> list[str]:
         if not self.AUTH_REDIS_URL:
             return ["AUTH_REDIS_URL must point to a dedicated noeviction Redis so revocations cannot be evicted"]
+
         if self.AUTH_REDIS_URL == self.REDIS_URL:
             return ["AUTH_REDIS_URL must differ from REDIS_URL (the cache Redis evicts keys)"]
+
         return []
 
     def _pool_problems(self) -> list[str]:
         budget = self.DB_MAX_CONNECTIONS - DB_RESERVED_CONNECTIONS
         demand = self.WEB_CONCURRENCY * (self.DB_POOL_SIZE + self.DB_MAX_OVERFLOW)
+
         if demand > budget:
             return [
                 f"WEB_CONCURRENCY x (DB_POOL_SIZE + DB_MAX_OVERFLOW) = {demand} exceeds the "
                 f"connection budget {budget} (DB_MAX_CONNECTIONS - {DB_RESERVED_CONNECTIONS})"
             ]
+
         return []
