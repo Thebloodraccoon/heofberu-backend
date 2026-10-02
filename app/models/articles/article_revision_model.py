@@ -36,7 +36,12 @@ class ArticleRevision(Base):
     subtype_id: Mapped[int | None]
     visibility: Mapped[ArticleVisibility] = mapped_column(ArticleVisibilityType)
 
+    #: Like git's author/committer: who wrote the change and who approved it. A direct edit by the author or the
+    #: founder is self-reviewed (both the same user); an accepted proposal has proposer -> editor, acceptor -> reviewer.
     editor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    #: ``revisions.hashing.revision_hash`` of this snapshot, chained to the previous version's hash.
+    content_hash: Mapped[str] = mapped_column(String(64))
     change_note: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

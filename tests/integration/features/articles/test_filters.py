@@ -1,6 +1,9 @@
 """Listing/search filters (tag_match=all, subtype), query bounds, title normalization and relation listing caps."""
 
 import pytest
+from sqlalchemy import delete
+
+from app.models.user_model import User
 
 
 async def _tag(client, gm_token, name):
@@ -76,6 +79,83 @@ class TestListFilters:
 
     async def test_fifty_filter_values_are_still_allowed(self, client):
         assert (await client.get("/articles", params={"tag_id": list(range(1, 51))})).status_code == 200
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestAuthorFilter:
+    async def _setup(self, client, create_article, founder_token):
+        """The GM writes a public, a GM-only and a draft article; the founder writes one more."""
+
+        await create_article(title="Public Lore", status="published")
+        await create_article(title="Secret Lore", status="published", visibility="gm_only")
+        await create_article(title="Draft Lore")
+        response = await client.post(
+            "/articles",
+            json={"title": "Founder Lore", "article_type": "lore"},
+            headers={"Authorization": f"Bearer {founder_token}"},
+        )
+        assert response.status_code == 201, response.text
+
+    async def test_gm_sees_every_article_of_the_author(self, client, create_article, gm_token, founder_token, gm):
+        await self._setup(client, create_article, founder_token)
+
+        response = await client.get(
+            "/articles", params={"author_id": gm.id}, headers={"Authorization": f"Bearer {gm_token}"}
+        )
+
+        assert {i["title"] for i in response.json()["items"]} == {"Public Lore", "Secret Lore", "Draft Lore"}
+        assert {i["author"]["id"] for i in response.json()["items"]} == {gm.id}
+
+    async def test_non_gm_sees_only_the_authors_published_public_articles(
+        self, client, create_article, founder_token, player_token, gm
+    ):
+        await self._setup(client, create_article, founder_token)
+
+        anonymous = await client.get("/articles", params={"author_id": gm.id})
+        player = await client.get(
+            "/articles", params={"author_id": gm.id}, headers={"Authorization": f"Bearer {player_token}"}
+        )
+
+        for response in (anonymous, player):
+            body = response.json()
+            assert [i["title"] for i in body["items"]] == ["Public Lore"]
+            assert body["total"] == 1
+
+    async def test_search_filters_by_author(self, client, create_article, founder_token, gm, founder):
+        await self._setup(client, create_article, founder_token)
+
+        mine = await client.get("/articles/search", params={"q": "lore", "author_id": gm.id})
+        founders = await client.get("/articles/search", params={"q": "lore", "author_id": founder.id})
+
+        assert [(i["title"], i["author"]["id"]) for i in mine.json()["items"]] == [("Public Lore", gm.id)]
+        assert founders.json()["items"] == []
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestAuthorInResponses:
+    async def test_anonymous_reader_sees_author_everywhere(self, client, create_article, gm):
+        article = await create_article(title="Public Lore", status="published")
+        expected = {"id": gm.id, "username": gm.username}
+
+        detail = (await client.get(f"/articles/{article['id']}")).json()
+        listed = (await client.get("/articles")).json()["items"]
+        found = (await client.get("/articles/search", params={"q": "lore"})).json()["items"]
+
+        assert detail["author"] == expected
+        assert [i["author"] for i in listed] == [expected]
+        assert [i["author"] for i in found] == [expected]
+
+    async def test_author_is_null_once_the_user_is_deleted(self, client, create_article, gm, db_session):
+        await create_article(title="Orphan", status="published")
+
+        await db_session.execute(delete(User).where(User.id == gm.id))
+        await db_session.commit()
+
+        item = (await client.get("/articles")).json()["items"][0]
+        assert item["author"] is None
+        assert "author_id" not in item
 
 
 @pytest.mark.integration

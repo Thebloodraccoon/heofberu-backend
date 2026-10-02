@@ -28,6 +28,15 @@ ArticleExcerpt = Annotated[str, Field(max_length=EXCERPT_MAX_LENGTH), AfterValid
 ArticleBody = Annotated[str, Field(max_length=BODY_MAX_LENGTH), AfterValidator(reject_nested_gm_containers)]
 
 
+class ArticleAuthorBrief(BaseModel):
+    """Author reference embedded in article responses (public: shown to every reader of the article)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+
+
 class ArticleSubtypeBrief(BaseModel):
     """Subtype reference embedded in article responses."""
 
@@ -77,12 +86,11 @@ class ArticleCreate(BaseModel):
     parent_id: int | None = None
 
 
-class ArticleUpdate(BaseModel):
+class ArticleContentUpdate(BaseModel):
     """
-    All fields optional — only provided fields are updated (PATCH semantics); same rules as ``ArticleCreate``.
+    The versioned content fields, all optional (PATCH semantics); same rules as ``ArticleCreate``.
 
-    ``status`` is not here: it moves only through the review workflow endpoints
-    (``ArticleCrudService.transition``).
+    Also the payload of a change proposal (``POST /articles/{id}/proposals``).
     """
 
     title: ArticleTitle | None = None
@@ -90,7 +98,6 @@ class ArticleUpdate(BaseModel):
     body_markdown: ArticleBody | None = None
     article_type: ArticleType | None = None
     subtype_id: int | None = None
-    parent_id: int | None = None
     visibility: ArticleVisibility | None = None
     change_note: str | None = Field(
         default=None,
@@ -109,6 +116,17 @@ class ArticleUpdate(BaseModel):
         return reject_explicit_null(value, info.field_name)
 
 
+class ArticleUpdate(ArticleContentUpdate):
+    """
+    Content fields plus ``parent_id`` — only provided fields are updated (PATCH semantics).
+
+    ``status`` is not here: it moves only through the review workflow endpoints
+    (``ArticleCrudService.transition``).
+    """
+
+    parent_id: int | None = None
+
+
 class ArticleResponse(ArticleBase):
     """Full article representation returned by the API."""
 
@@ -117,7 +135,7 @@ class ArticleResponse(ArticleBase):
     id: int
     slug: str
     status: ArticleStatus
-    author_id: int | None = None
+    author: ArticleAuthorBrief | None = None
     version: int | None = Field(
         default=None,
         description="Content version (GM/founder only; null for other readers, who always get the latest content).",
@@ -143,6 +161,10 @@ class ArticleGetAllResponse(BaseModel):
     subtype: ArticleSubtypeBrief | None = None
     status: ArticleStatus
     visibility: ArticleVisibility
+    author: ArticleAuthorBrief | None = None
+    pending_proposals: int | None = Field(
+        default=None, description="Change proposals awaiting a decision (GM only; null for other readers)."
+    )
 
 
 class ArticleSearchResult(ArticleGetAllResponse):

@@ -385,6 +385,15 @@ class ArticleVisibility(str, Enum):
     GM_ONLY = "gm_only"
 
 
+class ArticleProposalStatus(str, Enum):
+    """Review state of a proposed change to someone else's article (like a pull request)."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
 def is_article_publicly_visible(status: "ArticleStatus | str", visibility: "ArticleVisibility | str") -> bool:
     """
     Canonical non-GM visibility predicate, in value form so it applies equally to an

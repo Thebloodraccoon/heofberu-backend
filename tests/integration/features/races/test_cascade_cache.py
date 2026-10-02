@@ -159,7 +159,7 @@ class TestCacheFreshness:
 
         after = (await client.get(f"/subraces/{subrace.id}")).json()
         assert after["ability_bonuses"] == [{"ability": "INT", "bonus": 1}]
-        assert [t["name"] for t in after["tags"]] == ["Elven"]
+        assert [t["name"] for t in after["tags"]] == ["elven"]
 
     async def test_race_tag_assignment_refreshes_the_cached_tag_listing(
         self, client, gm_token, create_race, caching_on
@@ -201,11 +201,11 @@ class TestRaceTagsAndSkills:
         both = await client.put(
             f"/races/{race.id}/tags", json={"tag_ids": [first["id"], second["id"]]}, headers=headers
         )
-        assert [t["name"] for t in both.json()["tags"]] == ["Elven", "Fey"]
+        assert [t["name"] for t in both.json()["tags"]] == ["elven", "fey"]
 
         only_second = await client.put(f"/races/{race.id}/tags", json={"tag_ids": [second["id"]]}, headers=headers)
-        assert [t["name"] for t in only_second.json()["tags"]] == ["Fey"]
-        assert [t["name"] for t in (await client.get(f"/races/{race.id}")).json()["tags"]] == ["Fey"]
+        assert [t["name"] for t in only_second.json()["tags"]] == ["fey"]
+        assert [t["name"] for t in (await client.get(f"/races/{race.id}")).json()["tags"]] == ["fey"]
 
         cleared = await client.put(f"/races/{race.id}/tags", json={"tag_ids": []}, headers=headers)
         assert cleared.json()["tags"] == []

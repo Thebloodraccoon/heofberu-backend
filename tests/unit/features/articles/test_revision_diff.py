@@ -1,4 +1,4 @@
-"""Unit tests for the revision diff builder (no DB)."""
+"""Unit tests for the revision diff builder and the revision hash chain (no DB)."""
 
 from types import SimpleNamespace
 
@@ -7,6 +7,7 @@ import pytest
 from app.constants import ArticleVisibility
 from app.features.articles.access import ArticleActor
 from app.features.articles.exceptions import ArticleEditForbiddenException
+from app.features.articles.revisions.hashing import revision_hash
 from app.features.articles.revisions.service import build_diff
 
 
@@ -66,3 +67,25 @@ class TestArticleActor:
     def test_gm_may_not_edit_authorless_article(self):
         with pytest.raises(ArticleEditForbiddenException):
             ArticleActor(id=6, is_founder=False).ensure_can_edit(1, author_id=None)
+
+
+CONTENT = {"title": "Moria", "excerpt": None, "body_markdown": "a", "visibility": ArticleVisibility.PUBLIC}
+
+
+@pytest.mark.unit
+class TestRevisionHash:
+    def test_is_deterministic_sha256_hex(self):
+        digest = revision_hash(None, 1, CONTENT)
+
+        assert digest == revision_hash(None, 1, dict(reversed(list(CONTENT.items()))))
+        assert len(digest) == 64
+
+    def test_enum_hashes_like_its_value(self):
+        assert revision_hash(None, 1, CONTENT) == revision_hash(None, 1, {**CONTENT, "visibility": "public"})
+
+    def test_changes_with_content_parent_and_version(self):
+        base = revision_hash(None, 1, CONTENT)
+
+        assert revision_hash(None, 1, {**CONTENT, "body_markdown": "b"}) != base
+        assert revision_hash("x" * 64, 1, CONTENT) != base
+        assert revision_hash(None, 2, CONTENT) != base

@@ -25,7 +25,7 @@ class TestUsageListing:
 
         body = (await client.get("/tags", params={"sort": "name"}, headers=headers)).json()
 
-        assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("Alpha", 3), ("Beta", 1), ("Gamma", 1)]
+        assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("alpha", 3), ("beta", 1), ("gamma", 1)]
         assert body["total"] == 3
 
     async def test_name_sort_second_page_has_its_own_counts(self, client, create_article, gm_token):
@@ -39,7 +39,7 @@ class TestUsageListing:
         ).json()
 
         assert body["total"] == 3
-        assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("Gamma", 1)]
+        assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("gamma", 1)]
 
     async def test_popular_sort_orders_by_usage_then_name(self, client, create_article, gm_token):
         alpha, beta, gamma = await _make_tags(client, gm_token, "Alpha", "Beta", "Gamma")
@@ -50,7 +50,7 @@ class TestUsageListing:
             await client.get("/tags", params={"sort": "popular"}, headers={"Authorization": f"Bearer {gm_token}"})
         ).json()
 
-        assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("Gamma", 2), ("Beta", 1), ("Alpha", 0)]
+        assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("gamma", 2), ("beta", 1), ("alpha", 0)]
 
     async def test_popular_sort_paginates_after_ordering(self, client, create_article, gm_token):
         alpha, beta, gamma = await _make_tags(client, gm_token, "Alpha", "Beta", "Gamma")
@@ -64,7 +64,7 @@ class TestUsageListing:
             )
         ).json()
 
-        assert [t["name"] for t in body["items"]] == ["Alpha"]
+        assert [t["name"] for t in body["items"]] == ["alpha"]
         assert body["total"] == 3
 
     async def test_non_gm_total_and_counts_only_cover_visible_records(self, client, create_article, gm_token):
@@ -76,7 +76,7 @@ class TestUsageListing:
             body = (await client.get("/tags", params={"sort": sort})).json()
 
             assert body["total"] == 1
-            assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("Shown", 1)]
+            assert [(t["name"], t["usage_count"]) for t in body["items"]] == [("shown", 1)]
 
     async def test_suggest_counts_usage_and_prefers_prefix_then_usage(self, client, create_article, gm_token):
         used, unused, infix = await _make_tags(client, gm_token, "Dwarven", "Dwarf", "Underdwarf")
@@ -85,7 +85,7 @@ class TestUsageListing:
 
         suggested = (await client.get("/tags/suggest", params={"q": "dwar"})).json()
 
-        assert [(t["name"], t["usage_count"]) for t in suggested] == [("Dwarven", 2), ("Underdwarf", 1)]
+        assert [(t["name"], t["usage_count"]) for t in suggested] == [("dwarven", 2), ("underdwarf", 1)]
 
     async def test_suggest_for_gm_includes_unused_tags(self, client, gm_token):
         await _make_tags(client, gm_token, "Dwarven", "Dwarf")
@@ -94,7 +94,7 @@ class TestUsageListing:
             await client.get("/tags/suggest", params={"q": "dwar"}, headers={"Authorization": f"Bearer {gm_token}"})
         ).json()
 
-        assert sorted((t["name"], t["usage_count"]) for t in suggested) == [("Dwarf", 0), ("Dwarven", 0)]
+        assert sorted((t["name"], t["usage_count"]) for t in suggested) == [("dwarf", 0), ("dwarven", 0)]
 
     async def test_search_wildcards_are_matched_literally(self, client, gm_token):
         await _make_tags(client, gm_token, "100% Orc", "Plain")
@@ -103,7 +103,7 @@ class TestUsageListing:
             await client.get("/tags", params={"search": "%"}, headers={"Authorization": f"Bearer {gm_token}"})
         ).json()
 
-        assert [t["name"] for t in body["items"]] == ["100% Orc"]
+        assert [t["name"] for t in body["items"]] == ["100% orc"]
 
     async def test_overlong_search_is_rejected(self, client):
         assert (await client.get("/tags", params={"search": "x" * 101})).status_code == 422

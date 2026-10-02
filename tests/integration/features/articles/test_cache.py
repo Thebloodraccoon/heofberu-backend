@@ -90,7 +90,7 @@ class TestArticleCache:
 
         await client.put(f"/articles/{article['id']}/tags", json={"tag_ids": [tag["id"]]}, headers=headers)
 
-        assert [t["name"] for t in (await client.get(f"/articles/{article['id']}")).json()["tags"]] == ["Dwarven"]
+        assert [t["name"] for t in (await client.get(f"/articles/{article['id']}")).json()["tags"]] == ["dwarven"]
 
     async def test_tag_rename_refreshes_cached_articles(
         self, client, create_article, gm_token, caching_on, redis_client
@@ -102,7 +102,7 @@ class TestArticleCache:
 
         await client.patch(f"/tags/{tag['id']}", json={"name": "Dwarrow"}, headers=headers)
 
-        assert [t["name"] for t in (await client.get(f"/articles/{article['id']}")).json()["tags"]] == ["Dwarrow"]
+        assert [t["name"] for t in (await client.get(f"/articles/{article['id']}")).json()["tags"]] == ["dwarrow"]
 
     async def test_subtype_rename_refreshes_cached_articles(
         self, client, create_article, gm_token, caching_on, redis_client

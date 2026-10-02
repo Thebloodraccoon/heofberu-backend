@@ -1,6 +1,7 @@
 """Article CRUD service: cached catalog CRUD plus composed capability reads."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,12 +61,14 @@ GET_BY_ID_TTL_SECONDS = 1800
 MAX_POINT_INVALIDATIONS = 500
 
 
-def _nest_subtype(row) -> dict:
-    """Listing row (``subtype_id``/``subtype_name`` columns) -> dict with a nested ``subtype`` object."""
+def _nest_row(row) -> dict:
+    """Listing row (``subtype_*``/``author_username`` columns) -> dict with nested ``subtype``/``author`` objects."""
 
     data = dict(row._mapping)
     subtype_id, name = data.pop("subtype_id"), data.pop("subtype_name")
     data["subtype"] = {"id": subtype_id, "name": name} if subtype_id is not None else None
+    author_id, username = data.pop("author_id"), data.pop("author_username")
+    data["author"] = {"id": author_id, "username": username} if author_id is not None else None
     return data
 
 
@@ -76,9 +79,9 @@ class ArticleCrudService(
     Article catalog CRUD.
 
     Editing policy: a GM edits only the articles they wrote (any status, a published one included, in place) and
-    proposes changes to the rest; the founder edits any article. An edit never changes ``status`` (only the review
-    actions do), so a published article stays published while it is edited. Every change of the content fields is
-    recorded as a new version (``article_revisions``) and can be restored.
+    proposes changes to the rest (``articles.proposals``); the founder edits any article. An edit never changes
+    ``status`` (only the review actions do), so a published article stays published while it is edited. Every
+    change of the content fields is recorded as a new version (``article_revisions``) and can be restored.
     """
 
     repository: ArticleRepository
@@ -113,7 +116,7 @@ class ArticleCrudService(
         A slug taken by a concurrent create is retried with the next free suffix.
         """
 
-        await self._validate_subtype(data.subtype_id, data.article_type)
+        await self.validate_subtype(data.subtype_id, data.article_type)
         if data.parent_id is not None and not await self.repository.exists_by_id(data.parent_id):
             raise RecordIdsInvalidError(model_name="Article", ids=[data.parent_id])
 
@@ -128,7 +131,9 @@ class ArticleCrudService(
             if data.parent_id is not None:
                 await self.repository.lock_tree()
             item = await self.repository.write_with_unique_slug(data.title, write)
-            await self.repository.record_revision(item.id, editor_id=author_id, change_note=None, bump=False)
+            await self.repository.record_revision(
+                item.id, editor_id=author_id, reviewer_id=author_id, change_note=None, bump=False
+            )
             await invalidate_article_trees(self.repository.db)
 
         return await self._get_response(item.id)
@@ -138,7 +143,8 @@ class ArticleCrudService(
         Partially update an article; only its author or the founder may (403 for any other GM).
 
         A change of any content field (``REVISED_FIELDS``) bumps ``version`` and records a revision with the
-        optional ``change_note``; a move (``parent_id``) alone is not a content change.
+        optional ``change_note``, reviewed by the editor themselves (like a direct push); a move (``parent_id``)
+        alone is not a content change.
 
         Including ``parent_id`` re-roots ``path`` for the article and every
         existing descendant, and is rejected if it would create a cycle or
@@ -158,12 +164,37 @@ class ArticleCrudService(
             raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
         actor.ensure_can_edit(article_id, state.author_id)
 
+        return await self.apply_changes(
+            article_id, fields, state, editor_id=actor.id, reviewer_id=actor.id, change_note=change_note
+        )
+
+    async def apply_changes(
+        self,
+        article_id: int,
+        fields: dict,
+        state,
+        *,
+        editor_id: int | None,
+        reviewer_id: int | None,
+        change_note: str | None,
+        guard: Callable[[], Awaitable[None]] | None = None,
+    ) -> ArticleResponse:
+        """
+        Write ``fields`` (already permission-checked) and record the revision as ``editor_id``/``reviewer_id``.
+
+        ``state`` is the article's ``get_write_state`` row. ``guard`` runs first inside the transaction (e.g. lock
+        the row and check the version, close a proposal); raising there rolls everything back.
+        """
+
         if "subtype_id" in fields or "article_type" in fields:
-            await self._validate_subtype(
+            await self.validate_subtype(
                 fields.get("subtype_id", state.subtype_id), fields.get("article_type", state.article_type)
             )
 
         async with self._atomic():
+            if guard is not None:
+                await guard()
+
             if "parent_id" in fields:
                 await self.repository.lock_tree()
                 await self._validate_parent(fields["parent_id"], article_id)
@@ -182,7 +213,7 @@ class ArticleCrudService(
 
             if any(field in fields for field in REVISED_FIELDS):
                 await self.repository.record_revision(
-                    article_id, editor_id=actor.id, change_note=change_note, bump=True
+                    article_id, editor_id=editor_id, reviewer_id=reviewer_id, change_note=change_note, bump=True
                 )
 
             await invalidate_articles(self.repository.db, article_id)
@@ -362,12 +393,17 @@ class ArticleCrudService(
         subtype_ids: list[int] | None,
         tag_ids: list[int] | None,
         match_all_tags: bool,
+        author_id: int | None = None,
         sort: str,
         cursor: str | None = None,
         use_cursor: bool = False,
+        has_pending_proposals: bool | None = None,
     ) -> Page[ArticleGetAllResponse] | CursorPage[ArticleGetAllResponse]:
         """
         Filtered/sorted listing (not cached: results depend on the reader's visibility and the filters).
+
+        ``has_pending_proposals`` (GM-only, ignored for other readers) keeps articles with / without a pending
+        change proposal.
 
         Offset ``Page`` by default; with ``use_cursor`` a keyset ``CursorPage`` ordered by ``(sort key, id)``
         whose ``cursor`` must have been issued for the same ``sort``.
@@ -384,15 +420,17 @@ class ArticleCrudService(
             subtype_ids=subtype_ids,
             tag_ids=tag_ids,
             match_all_tags=match_all_tags,
+            author_id=author_id,
+            has_pending_proposals=has_pending_proposals if include_hidden else None,
             sort=sort,
             after=after,
         )
         if use_cursor:
             rows, next_cursor = cursor_page(rows, size, sort, lambda row: (row.sort_value, row.id))
-            items = [ArticleGetAllResponse.model_validate(_nest_subtype(row)) for row in rows]
+            items = [ArticleGetAllResponse.model_validate(_nest_row(row)) for row in rows]
             return CursorPage(items=items, next_cursor=next_cursor, size=size)
 
-        items = [ArticleGetAllResponse.model_validate(_nest_subtype(row)) for row in rows]
+        items = [ArticleGetAllResponse.model_validate(_nest_row(row)) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
     async def search_articles(
@@ -406,8 +444,11 @@ class ArticleCrudService(
         subtype_ids: list[int] | None,
         tag_ids: list[int] | None,
         match_all_tags: bool,
+        author_id: int | None = None,
+        statuses: list[ArticleStatus] | None = None,
+        has_pending_proposals: bool | None = None,
     ) -> Page[ArticleSearchResult]:
-        """Ranked full-text search over visible articles."""
+        """Ranked full-text search over visible articles; same filters as ``list_articles``."""
 
         skip, limit = paginate(page, size)
         rows, total = await self.repository.search_articles(
@@ -419,8 +460,11 @@ class ArticleCrudService(
             subtype_ids=subtype_ids,
             tag_ids=tag_ids,
             match_all_tags=match_all_tags,
+            author_id=author_id,
+            statuses=statuses,
+            has_pending_proposals=has_pending_proposals if include_hidden else None,
         )
-        items = [ArticleSearchResult.model_validate(_nest_subtype(row)) for row in rows]
+        items = [ArticleSearchResult.model_validate(_nest_row(row)) for row in rows]
         return Page(items=items, total=total, page=page, size=size)
 
     async def get_children(self, article_id: int, *, include_hidden: bool) -> list[ArticleBrief]:
@@ -462,7 +506,7 @@ class ArticleCrudService(
         if not await self.repository.exists_visible(article_id, include_hidden):
             raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
 
-    async def _validate_subtype(self, subtype_id: int | None, article_type: str) -> None:
+    async def validate_subtype(self, subtype_id: int | None, article_type: str) -> None:
         """Reject a ``subtype_id`` that doesn't exist or belongs to another ``article_type`` (400)."""
 
         if subtype_id is None:

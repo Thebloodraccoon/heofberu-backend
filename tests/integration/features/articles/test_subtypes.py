@@ -20,7 +20,17 @@ class TestArticleSubtypes:
         subtype = await self._create(client, gm_headers, name="  Tavern  ")
 
         assert subtype["article_type"] == "location"
-        assert subtype["name"] == "Tavern"
+        assert subtype["name"] == "tavern"
+
+    async def test_subtype_names_are_lowercased_on_create_and_rename(self, client, gm_headers):
+        subtype = await self._create(client, gm_headers, name="Таверна")
+
+        renamed = await client.patch(
+            f"/articles/subtypes/{subtype['id']}", json={"name": "Постоялый ДВОР"}, headers=gm_headers
+        )
+
+        assert subtype["name"] == "таверна"
+        assert renamed.json()["name"] == "постоялый двор"
 
     async def test_player_cannot_create_subtype(self, client, player_token):
         response = await client.post(
@@ -58,7 +68,7 @@ class TestArticleSubtypes:
         response = await client.get("/articles/subtypes", params={"article_type": "location"})
 
         assert response.status_code == 200
-        assert [s["name"] for s in response.json()] == ["Tavern"]
+        assert [s["name"] for s in response.json()] == ["tavern"]
 
     async def test_article_embeds_subtype_and_filters_by_it(self, client, create_article):
         tavern = await create_article(title="Prancing Pony", subtype="Tavern", status="published")
@@ -66,7 +76,7 @@ class TestArticleSubtypes:
 
         listed = await client.get("/articles", params={"subtype_id": tavern["subtype"]["id"]})
 
-        assert tavern["subtype"]["name"] == "Tavern"
+        assert tavern["subtype"]["name"] == "tavern"
         assert [a["title"] for a in listed.json()["items"]] == ["Prancing Pony"]
         assert listed.json()["items"][0]["subtype"] == tavern["subtype"]
 
@@ -79,7 +89,7 @@ class TestArticleSubtypes:
         fetched = await client.get(f"/articles/{article['id']}", headers=gm_headers)
 
         assert renamed.status_code == 200
-        assert fetched.json()["subtype"]["name"] == "Inn"
+        assert fetched.json()["subtype"]["name"] == "inn"
 
     async def test_gm_cannot_delete_subtype(self, client, gm_headers):
         subtype = await self._create(client, gm_headers)

@@ -242,6 +242,34 @@ class TestRefreshRotation:
 
         assert response.status_code == 401
 
+    async def test_refresh_uses_the_first_of_duplicate_cookies(self, client, player):
+        """The browser sends the current (longest-path) cookie first; a stale legacy one comes after it."""
+
+        await client.post("/auth/login", json={"email": player.email, "password": "password123"})
+        current = client.cookies.get("refresh_token")
+        stale = create_access_token({"sub": str(player.id)})
+
+        client.cookies.clear()
+        cookie_header = f"refresh_token={current}; refresh_token={stale}"
+        response = await client.post("/auth/refresh", headers={"Cookie": cookie_header})
+
+        assert response.status_code == 200
+
+    async def test_login_refresh_and_logout_expire_the_legacy_cookie_paths(self, client, player):
+        def expires_legacy(response) -> bool:
+            expired = {
+                header.split("Path=")[1].split(";")[0]
+                for header in response.headers.get_list("set-cookie")
+                if "Max-Age=0" in header
+            }
+            return expired >= {"/api/auth", "/", "/api", "/api/v1"}
+
+        login = await client.post("/auth/login", json={"email": player.email, "password": "password123"})
+        refresh = await client.post("/auth/refresh")
+        logout = await client.post("/auth/logout", headers=bearer(refresh.json()["access_token"]))
+
+        assert expires_legacy(login) and expires_legacy(refresh) and expires_legacy(logout)
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio

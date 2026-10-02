@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.articles.article_image_model import ArticleImage
     from app.models.articles.article_subtype_model import ArticleSubtype
     from app.models.tag_model import Tag
+    from app.models.user_model import User
 
 #: A GM block that contains another ``:::`` container: from ``:::gm`` to the end of the text (fail closed, the flat
 #: pattern would close the block at the inner ``:::``). Keep equal to ``NESTED_GM_BLOCK_SQL_PATTERN`` in
@@ -122,6 +123,8 @@ class Article(Base):
 
     # Many-to-one, always needed in responses (incl. tree/relation briefs): joined-loaded, never lazy in async.
     subtype: Mapped[ArticleSubtype | None] = relationship(lazy="joined")
+    # Same for the author (``{id, username}`` in every article response); ``None`` once the user is deleted.
+    author: Mapped[User | None] = relationship(foreign_keys=[author_id], lazy="joined")
     tags: Mapped[list[Tag]] = relationship(secondary="article_tags", back_populates="articles", order_by="Tag.name")
     images: Mapped[list[ArticleImage]] = relationship(
         back_populates="article",

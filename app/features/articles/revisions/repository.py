@@ -20,20 +20,31 @@ class ArticleRevisionRepository:
 
         return await self.db.scalar(select(Article.id).where(Article.id == article_id)) is not None
 
-    async def list_for_article(self, article_id: int, *, skip: int, limit: int) -> tuple[list[ArticleRevision], int]:
-        """Return one page of the history, newest version first, and its total size."""
+    async def list_for_article(
+        self, article_id: int, *, skip: int, limit: int, before_version: int | None = None, with_total: bool = True
+    ) -> tuple[list[ArticleRevision], int | None]:
+        """
+        Return one page of the history, newest version first, and its total size (``None`` without ``with_total``);
+        ``before_version`` is the keyset position (only older versions).
+        """
 
-        total = await self.db.scalar(
-            select(func.count()).select_from(ArticleRevision).where(ArticleRevision.article_id == article_id)
-        )
+        total = None
+        if with_total:
+            total = await self.db.scalar(
+                select(func.count()).select_from(ArticleRevision).where(ArticleRevision.article_id == article_id)
+            )
+        conditions = [ArticleRevision.article_id == article_id]
+        if before_version is not None:
+            conditions.append(ArticleRevision.version < before_version)
+
         result = await self.db.execute(
             select(ArticleRevision)
-            .where(ArticleRevision.article_id == article_id)
+            .where(*conditions)
             .order_by(ArticleRevision.version.desc())
             .offset(skip)
             .limit(limit)
         )
-        return list(result.scalars().all()), total or 0
+        return list(result.scalars().all()), total
 
     async def get(self, article_id: int, version: int) -> ArticleRevision | None:
         """Return one snapshot, or ``None``."""

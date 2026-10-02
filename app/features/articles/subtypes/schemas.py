@@ -7,9 +7,9 @@ from app.features.articles.schema_validators import validate_in_list
 
 
 def _normalize_name(name: str | None) -> str:
-    """Trim and collapse inner whitespace; reject a blank (or explicit-null) name."""
+    """Trim, collapse inner whitespace and lowercase («Таверна» -> «таверна»); reject a blank/null name."""
 
-    normalized = " ".join((name or "").split())
+    normalized = " ".join((name or "").split()).lower()
     if not normalized:
         raise ValueError("Subtype name must not be blank.")
 
@@ -30,7 +30,7 @@ class ArticleSubtypeCreate(BaseModel):
 
     @field_validator("name")
     def normalize_name(cls, name):
-        """Trim and collapse whitespace; reject a blank name."""
+        """Trim, collapse whitespace and lowercase; reject a blank name."""
 
         return _normalize_name(name)
 
@@ -42,7 +42,7 @@ class ArticleSubtypeUpdate(BaseModel):
 
     @field_validator("name")
     def normalize_name(cls, name):
-        """Trim and collapse whitespace; reject a blank or explicit-null name."""
+        """Trim, collapse whitespace and lowercase; reject a blank or explicit-null name."""
 
         return _normalize_name(name)
 

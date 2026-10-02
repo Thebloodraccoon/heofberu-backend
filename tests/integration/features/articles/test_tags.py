@@ -31,7 +31,7 @@ class TestArticleTags:
 
         assert response.status_code == 200
         tag_names = {t["name"] for t in response.json()["tags"]}
-        assert tag_names == {"Dwarven", "Underground"}
+        assert tag_names == {"dwarven", "underground"}
 
     async def test_set_tags_replaces_previous_set(self, client, create_article, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}
@@ -47,7 +47,7 @@ class TestArticleTags:
 
         assert response.status_code == 200
         tag_names = {t["name"] for t in response.json()["tags"]}
-        assert tag_names == {"Underground"}
+        assert tag_names == {"underground"}
 
     async def test_set_tags_clears_all_tags(self, client, create_article, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}

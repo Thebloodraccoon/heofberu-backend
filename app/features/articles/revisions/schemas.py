@@ -8,13 +8,15 @@ from app.constants import ArticleVisibility
 
 
 class ArticleRevisionBrief(BaseModel):
-    """One history row: who saved which version, when, and why."""
+    """One history row (like a git commit): who wrote and who approved which version, when, why, and its hash."""
 
     model_config = ConfigDict(from_attributes=True)
 
     version: int
+    content_hash: str
     title: str
     editor_id: int | None = None
+    reviewer_id: int | None = None
     change_note: str | None = None
     created_at: datetime
 

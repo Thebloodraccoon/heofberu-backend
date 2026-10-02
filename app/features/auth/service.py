@@ -1,6 +1,6 @@
 """Business logic for authentication: login, registration, token refresh, logout, password reset."""
 
-from fastapi import BackgroundTasks, Response
+from fastapi import BackgroundTasks, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,14 +43,40 @@ from app.features.users.service import invalidate_user_cache
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 _REFRESH_COOKIE_ATTRIBUTES = {"httponly": True, "samesite": "none", "secure": True, "path": "/api/v1/auth"}
+#: Paths a stale ``refresh_token`` cookie may carry: ``/api/auth`` (before the ``/api/v1`` prefix) and the
+#: shorter paths a pre-path-attribute / proxied setup left behind (seen in the wild: an email-subject token on
+#: ``/``). Every cookie write expires them, so a browser stops carrying a stale duplicate next to the current one.
+LEGACY_REFRESH_COOKIE_PATHS = ("/api/auth", "/", "/api", "/api/v1")
 
 # A dummy bcrypt hash equalizes login timing so unknown emails can't be told apart from wrong passwords.
 DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"  # nosec B105 -- not a credential: public constant hash used as a timing-equalizing dummy
 
 
-def set_refresh_cookie(response: Response, refresh_token: str) -> None:
-    """Attach the refresh token as the httpOnly cookie scoped to the auth endpoints."""
+def read_refresh_cookie(request: Request) -> str | None:
+    """
+    The FIRST ``refresh_token`` in the ``Cookie`` header (``None`` if there is none).
 
+    With duplicates (a stale cookie from an old path) browsers send the longest path first (RFC 6265, 5.4), i.e. the
+    current cookie; Starlette's ``request.cookies`` would keep the LAST one, an already-rotated token -> 401.
+    """
+
+    for pair in ";".join(request.headers.getlist("cookie")).split(";"):
+        name, sep, value = pair.strip().partition("=")
+        if sep and name == REFRESH_COOKIE_NAME:
+            return value
+
+    return None
+
+
+def _expire_legacy_refresh_cookies(response: Response) -> None:
+    for path in LEGACY_REFRESH_COOKIE_PATHS:
+        response.delete_cookie(key=REFRESH_COOKIE_NAME, **{**_REFRESH_COOKIE_ATTRIBUTES, "path": path})
+
+
+def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    """Attach the refresh token as the httpOnly cookie scoped to the auth endpoints (and expire legacy copies)."""
+
+    _expire_legacy_refresh_cookies(response)
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=refresh_token,
@@ -60,8 +86,9 @@ def set_refresh_cookie(response: Response, refresh_token: str) -> None:
 
 
 def delete_refresh_cookie(response: Response) -> None:
-    """Expire the refresh cookie, using the exact attributes it was set with."""
+    """Expire the refresh cookie (using the exact attributes it was set with) and its legacy copies."""
 
+    _expire_legacy_refresh_cookies(response)
     response.delete_cookie(key=REFRESH_COOKIE_NAME, **_REFRESH_COOKIE_ATTRIBUTES)
 
 

@@ -87,3 +87,89 @@ class ArticleSubtypeTypeMismatchException(AppError):
             f"Subtype {subtype_id} belongs to article_type '{subtype_type}', not '{article_type}'. "
             "Change or clear subtype_id together with article_type."
         )
+
+
+class ArticleProposalNotNeededException(AppError):
+    """Raised (409) when the article's author proposes a change: they edit the article directly."""
+
+    status_code = 409
+
+    def __init__(self, article_id: int):
+        """Initialize with the article the caller may edit."""
+
+        self.article_id = article_id
+        super().__init__(
+            f"You can edit article {article_id} directly (PATCH /articles/{article_id}); no proposal needed."
+        )
+
+
+class ArticleProposalClosedException(AppError):
+    """Raised (409) when accepting/rejecting a proposal that was already accepted or rejected."""
+
+    status_code = 409
+
+    def __init__(self, proposal_id: int, status: str):
+        """Initialize with the proposal and its current status."""
+
+        self.proposal_id = proposal_id
+        super().__init__(f"Proposal {proposal_id} is already {status}.")
+
+
+class ArticleProposalStaleException(AppError):
+    """Raised (409) when accepting a proposal made against an older version (the article was edited since)."""
+
+    status_code = 409
+
+    def __init__(self, proposal_id: int, base_version: int, current: int):
+        """Initialize with the proposal, the version it was based on and the article's current version."""
+
+        self.proposal_id = proposal_id
+        self.base_version = base_version
+        self.current = current
+        super().__init__(
+            f"Proposal {proposal_id} was made against version {base_version}, but the article is at version "
+            f"{current}. Reject it, and the proposer can propose again on top of the current version."
+        )
+
+
+class ArticleProposalWithdrawForbiddenException(AppError):
+    """Raised (403) when someone other than the proposer tries to withdraw a proposal."""
+
+    status_code = 403
+
+    def __init__(self, proposal_id: int):
+        """Initialize with the proposal the caller may not withdraw."""
+
+        self.proposal_id = proposal_id
+        super().__init__(f"Only the GM who made proposal {proposal_id} can withdraw it.")
+
+
+
+class ArticleProposalChangeForbiddenException(AppError):
+    """Raised (403) when someone other than the proposer, the article's author or the founder changes a proposal."""
+
+    status_code = 403
+
+    def __init__(self, proposal_id: int):
+        """Initialize with the proposal the caller may not change."""
+
+        self.proposal_id = proposal_id
+        super().__init__(
+            f"Only the GM who made proposal {proposal_id}, the article's author or the founder can update it."
+        )
+
+
+class ArticleProposalConflictException(AppError):
+    """Raised (409) when a proposal can't be merged onto the current version: both sides changed the same thing."""
+
+    status_code = 409
+
+    def __init__(self, proposal_id: int, details: dict):
+        """Initialize with the proposal and the conflicts (``conflicts``, ``body_conflicts``, ``merged_body``)."""
+
+        self.proposal_id = proposal_id
+        super().__init__(
+            f"Proposal {proposal_id} conflicts with the current version of the article: resolve the conflicts and "
+            f"PUT the result (base_version = the current version).",
+            details=details,
+        )

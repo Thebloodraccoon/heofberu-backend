@@ -14,7 +14,7 @@ class TestRaceTags:
         response = await client.put(f"/races/{race.id}/tags", json={"tag_ids": [tag["id"]]}, headers=headers)
 
         assert response.status_code == 200
-        assert [t["name"] for t in response.json()["tags"]] == ["Elven"]
+        assert [t["name"] for t in response.json()["tags"]] == ["elven"]
 
     async def test_player_cannot_set_race_tags(self, client, player_token, create_race):
         race = await create_race(name="Elf")
@@ -41,7 +41,7 @@ class TestBackgroundTags:
         )
 
         assert response.status_code == 200
-        assert [t["name"] for t in response.json()["tags"]] == ["Criminal"]
+        assert [t["name"] for t in response.json()["tags"]] == ["criminal"]
 
     async def test_player_cannot_set_background_tags(self, client, player_token, create_background):
         background = await create_background(name="Charlatan", with_suggestions=False)
@@ -67,7 +67,7 @@ class TestSubraceTags:
         response = await client.put(f"/subraces/{subrace.id}/tags", json={"tag_ids": [tag["id"]]}, headers=headers)
 
         assert response.status_code == 200
-        assert [t["name"] for t in response.json()["tags"]] == ["Wood"]
+        assert [t["name"] for t in response.json()["tags"]] == ["wood"]
 
     async def test_player_cannot_set_subrace_tags(self, client, player_token, create_race, create_subrace):
         race = await create_race(name="Elf")

@@ -44,6 +44,28 @@ ArticleTypesQuery = Annotated[
         "`?article_type=lore&article_type=npc`). See ARTICLE_TYPES. Omit for any type.",
     ),
 ]
+StatusQuery = Annotated[
+    list[ArticleStatus] | None,
+    Query(
+        alias="status",
+        description="GM only in effect (non-GMs only ever see `published`). Repeat the key: "
+        "`?status=in_review` is the review queue, `?status=published&sort=newest` the latest articles.",
+    ),
+]
+HasPendingProposalsQuery = Annotated[
+    bool | None,
+    Query(
+        description="GM only (ignored for others): `true` = articles with change proposals awaiting a decision "
+        "(the proposals review queue), `false` = without.",
+    ),
+]
+AuthorQuery = Annotated[
+    int | None,
+    Query(
+        description="Only articles written by this user (`author_id`). Visibility still applies: non-GMs get only "
+        "the author's published public articles.",
+    ),
+]
 SubtypeQuery = Annotated[
     list[int] | None,
     Query(
@@ -65,18 +87,13 @@ SubtypeQuery = Annotated[
 async def get_articles(
     article_service: ArticleCrudDep,
     user: OptionalUserDep,
-    status_filter: Annotated[
-        list[ArticleStatus] | None,
-        Query(
-            alias="status",
-            description="GM only in effect (non-GMs only ever see `published`). Repeat the key: "
-            "`?status=in_review` is the review queue, `?status=published&sort=newest` the latest articles.",
-        ),
-    ] = None,
+    status_filter: StatusQuery = None,
     tag_id: TagIdsQuery = None,
     tag_match: TagMatchQuery = "any",
     article_type: ArticleTypesQuery = None,
     subtype_ids: SubtypeQuery = None,
+    author_id: AuthorQuery = None,
+    has_pending_proposals: HasPendingProposalsQuery = None,
     sort: Literal["title", "newest", "oldest", "updated"] = Query(
         "title", description="`newest`/`oldest` order by published_at (falling back to created_at)."
     ),
@@ -104,9 +121,11 @@ async def get_articles(
         subtype_ids=subtype_ids,
         tag_ids=tag_id,
         match_all_tags=tag_match == "all",
+        author_id=author_id,
         sort=sort,
         cursor=cursor,
         use_cursor=use_cursor(pagination, cursor),
+        has_pending_proposals=has_pending_proposals,
     )
 
 
@@ -128,6 +147,9 @@ async def search_articles(
     tag_match: TagMatchQuery = "any",
     article_type: ArticleTypesQuery = None,
     subtype_ids: SubtypeQuery = None,
+    author_id: AuthorQuery = None,
+    status_filter: StatusQuery = None,
+    has_pending_proposals: HasPendingProposalsQuery = None,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=50, description="Page size"),
 ):
@@ -148,6 +170,9 @@ async def search_articles(
         subtype_ids=subtype_ids,
         tag_ids=tag_id,
         match_all_tags=tag_match == "all",
+        author_id=author_id,
+        statuses=status_filter,
+        has_pending_proposals=has_pending_proposals,
     )
 
 

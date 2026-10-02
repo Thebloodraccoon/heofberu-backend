@@ -4,15 +4,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 from sqlalchemy import (
-    Integer,
-    String,
     and_,
     delete,
     exists,
     func,
     insert,
-    literal,
     literal_column,
+    null,
     or_,
     select,
     text,
@@ -23,19 +21,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 from sqlalchemy_utils import Ltree
 
-from app.constants import ArticleStatus, ArticleVisibility
+from app.constants import ArticleProposalStatus, ArticleStatus, ArticleVisibility
 from app.core.exceptions import RecordAlreadyExistsError
 from app.core.pagination import Cursor, keyset_condition
 from app.features.articles.base import ArticleScopedRepository
 from app.features.articles.exceptions import ArticleTreeTooDeepException
+from app.features.articles.revisions.hashing import revision_hash
 from app.features.articles.secrets import gm_stripped_sql
 from app.features.articles.slug import slugify
 from app.features.articles.visibility import visibility_conditions
 from app.models.articles.article_association_models import article_tags
 from app.models.articles.article_image_model import ArticleImage
 from app.models.articles.article_model import Article
+from app.models.articles.article_proposal_model import ArticleProposal
 from app.models.articles.article_revision_model import ArticleRevision
 from app.models.articles.article_subtype_model import ArticleSubtype
+from app.models.user_model import User
 
 T = TypeVar("T")
 
@@ -96,16 +97,28 @@ class ArticleRepository(ArticleScopedRepository):
         )
         return result.one_or_none()
 
+    async def lock_version(self, article_id: int) -> int | None:
+        """Lock the article row until the transaction ends and return its current ``version`` (``None`` if absent)."""
+
+        return await self.db.scalar(select(Article.version).where(Article.id == article_id).with_for_update())
+
     async def record_revision(
-        self, article_id: int, *, editor_id: int | None, change_note: str | None, bump: bool
-    ) -> None:
+        self,
+        article_id: int,
+        *,
+        editor_id: int | None,
+        reviewer_id: int | None,
+        change_note: str | None,
+        bump: bool,
+    ) -> int:
         """
-        Snapshot the article's current content into ``article_revisions`` (one INSERT ... SELECT, no copying in Python).
+        Snapshot the article's current content into ``article_revisions`` and return the new version.
 
         ``bump=True`` first increments ``articles.version`` (call it after the content UPDATE; that UPDATE holds
         the row lock, so concurrent saves get distinct versions). A new article is recorded with ``bump=False``
         (its first version is the column default, 1). The snapshot is read back from the row, so it always equals
-        what was actually stored, whatever the service normalized.
+        what was actually stored, whatever the service normalized; its ``content_hash`` chains to the previous
+        version's (see ``revision_hash``).
         """
 
         if bump:
@@ -116,18 +129,31 @@ class ArticleRepository(ArticleScopedRepository):
                 .execution_options(synchronize_session=False)
             )
 
-        await self.db.execute(
-            insert(ArticleRevision).from_select(
-                ["article_id", "version", *REVISED_FIELDS, "editor_id", "change_note"],
-                select(
-                    Article.id,
-                    Article.version,
-                    *(getattr(Article, field) for field in REVISED_FIELDS),
-                    literal(editor_id, Integer),
-                    literal(change_note, String),
-                ).where(Article.id == article_id),
+        row = (
+            await self.db.execute(
+                select(Article.version, *(getattr(Article, field) for field in REVISED_FIELDS)).where(
+                    Article.id == article_id
+                )
+            )
+        ).one()
+        content = {field: getattr(row, field) for field in REVISED_FIELDS}
+        parent_hash = await self.db.scalar(
+            select(ArticleRevision.content_hash).where(
+                ArticleRevision.article_id == article_id, ArticleRevision.version == row.version - 1
             )
         )
+        await self.db.execute(
+            insert(ArticleRevision).values(
+                article_id=article_id,
+                version=row.version,
+                **content,
+                editor_id=editor_id,
+                reviewer_id=reviewer_id,
+                change_note=change_note,
+                content_hash=revision_hash(parent_hash, row.version, content),
+            )
+        )
+        return row.version
 
     async def update_fields(self, article_id: int, fields: dict, *, commit: bool = True) -> None:
         """Write ``fields`` onto the article with one UPDATE (slug uniqueness checked), committing or flushing."""
@@ -420,6 +446,20 @@ class ArticleRepository(ArticleScopedRepository):
         return [ArticleSubtype.id.label("subtype_id"), ArticleSubtype.name.label("subtype_name")]
 
     @staticmethod
+    def _pending_proposals_column(include_hidden: bool):
+        """Listing column: the article's pending proposal count for GMs, ``NULL`` for other readers."""
+
+        if not include_hidden:
+            return null().label("pending_proposals")
+
+        return (
+            select(func.count())
+            .where(ArticleProposal.article_id == Article.id, ArticleProposal.status == ArticleProposalStatus.PENDING)
+            .scalar_subquery()
+            .label("pending_proposals")
+        )
+
+    @staticmethod
     def _tag_condition(tag_ids: list[int], match_all: bool):
         """Articles carrying any (default) or all of ``tag_ids``."""
 
@@ -438,10 +478,29 @@ class ArticleRepository(ArticleScopedRepository):
         subtype_ids: list[int] | None,
         tag_ids: list[int] | None,
         match_all_tags: bool,
+        author_id: int | None = None,
+        statuses: list[ArticleStatus] | None = None,
+        has_pending_proposals: bool | None = None,
     ) -> list:
-        """Visibility plus the optional type/subtype/tag filters shared by the listing and the search."""
+        """
+        Visibility plus the optional type/subtype/tag/author/status/proposal filters shared by the listing and the
+        search.
+
+        Every filter is ANDed with the visibility conditions, so a non-GM filtering by author still only gets that
+        author's published public articles (and a ``total`` that doesn't count the rest). ``has_pending_proposals``
+        must only be passed for GMs (the service drops it for other readers).
+        """
 
         conditions = visibility_conditions(include_hidden)
+        if author_id is not None:
+            conditions.append(Article.author_id == author_id)
+        if statuses:
+            conditions.append(Article.status.in_(statuses))
+        if has_pending_proposals is not None:
+            pending = exists().where(
+                ArticleProposal.article_id == Article.id, ArticleProposal.status == ArticleProposalStatus.PENDING
+            )
+            conditions.append(pending if has_pending_proposals else ~pending)
         if article_types or subtype_ids:
             conditions.append(await self._type_condition(article_types or [], subtype_ids or []))
         if tag_ids:
@@ -550,6 +609,8 @@ class ArticleRepository(ArticleScopedRepository):
         subtype_ids: list[int] | None = None,
         tag_ids: list[int] | None = None,
         match_all_tags: bool = False,
+        author_id: int | None = None,
+        has_pending_proposals: bool | None = None,
         sort: str = "title",
         after: Cursor | None = None,
     ) -> tuple[list[Any], int | None]:
@@ -560,9 +621,16 @@ class ArticleRepository(ArticleScopedRepository):
         only the rows strictly after that position are returned and the total is ``None``.
         """
 
-        conditions = await self._filter_conditions(include_hidden, article_types, subtype_ids, tag_ids, match_all_tags)
-        if statuses:
-            conditions.append(Article.status.in_(statuses))
+        conditions = await self._filter_conditions(
+            include_hidden,
+            article_types,
+            subtype_ids,
+            tag_ids,
+            match_all_tags,
+            author_id,
+            statuses,
+            has_pending_proposals,
+        )
 
         key, descending = self._sort_key(sort)
         if after is not None:
@@ -577,6 +645,9 @@ class ArticleRepository(ArticleScopedRepository):
             *self._subtype_columns(),
             Article.status,
             Article.visibility,
+            Article.author_id,
+            User.username.label("author_username"),
+            self._pending_proposals_column(include_hidden),
             key.label("sort_value"),
         ]
         if after is None:
@@ -585,6 +656,7 @@ class ArticleRepository(ArticleScopedRepository):
         result = await self.db.execute(
             select(*columns)
             .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
+            .outerjoin(User, User.id == Article.author_id)
             .where(*conditions)
             .order_by(*((key.desc(), Article.id.desc()) if descending else (key, Article.id)))
             .offset(skip)
@@ -608,6 +680,9 @@ class ArticleRepository(ArticleScopedRepository):
         subtype_ids: list[int] | None = None,
         tag_ids: list[int] | None = None,
         match_all_tags: bool = False,
+        author_id: int | None = None,
+        statuses: list[ArticleStatus] | None = None,
+        has_pending_proposals: bool | None = None,
     ) -> tuple[list[Any], int]:
         """
         Full-text + typo-tolerant title search, best match first.
@@ -637,7 +712,16 @@ class ArticleRepository(ArticleScopedRepository):
 
         conditions = [
             or_(vector.op("@@")(combined_query), title_match),
-            *await self._filter_conditions(include_hidden, article_types, subtype_ids, tag_ids, match_all_tags),
+            *await self._filter_conditions(
+                include_hidden,
+                article_types,
+                subtype_ids,
+                tag_ids,
+                match_all_tags,
+                author_id,
+                statuses,
+                has_pending_proposals,
+            ),
         ]
 
         rank = (func.ts_rank(vector, combined_query) + func.word_similarity(query, Article.title)).label("rank")
@@ -667,12 +751,16 @@ class ArticleRepository(ArticleScopedRepository):
                 *self._subtype_columns(),
                 Article.status,
                 Article.visibility,
+                Article.author_id,
+                User.username.label("author_username"),
+                self._pending_proposals_column(include_hidden),
                 ranked_page.c.rank,
                 snippet,
                 ranked_page.c.total,
             )
             .join(ranked_page, ranked_page.c.id == Article.id)
             .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
+            .outerjoin(User, User.id == Article.author_id)
             .order_by(ranked_page.c.rank.desc(), Article.id)
         )
         rows = list(result.all())

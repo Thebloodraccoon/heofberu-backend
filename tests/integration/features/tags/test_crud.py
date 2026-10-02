@@ -18,7 +18,7 @@ class TestTagCrud:
 
         assert response.status_code == 201
         body = response.json()
-        assert body["name"] == "Dwarven"
+        assert body["name"] == "dwarven"
 
     async def test_create_tag_rejects_case_insensitive_duplicate(self, client, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}
@@ -34,7 +34,16 @@ class TestTagCrud:
         )
 
         assert response.status_code == 201
-        assert response.json()["name"] == "Dwarven Kingdom"
+        assert response.json()["name"] == "dwarven kingdom"
+
+    async def test_tag_names_are_lowercased_on_create_and_rename(self, client, gm_token):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        created = (await client.post("/tags", json={"name": "Северные Дварфы"}, headers=headers)).json()
+
+        renamed = await client.patch(f"/tags/{created['id']}", json={"name": "Горные ДВАРФЫ"}, headers=headers)
+
+        assert created["name"] == "северные дварфы"
+        assert renamed.json()["name"] == "горные дварфы"
 
     async def test_create_tag_rejects_blank_name(self, client, gm_token):
         response = await client.post("/tags", json={"name": "   "}, headers={"Authorization": f"Bearer {gm_token}"})
@@ -49,7 +58,7 @@ class TestTagCrud:
         response = await client.get(f"/tags/{created['id']}", headers={"Authorization": f"Bearer {gm_token}"})
 
         assert response.status_code == 200
-        assert response.json()["name"] == "Dwarven"
+        assert response.json()["name"] == "dwarven"
 
     async def test_get_missing_tag_returns_404(self, client):
         response = await client.get("/tags/999999")
@@ -63,7 +72,7 @@ class TestTagCrud:
         response = await client.patch(f"/tags/{created['id']}", json={"name": "Dwarrow"}, headers=headers)
 
         assert response.status_code == 200
-        assert response.json()["name"] == "Dwarrow"
+        assert response.json()["name"] == "dwarrow"
 
     async def test_player_cannot_rename_tag(self, client, gm_token, player_token):
         created = (
@@ -127,7 +136,7 @@ class TestTagCrud:
         assert response.status_code == 200
         body = response.json()
         assert body["total"] == 3
-        assert [t["name"] for t in body["items"]] == ["Alpha", "Beta"]
+        assert [t["name"] for t in body["items"]] == ["alpha", "beta"]
 
     async def test_list_tags_filters_by_search(self, client, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}
@@ -139,7 +148,7 @@ class TestTagCrud:
         assert response.status_code == 200
         body = response.json()
         assert body["total"] == 1
-        assert body["items"][0]["name"] == "Dwarven"
+        assert body["items"][0]["name"] == "dwarven"
 
     async def test_list_tags_reports_usage_count(self, client, gm_token, create_article):
         headers = {"Authorization": f"Bearer {gm_token}"}
@@ -160,7 +169,7 @@ class TestTagCrud:
 
         assert response.status_code == 200
         names = [t["name"] for t in response.json()]
-        assert names[0] == "Dwarven"
+        assert names[0] == "dwarven"
 
     async def test_suggest_respects_limit(self, client, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}

@@ -223,3 +223,23 @@ class TestVersioning:
         assert (await client.delete(f"/articles/{article['id']}", headers=_auth(founder_token))).status_code == 204
 
         assert (await client.get(f"/articles/{article['id']}/revisions", headers=_auth(gm_token))).status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestHistoryCursor:
+    async def test_cursor_pages_by_version_and_rejects_a_foreign_cursor(self, client, create_article, gm_token):
+        article = await create_article(body_markdown="v1")
+        for body in ("v2", "v3"):
+            await _edit(client, article["id"], gm_token, body_markdown=body)
+        url = f"/articles/{article['id']}/revisions"
+
+        first = (await client.get(url, params={"pagination": "cursor", "size": 2}, headers=_auth(gm_token))).json()
+        second = (await client.get(url, params={"cursor": first["next_cursor"]}, headers=_auth(gm_token))).json()
+        foreign = await client.get(
+            f"/articles/{article['id']}/proposals", params={"cursor": first["next_cursor"]}, headers=_auth(gm_token)
+        )
+
+        assert [r["version"] for r in first["items"]] == [3, 2]
+        assert ([r["version"] for r in second["items"]], second["next_cursor"]) == ([1], None)
+        assert foreign.status_code == 422

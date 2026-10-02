@@ -105,13 +105,13 @@ class TestAuthUserCache:
         article = await create_article(title="Authored", status="published")
         await client.get(f"/articles/{article['id']}")
         assert await caching_on.exists(article_cache_key(article["id"])) == 1
-        author_id = article["author_id"]
+        author_id = article["author"]["id"]
 
         deleted = await client.delete(f"/users/{author_id}", headers=bearer(founder_token))
 
         assert deleted.status_code == 204
         assert await caching_on.exists(article_cache_key(article["id"])) == 0
-        assert (await client.get(f"/articles/{article['id']}")).json()["author_id"] is None
+        assert (await client.get(f"/articles/{article['id']}")).json()["author"] is None
 
 
 @pytest.mark.integration

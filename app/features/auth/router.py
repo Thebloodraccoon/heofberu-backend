@@ -17,7 +17,7 @@ from app.features.auth.schemas import (
     ResetPasswordRequest,
     ResetPasswordResponse,
 )
-from app.features.auth.service import REFRESH_COOKIE_NAME, delete_refresh_cookie
+from app.features.auth.service import delete_refresh_cookie, read_refresh_cookie
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -121,7 +121,7 @@ async def logout(
 ):
     """Log out, revoking the access token and refresh cookie. **Authenticated.**"""
 
-    refresh_token_str = request.cookies.get(REFRESH_COOKIE_NAME)
+    refresh_token_str = read_refresh_cookie(request)
 
     logout_response = await auth_service.logout(token, refresh_token_str)
     delete_refresh_cookie(response)
@@ -145,7 +145,7 @@ async def logout(
 async def refresh_tokens(http_request: Request, response: Response, auth_service: AuthServiceDep):
     """Rotate the refresh-token cookie: returns a fresh access token and sets a new refresh cookie. Open endpoint."""
 
-    refresh_token = http_request.cookies.get(REFRESH_COOKIE_NAME, "")
+    refresh_token = read_refresh_cookie(http_request) or ""
     return await auth_service.refresh_tokens(refresh_token, response)
 
 

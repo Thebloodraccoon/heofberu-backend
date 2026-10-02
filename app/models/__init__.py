@@ -4,6 +4,7 @@ from app.models.articles.article_association_models import article_tags  # noqa:
 # Article and its associations (incl. article_tags, self-referential parent/children).
 from app.models.articles.article_image_model import ArticleImage  # noqa: F401
 from app.models.articles.article_model import Article  # noqa: F401
+from app.models.articles.article_proposal_model import ArticleProposal  # noqa: F401
 from app.models.articles.article_relation_model import ArticleRelation  # noqa: F401
 from app.models.articles.article_revision_model import ArticleRevision  # noqa: F401
 from app.models.articles.article_subtype_model import ArticleSubtype  # noqa: F401

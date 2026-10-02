@@ -129,11 +129,11 @@ class TestSubraceTags:
         both = await client.put(
             f"/subraces/{subrace.id}/tags", json={"tag_ids": [first["id"], second["id"]]}, headers=auth(gm_token)
         )
-        assert [t["name"] for t in both.json()["tags"]] == ["Elven", "Fey"]
+        assert [t["name"] for t in both.json()["tags"]] == ["elven", "fey"]
 
         one = await client.put(f"/subraces/{subrace.id}/tags", json={"tag_ids": [second["id"]]}, headers=auth(gm_token))
-        assert [t["name"] for t in one.json()["tags"]] == ["Fey"]
-        assert [t["name"] for t in (await client.get(f"/subraces/{subrace.id}")).json()["tags"]] == ["Fey"]
+        assert [t["name"] for t in one.json()["tags"]] == ["fey"]
+        assert [t["name"] for t in (await client.get(f"/subraces/{subrace.id}")).json()["tags"]] == ["fey"]
 
         cleared = await client.put(f"/subraces/{subrace.id}/tags", json={"tag_ids": []}, headers=auth(gm_token))
         assert cleared.json()["tags"] == []

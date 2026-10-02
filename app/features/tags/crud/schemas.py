@@ -4,9 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _normalize_name(name: str) -> str:
-    """Trim and collapse inner whitespace; reject a blank name."""
+    """Trim, collapse inner whitespace and lowercase; reject a blank name."""
 
-    normalized = " ".join(name.split())
+    normalized = " ".join(name.split()).lower()
     if not normalized:
         raise ValueError("Tag name must not be blank.")
 
@@ -20,11 +20,11 @@ class TagBase(BaseModel):
 
 
 class TagCreate(TagBase):
-    """Payload for creating a tag (GM only). The name is trimmed; uniqueness ignores case."""
+    """Payload for creating a tag (GM only). The name is trimmed and lowercased."""
 
     @field_validator("name")
     def normalize_name(cls, name):
-        """Trim and collapse whitespace; reject a blank name."""
+        """Trim, collapse whitespace and lowercase; reject a blank name."""
 
         return _normalize_name(name)
 
@@ -36,7 +36,7 @@ class TagUpdate(BaseModel):
 
     @field_validator("name")
     def normalize_name(cls, name):
-        """Trim and collapse whitespace; reject a blank or explicit-null name."""
+        """Trim, collapse whitespace and lowercase; reject a blank or explicit-null name."""
 
         if name is None:
             raise ValueError("Tag name must not be blank.")

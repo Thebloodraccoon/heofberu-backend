@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Query
 
-from app.core.pagination import Page
+from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
 from app.features.articles.access import ArticleActor
 from app.features.articles.crud.schemas import ArticleResponse
 from app.features.articles.dependencies import ArticleCrudDep, ArticleRevisionsDep
@@ -20,9 +20,9 @@ REVISION_404 = {404: {"description": "No such article, or it has no such version
 
 @router.get(
     "/revisions",
-    response_model=Page[ArticleRevisionBrief],
+    response_model=Page[ArticleRevisionBrief] | CursorPage[ArticleRevisionBrief],
     summary="List an article's versions",
-    responses={404: {"description": "No article exists with the given ID."}},
+    responses={404: {"description": "No article exists with the given ID."}, 422: {"description": "Invalid `cursor`."}},
 )
 async def list_article_revisions(
     article_id: int,
@@ -30,13 +30,18 @@ async def list_article_revisions(
     _: GmUserDep,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(20, ge=1, le=100, description="Page size"),
+    pagination: PaginationQuery = "page",
+    cursor: CursorQuery = None,
 ):
     """
     Return the article's history, newest version first (`version`, `title`, who saved it, `change_note`, when).
+    Offset `Page` by default, keyset `CursorPage` with `pagination=cursor`.
     **GM only** (any GM may read any article's history, like its drafts).
     """
 
-    return await revisions.list_revisions(article_id, page=page, size=size)
+    return await revisions.list_revisions(
+        article_id, page=page, size=size, cursor=cursor, use_cursor=use_cursor(pagination, cursor)
+    )
 
 
 @router.get(

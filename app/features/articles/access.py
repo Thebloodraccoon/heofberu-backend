@@ -19,14 +19,17 @@ class ArticleActor:
 
         return cls(id=user.id, is_founder=user.role == UserRole.FOUND_FATHER)
 
-    def ensure_can_edit(self, article_id: int, author_id: int | None) -> None:
+    def can_edit(self, author_id: int | None) -> bool:
         """
-        Pass for the founder or the article's author, whatever its status; raise 403 otherwise.
+        The founder or the article's author, whatever its status (anyone else may only propose changes).
 
         An article without an author (author deleted) is editable by the founder only.
         """
 
-        if self.is_founder or (author_id is not None and author_id == self.id):
-            return
+        return self.is_founder or (author_id is not None and author_id == self.id)
 
-        raise ArticleEditForbiddenException(article_id)
+    def ensure_can_edit(self, article_id: int, author_id: int | None) -> None:
+        """Raise 403 unless ``can_edit``."""
+
+        if not self.can_edit(author_id):
+            raise ArticleEditForbiddenException(article_id)
