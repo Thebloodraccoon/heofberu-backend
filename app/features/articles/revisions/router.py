@@ -1,5 +1,7 @@
 """Article version history endpoints (mounted under ``/articles/{article_id}``)."""
 
+from typing import Any
+
 from fastapi import APIRouter, Query
 
 from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
@@ -15,7 +17,7 @@ from app.features.auth.dependencies import GmUserDep
 
 router = APIRouter()
 
-REVISION_404 = {404: {"description": "No such article, or it has no such version."}}
+REVISION_404: dict[int | str, dict[str, Any]] = {404: {"description": "No such article, or it has no such version."}}
 
 
 @router.get(

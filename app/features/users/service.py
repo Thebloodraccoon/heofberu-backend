@@ -6,6 +6,7 @@ from app.constants import UserRole
 from app.core.base.service import BaseService
 from app.core.base.transaction import invalidate_after_commit
 from app.core.cache import build_cache_key, use_cache
+from app.core.cache.namespaces import dependents
 from app.core.exceptions import FoundFatherAccessException
 from app.core.security.password import get_password_hash_async
 from app.features.articles.cache import ARTICLE_CACHE_NAMESPACES
@@ -29,10 +30,15 @@ def user_cache_key(user_id: int) -> str:
     return build_cache_key(UserService.get_auth_user, None, user_id, namespace=USERS_CACHE_NAMESPACE)
 
 
-async def invalidate_user_cache(db: AsyncSession, user_id: int) -> None:
-    """Drop one user's cached auth record once the surrounding transaction has committed."""
+async def invalidate_user_cache(db: AsyncSession, user_id: int, *, username_changed: bool = False) -> None:
+    """
+    Drop one user's cached auth record once the surrounding transaction has committed.
 
-    await invalidate_after_commit(db, keys=[user_cache_key(user_id)])
+    ``username_changed`` also purges the payloads that embed the username (articles' ``author``).
+    """
+
+    namespaces = dependents("users") if username_changed else ()
+    await invalidate_after_commit(db, *namespaces, keys=[user_cache_key(user_id)])
 
 
 class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
@@ -127,7 +133,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         fields["updated_at"] = settings.utcnow()
 
         updated_user = await self.repository.update(user, fields)
-        await invalidate_user_cache(self.repository.db, user_id)
+        await invalidate_user_cache(self.repository.db, user_id, username_changed="username" in fields)
 
         return self.response_schema.model_validate(updated_user)
 
@@ -152,7 +158,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         fields["updated_at"] = settings.utcnow()
 
         updated_user = await self.repository.update(user, fields)
-        await invalidate_user_cache(self.repository.db, user_id)
+        await invalidate_user_cache(self.repository.db, user_id, username_changed="username" in fields)
 
         return self.response_schema.model_validate(updated_user)
 

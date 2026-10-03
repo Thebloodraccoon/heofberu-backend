@@ -1,6 +1,6 @@
 """Effect-engine repository: every query and row write behind ``FeatureEffectsService``."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -73,7 +73,7 @@ class FeatureEffectsRepository(FeatureRepository):
 
         await self.db.flush()
 
-    async def clear_character_picks(self, *, option_ids: list[int] = (), group_ids: list[int] = ()) -> None:
+    async def clear_character_picks(self, *, option_ids: Sequence[int] = (), group_ids: Sequence[int] = ()) -> None:
         """Delete every character's stored pick of the given options/groups (the pick reverts to pending)."""
 
         if option_ids:

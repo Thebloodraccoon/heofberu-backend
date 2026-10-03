@@ -21,7 +21,7 @@ from app.models.races.subrace_model import Subrace
 
 class SubraceCrudService(
     CatalogCacheMixin,
-    BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
+    BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse],
 ):
     """Subrace catalog CRUD with race-scoped lookups."""
 

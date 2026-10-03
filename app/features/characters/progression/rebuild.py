@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ASILevelChoice, GrantSource, ProficiencySourceType, ProficiencyType
+from app.constants import GrantSource, ProficiencySourceType, ProficiencyType
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.crud.rules import validate_chosen_skills
@@ -16,7 +16,7 @@ from app.features.characters.progression.asi import AsiChoiceService
 from app.features.characters.progression.exceptions import InvalidRebuildMaxHpException
 from app.features.characters.progression.feature_sync import sync_progression_features
 from app.features.characters.progression.rules import constitution_modifier, hit_die_sides, max_hp_bounds
-from app.features.characters.progression.schemas import CharacterRebuildRequest
+from app.features.characters.progression.schemas import ASIChoice, CharacterRebuildRequest
 from app.features.characters.spells.repository import CharacterSpellRepository
 from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.exceptions import ClassNotFoundException, SubclassNotFoundException
@@ -200,7 +200,7 @@ class CharacterRebuilder:
 
         totals = await self.stats_service.compute(character)
         for asi_choice in sorted(data.asi_choices, key=lambda item: item.class_level):
-            if asi_choice.choice.type == ASILevelChoice.ASI:
+            if isinstance(asi_choice.choice, ASIChoice):
                 await self.asi.apply_asi(character, asi_choice.choice.increases, asi_choice.class_level, totals)
             else:
                 await self.asi.apply_feat(

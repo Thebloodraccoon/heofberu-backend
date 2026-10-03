@@ -65,7 +65,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.period = period
         self.skip_paths = skip_paths if skip_paths is not None else DEFAULT_SKIP_PATHS
         self.rules = rules or []
-        self.stage = stage or getattr(settings, "STAGE", "dev")
+        self.stage: str = stage or str(getattr(settings, "STAGE", "dev"))
 
         # Fallback only; the primary counter lives in Redis. Keyed by (ip, bucket).
         self.clients: dict[tuple[str, str], deque[float]] = {}

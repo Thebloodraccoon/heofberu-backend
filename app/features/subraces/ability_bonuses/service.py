@@ -15,7 +15,7 @@ from app.models.races.subrace_model import Subrace
 class SubraceAbilityBonusService(
     AbilityBonusesManagerMixin,
     CatalogCacheMixin,
-    BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
+    BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse],
 ):
     """Full replacement of a subrace ability score bonuses."""
 

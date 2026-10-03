@@ -91,7 +91,7 @@ class DecodedToken:
     tokens, an email for tokens minted before ids were used.
     """
 
-    def __init__(
+    def __init__(  # nosec B107  # token_type, not a password
         self,
         subject: str,
         jti: str,

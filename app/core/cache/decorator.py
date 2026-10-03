@@ -129,7 +129,7 @@ def use_cache(
             await cache_set(key, encode(result), ttl, epoch=epoch)
             return result
 
-        wrapper.__use_cache__ = {"namespace": namespace}
+        wrapper.__use_cache__ = {"namespace": namespace}  # type: ignore[attr-defined]  # read by the namespace test
         return wrapper
 
     return decorator
@@ -210,12 +210,12 @@ def _resolve_call_schema(func: Callable, args: tuple) -> Any:
         if item_schema is not None:
             from app.core.pagination import Page
 
-            return Page[item_schema]
+            return Page[item_schema]  # type: ignore[valid-type]  # schema resolved at runtime
 
     if func.__name__ == "list_for_source":
         item_schema = getattr(instance, "response_schema", None)
         if item_schema is not None:
-            return list[item_schema]
+            return list[item_schema]  # type: ignore[valid-type]  # schema resolved at runtime
 
     return getattr(instance, "response_schema", None)
 

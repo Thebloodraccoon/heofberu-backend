@@ -30,7 +30,7 @@ def _add_replace_route(
 
     async def endpoint(
         class_id: int,
-        data: Annotated[schema, Body(openapi_examples=examples)],
+        data: Annotated[schema, Body(openapi_examples=examples)],  # type: ignore[valid-type]  # route factory
         class_service: ClassProficienciesDep,
         _: GmUserDep,
     ):

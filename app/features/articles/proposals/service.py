@@ -17,7 +17,7 @@ from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, pa
 from app.features.articles.access import ArticleActor
 from app.features.articles.crud.repository import REVISED_FIELDS
 from app.features.articles.crud.schemas import ArticleContentUpdate, ArticleResponse
-from app.features.articles.crud.service import ArticleCrudService
+from app.features.articles.crud.writer import ArticleWriter
 from app.features.articles.exceptions import (
     ArticleProposalChangeForbiddenException,
     ArticleProposalClosedException,
@@ -33,11 +33,12 @@ from app.features.articles.proposals.schemas import (
     ArticleProposalResponse,
     ProposalArticleRef,
 )
+from app.features.articles.revisions.merge import CONFLICT, merge_text, merge_value
 from app.features.articles.revisions.repository import ArticleRevisionRepository
 from app.features.articles.revisions.schemas import ArticleRevisionDiff
-from app.features.articles.revisions.merge import CONFLICT, merge_text, merge_value
 from app.features.articles.revisions.service import DIFF_FIELDS, build_diff
 from app.models.articles.article_proposal_model import ArticleProposal
+from app.models.articles.article_revision_model import ArticleRevision
 
 #: ``sort`` name baked into proposal cursors (ordered by id, newest first), so another listing's cursor is a 422.
 CURSOR_SORT = "proposals"
@@ -61,13 +62,16 @@ def _plain(value: Any) -> Any:
 class ArticleProposalsService:
     """``/articles/{id}/proposals`` and the ``/articles/proposals`` queue."""
 
-    def __init__(self, db: AsyncSession, articles: ArticleCrudService):
-        """Bind to a session; ``articles`` validates subtypes and applies accepted proposals."""
+    def __init__(self, db: AsyncSession):
+        """
+        Bind to a session. Accepted proposals are written through ``ArticleWriter`` (the same path as a direct
+        edit, so history and caches behave identically), which also validates subtypes and reads write state.
+        """
 
         self.db = db
         self.repository = ArticleProposalRepository(db)
         self._revisions = ArticleRevisionRepository(db)
-        self._articles = articles
+        self._writer = ArticleWriter(db)
 
     async def propose(
         self, article_id: int, data: ArticleContentUpdate, actor: ArticleActor
@@ -87,17 +91,18 @@ class ArticleProposalsService:
         change_note = fields.pop("change_note", None)
         base = await self._revisions.get(article_id, state.version)
         content = {field: fields.get(field, getattr(base, field)) for field in REVISED_FIELDS}
-        await self._articles.validate_subtype(content["subtype_id"], content["article_type"])
+        await self._writer.validate_subtype(content["subtype_id"], content["article_type"])
 
-        proposal_id = await self.repository.create(
-            {
-                "article_id": article_id,
-                "base_version": state.version,
-                "proposer_id": actor.id,
-                "change_note": change_note,
-                **content,
-            }
-        )
+        async with atomic(self.db):
+            proposal_id = await self.repository.create(
+                {
+                    "article_id": article_id,
+                    "base_version": state.version,
+                    "proposer_id": actor.id,
+                    "change_note": change_note,
+                    **content,
+                }
+            )
         return await self.get_proposal(article_id, proposal_id)
 
     async def list_proposals(
@@ -112,8 +117,7 @@ class ArticleProposalsService:
     ) -> Page[ArticleProposalBrief] | CursorPage[ArticleProposalBrief]:
         """The article's proposals (any of ``statuses``), newest first; 404 if the article doesn't exist."""
 
-        if not await self._revisions.article_exists(article_id):
-            raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
+        await self._writer.write_state_or_404(article_id)
 
         return await self._list(
             {"article_id": article_id, "statuses": statuses},
@@ -178,11 +182,13 @@ class ArticleProposalsService:
 
         async def guard() -> None:
             await self._close(proposal, ArticleProposalStatus.ACCEPTED, actor.id, accepted_version=onto_version + 1)
-            current = await self._articles.repository.lock_version(article_id)
+            current = await self._writer.lock_version(article_id)
+            if current is None:
+                raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
             if current != onto_version:
                 raise ArticleProposalStaleException(proposal_id, onto_version, current)
 
-        return await self._articles.apply_changes(
+        return await self._writer.apply_changes(
             article_id,
             content,
             state,
@@ -221,7 +227,7 @@ class ArticleProposalsService:
             if data.base_version != state.version:
                 raise ArticleProposalStaleException(proposal_id, data.base_version, state.version)
 
-            await self._articles.validate_subtype(data.subtype_id, data.article_type)
+            await self._writer.validate_subtype(data.subtype_id, data.article_type)
             content = data.model_dump(exclude={"base_version"})
             await self.repository.replace_content(proposal_id, content, base_version=data.base_version)
 
@@ -276,8 +282,8 @@ class ArticleProposalsService:
         merged with conflict markers. The subtype of the merged type is re-validated (400).
         """
 
-        base = await self._revisions.get(proposal.article_id, proposal.base_version)
-        current = await self._revisions.get(proposal.article_id, onto_version)
+        base = await self._revision_or_404(proposal.article_id, proposal.base_version)
+        current = await self._revision_or_404(proposal.article_id, onto_version)
 
         content: dict = {}
         conflicts = []
@@ -298,7 +304,7 @@ class ArticleProposalsService:
             raise ArticleProposalConflictException(proposal.id, details)
 
         content["body_markdown"] = body.text
-        await self._articles.validate_subtype(content["subtype_id"], content["article_type"])
+        await self._writer.validate_subtype(content["subtype_id"], content["article_type"])
         return content
 
     async def _reviewable_or_error(self, article_id: int, proposal_id: int, actor: ArticleActor):
@@ -316,6 +322,8 @@ class ArticleProposalsService:
     async def _list(
         self, filters: dict, *, page: int, size: int, cursor: str | None, use_cursor: bool
     ) -> Page[ArticleProposalBrief] | CursorPage[ArticleProposalBrief]:
+        """Shared page/cursor listing behind ``list_proposals`` and ``queue`` (newest first)."""
+
         if use_cursor:
             before_id = decode_cursor(cursor, CURSOR_SORT).id if cursor is not None else None
             rows, _ = await self.repository.list_proposals(
@@ -339,6 +347,8 @@ class ArticleProposalsService:
         accepted_version: int | None = None,
         review_note: str | None = None,
     ) -> None:
+        """Close a pending proposal (conditional UPDATE); 409 with its actual status if it was already closed."""
+
         closed = await self.repository.close(
             proposal.id, status, reviewer_id=reviewer_id, accepted_version=accepted_version, review_note=review_note
         )
@@ -346,14 +356,26 @@ class ArticleProposalsService:
             await self.db.refresh(proposal)
             raise ArticleProposalClosedException(proposal.id, ArticleProposalStatus(proposal.status).value)
 
-    async def _write_state_or_404(self, article_id: int):
-        state = await self._articles.repository.get_write_state(article_id)
-        if state is None:
-            raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
+    async def _revision_or_404(self, article_id: int, version: int) -> ArticleRevision:
+        """
+        One stored revision, or ``RecordNotFoundError``. Every version has a revision, so a miss means the history
+        was tampered with; fail loudly instead of merging against nothing.
+        """
 
-        return state
+        revision = await self._revisions.get(article_id, version)
+        if revision is None:
+            raise RecordNotFoundError(model_name="ArticleRevision", model_id=f"{article_id}@{version}")
+
+        return revision
+
+    async def _write_state_or_404(self, article_id: int):
+        """The article's write-state row (author, version, ...), or ``RecordNotFoundError``."""
+
+        return await self._writer.write_state_or_404(article_id)
 
     async def _get_or_404(self, article_id: int, proposal_id: int):
+        """The ``(proposal, title, slug, version)`` row, or ``RecordNotFoundError``."""
+
         row = await self.repository.get(article_id, proposal_id)
         if row is None:
             raise RecordNotFoundError(model_name="ArticleProposal", model_id=str(proposal_id))

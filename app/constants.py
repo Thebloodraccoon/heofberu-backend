@@ -398,7 +398,7 @@ def is_article_publicly_visible(status: "ArticleStatus | str", visibility: "Arti
     """
     Canonical non-GM visibility predicate, in value form so it applies equally to an
     ORM ``Article``, a cached ``ArticleResponse``, or raw SQL (see
-    ``ArticleRepository._visibility_conditions`` for the row-filter equivalent).
+    ``app.features.articles.visibility.visibility_conditions`` for the row-filter equivalent).
     """
 
     return status == ArticleStatus.PUBLISHED and visibility == ArticleVisibility.PUBLIC

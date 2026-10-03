@@ -42,9 +42,6 @@ BEFORE_ASI = "f9c6d8e2b4a7"
 pytestmark = pytest.mark.integration
 
 
-# --------------------------------------------------------------------------- helpers
-
-
 def _tag() -> str:
     assert isolation.IDENTITY is not None
     return f"heof_test_mig_{isolation.IDENTITY.tag}"
@@ -145,9 +142,6 @@ def scratch_db(base_db, request):
         _drop_db(name)
 
 
-# --------------------------------------------------------------------------- chain
-
-
 class TestMigrationChain:
     def test_exactly_one_head_and_every_parent_resolves(self):
         script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
@@ -197,9 +191,6 @@ class TestRoundTrip:
 
         _alembic(scratch_db, "upgrade", "head")
         assert _version(scratch_db) == head
-
-
-# --------------------------------------------------------------------------- drift
 
 
 class TestNoDrift:
@@ -326,9 +317,6 @@ class TestNoDrift:
             engine.dispose()
 
         assert not mismatches, "\n".join(mismatches)
-
-
-# --------------------------------------------------------------------------- data migrations
 
 
 def _article_matches(db_name: str, slug: str, word: str, column: str = "search_vector") -> bool:

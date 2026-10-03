@@ -1,6 +1,6 @@
 """Validation helpers shared by the class and subclass request schemas."""
 
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Hashable, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -53,7 +53,7 @@ def reject_explicit_nulls(model: BaseModel, *, nullable: frozenset[str] = frozen
             raise ValueError(f"{name} cannot be null.")
 
 
-def null_guard(nullable: frozenset[str] = frozenset()) -> Callable[..., Any]:
+def null_guard(nullable: frozenset[str] = frozenset()) -> Any:
     """Build the ``model_validator(mode="after")`` that applies :func:`reject_explicit_nulls`."""
 
     def check(self):

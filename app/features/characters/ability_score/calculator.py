@@ -86,8 +86,8 @@ class CharacterAbilityScoreCalculator:
         for bonus in race_bonuses:
             totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
 
-        for bonus in subrace_bonuses:
-            totals[bonus.ability] = totals.get(bonus.ability, 0) + bonus.bonus
+        for subrace_bonus in subrace_bonuses:
+            totals[subrace_bonus.ability] = totals.get(subrace_bonus.ability, 0) + subrace_bonus.bonus
 
         for increase in asi_increases or []:
             totals[increase.ability] = totals.get(increase.ability, 0) + increase.amount
@@ -118,9 +118,9 @@ class CharacterAbilityScoreCalculator:
 
         for bonus in race_bonuses:
             contributions[bonus.ability].append(StatContribution("race", race_name or "Race bonus", bonus.bonus))
-        for bonus in subrace_bonuses:
-            contributions[bonus.ability].append(
-                StatContribution("subrace", subrace_name or "Subrace bonus", bonus.bonus)
+        for subrace_bonus in subrace_bonuses:
+            contributions[subrace_bonus.ability].append(
+                StatContribution("subrace", subrace_name or "Subrace bonus", subrace_bonus.bonus)
             )
         for increase in asi_increases:
             contributions[increase.ability].append(StatContribution("asi", _asi_label(increase), increase.amount))

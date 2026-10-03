@@ -3,19 +3,20 @@
 from sqlalchemy import select
 
 from app.constants import ArticleStatus, ArticleVisibility
+from app.core.base.repository import RepositoryMixin
 from app.models.articles.article_model import Article
 
 
-def visibility_conditions(include_hidden: bool) -> list:
-    """Row filters hiding unpublished and GM-only articles from non-GM readers."""
+def visibility_conditions(include_hidden: bool, model=Article) -> list:
+    """Row filters hiding unpublished and GM-only articles from non-GM readers (``model``: ``Article`` or an alias)."""
 
     if include_hidden:
         return []
 
-    return [Article.status == ArticleStatus.PUBLISHED, Article.visibility == ArticleVisibility.PUBLIC]
+    return [model.status == ArticleStatus.PUBLISHED, model.visibility == ArticleVisibility.PUBLIC]
 
 
-class ArticleVisibilityMixin:
+class ArticleVisibilityMixin(RepositoryMixin):
     """``exists_visible`` for repositories bound to ``Article`` (needs ``self.db``)."""
 
     async def exists_visible(self, article_id: int, include_hidden: bool) -> bool:

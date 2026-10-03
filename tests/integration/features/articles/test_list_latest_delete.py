@@ -62,6 +62,16 @@ class TestArticleList:
         assert body["total"] == 3
         assert len(body["items"]) == 2
 
+    async def test_page_past_the_end_still_reports_the_total(self, client, create_article):
+        for i in range(3):
+            await create_article(title=f"Entry {i}", status="published")
+
+        response = await client.get("/articles", params={"page": 5, "size": 2})
+
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+        assert response.json()["total"] == 3
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio

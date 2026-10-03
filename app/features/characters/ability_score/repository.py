@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.base.repository import BaseRepository
+from app.core.base.repository import SessionRepository
 from app.models import CharacterAbilityScore, Class, Race, Subrace
 from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
@@ -22,7 +22,7 @@ from app.models.races.subrace_association_models import SubraceAbilityBonus
 from app.settings._common import utcnow
 
 
-class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
+class CharacterStatsRepository(SessionRepository):
     """
     Repository backing ``CharacterStatsService``: the
     ``character_ability_scores`` cache table plus the source-bonus and
@@ -33,7 +33,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
     def __init__(self, db: AsyncSession):
         """Create the stats repository."""
 
-        super().__init__(CharacterAbilityScore, db)
+        super().__init__(db)
 
     async def get_by_character_id(self, character_id: int) -> CharacterAbilityScore | None:
         """Fetch the cached effective-ability-score row, or None if never computed."""
@@ -170,9 +170,9 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         rows = [
             {"character_id": character_id, **totals} for character_id, totals in sorted(totals_by_character_id.items())
         ]
-        statement = pg_insert(CharacterAbilityScore).values(rows)
-        updates = {field: statement.excluded[field] for field in rows[0] if field != "character_id"}
-        statement = statement.on_conflict_do_update(
+        insert = pg_insert(CharacterAbilityScore).values(rows)
+        updates = {field: insert.excluded[field] for field in rows[0] if field != "character_id"}
+        statement = insert.on_conflict_do_update(
             index_elements=[CharacterAbilityScore.character_id],
             set_={**updates, "updated_at": utcnow()},
         ).returning(CharacterAbilityScore)
@@ -200,7 +200,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             return {}
 
         result = await self.db.execute(select(Race.id, Race.name).where(Race.id.in_(ids)))
-        return dict(result.all())
+        return {entity_id: name for entity_id, name in result.all()}  # noqa: C416 - dict(rows) fails mypy
 
     async def get_subrace_names(self, subrace_ids: Iterable[int]) -> dict[int, str]:
         """``{subrace_id: name}`` for the given subraces."""
@@ -210,4 +210,4 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             return {}
 
         result = await self.db.execute(select(Subrace.id, Subrace.name).where(Subrace.id.in_(ids)))
-        return dict(result.all())
+        return {entity_id: name for entity_id, name in result.all()}  # noqa: C416 - dict(rows) fails mypy

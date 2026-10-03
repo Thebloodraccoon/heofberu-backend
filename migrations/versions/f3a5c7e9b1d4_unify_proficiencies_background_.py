@@ -56,9 +56,7 @@ down_revision: Union[str, None] = "a1b2c3d4e5f6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-ability_score_enum = postgresql.ENUM(
-    "STR", "DEX", "CON", "INT", "WIS", "CHA", name="ability_score", create_type=False
-)
+ability_score_enum = postgresql.ENUM("STR", "DEX", "CON", "INT", "WIS", "CHA", name="ability_score", create_type=False)
 armor_proficiency_enum = postgresql.ENUM(
     "LIGHT", "MEDIUM", "HEAVY", "SHIELD", name="armor_proficiency", create_type=False
 )
@@ -195,9 +193,7 @@ def upgrade() -> None:
         "character_proficiencies",
         ["character_id", "weapon_category"],
         unique=True,
-        postgresql_where=sa.text(
-            "source_type = 'GM' AND proficiency_type = 'WEAPON' AND weapon_category IS NOT NULL"
-        ),
+        postgresql_where=sa.text("source_type = 'GM' AND proficiency_type = 'WEAPON' AND weapon_category IS NOT NULL"),
     )
     op.create_index(
         "uq_character_proficiency_gm_weapon_item",
@@ -236,8 +232,7 @@ def upgrade() -> None:
         ["source_character_feature_id", "weapon_category"],
         unique=True,
         postgresql_where=sa.text(
-            "source_character_feature_id IS NOT NULL AND proficiency_type = 'WEAPON' "
-            "AND weapon_category IS NOT NULL"
+            "source_character_feature_id IS NOT NULL AND proficiency_type = 'WEAPON' AND weapon_category IS NOT NULL"
         ),
     )
     op.create_index(
@@ -264,9 +259,7 @@ def upgrade() -> None:
     op.drop_index(
         op.f("ix_character_proficiency_audit_log_actor_user_id"), table_name="character_proficiency_audit_log"
     )
-    op.drop_index(
-        op.f("ix_character_proficiency_audit_log_character_id"), table_name="character_proficiency_audit_log"
-    )
+    op.drop_index(op.f("ix_character_proficiency_audit_log_character_id"), table_name="character_proficiency_audit_log")
     op.drop_table("character_proficiency_audit_log")
     op.execute("DROP TYPE IF EXISTS proficiency_audit_action")
 
@@ -304,9 +297,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["background_id"], ["backgrounds.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_background_suggestions_background_id"), "background_suggestions", ["background_id"]
-    )
+    op.create_index(op.f("ix_background_suggestions_background_id"), "background_suggestions", ["background_id"])
 
     op.drop_column("backgrounds", "personality_traits_suggestions")
     op.drop_column("backgrounds", "ideals_suggestions")
@@ -343,9 +334,7 @@ def downgrade() -> None:
     op.drop_index("ix_background_skills_skill_id", table_name="background_skills")
     op.drop_index("ix_class_available_skills_skill_id", table_name="class_available_skills")
     op.drop_index("ix_race_skills_skill_id", table_name="race_skills")
-    op.drop_index(
-        op.f("ix_character_asi_choices_ability_score_increase_id"), table_name="character_asi_choices"
-    )
+    op.drop_index(op.f("ix_character_asi_choices_ability_score_increase_id"), table_name="character_asi_choices")
 
     # --- 4. Restore skills.key ---
     # Best-effort: the original key values are gone (dropped, not archived),
@@ -361,15 +350,9 @@ def downgrade() -> None:
 
     # --- 3. Restore background suggestion columns, drop the table + starting_gold ---
     op.drop_column("backgrounds", "starting_gold")
-    op.add_column(
-        "backgrounds", sa.Column("flaws_suggestions", sa.Text(), nullable=False, server_default="")
-    )
-    op.add_column(
-        "backgrounds", sa.Column("bonds_suggestions", sa.Text(), nullable=False, server_default="")
-    )
-    op.add_column(
-        "backgrounds", sa.Column("ideals_suggestions", sa.Text(), nullable=False, server_default="")
-    )
+    op.add_column("backgrounds", sa.Column("flaws_suggestions", sa.Text(), nullable=False, server_default=""))
+    op.add_column("backgrounds", sa.Column("bonds_suggestions", sa.Text(), nullable=False, server_default=""))
+    op.add_column("backgrounds", sa.Column("ideals_suggestions", sa.Text(), nullable=False, server_default=""))
     op.add_column(
         "backgrounds", sa.Column("personality_traits_suggestions", sa.Text(), nullable=False, server_default="")
     )
@@ -381,12 +364,8 @@ def downgrade() -> None:
     # --- 2. Restore dead free-text fields ---
     op.add_column("character_features", sa.Column("notes", sa.Text(), nullable=False, server_default=""))
     op.add_column("character_items", sa.Column("notes", sa.Text(), nullable=False, server_default=""))
-    op.add_column(
-        "character_items", sa.Column("is_attuned", sa.Boolean(), nullable=False, server_default=sa.false())
-    )
-    op.add_column(
-        "character_items", sa.Column("is_equipped", sa.Boolean(), nullable=False, server_default=sa.false())
-    )
+    op.add_column("character_items", sa.Column("is_attuned", sa.Boolean(), nullable=False, server_default=sa.false()))
+    op.add_column("character_items", sa.Column("is_equipped", sa.Boolean(), nullable=False, server_default=sa.false()))
 
     # --- 1. Restore the four typed tables + audit log, drop the unified table ---
     op.execute(

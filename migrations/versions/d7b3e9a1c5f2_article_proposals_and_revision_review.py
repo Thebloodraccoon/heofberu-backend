@@ -54,12 +54,16 @@ def upgrade() -> None:
 
     op.add_column("article_revisions", sa.Column("content_hash", sa.String(length=64), nullable=True))
     bind = op.get_bind()
-    rows = bind.execute(
-        sa.text(
-            "SELECT id, article_id, version, title, excerpt, body_markdown, article_type, subtype_id, "
-            "lower(visibility::text) AS visibility FROM article_revisions ORDER BY article_id, version"
+    rows = (
+        bind.execute(
+            sa.text(
+                "SELECT id, article_id, version, title, excerpt, body_markdown, article_type, subtype_id, "
+                "lower(visibility::text) AS visibility FROM article_revisions ORDER BY article_id, version"
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     hashes: dict[tuple[int, int], str] = {}
     for row in rows:
         content = {field: row[field] for field in CONTENT_FIELDS}

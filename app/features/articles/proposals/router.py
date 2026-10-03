@@ -1,6 +1,6 @@
 """Proposed article changes (mounted under ``/articles/{article_id}``)."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
 
@@ -30,17 +30,17 @@ StatusesQuery = Annotated[
     ),
 ]
 
-PROPOSAL_404 = {404: {"description": "No such article, or it has no such proposal."}}
+PROPOSAL_404: dict[int | str, dict[str, Any]] = {404: {"description": "No such article, or it has no such proposal."}}
 CONFLICT_409 = (
     "The proposal conflicts with the current version: `details` holds `conflicts` (`field`, `base`, `current`, "
     "`proposed`), `body_conflicts` (`base`, `current`, `proposed` hunks) and `merged_body` (with "
     "`<<<<<<<`/`|||||||`/`=======`/`>>>>>>>` markers). Nothing is saved."
 )
-CHANGE_RESPONSES = {
+CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
     **PROPOSAL_404,
     403: {"description": "Only the proposer, the article's author or the founder can update a proposal."},
 }
-REVIEW_RESPONSES = {
+REVIEW_RESPONSES: dict[int | str, dict[str, Any]] = {
     **PROPOSAL_404,
     403: {"description": "Only the article's author or the founder reviews proposals (the founder, their own too)."},
 }

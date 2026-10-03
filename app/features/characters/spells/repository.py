@@ -4,18 +4,18 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.base.repository import BaseRepository
+from app.core.base.repository import BaseRepository, SessionRepository
 from app.models.character.character_spell_model import CharacterGrantedSpell, CharacterSpell, CharacterSpellSlot
 from app.models.spells.spell_model import Spell
 
 
-class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
+class CharacterSpellSlotRepository(SessionRepository):
     """Repository for a character's spell slot totals per level (``character_spell_slots``)."""
 
     def __init__(self, db: AsyncSession):
         """Create the spell-slot repository."""
 
-        super().__init__(CharacterSpellSlot, db)
+        super().__init__(db)
 
     async def get_spell_slot(self, character_id: int, level: str) -> CharacterSpellSlot | None:
         """Fetch a character's spell slot entry for a level, or None."""
@@ -46,7 +46,9 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
         them, keeping history stable — "0 total = no slots").
         """
 
-        existing = {slot.spell_level: slot for slot in await self.get_all_spell_slots(character_id)}
+        existing: dict[str, CharacterSpellSlot] = {
+            slot.spell_level: slot for slot in await self.get_all_spell_slots(character_id)
+        }
 
         for level, total in slots_by_level.items():
             slot = existing.get(level)
@@ -77,13 +79,13 @@ class CharacterSpellSlotRepository(BaseRepository[CharacterSpellSlot]):
         await self.commit_or_flush(commit=commit)
 
 
-class CharacterSpellRepository(BaseRepository[CharacterSpell]):
+class CharacterSpellRepository(SessionRepository):
     """Repository for a character's known spells (``character_spells``)."""
 
     def __init__(self, db: AsyncSession):
         """Create the known-spell repository."""
 
-        super().__init__(CharacterSpell, db)
+        super().__init__(db)
 
     @staticmethod
     def _spell_load_options() -> list:

@@ -69,16 +69,20 @@ def _to_pending_response(
                 pick_count=group.pick_count,
                 choice_type=group.choice_type,
                 options=[
-                    PendingChoiceOption(
-                        id=option.id,
-                        needs_skill=_option_has_open_skill(option),
-                        needs_spell=_option_has_open_spell(option),
-                        ability_effects=option.ability_effects,
-                        skill_effects=option.skill_effects,
-                        saving_throw_effects=option.saving_throw_effects,
-                        armor_effects=option.armor_effects,
-                        weapon_effects=option.weapon_effects,
-                        spell_effects=option.spell_effects,
+                    # ORM effect rows are validated into the response items by attribute
+                    PendingChoiceOption.model_validate(
+                        {
+                            "id": option.id,
+                            "needs_skill": _option_has_open_skill(option),
+                            "needs_spell": _option_has_open_spell(option),
+                            "ability_effects": option.ability_effects,
+                            "skill_effects": option.skill_effects,
+                            "saving_throw_effects": option.saving_throw_effects,
+                            "armor_effects": option.armor_effects,
+                            "weapon_effects": option.weapon_effects,
+                            "spell_effects": option.spell_effects,
+                        },
+                        from_attributes=True,
                     )
                     for option in group.options
                 ],

@@ -1,8 +1,8 @@
 """Article relations repository: per-article combined listing and per-relation CRUD."""
 
-from sqlalchemy import case, exists, or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only, selectinload
+from sqlalchemy.orm import aliased, load_only, noload
 
 from app.constants import ArticleVisibility
 from app.features.articles.base import ArticleScopedRepository
@@ -23,55 +23,37 @@ class ArticleRelationsRepository(ArticleScopedRepository):
 
         super().__init__(db)
 
-    async def relation_exists(
-        self, from_article_id: int, to_article_id: int, relation_type: str, *, exclude_id: int | None = None
-    ) -> bool:
-        """Return whether this exact ``(from, to, relation_type)`` triple already exists (ignoring ``exclude_id``)."""
+    async def list_relations(self, article_id: int, *, include_hidden: bool) -> list[tuple[ArticleRelation, Article]]:
+        """
+        Return the relations touching the article (either direction) as ``(relation, far-side article)`` pairs,
+        newest first, at most ``RELATIONS_LIMIT``.
 
-        stmt = select(ArticleRelation.id).where(
-            ArticleRelation.from_article_id == from_article_id,
-            ArticleRelation.to_article_id == to_article_id,
-            ArticleRelation.relation_type == relation_type,
+        One query: only the far side is joined (the near side is the article itself). For non-GM readers
+        (``include_hidden=False``) GM-only relations and relations whose far side isn't a published, public
+        article are filtered out in SQL.
+        """
+
+        other = aliased(Article)
+        other_id = case(
+            (ArticleRelation.from_article_id == article_id, ArticleRelation.to_article_id),
+            else_=ArticleRelation.from_article_id,
         )
-        if exclude_id is not None:
-            stmt = stmt.where(ArticleRelation.id != exclude_id)
-
-        return await self.db.scalar(stmt) is not None
-
-    async def list_relations(self, article_id: int, *, include_hidden: bool) -> list[ArticleRelation]:
-        """
-        Return the relations touching the article (either direction), newest first, at most ``RELATIONS_LIMIT``.
-
-        For non-GM readers (``include_hidden=False``) GM-only relations and relations whose far side isn't a
-        published, public article are filtered out in SQL.
-        """
-
         conditions = [or_(ArticleRelation.from_article_id == article_id, ArticleRelation.to_article_id == article_id)]
         if not include_hidden:
-            other_id = case(
-                (ArticleRelation.from_article_id == article_id, ArticleRelation.to_article_id),
-                else_=ArticleRelation.from_article_id,
-            )
-            conditions += [
-                ArticleRelation.visibility == ArticleVisibility.PUBLIC,
-                exists(select(Article.id).where(Article.id == other_id, *visibility_conditions(False))),
-            ]
+            conditions += [ArticleRelation.visibility == ArticleVisibility.PUBLIC, *visibility_conditions(False, other)]
 
-        other_side_columns = load_only(
-            Article.id, Article.slug, Article.title, Article.article_type, Article.subtype_id,
-            Article.status, Article.visibility,
-        )  # fmt: skip
         result = await self.db.execute(
-            select(ArticleRelation)
+            select(ArticleRelation, other)
+            .join(other, other.id == other_id)
             .where(*conditions)
             .options(
-                selectinload(ArticleRelation.from_article).options(other_side_columns),
-                selectinload(ArticleRelation.to_article).options(other_side_columns),
+                load_only(other.id, other.slug, other.title, other.article_type, other.subtype_id),
+                noload(other.author),  # joined by default; an ``ArticleBrief`` has no author
             )
             .order_by(ArticleRelation.created_at.desc(), ArticleRelation.id.desc())
             .limit(RELATIONS_LIMIT)
         )
-        return list(result.scalars().all())
+        return [(relation, far_side) for relation, far_side in result.all()]
 
     async def get_relation(self, article_id: int, relation_id: int) -> ArticleRelation | None:
         """Fetch a single relation scoped to the article (either direction), or ``None``."""

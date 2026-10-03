@@ -3,17 +3,17 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.repository import BaseRepository
+from app.core.base.repository import SessionRepository
 from app.models.character.character_max_level_model import CharacterMaxLevel
 
 
-class CharacterMaxLevelRepository(BaseRepository[CharacterMaxLevel]):
+class CharacterMaxLevelRepository(SessionRepository):
     """CRUD for ``character_max_levels`` (one row per character)."""
 
     def __init__(self, db: AsyncSession):
         """Create the max-level repository."""
 
-        super().__init__(CharacterMaxLevel, db)
+        super().__init__(db)
 
     async def get_by_character_id(self, character_id: int) -> CharacterMaxLevel | None:
         """Fetch the character's max-level row, or ``None`` if it has none."""

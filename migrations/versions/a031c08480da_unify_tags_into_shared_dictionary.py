@@ -103,7 +103,11 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_background_tags_tag_id"), "background_tags", ["tag_id"], unique=False)
 
-    bind.execute(sa.text("INSERT INTO subrace_tags (subrace_id, tag_id) SELECT subrace_id, tag_id FROM _subrace_tags_migration_staging"))
+    bind.execute(
+        sa.text(
+            "INSERT INTO subrace_tags (subrace_id, tag_id) SELECT subrace_id, tag_id FROM _subrace_tags_migration_staging"
+        )
+    )
     op.execute("DROP TABLE _subrace_tags_migration_staging")
 
 

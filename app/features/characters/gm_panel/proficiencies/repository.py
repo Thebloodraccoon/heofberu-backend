@@ -14,6 +14,7 @@ Writes only flush; the service owns the transaction.
 """
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 from sqlalchemy import and_, false, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +34,7 @@ from app.models.features.feature_engine_models import (
 )
 from app.models.features.feature_model import Feature
 
-_EFFECT_MODEL = {
+_EFFECT_MODEL: dict[ProficiencyType, Any] = {
     ProficiencyType.SKILL: FeatureSkillProficiencyEffect,
     ProficiencyType.SAVING_THROW: FeatureSavingThrowEffect,
     ProficiencyType.ARMOR: FeatureArmorProficiencyEffect,
@@ -111,7 +112,8 @@ class CharacterProficiencyGmRepository:
 
         key = proficiency_key(proficiency_type, **discriminator)
         return [
-            ProficiencyEntry(key, feature_source(feature), is_expertise=expertise_by_feature[feature_id])
+            # feature_source reads only id/name/source_type, which the namespace carries
+            ProficiencyEntry(key, feature_source(cast(Feature, feature)), is_expertise=expertise_by_feature[feature_id])
             for feature_id, feature in features.items()
         ]
 

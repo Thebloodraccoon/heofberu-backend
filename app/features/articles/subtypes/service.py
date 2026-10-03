@@ -15,16 +15,17 @@ from app.models.articles.article_subtype_model import ArticleSubtype
 
 
 class ArticleSubtypeService(
-    BaseService[ArticleSubtype, ArticleSubtypeCreate, ArticleSubtypeUpdate, ArticleSubtypeResponse, None]
+    BaseService[ArticleSubtype, ArticleSubtypeCreate, ArticleSubtypeUpdate, ArticleSubtypeResponse]
 ):
     """
-    Subtype CRUD. Writes purge the ``articles`` cache: the cached subtype list and article payloads embed
-    the subtype name, and a delete nulls ``articles.subtype_id`` (``ON DELETE SET NULL``).
+    Subtype CRUD. The list is cached under its own ``article_subtypes`` namespace (so article-wide purges keep it
+    warm); writes purge it plus the article caches: article payloads and tree briefs embed the subtype name, and a
+    delete nulls ``articles.subtype_id`` (``ON DELETE SET NULL``).
     """
 
     repository: ArticleSubtypeRepository
 
-    cache_namespaces = ARTICLE_CACHE_NAMESPACES
+    cache_namespaces = ("article_subtypes", *ARTICLE_CACHE_NAMESPACES)
 
     def __init__(self, db: AsyncSession):
         """Initialize the service with the subtype repository."""

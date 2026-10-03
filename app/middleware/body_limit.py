@@ -32,6 +32,8 @@ class PayloadTooLargeError(AppError, StarletteHTTPException):
     lookup follows the MRO, so the ``AppError`` envelope handler still serves it.
     """
 
+    headers: dict[str, str] | None
+
     def __init__(self, max_bytes: int):
         self.message = _message(max_bytes)
         self.details = None

@@ -113,6 +113,34 @@ class TestAuthUserCache:
         assert await caching_on.exists(article_cache_key(article["id"])) == 0
         assert (await client.get(f"/articles/{article['id']}")).json()["author"] is None
 
+    async def test_renaming_an_author_refreshes_their_cached_articles(
+        self, client, create_article, gm_token, caching_on
+    ):
+        from app.features.articles.cache import article_cache_key
+
+        article = await create_article(title="Authored", status="published")
+        await client.get(f"/articles/{article['id']}")
+        assert await caching_on.exists(article_cache_key(article["id"])) == 1
+
+        renamed = await client.put("/users/me", json={"username": "lorekeeper"}, headers=bearer(gm_token))
+
+        assert renamed.status_code == 200, renamed.text
+        assert await caching_on.exists(article_cache_key(article["id"])) == 0
+        assert (await client.get(f"/articles/{article['id']}")).json()["author"]["username"] == "lorekeeper"
+
+    async def test_profile_edit_without_a_rename_keeps_cached_articles(
+        self, client, create_article, gm_token, caching_on
+    ):
+        from app.features.articles.cache import article_cache_key
+
+        article = await create_article(title="Authored", status="published")
+        await client.get(f"/articles/{article['id']}")
+
+        edited = await client.put("/users/me", json={"bio": "Keeper of lore"}, headers=bearer(gm_token))
+
+        assert edited.status_code == 200, edited.text
+        assert await caching_on.exists(article_cache_key(article["id"])) == 1
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio

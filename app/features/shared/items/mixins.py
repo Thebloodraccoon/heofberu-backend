@@ -3,6 +3,7 @@
 from typing import Any
 
 from app.constants import FeatureSourceType
+from app.core.base.service import ServiceMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
 from app.features.shared.items.schemas import (
     ChoiceGroupsResponse,
@@ -12,7 +13,7 @@ from app.features.shared.items.schemas import (
 )
 
 
-class SourceItemManagerMixin:
+class SourceItemManagerMixin(ServiceMixin):
     """List/full-replace starting equipment attached to a source record."""
 
     _items: NestedSourceItemService
@@ -34,7 +35,7 @@ class SourceItemManagerMixin:
         return await self._get_response(source_id)
 
 
-class ChoiceGroupManagerMixin:
+class ChoiceGroupManagerMixin(ServiceMixin):
     """List/full-replace choice groups (class starting equipment alternatives)."""
 
     _items: NestedSourceItemService

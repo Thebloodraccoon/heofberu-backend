@@ -14,7 +14,7 @@ from app.models.races.subrace_model import Subrace
 class SubraceTagService(
     TagsManagerMixin,
     CatalogCacheMixin,
-    BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse, None],
+    BaseService[Subrace, SubraceCreate, SubraceUpdate, SubraceResponse],
 ):
     """Full replacement and id-resolution for subrace tags."""
 

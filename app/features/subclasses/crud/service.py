@@ -20,7 +20,7 @@ from app.models.classes.subclass_model import Subclass
 
 
 class SubclassCrudService(
-    BaseService[Subclass, SubclassCreate, SubclassUpdate, SubclassResponse, None],
+    BaseService[Subclass, SubclassCreate, SubclassUpdate, SubclassResponse],
 ):
     """
     Subclass catalog CRUD built on :class:`BaseService`.

@@ -1,8 +1,9 @@
 """Queries over ``article_proposals``."""
 
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ArticleProposalStatus
@@ -30,11 +31,11 @@ class ArticleProposalRepository:
         self.db = db
 
     async def create(self, data: dict) -> int:
-        """Insert a proposal, commit, return its id."""
+        """Insert a proposal and return its id (flush only; the service commits through ``atomic``)."""
 
         proposal = ArticleProposal(**data)
         self.db.add(proposal)
-        await self.db.commit()
+        await self.db.flush()
         return proposal.id
 
     async def get(self, article_id: int, proposal_id: int) -> Any:
@@ -141,4 +142,4 @@ class ArticleProposalRepository:
             )
             .execution_options(synchronize_session=False)
         )
-        return result.rowcount == 1
+        return cast(CursorResult[Any], result).rowcount == 1

@@ -1,8 +1,11 @@
 """Spell CRUD service with transactional class/subclass/race/subrace availability setup."""
 
+from functools import partial
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.cached_service import CachedService
+from app.core.base.service import BeforeUpdateHook
 from app.core.base.transaction import invalidate_after_commit
 from app.core.cache import use_cache
 from app.core.exceptions import RecordNotFoundError
@@ -97,7 +100,7 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
             ids = getattr(spell_data, dimension.field)
             if ids:
                 members_by_dimension[dimension] = await self.resolve_ids(
-                    lambda wanted, dimension=dimension: self.repository.get_dimension_members(dimension, wanted),
+                    partial(self.repository.get_dimension_members, dimension),
                     ids,
                     dimension.label,
                 )
@@ -112,11 +115,15 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
 
         return await self._get_response(item.id)
 
-    async def update(self, item_id: int, update_data: SpellUpdate) -> SpellResponse:
+    async def update(
+        self, item_id: int, update_data: SpellUpdate, *, before_update: BeforeUpdateHook | None = None
+    ) -> SpellResponse:
         """Partially update a spell; a changed name also purges the catalogs that render it."""
 
         item = await self._get_or_404(item_id)
         fields = update_data.model_dump(exclude_unset=True)
+        if before_update:
+            before_update(item, fields)
         renamed = "name" in fields and fields["name"] != item.name
 
         async with self._atomic():

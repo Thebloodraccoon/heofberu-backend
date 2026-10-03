@@ -14,15 +14,16 @@ central ``FeatureCrudService``, which owns every feature write.
 
 from typing import Any, Generic
 
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import TypeVar
 
+from app.core.base.repository import ModelProtocol
 from app.core.cache import use_cache
 
-Model = TypeVar("Model")
-ResponseSchema = TypeVar("ResponseSchema")
-SourceType = TypeVar("SourceType")
+Model = TypeVar("Model", bound=ModelProtocol)
+ResponseSchema = TypeVar("ResponseSchema", bound=BaseModel)
 
 
 class NestedCollectionService(Generic[Model, ResponseSchema]):
@@ -59,13 +60,13 @@ class NestedCollectionService(Generic[Model, ResponseSchema]):
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    def fk_for(self, source_type: SourceType) -> str:
+    def fk_for(self, source_type: Any) -> str:
         """Resolve the polymorphic FK column name for ``source_type``."""
 
         raise NotImplementedError
 
     @use_cache()
-    async def list_for_source(self, source_type: SourceType, source_id: int) -> list[ResponseSchema]:
+    async def list_for_source(self, source_type: Any, source_id: int) -> list[ResponseSchema]:
         """
         Return every row owned by ``source_id`` (ordered by id).
 

@@ -44,7 +44,7 @@ so a blackholed instance costs one timeout per window, not one per request.
 from collections.abc import Callable, Iterable
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 from app.settings import settings
 
@@ -316,7 +316,7 @@ async def _replay_pending(redis: Any) -> None:
 async def _purge(namespaces: list[str], keys: list[str], *, flush: bool = False) -> None:
     """Run one purge (after replaying older failures); if Redis fails, remember it for a retry."""
 
-    provider = _provider(force=True)
+    provider = cast(Callable, _provider(force=True))  # force=True ignores the breaker: never None
     try:
         async with provider() as redis:
             await _replay_pending(redis)

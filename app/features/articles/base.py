@@ -1,5 +1,8 @@
-"""Thin bases shared by the article capabilities (CRUD, tags, relations, images) instead of one fat repository."""
+"""Thin bases shared by the article capabilities instead of one fat repository."""
 
+from typing import Any
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,11 +15,12 @@ from app.models.articles.article_model import Article
 
 class ArticleScopedRepository(ArticleVisibilityMixin, BaseRepository[Article]):
     """
-    Plain ``Article`` repository: id lookups and the visibility check, nothing capability-specific.
+    Plain ``Article`` repository: id lookups, the visibility check and the write-rule state, nothing
+    capability-specific.
 
-    The capability repositories (relations, images, tags) build on this rather than on
-    ``ArticleRepository``, so they don't inherit its tree, listing and search queries. Tags and images
-    are only eager-loaded when ``load_tags_and_images`` is set (callers that serialize a full article).
+    Every capability repository (crud, tree, listing, workflow, tags, relations, images) builds on this, so none
+    inherits another one's queries. Tags and images are eager-loaded only with ``load_tags_and_images`` (repositories
+    whose service serializes a full ``ArticleResponse``).
     """
 
     def __init__(
@@ -39,11 +43,29 @@ class ArticleScopedRepository(ArticleVisibilityMixin, BaseRepository[Article]):
             unique_fields=unique_fields,
         )
 
+    async def get_write_state(self, article_id: int) -> Any:
+        """
+        The row the write rules need, without tags/images: ``(article_type, subtype_id, published_at, status,
+        author_id, version)``; ``None`` if the article doesn't exist.
+        """
 
-class ArticleScopedService(BaseService[Article, ArticleCreate, ArticleUpdate, ArticleResponse, None]):
-    """Base of the services that act on one article (``/articles/{id}/tags|relations|images``)."""
+        result = await self.db.execute(
+            select(
+                Article.article_type,
+                Article.subtype_id,
+                Article.published_at,
+                Article.status,
+                Article.author_id,
+                Article.version,
+            ).where(Article.id == article_id)
+        )
+        return result.one_or_none()
+
+
+class ArticleScopedService(BaseService[Article, ArticleCreate, ArticleUpdate, ArticleResponse]):
+    """Base of the services that act on one article and answer with ``ArticleResponse`` (tags, workflow, ...)."""
 
     def __init__(self, repository: ArticleScopedRepository):
-        """Serialize to ``ArticleResponse`` (only the tags service returns it; the others use the shared helpers)."""
+        """Serialize to ``ArticleResponse``; ``_get_response`` needs a repository with ``load_tags_and_images``."""
 
         super().__init__(repository=repository, response_schema=ArticleResponse)

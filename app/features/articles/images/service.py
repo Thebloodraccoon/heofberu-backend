@@ -55,9 +55,15 @@ class ArticleImagesService(ArticleScopedService):
 
         No database transaction is held across the network call: a short transaction commits a
         placeholder row (its id and key name the storage object), the file is uploaded with no
-        connection checked out, and a second short transaction sets the public URL. If the upload or the
-        second step fails, the placeholder row and any object written are removed again, so no row with an
-        empty ``image_url`` outlives the request. At most ``IMAGE_MAX_BYTES`` + 1 bytes of the file are read.
+        connection checked out, and a second short transaction sets the public URL and schedules the
+        article's cache purge. If the upload or the second step fails, the placeholder row and any object
+        written are removed again, so no row with an empty ``image_url`` outlives the request. At most
+        ``IMAGE_MAX_BYTES`` + 1 bytes of the file are read.
+
+        Raises:
+            RecordNotFoundError: no such article.
+            ArticleImageLimitException: the article already holds ``MAX_IMAGES_PER_ARTICLE`` images.
+            ImageUploadError: the file was rejected by storage (type/size; 400).
         """
 
         await self._exists_or_404(article_id)
@@ -69,20 +75,23 @@ class ArticleImagesService(ArticleScopedService):
         finally:
             await image.close()
 
-        row = await self.repository.create_placeholder(article_id)
+        async with self._atomic():
+            row = await self.repository.create_placeholder(article_id, commit=False)
         image_id, entity = row.id, storage_entity(article_id, row.storage_key)
+
         try:
             url = await self._storage.upload_image(entity, image_id, content, image.content_type or "")
-            updated = await self.repository.set_image_url(article_id, image_id, url)
-            if updated is None:
-                raise ArticleImageNotFoundException(article_id=article_id, image_id=image_id)
+            async with self._atomic():
+                updated = await self.repository.set_image_url(article_id, image_id, url, commit=False)
+                if updated is None:
+                    raise ArticleImageNotFoundException(article_id=article_id, image_id=image_id)
+                await invalidate_articles(self.repository.db, article_id)
         except Exception:
             await self._storage.delete_image(entity, image_id)
-            await self.repository.delete_image_by_id(image_id)
-            await invalidate_articles(self.repository.db, article_id)
+            async with self._atomic():
+                await self.repository.delete_image_by_id(image_id, commit=False)
+                await invalidate_articles(self.repository.db, article_id)
             raise
-
-        await invalidate_articles(self.repository.db, article_id)
 
         return ArticleImageResponse.model_validate(updated)
 
@@ -99,8 +108,9 @@ class ArticleImagesService(ArticleScopedService):
         await self._exists_or_404(article_id)
         image_row = await self._get_image_or_404(article_id, image_id)
         entity = storage_entity(article_id, image_row.storage_key)
-        await self.repository.delete_image_row(image_row)
-        await invalidate_articles(self.repository.db, article_id)
+        async with self._atomic():
+            await self.repository.delete_image_row(image_row, commit=False)
+            await invalidate_articles(self.repository.db, article_id)
         await self._storage.delete_image(entity, image_id)
 
     async def _get_image_or_404(self, article_id: int, image_id: int) -> ArticleImage:

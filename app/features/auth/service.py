@@ -1,5 +1,7 @@
 """Business logic for authentication: login, registration, token refresh, logout, password reset."""
 
+from typing import Literal, TypedDict
+
 from fastapi import BackgroundTasks, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,14 +44,29 @@ from app.features.users.service import invalidate_user_cache
 
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
-_REFRESH_COOKIE_ATTRIBUTES = {"httponly": True, "samesite": "none", "secure": True, "path": "/api/v1/auth"}
+
+
+class _CookieAttributes(TypedDict):
+    httponly: bool
+    samesite: Literal["lax", "strict", "none"]
+    secure: bool
+    path: str
+
+
+def _refresh_cookie_attributes(path: str = "/api/v1/auth") -> _CookieAttributes:
+    """``Set-Cookie`` attributes of the refresh cookie (the path is overridable to expire legacy copies)."""
+
+    return {"httponly": True, "samesite": "none", "secure": True, "path": path}
+
+
+_REFRESH_COOKIE_ATTRIBUTES = _refresh_cookie_attributes()
 #: Paths a stale ``refresh_token`` cookie may carry: ``/api/auth`` (before the ``/api/v1`` prefix) and the
 #: shorter paths a pre-path-attribute / proxied setup left behind (seen in the wild: an email-subject token on
 #: ``/``). Every cookie write expires them, so a browser stops carrying a stale duplicate next to the current one.
 LEGACY_REFRESH_COOKIE_PATHS = ("/api/auth", "/", "/api", "/api/v1")
 
 # A dummy bcrypt hash equalizes login timing so unknown emails can't be told apart from wrong passwords.
-DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"  # nosec B105 -- not a credential: public constant hash used as a timing-equalizing dummy
+DUMMY_PASSWORD_HASH = "$2b$12$DwWynkIMMBTtbcY8mPXP8ukj.AwYLuoe.xsvr8/XZNjHDfPrWS25i"  # nosec B105  # not a credential: public constant hash used as a timing-equalizing dummy
 
 
 def read_refresh_cookie(request: Request) -> str | None:
@@ -70,7 +87,7 @@ def read_refresh_cookie(request: Request) -> str | None:
 
 def _expire_legacy_refresh_cookies(response: Response) -> None:
     for path in LEGACY_REFRESH_COOKIE_PATHS:
-        response.delete_cookie(key=REFRESH_COOKIE_NAME, **{**_REFRESH_COOKIE_ATTRIBUTES, "path": path})
+        response.delete_cookie(key=REFRESH_COOKIE_NAME, **_refresh_cookie_attributes(path))
 
 
 def set_refresh_cookie(response: Response, refresh_token: str) -> None:

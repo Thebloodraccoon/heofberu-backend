@@ -18,7 +18,7 @@ in-memory result.
 """
 
 from functools import partial
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,7 +69,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
         if not await self.skill_repository.exists_by_id(skill_id):
-            raise RecordNotFoundError("Skill", skill_id)
+            raise RecordNotFoundError("Skill", str(skill_id))
 
         resolved = await self._grant(
             character_id,
@@ -113,7 +113,10 @@ class GmPanelProficiencyService(CharacterSubDomainService):
             missing=not_found,
             skill_id=skill_id,
         )
-        return SkillProficiencyResponse(skill_id=skill_id, is_expertise=resolved.is_expertise)
+        # wanted=True: the skill stays granted, so it always resolves
+        return SkillProficiencyResponse(
+            skill_id=skill_id, is_expertise=cast(ResolvedProficiency, resolved).is_expertise
+        )
 
     async def add_saving_throw(
         self, character_id: int, ability: AbilityScore, current_user: UserResponse
@@ -231,7 +234,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     ) -> ResolvedProficiency:
         """Grant one proficiency; ``409`` if the character already has it from any source."""
 
-        return await self._write(
+        resolved = await self._write(
             character_id,
             current_user,
             proficiency_type,
@@ -239,6 +242,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
             already=ProficiencyAlreadyGrantedException(character_id, detail),
             **discriminator,
         )
+        return cast(ResolvedProficiency, resolved)  # wanted=True always resolves to the new grant
 
     async def _revoke(
         self,

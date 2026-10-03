@@ -101,8 +101,7 @@ class _ClientState:
         async with lock:
             current_loop = asyncio.get_running_loop()
             if cls._client is None or cls._loop is not current_loop:
-                if cls._client is not None:
-                    await cls._client.aclose()
+                # The supabase client has no aclose(); its connections live on ``_http``, closed here.
                 if cls._http is not None:
                     await cls._http.aclose()
                 cls._http = httpx.AsyncClient(timeout=STORAGE_CALL_TIMEOUT)
@@ -263,7 +262,7 @@ class ImageStorageService:
                 raise ImageUploadError("The image was rejected by the storage provider.") from exc
             raise ImageStorageUnavailableError("Image storage is temporarily unavailable.") from exc
 
-        return f"{_public_url(path)}?v={hashlib.md5(content).hexdigest()[:8]}"
+        return f"{_public_url(path)}?v={hashlib.md5(content, usedforsecurity=False).hexdigest()[:8]}"
 
     async def delete_image(self, entity: str, row_id: int) -> None:
         """

@@ -32,4 +32,5 @@ class CharacterAttackRepository(BaseRepository[Attack]):
     async def count_for_character(self, character_id: int) -> int:
         """Number of attacks a character owns."""
 
-        return await self.db.scalar(select(func.count()).select_from(Attack).where(Attack.character_id == character_id))
+        stmt = select(func.count()).select_from(Attack).where(Attack.character_id == character_id)
+        return await self.db.scalar(stmt) or 0

@@ -3,7 +3,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ASILevelChoice
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
@@ -29,6 +28,7 @@ from app.features.characters.progression.rules import (
     resolve_hp_gain,
 )
 from app.features.characters.progression.schemas import (
+    ASIChoice,
     BackgroundChange,
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
@@ -223,7 +223,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             feat_grant = None
             if data.choice is not None:
                 totals = await self.stats_service.compute(character)
-                if data.choice.type == ASILevelChoice.ASI:
+                if isinstance(data.choice, ASIChoice):
                     await self.asi.apply_asi(character, data.choice.increases, new_level, totals)
                 else:
                     feat_grant = await self.asi.apply_feat(character, data.choice, new_level, totals)

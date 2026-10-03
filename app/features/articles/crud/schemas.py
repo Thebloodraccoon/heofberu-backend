@@ -1,4 +1,10 @@
-"""Request/response schemas for the article CRUD endpoints (identity/content fields; tags/images live in their own folders)."""
+"""
+Article request/response schemas shared across the article capabilities.
+
+Write payloads (``ArticleCreate`` / ``ArticleContentUpdate`` / ``ArticleUpdate``), the full ``ArticleResponse``,
+and the embedded briefs (``ArticleBrief`` for tree/relation lists, author and subtype refs). Listing rows live in
+``listing.schemas``.
+"""
 
 from datetime import datetime
 from typing import Annotated
@@ -121,7 +127,7 @@ class ArticleUpdate(ArticleContentUpdate):
     Content fields plus ``parent_id`` — only provided fields are updated (PATCH semantics).
 
     ``status`` is not here: it moves only through the review workflow endpoints
-    (``ArticleCrudService.transition``).
+    (``ArticleWorkflowService.transition``).
     """
 
     parent_id: int | None = None
@@ -146,36 +152,6 @@ class ArticleResponse(ArticleBase):
     subtype: ArticleSubtypeBrief | None = None
     tags: list[TagBrief] = []
     images: list[ArticleImageResponse] = []
-
-
-class ArticleGetAllResponse(BaseModel):
-    """Lightweight listing row returned by the paginated ``GET /articles`` endpoint."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    slug: str
-    title: str
-    excerpt: str | None = None
-    article_type: str
-    subtype: ArticleSubtypeBrief | None = None
-    status: ArticleStatus
-    visibility: ArticleVisibility
-    author: ArticleAuthorBrief | None = None
-    pending_proposals: int | None = Field(
-        default=None, description="Change proposals awaiting a decision (GM only; null for other readers)."
-    )
-
-
-class ArticleSearchResult(ArticleGetAllResponse):
-    """
-    One ``GET /articles/search`` hit: listing fields plus relevance ``rank`` and a body ``snippet``.
-
-    ``snippet`` wraps matched terms in ``<mark>``; everything else in it is raw markdown, so escape it before rendering.
-    """
-
-    rank: float
-    snippet: str | None = None
 
 
 class ArticleBrief(BaseModel):

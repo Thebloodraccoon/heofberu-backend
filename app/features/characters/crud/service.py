@@ -24,6 +24,7 @@ from app.features.characters.schemas import (
     CharacterResponse,
     CharacterStatsResponse,
     CharacterUpdate,
+    StatSourceContribution,
 )
 from app.features.characters.spells.repository import CharacterSpellSlotRepository
 from app.features.users.schemas import UserResponse
@@ -78,12 +79,12 @@ class CharacterService(CharacterSubDomainService):
         else:
             owner_id = current_user.id
 
-        filters: dict[str, Any] = {}
+        criteria: dict[str, Any] = {}
         if owner_id is not None:
-            filters["owner_id"] = owner_id
+            criteria["owner_id"] = owner_id
         if class_id is not None:
-            filters["class_id"] = class_id
-        filters = filters or None
+            criteria["class_id"] = class_id
+        filters = criteria or None
 
         if use_cursor:
             conditions = []
@@ -138,7 +139,8 @@ class CharacterService(CharacterSubDomainService):
                     base=breakdown.base,
                     total=breakdown.total,
                     contributions=[
-                        {"source": c.source, "label": c.label, "amount": c.amount} for c in breakdown.contributions
+                        StatSourceContribution(source=c.source, label=c.label, amount=c.amount)
+                        for c in breakdown.contributions
                     ],
                 )
                 for ability, breakdown in breakdown_by_ability.items()

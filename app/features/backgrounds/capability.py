@@ -7,9 +7,7 @@ from app.features.backgrounds.crud.schemas import BackgroundCreate, BackgroundRe
 from app.models import Background
 
 
-class BackgroundCapabilityService(
-    BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None]
-):
+class BackgroundCapabilityService(BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse]):
     """
     A capability endpoint's service: it writes one slice of a background and
     answers with the full :class:`BackgroundResponse`.
@@ -21,7 +19,7 @@ class BackgroundCapabilityService(
 
     repository: BackgroundRepository
 
-    cache_namespaces = BACKGROUND_CACHE_NAMESPACES
+    cache_namespaces: tuple[str, ...] = BACKGROUND_CACHE_NAMESPACES
 
     def __init__(self, repository: BackgroundRepository):
         """Bind the capability's repository and the shared response schema."""

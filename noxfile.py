@@ -47,7 +47,7 @@ def ruff_session(session):
 def security_session(session):
     """Security checks with bandit."""
     setup_test_env(session)
-    session.run("poetry", "run", "bandit", "-r", "app/", external=True)
+    session.run("poetry", "run", "bandit", "-c", "pyproject.toml", "-r", "app/", external=True)
 
 
 @nox.session(name="mypy")
@@ -102,7 +102,7 @@ def all_session(session):
     session.run("poetry", "run", "ruff", "check", "app/", "tests/", external=True)
     session.run("poetry", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
     # session.run("poetry", "run", "mypy", "app/", external=True)
-    session.run("poetry", "run", "bandit", "-r", "app/", external=True)
+    session.run("poetry", "run", "bandit", "-c", "pyproject.toml", "-r", "app/", external=True)
     session.run(
         "poetry", "run", "pytest",
         "--cache-clear",

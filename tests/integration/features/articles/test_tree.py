@@ -96,7 +96,7 @@ class TestVisibleTree:
         assert len(gm_view["images"]) == 1
 
     async def test_children_list_is_capped(self, client, create_article, monkeypatch):
-        monkeypatch.setattr("app.features.articles.crud.repository.TREE_LIST_LIMIT", 2)
+        monkeypatch.setattr("app.features.articles.tree.repository.TREE_LIST_LIMIT", 2)
         root = await create_article(title="Root", status="published")
         for i in range(3):
             await create_article(title=f"Child {i}", parent_id=root["id"], status="published")
@@ -177,7 +177,7 @@ class TestNullPathSafety:
 @pytest.mark.asyncio
 class TestDepthCap:
     async def test_create_below_the_maximum_depth_is_rejected(self, client, create_article, gm_token, monkeypatch):
-        monkeypatch.setattr("app.features.articles.crud.repository.MAX_TREE_DEPTH", 3)
+        monkeypatch.setattr("app.features.articles.tree.repository.MAX_TREE_DEPTH", 3)
         a = await create_article(title="A")
         b = await create_article(title="B", parent_id=a["id"])
         c = await create_article(title="C", parent_id=b["id"])
@@ -194,7 +194,7 @@ class TestDepthCap:
     async def test_moving_a_deep_subtree_under_a_parent_is_rejected(
         self, client, create_article, gm_token, monkeypatch
     ):
-        monkeypatch.setattr("app.features.articles.crud.repository.MAX_TREE_DEPTH", 3)
+        monkeypatch.setattr("app.features.articles.tree.repository.MAX_TREE_DEPTH", 3)
         x = await create_article(title="X")
         y = await create_article(title="Y", parent_id=x["id"])
         top = await create_article(title="Top")

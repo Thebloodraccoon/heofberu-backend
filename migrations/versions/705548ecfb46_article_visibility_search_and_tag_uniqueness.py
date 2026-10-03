@@ -96,7 +96,9 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_articles_visibility"), "articles", ["visibility"], unique=False)
 
-    op.execute(f"ALTER TABLE articles ADD COLUMN search_vector tsvector GENERATED ALWAYS AS ({SEARCH_VECTOR_SQL}) STORED")
+    op.execute(
+        f"ALTER TABLE articles ADD COLUMN search_vector tsvector GENERATED ALWAYS AS ({SEARCH_VECTOR_SQL}) STORED"
+    )
     op.execute("CREATE INDEX ix_articles_search_vector ON articles USING gin (search_vector)")
     op.execute("CREATE INDEX ix_articles_title_trgm ON articles USING gin (title gin_trgm_ops)")
 

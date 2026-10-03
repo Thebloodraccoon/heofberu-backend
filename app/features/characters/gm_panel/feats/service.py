@@ -107,6 +107,8 @@ class GmPanelFeatService(CharacterSubDomainService):
         grant = await self._get_feat_grant_or_404(character_id, character_feat_id)
 
         feat = await self.feat_repository.get_by_id(grant.feature_id)
+        if feat is None:  # the grant's FK cascades, so only a concurrent delete gets here
+            raise FeatNotFoundException(feat_id=grant.feature_id)
         self._validate_asi_choice(feat, data.ability_score_increase_id)
 
         async with self._atomic():

@@ -2,10 +2,12 @@
 
 from typing import Any
 
+from app.core.base.repository import RepositoryMixin
+from app.core.base.service import ServiceMixin
 from app.models.tag_model import Tag
 
 
-class TagLookupMixin:
+class TagLookupMixin(RepositoryMixin):
     """Resolve tag IDs to Tag rows via the generic id-IN lookup."""
 
     async def get_tags_by_ids(self, tag_ids: list[int]) -> list[Tag]:
@@ -14,7 +16,7 @@ class TagLookupMixin:
         return await self.get_many_by_ids(Tag, tag_ids)
 
 
-class TagsReplaceMixin:
+class TagsReplaceMixin(RepositoryMixin):
     """
     Fully replace a source record's tags in its many-to-many association table.
 
@@ -46,7 +48,7 @@ class TagsReplaceMixin:
         )
 
 
-class TagsManagerMixin:
+class TagsManagerMixin(ServiceMixin):
     """Fully replace the tags attached to a source record."""
 
     async def set_tags(self, source_id: int, data: Any) -> Any:

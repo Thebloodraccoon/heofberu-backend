@@ -15,19 +15,28 @@ from app.features.articles.crud.repository import SLUG_ATTEMPTS, ArticleReposito
 from app.features.articles.crud.schemas import ArticleCreate, ArticleUpdate
 from app.features.articles.crud.service import ArticleCrudService
 from app.features.articles.exceptions import ArticleParentCycleException, ArticleStatusTransitionException
+from app.features.articles.relations.schemas import ArticleRelationCreate
+from app.features.articles.relations.service import ArticleRelationsService
+from app.features.articles.workflow.repository import ArticleWorkflowRepository
+from app.features.articles.workflow.service import ArticleWorkflowService
 from app.models.articles.article_model import Article
+from app.models.articles.article_relation_model import ArticleRelation
 from app.models.articles.article_revision_model import ArticleRevision
 from app.settings import settings
 
 FOUNDER = ArticleActor(id=1, is_founder=True)
 
 
-async def _in_own_session(operation):
-    """Run ``operation(service)`` with a service on its own session/connection."""
+def _crud(session):
+    return ArticleCrudService(session, storage=object())
+
+
+async def _in_own_session(operation, make_service=_crud):
+    """Run ``operation(service)`` with a service (``make_service(session)``) on its own session/connection."""
 
     session = settings.SessionLocal()
     try:
-        return await operation(ArticleCrudService(session, storage=object()))
+        return await operation(make_service(session))
     finally:
         await session.close()
 
@@ -111,6 +120,25 @@ class TestSlugRace:
         slugs = (await db_session.execute(select(Article.slug).order_by(Article.slug))).scalars().all()
         assert slugs == ["moria", "moria-2"]
 
+    async def test_lost_slug_race_on_rename_is_retried(self, client, create_article, db_session, monkeypatch):
+        await create_article(title="Moria")
+        draft = await create_article(title="Rivendell")
+        service = ArticleCrudService(db_session, storage=object())
+        real = service.writer.repository.generate_unique_slug
+        offered = []
+
+        async def stale_first(title, *, exclude_id=None):
+            offered.append("moria" if not offered else await real(title, exclude_id=exclude_id))
+            return offered[-1]
+
+        monkeypatch.setattr(service.writer.repository, "generate_unique_slug", stale_first)
+
+        renamed = await service.update_article(draft["id"], ArticleUpdate(title="Moria"), FOUNDER)
+
+        assert offered == ["moria", "moria-2"]
+        assert renamed.slug == "moria-2"
+        assert renamed.title == "Moria"
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -167,14 +195,18 @@ class TestTransitionRace:
         async def publish(service):
             return await service.transition(article["id"], "publish", actor=FOUNDER)
 
-        results = await asyncio.gather(_in_own_session(publish), _in_own_session(publish), return_exceptions=True)
+        results = await asyncio.gather(
+            _in_own_session(publish, ArticleWorkflowService),
+            _in_own_session(publish, ArticleWorkflowService),
+            return_exceptions=True,
+        )
 
         assert len([r for r in results if isinstance(r, ArticleStatusTransitionException)]) == 1
         assert len([r for r in results if not isinstance(r, Exception)]) == 1
 
     async def test_transition_moves_only_from_an_allowed_status(self, client, create_article, db_session):
         article = await create_article(status="published")
-        repo = ArticleRepository(db_session)
+        repo = ArticleWorkflowRepository(db_session)
 
         moved = await repo.transition_status(
             article["id"], frozenset({ArticleStatus.IN_REVIEW}), ArticleStatus.PUBLISHED, reviewer_id=None
@@ -190,3 +222,28 @@ class TestTransitionRace:
         response = await client.post("/articles/999999/archive", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestRelationRace:
+    async def test_concurrent_duplicate_creates_leave_one_relation(self, client, create_article, db_session):
+        source = await create_article(title="Khazad-dum")
+        target = await create_article(title="Moria")
+        data = ArticleRelationCreate(to_article_id=target["id"], relation_type="LOCATED_IN")
+
+        async def link(service):
+            return await service.create_relation(source["id"], data)
+
+        results = await asyncio.gather(
+            _in_own_session(link, ArticleRelationsService),
+            _in_own_session(link, ArticleRelationsService),
+            return_exceptions=True,
+        )
+
+        assert len([r for r in results if isinstance(r, RecordAlreadyExistsError)]) == 1
+        assert len([r for r in results if not isinstance(r, Exception)]) == 1
+        stored = await db_session.scalars(
+            select(ArticleRelation.id).where(ArticleRelation.from_article_id == source["id"])
+        )
+        assert len(stored.all()) == 1

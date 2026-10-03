@@ -8,6 +8,8 @@ filters to ``FEAT`` so a feat endpoint can never leak or mutate a
 class/subclass/race/subrace/background feature.
 """
 
+from typing import Any
+
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -146,11 +148,13 @@ class FeatRepository(BaseRepository[Feature]):
             _raise_if_name_conflict(exc, obj_data)
             raise
 
-    async def update(self, db_obj: Feature, update_data: dict, *, refresh: bool = False) -> Feature:
+    async def update(
+        self, db_obj: Feature, update_data: dict[str, Any], *, refresh: bool = False, commit: bool = True
+    ) -> Feature:
         """Apply ``update_data``; a concurrent duplicate name surfaces as ``RecordAlreadyExistsError``."""
 
         try:
-            return await super().update(db_obj, update_data, refresh=refresh)
+            return await super().update(db_obj, update_data, refresh=refresh, commit=commit)
         except IntegrityError as exc:
             _raise_if_name_conflict(exc, update_data)
             raise

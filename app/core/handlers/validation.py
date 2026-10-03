@@ -6,6 +6,7 @@ submitted ``input`` is never echoed back or logged: it may be a password or
 another secret.
 """
 
+from collections.abc import Mapping, Sequence
 import logging
 from typing import Any
 
@@ -18,7 +19,7 @@ from app.core.handlers._response import build_error_response, get_request_id
 logger = logging.getLogger(__name__)
 
 
-def _summarize(errors: list[dict[str, Any]]) -> list[dict[str, str]]:
+def _summarize(errors: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
     """Reduce raw Pydantic errors to ``field``/``message``/``type`` (no ``input``, no ``ctx``)."""
 
     return [
@@ -31,7 +32,7 @@ def _summarize(errors: list[dict[str, Any]]) -> list[dict[str, str]]:
     ]
 
 
-def _respond(request: Request, errors: list[dict[str, Any]], error_type: str):
+def _respond(request: Request, errors: Sequence[Mapping[str, Any]], error_type: str):
     summary = _summarize(errors)
 
     logger.warning(

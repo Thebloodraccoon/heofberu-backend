@@ -34,6 +34,4 @@ def downgrade() -> None:
     """Downgrade schema (captions/order come back empty)."""
 
     op.add_column("article_images", sa.Column("caption", sa.String(length=300), nullable=True))
-    op.add_column(
-        "article_images", sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0")
-    )
+    op.add_column("article_images", sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"))

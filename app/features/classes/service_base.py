@@ -9,7 +9,7 @@ from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassU
 from app.models.classes.class_model import Class
 
 
-class ClassScopedService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None]):
+class ClassScopedService(BaseService[Class, ClassCreate, ClassUpdate, ClassResponse]):
     """
     Base for services that read or replace one aspect of a class.
 
@@ -19,7 +19,7 @@ class ClassScopedService(BaseService[Class, ClassCreate, ClassUpdate, ClassRespo
 
     repository: ClassRepository
 
-    cache_namespaces = CLASS_CACHE_NAMESPACES
+    cache_namespaces: tuple[str, ...] = CLASS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
         """Initialize the service with a class repository over the session."""

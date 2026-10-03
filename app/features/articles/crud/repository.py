@@ -1,101 +1,69 @@
-"""Article repository: writes (slug allocation, status moves, ltree paths) and the read queries (tree, listing, search)."""
+"""
+Article write queries (content UPDATE, version + revision snapshot, slug allocation, delete) and the detail lookups.
+
+Tree writes/reads live in ``tree.repository``, listing/search in ``listing.repository``, status moves in
+``workflow.repository``.
+"""
 
 from collections.abc import Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
-from sqlalchemy import (
-    and_,
-    delete,
-    exists,
-    func,
-    insert,
-    literal_column,
-    null,
-    or_,
-    select,
-    text,
-    update,
-)
+from sqlalchemy import and_, delete, insert, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, load_only
-from sqlalchemy_utils import Ltree
+from sqlalchemy.orm import aliased
+from sqlalchemy.sql.expression import Executable
 
-from app.constants import ArticleProposalStatus, ArticleStatus, ArticleVisibility
 from app.core.exceptions import RecordAlreadyExistsError
-from app.core.pagination import Cursor, keyset_condition
 from app.features.articles.base import ArticleScopedRepository
-from app.features.articles.exceptions import ArticleTreeTooDeepException
 from app.features.articles.revisions.hashing import revision_hash
-from app.features.articles.secrets import gm_stripped_sql
 from app.features.articles.slug import slugify
 from app.features.articles.visibility import visibility_conditions
-from app.models.articles.article_association_models import article_tags
 from app.models.articles.article_image_model import ArticleImage
 from app.models.articles.article_model import Article
-from app.models.articles.article_proposal_model import ArticleProposal
 from app.models.articles.article_revision_model import ArticleRevision
 from app.models.articles.article_subtype_model import ArticleSubtype
-from app.models.user_model import User
 
 T = TypeVar("T")
 
 #: Content fields: a change to any of them is a new version (mirrored in ``ArticleRevision``).
 REVISED_FIELDS = ("title", "excerpt", "body_markdown", "article_type", "subtype_id", "visibility")
 
-#: Minimum ``pg_trgm`` word-similarity for a title to count as a typo/prefix-tolerant match.
-#: ``word_similarity`` (vs. plain ``similarity``) looks for the best-matching *substring* of the
-#: title rather than comparing whole strings, so a short prefix like "Аур" still matches inside a
-#: longer title like "Аурис, бог Солнца".
-TITLE_SIMILARITY_THRESHOLD = 0.4
-
-#: Deepest supported article tree (an ltree holds at most 256 labels; real lore nests a handful of levels).
-MAX_TREE_DEPTH = 32
-#: Cap on the unpaginated tree/relation lists (children, descendants), so a hub article can't return a whole catalog.
-TREE_LIST_LIMIT = 1000
 #: Tries at a free slug before giving up when concurrent writers keep taking the candidate.
 SLUG_ATTEMPTS = 5
-#: Key of the transaction-scoped advisory lock serialising every change of the article tree.
-TREE_LOCK_KEY = 0x41525443
-
-# Inline ``regconfig`` literals: a bound parameter would be sent as varchar, which Postgres
-# won't accept where the text-search functions expect a ``regconfig``.
-RUSSIAN_CONFIG = literal_column("'russian'::regconfig")
-SIMPLE_CONFIG = literal_column("'simple'::regconfig")
-
-SNIPPET_OPTIONS = "StartSel=<mark>, StopSel=</mark>, MaxFragments=2, MaxWords=25, MinWords=10, ShortWord=2"
 
 
 class ArticleRepository(ArticleScopedRepository):
     """
-    Article repository with eager-loaded tags and gallery images.
+    Article rows with eager-loaded tags and images (``get_by_id`` serializes a full ``ArticleResponse``).
 
-    No ``check_in_use_on_delete``: deleting an article that's someone's
-    ``parent_id`` just detaches its children (``ondelete="SET NULL"``, see
-    ``app/models/articles/article_model.py``) instead of being blocked —
-    unlike a race/class/skill, nothing downstream depends on an article
-    existing.
+    No ``check_in_use_on_delete``: deleting an article that's someone's ``parent_id`` just detaches its children
+    (``ondelete="SET NULL"`` + ``ArticleTreeRepository.detach_children``); nothing downstream depends on an article.
     """
 
     def __init__(self, db: AsyncSession):
-        """Initialize the repository with eager-loaded tags and images, searchable by title/slug, unique slug."""
+        """Initialize with eager-loaded tags and images, searchable by title/slug, unique slug."""
 
         super().__init__(db, load_tags_and_images=True, search_fields=["title", "slug"], unique_fields=["slug"])
 
-    async def get_write_state(self, article_id: int) -> Any:
-        """Row ``(article_type, subtype_id, published_at, status, author_id, version)`` the write rules need, sans tags/images; ``None`` if absent."""
+    async def update_fields(self, article_id: int, fields: dict, *, commit: bool = True) -> None:
+        """
+        Write ``fields`` onto the article with one UPDATE, committing or flushing.
 
-        result = await self.db.execute(
-            select(
-                Article.article_type,
-                Article.subtype_id,
-                Article.published_at,
-                Article.status,
-                Article.author_id,
-                Article.version,
-            ).where(Article.id == article_id)
-        )
-        return result.one_or_none()
+        No slug pre-check: a slug only arrives from ``write_with_unique_slug``, which picked a free one and retries
+        on the unique constraint's ``IntegrityError`` if a concurrent writer took it meanwhile.
+        """
+
+        if fields:
+            await self.db.execute(
+                update(Article)
+                .where(Article.id == article_id)
+                .values(**fields)
+                .execution_options(synchronize_session=False)
+            )
+
+        await self.commit_or_flush(commit=commit)
 
     async def lock_version(self, article_id: int) -> int | None:
         """Lock the article row until the transaction ends and return its current ``version`` (``None`` if absent)."""
@@ -114,28 +82,26 @@ class ArticleRepository(ArticleScopedRepository):
         """
         Snapshot the article's current content into ``article_revisions`` and return the new version.
 
-        ``bump=True`` first increments ``articles.version`` (call it after the content UPDATE; that UPDATE holds
-        the row lock, so concurrent saves get distinct versions). A new article is recorded with ``bump=False``
-        (its first version is the column default, 1). The snapshot is read back from the row, so it always equals
-        what was actually stored, whatever the service normalized; its ``content_hash`` chains to the previous
+        ``bump=True`` increments ``articles.version`` and reads the snapshot back in the same ``UPDATE … RETURNING``
+        (call it after the content UPDATE, which holds the row lock, so concurrent saves get distinct versions).
+        A new article is recorded with ``bump=False`` (its first version is the column default, 1). The snapshot
+        is what was actually stored, whatever the service normalized; its ``content_hash`` chains to the previous
         version's (see ``revision_hash``).
         """
 
+        columns = (Article.version, *(getattr(Article, field) for field in REVISED_FIELDS))
+        stmt: Executable
         if bump:
-            await self.db.execute(
+            stmt = (
                 update(Article)
                 .where(Article.id == article_id)
                 .values(version=Article.version + 1)
+                .returning(*columns)
                 .execution_options(synchronize_session=False)
             )
-
-        row = (
-            await self.db.execute(
-                select(Article.version, *(getattr(Article, field) for field in REVISED_FIELDS)).where(
-                    Article.id == article_id
-                )
-            )
-        ).one()
+        else:
+            stmt = select(*columns).where(Article.id == article_id)
+        row = (await self.db.execute(stmt)).one()
         content = {field: getattr(row, field) for field in REVISED_FIELDS}
         parent_hash = await self.db.scalar(
             select(ArticleRevision.content_hash).where(
@@ -155,78 +121,27 @@ class ArticleRepository(ArticleScopedRepository):
         )
         return row.version
 
-    async def update_fields(self, article_id: int, fields: dict, *, commit: bool = True) -> None:
-        """Write ``fields`` onto the article with one UPDATE (slug uniqueness checked), committing or flushing."""
-
-        if fields:
-            await self._check_uniqueness(fields, exclude_id=article_id)
-            await self.db.execute(
-                update(Article)
-                .where(Article.id == article_id)
-                .values(**fields)
-                .execution_options(synchronize_session=False)
-            )
-
-        await self.commit_or_flush(commit=commit)
-
-    async def transition_status(
-        self,
-        article_id: int,
-        allowed_from: frozenset[ArticleStatus],
-        target: ArticleStatus,
-        *,
-        reviewer_id: int | None,
-        expected_version: int | None = None,
-    ) -> bool:
-        """
-        Move the article to ``target`` only if it is currently in ``allowed_from`` (compare-and-set in one UPDATE).
-
-        Returns whether a row moved, so two concurrent actions can't both pass a stale status check. A first
-        publish stamps ``published_at``; ``reviewer_id`` is recorded when given. With ``expected_version`` the move
-        also requires the article to still be at that content version (nothing was edited since the reviewer looked).
-        """
-
-        values: dict[str, Any] = {"status": target}
-        if reviewer_id is not None:
-            values["reviewed_by_id"] = reviewer_id
-        if target == ArticleStatus.PUBLISHED:
-            values["published_at"] = func.coalesce(Article.published_at, func.now())
-
-        conditions = [Article.id == article_id, Article.status.in_(sorted(allowed_from, key=lambda s: s.value))]
-        if expected_version is not None:
-            conditions.append(Article.version == expected_version)
-
-        result = await self.db.execute(
-            update(Article)
-            .where(*conditions)
-            .values(**values)
-            .returning(Article.id)
-            .execution_options(synchronize_session=False)
-        )
-        return result.scalar_one_or_none() is not None
-
     async def delete_row(self, article_id: int) -> bool:
         """Delete the article row with one statement (tags, relations and images go with it by FK cascade)."""
 
         result = await self.db.execute(
             delete(Article).where(Article.id == article_id).execution_options(synchronize_session=False)
         )
-        return bool(result.rowcount)
+        return bool(cast(CursorResult[Any], result).rowcount)
 
     async def generate_unique_slug(self, title: str, *, exclude_id: int | None = None) -> str:
         """
         Build a slug from ``title`` that no article uses yet: ``base``, then ``base-2``, ``base-3``, ...
 
-        ``exclude_id`` ignores that article's own current slug (re-slugging on rename). Concurrent
-        writers can still pick the same value; ``write_with_unique_slug`` retries on that.
+        ``exclude_id`` ignores that article's own current slug (re-slugging on rename). Concurrent writers can
+        still pick the same value; ``write_with_unique_slug`` retries on that.
         """
 
         base = slugify(title)
         stmt = select(Article.slug).where(or_(Article.slug == base, Article.slug.like(f"{base}-%")))
         if exclude_id is not None:
             stmt = stmt.where(Article.id != exclude_id)
-        result = await self.db.execute(stmt)
-        taken = set(result.scalars().all())
+        taken = set((await self.db.execute(stmt)).scalars().all())
 
         candidate, suffix = base, 2
         while candidate in taken:
@@ -241,8 +156,11 @@ class ArticleRepository(ArticleScopedRepository):
         """
         Run ``write(slug)`` with a free slug, retrying with a fresh one when a concurrent writer took it first.
 
-        Each attempt runs in its own savepoint, so a lost race rolls back only that attempt and the
-        enclosing transaction stays usable. ``write`` must flush so the unique constraint fires here.
+        Each attempt runs in its own savepoint, so a lost race rolls back only that attempt and the enclosing
+        transaction stays usable. ``write`` must flush so the unique constraint fires here.
+
+        Raises:
+            RecordAlreadyExistsError: still no free slug after ``SLUG_ATTEMPTS`` tries.
         """
 
         slug = ""
@@ -259,510 +177,37 @@ class ArticleRepository(ArticleScopedRepository):
 
         raise RecordAlreadyExistsError(model_name="Article", field="slug", value=slug)
 
-    async def lock_tree(self) -> None:
-        """
-        Serialise tree changes (create under a parent, re-parent, delete) until the transaction ends.
-
-        Cycle checks and path rewrites read other rows' paths, so two concurrent moves (A under B, B under A)
-        would each pass the check and together form a cycle; one global lock is enough for how rarely lore moves.
-        """
-
-        await self.db.execute(select(func.pg_advisory_xact_lock(TREE_LOCK_KEY)))
-
-    async def _ancestor_chain(self, article_id: int) -> list[int]:
-        """Ids from the root down to ``article_id`` (inclusive), walking ``parent_id`` (does not trust ``path``)."""
-
-        chain = (
-            select(Article.id, Article.parent_id, literal_column("1").label("depth"))
-            .where(Article.id == article_id)
-            .cte("chain", recursive=True)
-        )
-        step = (
-            select(Article.id, Article.parent_id, (chain.c.depth + 1).label("depth"))
-            .join(chain, Article.id == chain.c.parent_id)
-            .where(chain.c.depth < 256)
-        )
-        chain = chain.union_all(step)
-
-        result = await self.db.execute(select(chain.c.id).order_by(chain.c.depth.desc()))
-        return list(result.scalars().all())
-
-    async def is_self_or_descendant(self, article_id: int, candidate_id: int) -> bool:
-        """Return whether ``candidate_id`` is ``article_id`` itself or sits anywhere in its subtree."""
-
-        if candidate_id == article_id:
-            return True
-
-        return article_id in await self._ancestor_chain(candidate_id)
-
     async def get_id_by_slug(self, slug: str) -> int | None:
-        """Return the id of the article with this ``slug`` (any visibility), or ``None``."""
+        """The id of the article with this ``slug`` (any visibility), or ``None``."""
 
-        result = await self.db.execute(select(Article.id).where(Article.slug == slug))
-        return result.scalar_one_or_none()
+        return await self.db.scalar(select(Article.id).where(Article.slug == slug))
+
+    async def get_public_state(self, *, article_id: int | None = None, slug: str | None = None) -> Any:
+        """
+        One query for a non-GM detail read, by ``article_id`` or ``slug``: ``(id, visible_parent_id)`` if the
+        article is published and public, else ``None``.
+
+        ``visible_parent_id`` is the parent's id only when that parent is visible too (``None`` otherwise), so a
+        hidden parent's id never reaches the reader.
+        """
+
+        parent = aliased(Article)
+        stmt = (
+            select(Article.id, parent.id.label("visible_parent_id"))
+            .outerjoin(parent, and_(parent.id == Article.parent_id, *visibility_conditions(False, parent)))
+            .where(Article.id == article_id if slug is None else Article.slug == slug, *visibility_conditions(False))
+        )
+        return (await self.db.execute(stmt)).one_or_none()
 
     async def get_subtype_type(self, subtype_id: int) -> str | None:
-        """Return the ``article_type`` a subtype belongs to, or ``None`` if it doesn't exist."""
+        """The ``article_type`` a subtype belongs to, or ``None`` if it doesn't exist."""
 
         return await self.db.scalar(select(ArticleSubtype.article_type).where(ArticleSubtype.id == subtype_id))
 
     async def list_image_keys(self, article_id: int) -> list[tuple[int, str]]:
-        """Return ``(id, storage_key)`` of every image owned by the article (for storage cleanup on delete)."""
+        """``(id, storage_key)`` of every image owned by the article (for storage cleanup on delete)."""
 
         result = await self.db.execute(
             select(ArticleImage.id, ArticleImage.storage_key).where(ArticleImage.article_id == article_id)
         )
         return [(row.id, row.storage_key) for row in result]
-
-    async def set_path(self, article_id: int, parent_id: int | None, *, commit: bool = True) -> None:
-        """
-        Compute and persist ``path`` for ``article_id`` from its parent's ``path``.
-
-        If the article already had a ``path`` (i.e. this is a re-parent, not
-        the initial set on create), every existing descendant is re-rooted
-        under the new path in the same statement (an ltree "move subtree")
-        so ancestor/descendant queries stay correct for the whole subtree.
-        A parent whose own ``path`` is missing is resolved through ``parent_id`` instead of
-        silently making the article a root.
-
-        Callers hold ``lock_tree`` and have rejected cycles first (see ``is_self_or_descendant``;
-        ``ArticleCrudService`` does). Raises ``ArticleTreeTooDeepException`` past ``MAX_TREE_DEPTH``.
-        """
-
-        if parent_id is None:
-            new_path = str(article_id)
-        else:
-            parent_path = await self.db.scalar(select(Article.path).where(Article.id == parent_id))
-            if parent_path:
-                new_path = f"{parent_path}.{article_id}"
-            else:
-                new_path = ".".join(str(node) for node in [*await self._ancestor_chain(parent_id), article_id])
-
-        old_path = await self.db.scalar(select(Article.path).where(Article.id == article_id))
-
-        height = 0
-        if old_path:
-            deepest = await self.db.scalar(
-                select(func.max(func.nlevel(Article.path))).where(Article.path.op("<@")(old_path))
-            )
-            height = (deepest or 0) - len(str(old_path).split("."))
-        if len(new_path.split(".")) + height > MAX_TREE_DEPTH:
-            raise ArticleTreeTooDeepException(article_id, MAX_TREE_DEPTH)
-
-        await self.db.execute(
-            update(Article)
-            .where(Article.id == article_id)
-            .values(path=Ltree(new_path))
-            .execution_options(synchronize_session=False)
-        )
-
-        if old_path:
-            await self.db.execute(
-                text(
-                    "UPDATE articles "
-                    "SET path = CAST(:new_path AS ltree) || subpath(path, nlevel(CAST(:old_path AS ltree))) "
-                    "WHERE path <@ CAST(:old_path AS ltree) AND id != :article_id"
-                ),
-                {"new_path": new_path, "old_path": str(old_path), "article_id": article_id},
-            )
-
-        await self.commit_or_flush(commit=commit)
-
-    async def detach_children(self, article_id: int) -> list[int]:
-        """
-        Re-root the whole subtree under ``article_id`` as if the article were already gone; return its direct children.
-
-        Deleting an article only clears its children's ``parent_id`` (``ON DELETE SET NULL``); their ``path`` would
-        keep pointing under the removed node. One UPDATE strips the article's prefix from every descendant's path.
-        """
-
-        result = await self.db.execute(select(Article.id).where(Article.parent_id == article_id))
-        child_ids = list(result.scalars().all())
-        if not child_ids:
-            return child_ids
-
-        path = await self.db.scalar(select(Article.path).where(Article.id == article_id))
-        if path is None:
-            for child_id in child_ids:
-                await self.set_path(child_id, None, commit=False)
-            return child_ids
-
-        await self.db.execute(
-            text(
-                "UPDATE articles SET path = subpath(path, nlevel(CAST(:path AS ltree))) "
-                "WHERE path <@ CAST(:path AS ltree) AND id != :article_id"
-            ),
-            {"path": str(path), "article_id": article_id},
-        )
-        return child_ids
-
-    async def _count(self, model, conditions: list) -> int:
-        """Fallback total for an empty page (``count() OVER()`` yields no row when nothing matches)."""
-
-        return await self.db.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
-
-    @staticmethod
-    def _brief_load_options() -> list:
-        """Columns an ``ArticleBrief`` response actually uses (tree endpoints don't need body/tags/images)."""
-
-        return [load_only(Article.id, Article.slug, Article.title, Article.article_type, Article.subtype_id)]
-
-    @staticmethod
-    def _excerpt_column(include_hidden: bool):
-        """``excerpt`` as the reader may see it: GM-only blocks stripped for non-GMs."""
-
-        if include_hidden:
-            return Article.excerpt
-
-        return gm_stripped_sql(Article.excerpt).label("excerpt")
-
-    async def _type_condition(self, article_types: list[str], subtype_ids: list[int]):
-        """
-        Type/subtype filter where a subtype refines only its own type (faceted search).
-
-        A type with some of its subtypes picked contributes only those subtypes; a type with none
-        picked contributes all of its articles: ``type IN (types w/o picked subtypes) OR subtype_id IN
-        (picked)``. Subtypes picked without their type still match (their type is implied).
-        """
-
-        if not subtype_ids:
-            return Article.article_type.in_(article_types)
-
-        refined = set(
-            (
-                await self.db.execute(
-                    select(ArticleSubtype.article_type).where(ArticleSubtype.id.in_(subtype_ids)).distinct()
-                )
-            ).scalars()
-        )
-        whole_types = [t for t in article_types if t not in refined]
-
-        return or_(Article.subtype_id.in_(subtype_ids), Article.article_type.in_(whole_types))
-
-    @staticmethod
-    def _subtype_columns() -> list:
-        """Listing columns for the (optional) subtype; ``ArticleCrudService`` nests them into ``subtype``."""
-
-        return [ArticleSubtype.id.label("subtype_id"), ArticleSubtype.name.label("subtype_name")]
-
-    @staticmethod
-    def _pending_proposals_column(include_hidden: bool):
-        """Listing column: the article's pending proposal count for GMs, ``NULL`` for other readers."""
-
-        if not include_hidden:
-            return null().label("pending_proposals")
-
-        return (
-            select(func.count())
-            .where(ArticleProposal.article_id == Article.id, ArticleProposal.status == ArticleProposalStatus.PENDING)
-            .scalar_subquery()
-            .label("pending_proposals")
-        )
-
-    @staticmethod
-    def _tag_condition(tag_ids: list[int], match_all: bool):
-        """Articles carrying any (default) or all of ``tag_ids``."""
-
-        subquery = select(article_tags.c.article_id).where(article_tags.c.tag_id.in_(tag_ids))
-        if match_all:
-            subquery = subquery.group_by(article_tags.c.article_id).having(
-                func.count(func.distinct(article_tags.c.tag_id)) == len(set(tag_ids))
-            )
-
-        return Article.id.in_(subquery)
-
-    async def _filter_conditions(
-        self,
-        include_hidden: bool,
-        article_types: list[str] | None,
-        subtype_ids: list[int] | None,
-        tag_ids: list[int] | None,
-        match_all_tags: bool,
-        author_id: int | None = None,
-        statuses: list[ArticleStatus] | None = None,
-        has_pending_proposals: bool | None = None,
-    ) -> list:
-        """
-        Visibility plus the optional type/subtype/tag/author/status/proposal filters shared by the listing and the
-        search.
-
-        Every filter is ANDed with the visibility conditions, so a non-GM filtering by author still only gets that
-        author's published public articles (and a ``total`` that doesn't count the rest). ``has_pending_proposals``
-        must only be passed for GMs (the service drops it for other readers).
-        """
-
-        conditions = visibility_conditions(include_hidden)
-        if author_id is not None:
-            conditions.append(Article.author_id == author_id)
-        if statuses:
-            conditions.append(Article.status.in_(statuses))
-        if has_pending_proposals is not None:
-            pending = exists().where(
-                ArticleProposal.article_id == Article.id, ArticleProposal.status == ArticleProposalStatus.PENDING
-            )
-            conditions.append(pending if has_pending_proposals else ~pending)
-        if article_types or subtype_ids:
-            conditions.append(await self._type_condition(article_types or [], subtype_ids or []))
-        if tag_ids:
-            conditions.append(self._tag_condition(tag_ids, match_all_tags))
-
-        return conditions
-
-    async def list_children(self, article_id: int, *, include_hidden: bool = False) -> list[Article]:
-        """Return the direct children of ``article_id`` (one level down), ordered by title, at most ``TREE_LIST_LIMIT``."""
-
-        result = await self.db.execute(
-            select(Article)
-            .where(Article.parent_id == article_id, *visibility_conditions(include_hidden))
-            .options(*self._brief_load_options())
-            .order_by(Article.title, Article.id)
-            .limit(TREE_LIST_LIMIT)
-        )
-        return list(result.scalars().unique().all())
-
-    async def list_descendants(self, article_id: int, *, include_hidden: bool = False) -> list[Article]:
-        """
-        Return the descendants of ``article_id`` at any depth (excluding itself), ordered by ``path``,
-        at most ``TREE_LIST_LIMIT``.
-
-        For non-GM readers, a descendant only counts if every node strictly between
-        ``article_id`` and it (exclusive of the root, inclusive of itself) is also
-        visible — otherwise a hidden intermediate node's own visible descendants
-        would leak through it.
-        """
-
-        parent_path = await self.db.scalar(select(Article.path).where(Article.id == article_id))
-        if parent_path is None:
-            return []
-
-        conditions = [
-            Article.path.op("<@")(parent_path),
-            Article.id != article_id,
-            *visibility_conditions(include_hidden),
-        ]
-
-        if not include_hidden:
-            hidden_intermediate = aliased(Article)
-            conditions.append(
-                ~exists(
-                    select(hidden_intermediate.id).where(
-                        hidden_intermediate.path.op("<@")(parent_path),
-                        hidden_intermediate.path.op("@>")(Article.path),
-                        hidden_intermediate.id != article_id,
-                        hidden_intermediate.id != Article.id,
-                        or_(
-                            hidden_intermediate.status != ArticleStatus.PUBLISHED,
-                            hidden_intermediate.visibility != ArticleVisibility.PUBLIC,
-                        ),
-                    )
-                )
-            )
-
-        result = await self.db.execute(
-            select(Article)
-            .where(and_(*conditions))
-            .options(*self._brief_load_options())
-            .order_by(Article.path)
-            .limit(TREE_LIST_LIMIT)
-        )
-        return list(result.scalars().unique().all())
-
-    async def list_ancestors(self, article_id: int, *, include_hidden: bool = False) -> list[Article]:
-        """Return every visible ancestor of ``article_id`` (excluding itself), root-first; a hidden one is skipped."""
-
-        child_path = await self.db.scalar(select(Article.path).where(Article.id == article_id))
-        if child_path is None:
-            return []
-
-        result = await self.db.execute(
-            select(Article)
-            .where(
-                Article.path.op("@>")(child_path),
-                Article.id != article_id,
-                *visibility_conditions(include_hidden),
-            )
-            .options(*self._brief_load_options())
-            .order_by(Article.path)
-        )
-        return list(result.scalars().unique().all())
-
-    @staticmethod
-    def _sort_key(sort: str) -> tuple[Any, bool]:
-        """``(sort expression, descending)`` of a listing ``sort``; ``Article.id`` (same direction) breaks ties."""
-
-        published = func.coalesce(Article.published_at, Article.created_at)
-        return {
-            "title": (Article.title, False),
-            "newest": (published, True),
-            "oldest": (published, False),
-            "updated": (Article.updated_at, True),
-        }[sort]
-
-    async def list_articles(
-        self,
-        *,
-        skip: int,
-        limit: int,
-        include_hidden: bool,
-        statuses: list[ArticleStatus] | None = None,
-        article_types: list[str] | None = None,
-        subtype_ids: list[int] | None = None,
-        tag_ids: list[int] | None = None,
-        match_all_tags: bool = False,
-        author_id: int | None = None,
-        has_pending_proposals: bool | None = None,
-        sort: str = "title",
-        after: Cursor | None = None,
-    ) -> tuple[list[Any], int | None]:
-        """
-        Filtered, sorted listing rows (no tags/images loaded); each row carries its ``sort_value``.
-
-        Offset mode returns the total match count too; with ``after`` (keyset mode, ``skip`` unused)
-        only the rows strictly after that position are returned and the total is ``None``.
-        """
-
-        conditions = await self._filter_conditions(
-            include_hidden,
-            article_types,
-            subtype_ids,
-            tag_ids,
-            match_all_tags,
-            author_id,
-            statuses,
-            has_pending_proposals,
-        )
-
-        key, descending = self._sort_key(sort)
-        if after is not None:
-            conditions.append(keyset_condition(key, Article.id, after, descending=descending))
-
-        columns = [
-            Article.id,
-            Article.slug,
-            Article.title,
-            self._excerpt_column(include_hidden),
-            Article.article_type,
-            *self._subtype_columns(),
-            Article.status,
-            Article.visibility,
-            Article.author_id,
-            User.username.label("author_username"),
-            self._pending_proposals_column(include_hidden),
-            key.label("sort_value"),
-        ]
-        if after is None:
-            columns.append(func.count().over().label("total"))
-
-        result = await self.db.execute(
-            select(*columns)
-            .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
-            .outerjoin(User, User.id == Article.author_id)
-            .where(*conditions)
-            .order_by(*((key.desc(), Article.id.desc()) if descending else (key, Article.id)))
-            .offset(skip)
-            .limit(limit)
-        )
-        rows = list(result.all())
-        if after is not None:
-            return rows, None
-
-        total = rows[0].total if rows else await self._count(Article, conditions)
-        return rows, total or 0
-
-    async def search_articles(
-        self,
-        query: str,
-        *,
-        skip: int,
-        limit: int,
-        include_hidden: bool,
-        article_types: list[str] | None = None,
-        subtype_ids: list[int] | None = None,
-        tag_ids: list[int] | None = None,
-        match_all_tags: bool = False,
-        author_id: int | None = None,
-        statuses: list[ArticleStatus] | None = None,
-        has_pending_proposals: bool | None = None,
-    ) -> tuple[list[Any], int]:
-        """
-        Full-text + typo-tolerant title search, best match first.
-
-        A row matches when its weighted search vector (Russian OR simple config, so
-        both stemmed and literal terms hit) matches ``query``, or its title is trigram-word-similar
-        to it (substring/prefix match, e.g. "Аур" against "Аурис, бог Солнца"). ``rank`` blends
-        ``ts_rank`` with title similarity; ``snippet`` is a ``ts_headline`` fragment of
-        title/excerpt/body combined and wrapped in ``<mark>`` (rest of the text is raw markdown).
-
-        Ranking and paging run first over ids only; the expensive ``ts_headline`` is computed just for the
-        returned page, not for every match.
-
-        Non-GM readers search ``search_vector`` and get the excerpt and snippets with GM-only
-        blocks stripped, so a secret can neither match nor show up in a snippet; GMs search
-        ``search_vector_gm`` over the full body.
-        """
-
-        russian_query = func.websearch_to_tsquery(RUSSIAN_CONFIG, query)
-        combined_query = russian_query.op("||")(func.websearch_to_tsquery(SIMPLE_CONFIG, query))
-        title_match = Article.title.op("%>")(query)
-
-        if include_hidden:
-            vector, body = Article.search_vector_gm, Article.body_markdown
-        else:
-            vector, body = Article.search_vector, gm_stripped_sql(Article.body_markdown)
-
-        conditions = [
-            or_(vector.op("@@")(combined_query), title_match),
-            *await self._filter_conditions(
-                include_hidden,
-                article_types,
-                subtype_ids,
-                tag_ids,
-                match_all_tags,
-                author_id,
-                statuses,
-                has_pending_proposals,
-            ),
-        ]
-
-        rank = (func.ts_rank(vector, combined_query) + func.word_similarity(query, Article.title)).label("rank")
-        ranked_page = (
-            select(Article.id.label("id"), rank, func.count().over().label("total"))
-            .where(*conditions)
-            .order_by(rank.desc(), Article.id)
-            .offset(skip)
-            .limit(limit)
-            .subquery("ranked_page")
-        )
-
-        excerpt = func.coalesce(self._excerpt_column(include_hidden), "")
-        snippet = func.ts_headline(
-            RUSSIAN_CONFIG, func.concat_ws(" ", Article.title, excerpt, body), combined_query, SNIPPET_OPTIONS
-        ).label("snippet")
-
-        # SET LOCAL rejects bind params; TITLE_SIMILARITY_THRESHOLD is a hardcoded constant, so inlining it is safe.
-        await self.db.execute(text(f"SET LOCAL pg_trgm.word_similarity_threshold = {TITLE_SIMILARITY_THRESHOLD}"))
-        result = await self.db.execute(
-            select(
-                Article.id,
-                Article.slug,
-                Article.title,
-                self._excerpt_column(include_hidden),
-                Article.article_type,
-                *self._subtype_columns(),
-                Article.status,
-                Article.visibility,
-                Article.author_id,
-                User.username.label("author_username"),
-                self._pending_proposals_column(include_hidden),
-                ranked_page.c.rank,
-                snippet,
-                ranked_page.c.total,
-            )
-            .join(ranked_page, ranked_page.c.id == Article.id)
-            .outerjoin(ArticleSubtype, ArticleSubtype.id == Article.subtype_id)
-            .outerjoin(User, User.id == Article.author_id)
-            .order_by(ranked_page.c.rank.desc(), Article.id)
-        )
-        rows = list(result.all())
-        total = rows[0].total if rows else await self._count(Article, conditions)
-        return rows, total or 0

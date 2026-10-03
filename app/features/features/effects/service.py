@@ -95,7 +95,8 @@ class FeatureEffectsService:
         return FeatureEffectsResponse(
             feature_id=feature.id,
             choice_groups=[ChoiceGroupResponse.model_validate(group) for group in feature.choice_groups],
-            static_groups=feature.static_groups,
+            # plain dicts, validated into the static-group union by pydantic
+            static_groups=feature.static_groups,  # type: ignore[arg-type]
         )
 
     async def get_choice_groups(self, feature_id: int) -> list[ChoiceGroupResponse]:
@@ -264,11 +265,12 @@ class FeatureEffectsService:
                 )
                 new_groups.append(group)
             else:
-                group = existing_groups.get(payload.id)
-                if group is None:
+                existing_group = existing_groups.get(payload.id)
+                if existing_group is None:
                     raise InvalidFeatureEffectDataError(
                         f"Choice group id {payload.id} does not belong to this feature."
                     )
+                group = existing_group
                 seen_group_ids.add(payload.id)
                 for field in ("pick_count", "sort_order", "choice_type"):
                     if getattr(group, field) != getattr(payload, field):
@@ -295,11 +297,12 @@ class FeatureEffectsService:
                     new_options.append((option, option_payload))
                     continue
 
-                option = existing_options.get(option_payload.id)
-                if option is None:
+                existing_option = existing_options.get(option_payload.id)
+                if existing_option is None:
                     raise InvalidFeatureEffectDataError(
                         f"Choice option id {option_payload.id} does not belong to group {group.id}."
                     )
+                option = existing_option
                 if option.sort_order != option_payload.sort_order:
                     option.sort_order = option_payload.sort_order
                     changed = True

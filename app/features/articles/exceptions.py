@@ -144,7 +144,6 @@ class ArticleProposalWithdrawForbiddenException(AppError):
         super().__init__(f"Only the GM who made proposal {proposal_id} can withdraw it.")
 
 
-
 class ArticleProposalChangeForbiddenException(AppError):
     """Raised (403) when someone other than the proposer, the article's author or the founder changes a proposal."""
 

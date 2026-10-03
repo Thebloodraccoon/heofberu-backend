@@ -1,5 +1,6 @@
 """Spell availability service: full replacement of a spell's class/subclass/race/subrace availability."""
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
@@ -15,7 +16,7 @@ from app.features.spells.crud.schemas import SpellResponse
 from app.models import Spell
 
 
-class SpellAvailabilityService(BaseService[Spell, None, None, SpellResponse, None]):
+class SpellAvailabilityService(BaseService[Spell, BaseModel, BaseModel, SpellResponse]):
     """Full-replace writes for a spell's class/subclass/race/subrace availability."""
 
     repository: SpellRepository

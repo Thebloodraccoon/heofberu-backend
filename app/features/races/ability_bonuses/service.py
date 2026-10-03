@@ -15,7 +15,7 @@ from app.models.races.race_model import Race
 class RaceAbilityBonusService(
     AbilityBonusesManagerMixin,
     CatalogCacheMixin,
-    BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, None],
+    BaseService[Race, RaceCreate, RaceUpdate, RaceResponse],
 ):
     """Full replacement of a race's ability score bonuses."""
 

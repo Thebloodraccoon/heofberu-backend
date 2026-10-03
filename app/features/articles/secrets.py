@@ -68,7 +68,7 @@ def strip_gm_blocks(text: str | None) -> str | None:
 def has_nested_gm_container(text: str | None) -> bool:
     """Whether a GM block in ``text`` contains another ``:::`` container (including another ``:::gm``)."""
 
-    return bool(text) and _scan(text)[1]
+    return _scan(text)[1] if text else False
 
 
 def gm_stripped_sql(column, replacement: str = " "):

@@ -101,9 +101,6 @@ def configure_environment() -> Identity:
     return ident
 
 
-# --------------------------------------------------------------------------- Postgres
-
-
 def _admin_connection():
     import psycopg2
 
@@ -222,9 +219,6 @@ def drop_worker_database() -> None:
         _drop(conn.cursor(), IDENTITY.db_name)
     finally:
         conn.close()
-
-
-# --------------------------------------------------------------------------- Redis
 
 
 async def clear_redis_keys(client) -> None:

@@ -36,7 +36,7 @@ class ClassProgressionService(ClassScopedService):
 
         await self._exists_or_404(class_id)
 
-        slots_by_spell_level = {entry.spell_level: entry.slots for entry in data.slots}
+        slots_by_spell_level: dict[str, int] = {entry.spell_level: entry.slots for entry in data.slots}
         await self.repository.set_spell_slots(class_id, class_level, slots_by_spell_level)
         await self._invalidate_cache()
 
@@ -57,6 +57,8 @@ class ClassProgressionService(ClassScopedService):
         class_features: dict[int, list] = {}
         subclass_features: dict[int, list] = {}
         for feature in await self.repository.get_progression_features(class_id):
+            if feature.level is None:  # only levelled features appear on the 1-20 table
+                continue
             bucket = class_features if feature.subclass_id is None else subclass_features
             bucket.setdefault(feature.level, []).append(feature)
 

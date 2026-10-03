@@ -188,6 +188,7 @@ class CharacterCreationService:
 
         if (
             data.subrace_id is not None
+            and data.race_id is not None  # a subrace without a race was rejected above
             and await self.race_repository.get_subrace(data.race_id, data.subrace_id) is None
         ):
             raise SubraceNotFoundException(race_id=data.race_id, subrace_id=data.subrace_id)

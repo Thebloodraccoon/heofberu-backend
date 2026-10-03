@@ -3,6 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.cached_service import CachedService
+from app.core.base.service import BeforeUpdateHook
 from app.core.exceptions import RecordNotFoundError
 from app.features.feats.cache import FEAT_CACHE_NAMESPACES
 from app.features.feats.crud.repository import FeatRepository
@@ -57,11 +58,15 @@ class FeatCrudService(CachedService[Feature, FeatCreate, FeatUpdate, FeatRespons
 
         return await self._get_response(item.id)
 
-    async def update(self, item_id: int, update_data: FeatUpdate) -> FeatResponse:
+    async def update(
+        self, item_id: int, update_data: FeatUpdate, *, before_update: BeforeUpdateHook | None = None
+    ) -> FeatResponse:
         """Partially update a feat's base fields (ASI options are managed through the effects endpoints)."""
 
         feat = await self._get_row_or_404(item_id)
         fields = update_data.model_dump(exclude_unset=True)
+        if before_update:
+            before_update(feat, fields)
         self._ensure_prerequisite_complete(feat, fields)
 
         await self.repository.update(feat, fields)

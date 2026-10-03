@@ -3,11 +3,12 @@
 from typing import Any
 
 from app.constants import FeatureSourceType
+from app.core.base.service import ServiceMixin
 from app.features.characters.progression.feature_sync import reconcile_characters_for_source
 from app.features.shared.catalog.schemas import AbilityBonusesUpdate
 
 
-class AbilityBonusesManagerMixin:
+class AbilityBonusesManagerMixin(ServiceMixin):
     """
     Replace the owner's bonuses and reconcile the characters built on it.
 

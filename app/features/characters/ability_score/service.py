@@ -74,14 +74,15 @@ class CharacterStatsService:
         race_names = await self.repository.get_race_names([character.race_id] if character.race_id else [])
         subrace_names = await self.repository.get_subrace_names([character.subrace_id] if character.subrace_id else [])
 
+        race_id, subrace_id = character.race_id, character.subrace_id
         return self.calculator.breakdown(
             character,
-            sources.race_bonuses.get(character.race_id, []),
-            sources.subrace_bonuses.get(character.subrace_id, []),
+            sources.race_bonuses.get(race_id, []) if race_id is not None else [],
+            sources.subrace_bonuses.get(subrace_id, []) if subrace_id is not None else [],
             sources.asi.get(character.id, []),
             sources.features.get(character.id, []),
-            race_name=race_names.get(character.race_id),
-            subrace_name=subrace_names.get(character.subrace_id),
+            race_name=race_names.get(race_id) if race_id is not None else None,
+            subrace_name=subrace_names.get(subrace_id) if subrace_id is not None else None,
         )
 
     async def refresh(self, character: Character, *, commit: bool = True) -> CharacterAbilityScore:

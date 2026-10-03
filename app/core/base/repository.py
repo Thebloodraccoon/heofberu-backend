@@ -2,8 +2,10 @@
 Generic repository layer: common CRUD operations for SQLAlchemy models.
 
 Provides :class:`BaseRepository` (a reusable, model-generic CRUD base with
-filtering, search, pagination, uniqueness checks and delete-in-use guards)
-plus the model protocol and type aliases it relies on.
+filtering, search, pagination, uniqueness checks and delete-in-use guards),
+:class:`SessionRepository` (just the session and commit helpers, for tables
+without an ``id``), :class:`RepositoryMixin` (typing base for repository
+mixins) plus the model protocol and type aliases they rely on.
 
 Async stack: all public methods are ``async`` and run against an
 ``AsyncSession`` using 2.0-style ``select()`` statements.
@@ -11,11 +13,12 @@ Async stack: all public methods are ``async`` and run against an
 
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
-from typing import Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
 
 from sqlalchemy import String, Text, delete, func, inspect, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapper
 
 from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
 
@@ -39,7 +42,61 @@ class ModelProtocol(Protocol):
 ModelType = TypeVar("ModelType", bound=ModelProtocol)
 
 
-class BaseRepository(Generic[ModelType]):
+class SessionRepository:
+    """
+    Session plumbing shared by every repository: the bound ``AsyncSession`` and the commit/flush helpers.
+
+    Extend it directly for tables without a surrogate ``id`` (composite-key rows such as
+    ``character_conditions``): ``BaseRepository``'s id-based CRUD doesn't apply to them, so they shouldn't
+    inherit it.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    @asynccontextmanager
+    async def _commit_or_rollback(self) -> AsyncGenerator[None, None]:
+        """Commit on success; roll back and re-raise on any exception."""
+
+        try:
+            yield
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def commit_or_flush(self, *, commit: bool = True) -> None:
+        """
+        Persist pending changes: commit via the rollback-safe
+        :meth:`_commit_or_rollback` path, or flush when the caller owns the
+        transaction (``commit=False`` inside a ``_atomic()`` block).
+
+        Services doing raw ``setattr`` mutations or bulk executes should end
+        with this instead of hand-rolled ``db.commit()/db.flush()`` — a bare
+        ``commit()`` skips the rollback-on-error guarantee.
+        """
+
+        if commit:
+            async with self._commit_or_rollback():
+                pass
+        else:
+            await self.db.flush()
+
+
+class RepositoryMixin:
+    """
+    Base for repository mixins composed into a ``BaseRepository`` subclass.
+
+    Declares, for type checkers only, the host members the mixins call; adds nothing at runtime.
+    """
+
+    if TYPE_CHECKING:
+        db: AsyncSession
+        get_many_by_ids: Any
+        replace_association: Any
+
+
+class BaseRepository(SessionRepository, Generic[ModelType]):
     """
     Common CRUD operations for SQLAlchemy models.
 
@@ -89,8 +146,8 @@ class BaseRepository(Generic[ModelType]):
         unique_fields: list[str] | None = None,
         check_in_use_on_delete: bool = False,
     ):
+        super().__init__(db)
         self.model = model
-        self.db = db
         self._default_load_options = default_load_options or []
         self._search_fields = search_fields if search_fields is not None else self._detect_text_fields()
         self._unique_fields = unique_fields or []
@@ -99,7 +156,7 @@ class BaseRepository(Generic[ModelType]):
     def _detect_text_fields(self) -> list[str]:
         """Auto-detect searchable ``String``/``Text`` columns (secrets and URL columns are never searched)."""
 
-        mapper = inspect(self.model)
+        mapper = cast(Mapper[Any], inspect(self.model))
         return [
             column.key
             for column in mapper.columns
@@ -216,7 +273,7 @@ class BaseRepository(Generic[ModelType]):
         *columns: Any,
         order_by: Any = None,
         skip: int = 0,
-        limit: int = 100,
+        limit: int | None = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
         conditions: Sequence[Any] = (),
@@ -284,34 +341,6 @@ class BaseRepository(Generic[ModelType]):
 
                 if await self.db.scalar(stmt) is not None:
                     raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
-
-    @asynccontextmanager
-    async def _commit_or_rollback(self) -> AsyncGenerator[None, None]:
-        """Commit on success; roll back and re-raise on any exception."""
-
-        try:
-            yield
-            await self.db.commit()
-        except Exception:
-            await self.db.rollback()
-            raise
-
-    async def commit_or_flush(self, *, commit: bool = True) -> None:
-        """
-        Persist pending changes: commit via the rollback-safe
-        :meth:`_commit_or_rollback` path, or flush when the caller owns the
-        transaction (``commit=False`` inside a ``_atomic()`` block).
-
-        Services doing raw ``setattr`` mutations or bulk executes should end
-        with this instead of hand-rolled ``db.commit()/db.flush()`` — a bare
-        ``commit()`` skips the rollback-on-error guarantee.
-        """
-
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-        else:
-            await self.db.flush()
 
     async def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
         """

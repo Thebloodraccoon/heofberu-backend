@@ -2,7 +2,8 @@
 Generic service layer: fetch -> validate -> persist -> serialize orchestration.
 
 Provides :class:`BaseService` (a model-generic CRUD orchestrator sitting on
-top of :class:`BaseRepository`) and the schema type variables services bind to.
+top of :class:`BaseRepository`), :class:`ServiceMixin` (typing base for service
+mixins) and the schema type variables services bind to.
 
 Async stack: every orchestration method is ``async`` (repository calls are
 awaited); ``_atomic`` / ``_unit_of_work`` wrap multistep writes in one
@@ -11,13 +12,14 @@ transaction (see ``app.core.base.transaction``).
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any, Generic
+from typing import TYPE_CHECKING, Any, Generic, cast
 
 from pydantic import BaseModel
 from sqlalchemy import inspect
+from sqlalchemy.orm import Mapper
 from typing_extensions import TypeVar
 
-from app.core.base.repository import BaseRepository, ModelType
+from app.core.base.repository import BaseRepository, ModelProtocol, ModelType
 from app.core.base.transaction import UnitOfWork, after_commit, atomic, unit_of_work
 from app.core.cache.invalidation import invalidate
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
@@ -29,7 +31,26 @@ ResponseSchema = TypeVar("ResponseSchema", bound=BaseModel)
 GetAllSchema = TypeVar("GetAllSchema", bound=BaseModel, default=BaseModel)
 BeforeUpdateHook = Callable[[ModelType, dict], None]
 
-ResolvedItem = TypeVar("ResolvedItem")
+ResolvedItem = TypeVar("ResolvedItem", bound=ModelProtocol)
+
+
+class ServiceMixin:
+    """
+    Base for service mixins composed into a ``BaseService`` subclass (tags/skills/items/bonus managers, cache
+    routing).
+
+    Declares, for type checkers only, the host-service members the mixins call; adds nothing at runtime. They are
+    typed ``Any`` so they stay compatible with every concrete ``BaseService`` parametrisation.
+    """
+
+    if TYPE_CHECKING:
+        repository: Any
+        cache_namespaces: tuple[str, ...]
+        _atomic: Any
+        _exists_or_404: Any
+        _get_response: Any
+        _invalidate_cache: Any
+        resolve_ids: Any
 
 
 class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):
@@ -92,9 +113,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         size: int = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
-    ) -> Page[ResponseSchema]:
+    ) -> Page[Any]:
         """
-        Return a page of records.
+        Return a page of records (``ResponseSchema`` items, or ``GetAllSchema`` ones when that is set).
 
         When ``get_all_schema`` is set (reference catalogs), this is a
         lightweight listing: rows are fetched through the column-select path
@@ -122,16 +143,16 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         total = await self.repository.count(filters=filters, search=search)
 
         if self.get_all_schema is None:
-            items = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+            full_records = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
             return Page(
-                items=[self.response_schema.model_validate(item) for item in items],
+                items=[self.response_schema.model_validate(item) for item in full_records],
                 total=total,
                 page=page,
                 size=size,
             )
 
         model = self.repository.model
-        mapper = inspect(model)
+        mapper = cast(Mapper[Any], inspect(model))
         non_column_fields = [name for name in self.get_all_schema.model_fields if name not in mapper.columns]
 
         order_by = getattr(model, self.get_all_order_by) if self.get_all_order_by else None

@@ -46,6 +46,9 @@ class BackgroundGrants:
         character creation).
         """
 
+        if character.background_id is None:
+            return
+
         entries = await self.item_repository.get_source_items_for_sources(
             [(FeatureSourceType.BACKGROUND, character.background_id)]
         )

@@ -35,9 +35,7 @@ def upgrade() -> None:
         server_default="0",
     )
     op.alter_column("characters", "inspiration", server_default=None)
-    op.create_check_constraint(
-        "check_inspiration_range", "characters", "inspiration >= 0 AND inspiration <= 13"
-    )
+    op.create_check_constraint("check_inspiration_range", "characters", "inspiration >= 0 AND inspiration <= 13")
 
 
 def downgrade() -> None:

@@ -1,6 +1,6 @@
 """GM proficiency endpoints: add/remove/expertise on skill/saving-throw/armor/weapon rows (query-style IDs)."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Query, status
 
@@ -24,10 +24,7 @@ from app.features.characters.grants.schemas import (
 
 router = APIRouter()
 
-_NOT_A_GM = {403: {"description": "You are not a GM."}}
-
-
-# --- Skills -----------------------------------------------------------------
+_NOT_A_GM: dict[int | str, dict[str, Any]] = {403: {"description": "You are not a GM."}}
 
 
 @router.post(
@@ -101,9 +98,6 @@ async def set_character_skill_expertise(
     return await service.set_skill_expertise(character_id, skill_id, data, current_user)
 
 
-# --- Saving throws ------------------------------------------------------------
-
-
 @router.post(
     "/proficiencies/saving-throws",
     response_model=CharacterSavingThrowProficiencyResponse,
@@ -144,9 +138,6 @@ async def remove_character_saving_throw_proficiency(
     return None
 
 
-# --- Armor -----------------------------------------------------------------
-
-
 @router.post(
     "/proficiencies/armor",
     response_model=CharacterArmorProficiencyResponse,
@@ -185,9 +176,6 @@ async def remove_character_armor_proficiency(
 
     await service.remove_armor(character_id, armor_type, current_user)
     return None
-
-
-# --- Weapons -----------------------------------------------------------------
 
 
 @router.post(

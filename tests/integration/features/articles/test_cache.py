@@ -318,3 +318,143 @@ class TestArticleListCaches:
 
         await client.patch(f"/articles/subtypes/{created.json()['id']}", json={"name": "temple"}, headers=headers)
         assert [s["name"] for s in (await client.get("/articles/subtypes?article_type=location")).json()] == ["temple"]
+
+    async def test_body_edit_keeps_tree_lists_warm_and_a_title_edit_purges_them(
+        self, client, create_article, gm_token, caching_on, redis_client
+    ):
+        from app.core.cache import build_cache_key
+        from app.features.articles.cache import ARTICLE_TREE_NAMESPACE
+        from app.features.articles.tree.service import ArticleTreeService
+
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        parent = await create_article(title="Moria", status="published")
+        child = await create_article(title="West Gate", status="published", parent_id=parent["id"])
+        children_key = build_cache_key(
+            ArticleTreeService._cached_children,
+            None,
+            parent["id"],
+            include_hidden=False,
+            namespace=ARTICLE_TREE_NAMESPACE,
+        )
+        await client.get(f"/articles/{parent['id']}/children")
+        assert await redis_client.exists(children_key) == 1
+
+        await client.patch(f"/articles/{child['id']}", json={"body_markdown": "Doors of Durin"}, headers=headers)
+        assert await redis_client.exists(children_key) == 1
+
+        await client.patch(f"/articles/{child['id']}", json={"title": "East Gate"}, headers=headers)
+        assert await redis_client.exists(children_key) == 0
+        assert [c["title"] for c in (await client.get(f"/articles/{parent['id']}/children")).json()] == ["East Gate"]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestRelationAndReaderCache:
+    async def test_relation_writes_refresh_both_ends_and_keep_other_lists_warm(
+        self, client, create_article, gm_token, caching_on, redis_client
+    ):
+        from app.core.cache import build_cache_key
+        from app.features.articles.cache import ARTICLE_TREE_NAMESPACE
+        from app.features.articles.relations.service import relations_cache_key
+        from app.features.articles.tree.service import ArticleTreeService
+
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        source = await create_article(title="Khazad-dum", status="published")
+        target = await create_article(title="Moria", status="published")
+        bystander = await create_article(title="Rivendell", status="published")
+        await create_article(title="Last Homely House", status="published", parent_id=bystander["id"])
+        for article in (source, target, bystander):
+            assert (await client.get(f"/articles/{article['id']}/relations")).json() == []
+        await client.get(f"/articles/{bystander['id']}/children")
+        children_key = build_cache_key(
+            ArticleTreeService._cached_children,
+            None,
+            bystander["id"],
+            include_hidden=False,
+            namespace=ARTICLE_TREE_NAMESPACE,
+        )
+
+        created = await client.post(
+            f"/articles/{source['id']}/relations",
+            json={"to_article_id": target["id"], "relation_type": "LOCATED_IN"},
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+        relation_url = f"/articles/{source['id']}/relations/{created.json()['id']}"
+
+        assert await redis_client.exists(relations_cache_key(bystander["id"], False)) == 1
+        assert await redis_client.exists(children_key) == 1
+        assert [r["direction"] for r in (await client.get(f"/articles/{source['id']}/relations")).json()] == [
+            "outgoing"
+        ]
+        assert [r["direction"] for r in (await client.get(f"/articles/{target['id']}/relations")).json()] == [
+            "incoming"
+        ]
+
+        await client.patch(relation_url, json={"visibility": "gm_only"}, headers=headers)
+        assert (await client.get(f"/articles/{source['id']}/relations")).json() == []
+        assert (await client.get(f"/articles/{target['id']}/relations")).json() == []
+        assert len((await client.get(f"/articles/{target['id']}/relations", headers=headers)).json()) == 1
+
+        await client.delete(relation_url, headers=headers)
+        assert (await client.get(f"/articles/{source['id']}/relations", headers=headers)).json() == []
+        assert (await client.get(f"/articles/{target['id']}/relations", headers=headers)).json() == []
+        assert await redis_client.exists(relations_cache_key(bystander["id"], False)) == 1
+
+    async def test_cached_child_masks_a_parent_hidden_after_caching(
+        self, client, create_article, gm_token, caching_on, redis_client
+    ):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        parent = await create_article(title="Moria", status="published")
+        child = await create_article(title="West Gate", status="published", parent_id=parent["id"])
+        assert (await client.get(f"/articles/{child['id']}")).json()["parent_id"] == parent["id"]
+
+        await client.patch(f"/articles/{parent['id']}", json={"visibility": "gm_only"}, headers=headers)
+
+        assert await redis_client.exists(article_cache_key(child["id"])) == 1
+        assert (await client.get(f"/articles/{child['id']}")).json()["parent_id"] is None
+        assert (await client.get(f"/articles/{child['id']}", headers=headers)).json()["parent_id"] == parent["id"]
+
+    async def test_a_lost_invalidation_cannot_keep_a_withdrawn_article_public_by_slug(
+        self, client, create_article, caching_on, redis_client, db_session
+    ):
+        from sqlalchemy import update
+
+        from app.constants import ArticleVisibility
+        from app.models import Article
+
+        article = await create_article(title="Withdrawn", status="published")
+        assert (await client.get(f"/articles/by-slug/{article['slug']}")).status_code == 200
+        assert await redis_client.exists(article_cache_key(article["id"])) == 1
+
+        await db_session.execute(
+            update(Article).where(Article.id == article["id"]).values(visibility=ArticleVisibility.GM_ONLY)
+        )
+        await db_session.commit()
+
+        response = await client.get(f"/articles/by-slug/{article['slug']}")
+        assert response.status_code == 404
+        message = response.json()["error"]["message"]
+        assert article["slug"] in message
+        assert f"id {article['id']} " not in message
+
+    async def test_article_wide_purge_keeps_the_subtype_list_warm(
+        self, client, create_article, gm_token, caching_on, redis_client
+    ):
+        from app.core.cache import build_cache_key
+        from app.features.articles.subtypes.service import ArticleSubtypeService
+
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        tag = (await client.post("/tags", json={"name": "Dwarven"}, headers=headers)).json()
+        article = await create_article(title="Aurora Temple", subtype="shrine", status="published", tag_ids=[tag["id"]])
+        subtypes_key = build_cache_key(
+            ArticleSubtypeService.list_subtypes, None, "location", namespace="article_subtypes"
+        )
+        await client.get(f"/articles/{article['id']}")
+        assert [s["name"] for s in (await client.get("/articles/subtypes?article_type=location")).json()] == ["shrine"]
+        assert await redis_client.exists(subtypes_key) == 1
+
+        await client.patch(f"/tags/{tag['id']}", json={"name": "Dwarrow"}, headers=headers)
+
+        assert await redis_client.exists(article_cache_key(article["id"])) == 0
+        assert await redis_client.exists(subtypes_key) == 1

@@ -3,7 +3,6 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.articles.article_model import Article
 from app.models.articles.article_revision_model import ArticleRevision
 
 
@@ -14,11 +13,6 @@ class ArticleRevisionRepository:
         """Bind to a session."""
 
         self.db = db
-
-    async def article_exists(self, article_id: int) -> bool:
-        """Whether the article exists (to tell an empty history from a missing article)."""
-
-        return await self.db.scalar(select(Article.id).where(Article.id == article_id)) is not None
 
     async def list_for_article(
         self, article_id: int, *, skip: int, limit: int, before_version: int | None = None, with_total: bool = True

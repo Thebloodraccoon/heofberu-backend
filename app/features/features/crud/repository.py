@@ -1,6 +1,8 @@
 """Feature repository: base CRUD plus the effect-tree loaders shared by every catalog."""
 
-from sqlalchemy import literal_column, select, union_all
+from typing import Any
+
+from sqlalchemy import Select, literal_column, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
@@ -187,7 +189,7 @@ async def load_effect_flags(db, feature_ids: list[int]) -> dict[int, dict[str, b
     if not feature_ids:
         return flags
 
-    selects = [
+    selects: list[Select[Any]] = [
         select(model.feature_id.label("feature_id"), literal_column("'has_static_effects'").label("flag"))
         .where(model.feature_id.in_(feature_ids))
         .distinct()

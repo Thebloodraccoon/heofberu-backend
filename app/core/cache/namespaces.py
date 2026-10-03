@@ -36,6 +36,7 @@ CACHE_DEPENDENTS: dict[str, tuple[str, ...]] = {
     "races": ("spells",),
     "subraces": ("spells",),
     "tags": ("races", "backgrounds", "articles"),
+    "users": ("articles",),
 }
 """Entity written -> namespaces whose cached payloads embed its name/id (besides its own)."""
 

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import RecordNotFoundError
 from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, paginate
+from app.features.articles.base import ArticleScopedRepository
 from app.features.articles.revisions.repository import ArticleRevisionRepository
 from app.features.articles.revisions.schemas import (
     ArticleRevisionBrief,
@@ -61,9 +62,10 @@ class ArticleRevisionsService:
     """Read side of the version history (``/articles/{id}/revisions``)."""
 
     def __init__(self, db: AsyncSession):
-        """Initialize the revisions repository."""
+        """Initialize the revisions repository and a plain article lookup (to tell an empty history from a 404)."""
 
         self.repository = ArticleRevisionRepository(db)
+        self._articles = ArticleScopedRepository(db)
 
     async def list_revisions(
         self, article_id: int, *, page: int, size: int, cursor: str | None = None, use_cursor: bool = False
@@ -73,7 +75,7 @@ class ArticleRevisionsService:
         ``CursorPage`` over ``version`` (new versions on top never shift it).
         """
 
-        if not await self.repository.article_exists(article_id):
+        if not await self._articles.exists_by_id(article_id):
             raise RecordNotFoundError(model_name="Article", model_id=str(article_id))
 
         if use_cursor:
@@ -107,6 +109,8 @@ class ArticleRevisionsService:
         return build_diff(old, new)
 
     async def _get_or_404(self, article_id: int, version: int) -> ArticleRevision:
+        """One snapshot, or ``RecordNotFoundError`` naming ``article_id@version``."""
+
         revision = await self.repository.get(article_id, version)
         if revision is None:
             raise RecordNotFoundError(model_name="ArticleRevision", model_id=f"{article_id}@{version}")

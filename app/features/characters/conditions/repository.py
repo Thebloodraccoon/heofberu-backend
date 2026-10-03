@@ -5,17 +5,17 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
-from app.core.base.repository import BaseRepository
+from app.core.base.repository import SessionRepository
 from app.models.character.character_condition_model import CharacterCondition
 
 
-class CharacterConditionRepository(BaseRepository[CharacterCondition]):
+class CharacterConditionRepository(SessionRepository):
     """Repository for the conditions a character is currently under (``character_conditions``)."""
 
     def __init__(self, db: AsyncSession):
         """Create the condition repository."""
 
-        super().__init__(CharacterCondition, db)
+        super().__init__(db)
 
     async def get_character_conditions(self, character_id: int) -> list[CharacterCondition]:
         """Get every active condition on a character."""

@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.base.service import ServiceMixin
 from app.core.base.transaction import after_commit
 from app.core.cache import invalidate_many
 
@@ -13,7 +14,7 @@ async def purge_after_commit(db: AsyncSession, *namespaces: str) -> None:
     await after_commit(db, lambda: invalidate_many(names))
 
 
-class CatalogCacheMixin:
+class CatalogCacheMixin(ServiceMixin):
     """``BaseService`` mixin: write-path purges go through :func:`purge_after_commit`."""
 
     cache_namespaces: tuple[str, ...]

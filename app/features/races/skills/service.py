@@ -14,7 +14,7 @@ from app.models.races.race_model import Race
 class RaceSkillService(
     SkillsManagerMixin,
     CatalogCacheMixin,
-    BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, None],
+    BaseService[Race, RaceCreate, RaceUpdate, RaceResponse],
 ):
     """Full replacement and id-resolution for a race's granted skills."""
 

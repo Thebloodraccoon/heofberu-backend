@@ -105,19 +105,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["from_article_id"], ["articles.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["to_article_id"], ["articles.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "from_article_id", "to_article_id", "relation_type", name="uq_article_relation"
-        ),
+        sa.UniqueConstraint("from_article_id", "to_article_id", "relation_type", name="uq_article_relation"),
     )
     op.create_index(
         op.f("ix_article_relations_from_article_id"), "article_relations", ["from_article_id"], unique=False
     )
-    op.create_index(
-        op.f("ix_article_relations_to_article_id"), "article_relations", ["to_article_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_article_relations_relation_type"), "article_relations", ["relation_type"], unique=False
-    )
+    op.create_index(op.f("ix_article_relations_to_article_id"), "article_relations", ["to_article_id"], unique=False)
+    op.create_index(op.f("ix_article_relations_relation_type"), "article_relations", ["relation_type"], unique=False)
 
     op.create_table(
         "article_tags",
