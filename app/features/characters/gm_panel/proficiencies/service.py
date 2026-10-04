@@ -17,17 +17,15 @@ decides, writes in one transaction and builds the response from the
 in-memory result.
 """
 
-from functools import partial
 from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import AbilityScore, ArmorProficiency, ProficiencyType, WeaponProficiency
-from app.core.base.transaction import unit_of_work
 from app.core.exceptions import RecordNotFoundError
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.exceptions import (
+    InvalidWeaponProficiencyTargetException,
     ProficiencyAlreadyGrantedException,
     ProficiencyNotFoundException,
     SkillProficiencyNotFoundException,
@@ -204,7 +202,10 @@ class GmPanelProficiencyService(CharacterSubDomainService):
         weapon_category: WeaponProficiency | None,
         item_id: int | None,
     ) -> None:
-        """Revoke a character's proficiency in a weapon category or a single item."""
+        """Revoke a character's proficiency in a weapon category or a single item (exactly one of the two)."""
+
+        if (weapon_category is None) == (item_id is None):
+            raise InvalidWeaponProficiencyTargetException()
 
         await self.get_character_for_user(character_id, current_user)
         await self._revoke(
@@ -293,7 +294,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
         if not granted_now and missing is not None:
             raise missing
 
-        async with unit_of_work(self.repository.db) as uow:
+        async with self._atomic():
             gm_row = await self.proficiency_repository.apply(
                 character_id,
                 proficiency_type,
@@ -305,7 +306,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
                 **discriminator,
             )
             resolved = resolve_group(key, self._after_write(entries, gm_row))
-            await uow.after_commit(partial(invalidate_character_cache, character_id))
+            await self._invalidate_character(character_id)
 
         return resolved
 

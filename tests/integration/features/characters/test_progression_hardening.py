@@ -5,6 +5,7 @@ revoke and rebuild, authorization of the grant endpoints, and cache freshness af
 
 import pytest
 
+from tests.helpers import effect_items
 from tests.integration.features.characters.test_progression import level_up_to
 
 
@@ -21,14 +22,17 @@ async def author_asi_options(client, gm_token, feat, abilities=("STR",)):
                 {
                     "pick_count": 1,
                     "choice_type": "ABILITY_SCORE",
-                    "options": [{"ability_effects": [{"ability": ability, "amount": 1}]} for ability in abilities],
+                    "options": [
+                        {"effects": [{"effect_type": "ability", "items": [{"ability": ability, "amount": 1}]}]}
+                        for ability in abilities
+                    ],
                 }
             ]
         },
         headers=auth(gm_token),
     )
     assert response.status_code == 200, response.text
-    return [option["ability_effects"][0]["id"] for option in response.json()[0]["options"]]
+    return [effect_items(option["effects"], "ability")[0]["id"] for option in response.json()[0]["options"]]
 
 
 async def level_up_with(client, token, character_id, choice):
@@ -183,14 +187,14 @@ class TestFeatAsiUpdateKeepsOtherPicks:
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
                         "options": [
-                            {"ability_effects": [{"ability": "STR", "amount": 1}]},
-                            {"ability_effects": [{"ability": "DEX", "amount": 1}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}]},
                         ],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "SAVING_THROW",
-                        "options": [{"saving_throw_effects": [{"ability": "WIS"}]}],
+                        "options": [{"effects": [{"effect_type": "saving_throw", "items": [{"ability": "WIS"}]}]}],
                     },
                 ]
             },
@@ -198,7 +202,7 @@ class TestFeatAsiUpdateKeepsOtherPicks:
         )
         assert response.status_code == 200, response.text
         asi_group, save_group = response.json()
-        str_id, dex_id = (option["ability_effects"][0]["id"] for option in asi_group["options"])
+        str_id, dex_id = (effect_items(option["effects"], "ability")[0]["id"] for option in asi_group["options"])
 
         grant = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
@@ -355,7 +359,10 @@ async def feature_with_ability_choice(client, gm_token, create_feature, class_id
                 {
                     "pick_count": 1,
                     "choice_type": "ABILITY_SCORE",
-                    "options": [{"ability_effects": [{"ability": ability, "amount": 1}]} for ability in abilities],
+                    "options": [
+                        {"effects": [{"effect_type": "ability", "items": [{"ability": ability, "amount": 1}]}]}
+                        for ability in abilities
+                    ],
                 }
             ]
         },
@@ -503,7 +510,9 @@ class TestLevelUpBatchesFeatureChoices:
                         {
                             "pick_count": 1,
                             "choice_type": "ABILITY_SCORE",
-                            "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                            "options": [
+                                {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                            ],
                         }
                     ]
                 },

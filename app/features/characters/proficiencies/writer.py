@@ -11,6 +11,9 @@ the same source's own list, so re-adding an id already in that list never
 produces a duplicate row for it.
 """
 
+from collections.abc import Iterable
+
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
@@ -36,3 +39,17 @@ def add_skill_proficiencies(
                 is_expertise=False,
             )
         )
+
+
+async def delete_skill_proficiencies(
+    db: AsyncSession, character_id: int, source_types: Iterable[ProficiencySourceType]
+) -> None:
+    """Delete the character's SKILL rows of the given sources (no flush/commit; the caller owns the transaction)."""
+
+    await db.execute(
+        delete(CharacterProficiency).where(
+            CharacterProficiency.character_id == character_id,
+            CharacterProficiency.proficiency_type == ProficiencyType.SKILL,
+            CharacterProficiency.source_type.in_(list(source_types)),
+        )
+    )

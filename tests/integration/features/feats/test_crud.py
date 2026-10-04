@@ -3,6 +3,7 @@
 import pytest
 
 from app.models import CharacterASIChoice
+from tests.helpers import effect_items
 
 
 @pytest.mark.integration
@@ -58,7 +59,9 @@ class TestFeatCrud:
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
                         "label": "Ability Score Increase",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     }
                 ]
             },
@@ -68,9 +71,11 @@ class TestFeatCrud:
 
         read_response = await client.get(f"/feats/{feat.id}")
         options = read_response.json()["choice_groups"][0]["options"]
-        assert {effect["ability"]: effect["amount"] for option in options for effect in option["ability_effects"]} == {
-            "STR": 1
-        }
+        assert {
+            effect["ability"]: effect["amount"]
+            for option in options
+            for effect in effect_items(option["effects"], "ability")
+        } == {"STR": 1}
 
     async def test_gm_cannot_delete_feat(self, client, gm_token, create_feat):
         feat = await create_feat(name="Doomed Feat")

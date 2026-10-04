@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.constants import AbilityScore, FeatureSourceType
-from app.features.features.effects.schemas import ChoiceGroupResponse, StaticEffectGroup
+from app.features.features.effects.schemas import ChoiceGroupResponse, EffectGroup
 
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS keys off subclass_id (not class_id — the old denorm approach).
@@ -180,7 +180,7 @@ class FeatureResponse(FeatureBase):
     id: int
 
     choice_groups: list[ChoiceGroupResponse] = []
-    static_groups: list[StaticEffectGroup] = []
+    static_groups: list[EffectGroup] = []
 
     has_static_effects: bool = False
     has_choices: bool = False
@@ -234,7 +234,7 @@ class NestedFeatureResponse(BaseModel):
     level: int | None = None
 
     choice_groups: list[ChoiceGroupResponse] = []
-    static_groups: list[StaticEffectGroup] = []
+    static_groups: list[EffectGroup] = []
 
     has_static_effects: bool = False
     has_choices: bool = False

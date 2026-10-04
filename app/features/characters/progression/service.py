@@ -1,6 +1,5 @@
 """Service for character progression: subclass/subrace/background setup, leveling up, point-rebuild."""
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.backgrounds.crud.repository import BackgroundRepository
@@ -43,7 +42,6 @@ from app.features.classes.exceptions import ClassNotFoundException, SubclassNotF
 from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import SubraceNotFoundException
 from app.features.users.schemas import UserResponse
-from app.models import Class
 from app.models.character.character_model import Character
 
 
@@ -98,7 +96,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        async with self._unit_of_work():
+        async with self._atomic():
             await self._lock_character(character)
 
             if (
@@ -121,7 +119,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        async with self._unit_of_work():
+        async with self._atomic():
             await self._lock_character(character)
 
             if data.subrace_id is not None:
@@ -147,7 +145,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        async with self._unit_of_work():
+        async with self._atomic():
             await self._lock_character(character)
 
             if character.background_id is not None:
@@ -181,7 +179,7 @@ class CharacterProgressionService(CharacterSubDomainService):
         character = await self.get_character_for_user(character_id, current_user)
         plan = await self.rebuilder.prepare(data)
 
-        async with self._unit_of_work():
+        async with self._atomic():
             await self._lock_character(character)
             check_rebuild_asi_levels(character.level, data.asi_choices)
 
@@ -209,7 +207,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        async with self._unit_of_work():
+        async with self._atomic():
             await self._lock_character(character)
 
             max_level = await self._allowed_max_level(character)
@@ -303,7 +301,7 @@ class CharacterProgressionService(CharacterSubDomainService):
     async def _hit_die_sides(self, class_id: int) -> int:
         """Hit die sides of a class (a single-column read, not the whole class tree)."""
 
-        hit_dice = (await self.db.execute(select(Class.hit_dice).where(Class.id == class_id))).scalar_one_or_none()
+        hit_dice = await self.class_repository.get_hit_dice(class_id)
         if hit_dice is None:
             raise ClassNotFoundException(class_id=class_id)
 

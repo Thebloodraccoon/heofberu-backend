@@ -278,7 +278,7 @@ class TestLateSetupGrants:
         trait = await create_feature(name="Champion Trait", source_type="SUBCLASS", subclass_id=champion.id, level=None)
         await client.put(
             f"/features/{trait.id}/effects",
-            json={"ability_effects": [{"ability": "STR", "amount": 1}]},
+            json={"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 

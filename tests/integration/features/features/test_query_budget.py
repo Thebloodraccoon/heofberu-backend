@@ -32,12 +32,24 @@ async def feature_with_tree(client, gm_token, create_feature, create_skill):
     skill_id = (await create_skill(name="Stealth")).id
     await client.put(
         f"/features/{feature_id}/effects",
-        json={"armor_effects": [{"armor_type": "LIGHT"}], "skill_effects": [{"skill_id": skill_id}]},
+        json={
+            "static_groups": [
+                {"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]},
+                {"effect_type": "skill", "items": [{"skill_id": skill_id}]},
+            ]
+        },
         headers=auth(gm_token),
     )
     await client.put(
         f"/features/{feature_id}/choice-groups",
-        json={"choice_groups": [{"choice_type": "SKILL", "options": [{"skill_effects": [{"skill_id": skill_id}]}]}]},
+        json={
+            "choice_groups": [
+                {
+                    "choice_type": "SKILL",
+                    "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill_id}]}]}],
+                }
+            ]
+        },
         headers=auth(gm_token),
     )
     return feature_id
@@ -84,7 +96,9 @@ class TestQueryBudget:
 
         with count_statements(db_session) as statements:
             response = await client.put(
-                f"/features/{feature_with_tree}/effects", json={"armor_effects": armor}, headers=auth(gm_token)
+                f"/features/{feature_with_tree}/effects",
+                json={"static_groups": [{"effect_type": "armor", "items": armor}]},
+                headers=auth(gm_token),
             )
 
         assert response.status_code == 200

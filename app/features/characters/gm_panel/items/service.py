@@ -3,7 +3,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.exceptions import (
     CharacterItemNotFoundException,
     CharacterItemQuantityLimitException,
@@ -65,7 +64,7 @@ class GmPanelItemService(CharacterSubDomainService):
                 quantity=data.quantity,
             )
 
-        await invalidate_character_cache(character_id)
+        await self._invalidate_character(character_id)
 
         return CharacterItemResponse.model_validate(stack)
 
@@ -80,7 +79,7 @@ class GmPanelItemService(CharacterSubDomainService):
 
         fields = data.model_dump(exclude_unset=True)
         updated_stack = await self.character_item_repository.update_character_item(stack, fields)
-        await invalidate_character_cache(character_id)
+        await self._invalidate_character(character_id)
 
         return CharacterItemResponse.model_validate(updated_stack)
 
@@ -91,7 +90,7 @@ class GmPanelItemService(CharacterSubDomainService):
 
         stack = await self._get_stack_or_404(character_id, character_item_id)
         result = await self.character_item_repository.remove_character_item(stack)
-        await invalidate_character_cache(character_id)
+        await self._invalidate_character(character_id)
 
         return result
 

@@ -1,12 +1,8 @@
 """Character spell service: slots and known spells management."""
 
-from functools import partial
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.transaction import unit_of_work
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.grants.effects import (
     load_character_grant_effects,
     load_spell_responses,
@@ -103,7 +99,7 @@ class CharacterSpellService(CharacterSubDomainService):
         if not spell:
             raise SpellNotFoundException(spell_id=data.spell_id)
 
-        async with unit_of_work(self.repository.db) as uow:
+        async with self._atomic():
             await lock_character(self.repository.db, character_id)
 
             if await self.character_spell_repository.get_known_spell(character_id, data.spell_id):
@@ -111,7 +107,7 @@ class CharacterSpellService(CharacterSubDomainService):
 
             await self.eligibility_checker.check(character, spell)
             await self.character_spell_repository.add_known_spell(character_id, data.spell_id)
-            await uow.after_commit(partial(invalidate_character_cache, character_id))
+            await self._invalidate_character(character_id)
 
         return CharacterSpellResponse.model_validate(spell)
 
@@ -121,9 +117,9 @@ class CharacterSpellService(CharacterSubDomainService):
         await self.get_character_for_user(character_id, current_user)
 
         character_spell = await self._get_known_spell_or_404(character_id, spell_id)
-        async with unit_of_work(self.repository.db) as uow:
+        async with self._atomic():
             await self.character_spell_repository.remove_known_spell(character_spell)
-            await uow.after_commit(partial(invalidate_character_cache, character_id))
+            await self._invalidate_character(character_id)
 
     async def _get_known_spell_or_404(self, character_id: int, spell_id: int) -> CharacterSpell:
         """Fetch a known-spell entry, or raise ``CharacterSpellNotFoundException``."""

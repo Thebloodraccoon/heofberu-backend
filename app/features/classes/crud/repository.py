@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants import DiceType
 from app.core.base.repository import BaseRepository
 from app.features.classes.proficiencies.kinds import ProficiencyKind
 from app.features.features.crud.repository import feature_summary_loads
@@ -61,6 +62,11 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
         """Return the class name, or ``None`` when the class does not exist."""
 
         return await self.db.scalar(select(Class.name).where(Class.id == class_id))
+
+    async def get_hit_dice(self, class_id: int) -> DiceType | None:
+        """Return the class hit dice, or ``None`` when the class does not exist."""
+
+        return await self.db.scalar(select(Class.hit_dice).where(Class.id == class_id))
 
     async def get_character_ids(self, class_id: int) -> list[int]:
         """Ids of every character of the class (to purge their cached payloads)."""

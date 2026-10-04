@@ -49,9 +49,9 @@ that make this work:
   validation (`app/features/characters/feats/validation.py`) and the
   ASI-picked-on-grant response (`FeatAbilityScoreIncreaseResponse`) — but the
   feat catalog response itself no longer exposes it as a flat field; read the
-  option's `ability_effects[0]` off `FeatResponse.choice_groups` instead.
+  option's `effects` group with `effect_type: "ability"` off `FeatResponse.choice_groups` instead.
 - A character grant's `ability_score_increase_id` points at the picked
-  option's `AbilityEffectItem` row id (`choice_groups[].options[].ability_effects[].id`),
+  option's `AbilityEffectItem` row id (`choice_groups[].options[].effects[ability].items[].id`),
   so ASI row ids must never be rewritten.
 
 ## Write semantics & caches

@@ -16,11 +16,11 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
 | `schemas.py` | Shared domain schemas: `CharacterCreate`/`CharacterUpdate`/`CharacterResponse`, the `PatchModel` base (explicit `null` in a PATCH is a 422 except for fields listed in `nullable_fields`) and the input bounds (`NAME_MAX_LENGTH`, `MONEY_MAX`, `HP_LIMIT`, ...). Bounds live on the input schemas only — `CharacterResponse` stays unconstrained so older stored rows still serialize. Sub-packages import from here — never the reverse. |
 | `exceptions.py` | Domain-wide `AppError`s: `CharacterNotFoundException`, `CharacterAccessDeniedException`, `GmOnlyFieldException`, `BackgroundNotFoundException`. |
 | `access.py` | Access-control helpers: `is_gm` (GM or founder), `get_character_or_404`, `check_character_access`, the combined `get_character_for_user` (GM or owner, else 403/404) and `ensure_character_access` (same decision from a single `owner_id` lookup, for sub-resources that never read the character). |
-| `base.py` | `CharacterSubDomainService` — shared base for sub-domain services: owns the single `CharacterRepository`, the access checks (`get_character_for_user`, `ensure_character_access`) and the transaction helpers (`_atomic()`, `_unit_of_work()`, `_invalidate_character()`). `_light_character_fetch = True` only means "no `populate_existing`" (an instance already in the session is returned as it is); services that need a freshly re-read row override it to `False`. |
+| `base.py` | `CharacterSubDomainService` — shared base for sub-domain services: owns the single `CharacterRepository`, the access checks (`get_character_for_user`, `ensure_character_access`) and the transaction helpers (`_atomic()`, `_invalidate_character()`). `_light_character_fetch = True` only means "no `populate_existing`" (an instance already in the session is returned as it is); services that need a freshly re-read row override it to `False`. |
 | `dependencies.py` | All `Character*Dep` service aliases (`CharacterServiceDep`, `CharacterSpellServiceDep`, ...). |
 | `cache.py` | Exact-key invalidation of the cached character response: `character_cache_key`, `invalidate_character_cache(id, db=None)`, `invalidate_characters_cache(ids, db=None)`, `CHARACTER_CACHE_TTL` (300 s). Pass the writing session as `db` to defer the purge until the surrounding `atomic()` block commits (dropped on rollback); there is no namespace/prefix purge and no keyspace scan. |
 
-**Transaction rule:** the service owns the transaction. A multi-step write runs inside `self._atomic()` / `self._unit_of_work()` with `commit=False` repository calls; a single-repository write may rely on the repository's own commit. Routers never commit. Cache purges are scheduled with `self._invalidate_character(id)`, which runs after the commit inside an atomic block and immediately outside one.
+**Transaction rule:** the service owns the transaction. A multi-step write runs inside `self._atomic()` with `commit=False` repository calls; a single-repository write may rely on the repository's own commit. Routers never commit. Cache purges always go through `self._invalidate_character(id)` (never `invalidate_character_cache` directly), which runs after the commit inside an atomic block and immediately outside one.
 
 ### Sub-packages
 
@@ -87,7 +87,9 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   `FeatureGrantService` (its methods take `current_user`); `PATCH .../choices`
   is one service transaction with the cache purge after COMMIT;
   `resolve_grants_choices` is the level-up batch (trees loaded in one query,
-  features without `has_choices` skipped).
+  features without `has_choices` skipped). Grant/pick queries live in
+  `CharacterFeatureRepository` (`features/repository.py`: `get_grant`,
+  `get_choices`, `replace_choices`, ...) — the service holds no SQL.
 - `gm_panel/` — GM-only panel under `/characters/gm-panel`: feat grants
   (with mandatory ASI choice when offered), feature grants, inventory
   (items), free-form ±ASI adjustments, max-HP edit, the per-character

@@ -35,26 +35,32 @@ features/
 ## The effect engine
 
 A feature's mechanical payload lives in `app/models/features/feature_engine_models.py`
-and is served as three things:
+(six typed effect tables, each row owned by a feature OR a choice option).
 
-- **Six fixed-effect lists on write** (`FeatureEffectsUpdate`): `ability_effects`,
-  `skill_effects`, `saving_throw_effects`, `armor_effects`, `weapon_effects`,
-  `spell_effects`. A fixed effect applies automatically to any character
-  granted the feature. `PUT /features/{feature_id}/effects` still takes this
-  flat six-list shape.
+**One API shape for an effect bundle, read and write alike: `list[EffectGroup]`.**
+`EffectGroup` (`features/effects/schemas.py`) is a discriminated union keyed by
+`effect_type` (`"ability"` / `"skill"` / `"saving_throw"` / `"armor"` / `"weapon"` /
+`"spell"`), each member carrying that type's `items`. Responses list only the
+**non-empty** types, built by the single helper `effect_groups(holder)`
+(`feature_engine_models.py`, used by `Feature.static_groups` and
+`FeatureChoiceOption.effects`) — there are never empty per-type lists in a response.
+
+- **Fixed effects**: `static_groups` on `FeatureResponse` / `NestedFeatureResponse` /
+  `FeatureEffectsResponse`, and the same `static_groups` on write
+  (`FeatureEffectsUpdate`, `PUT /features/{feature_id}/effects`): a type with a group
+  becomes the complete set of that type (diffed by id; a group with empty `items`
+  clears it), a type with no group is left untouched, a repeated `effect_type` is a 422.
+  A fixed effect applies automatically to any character granted the feature.
 - **Choice groups** ("pick N of M", `ChoiceGroupsUpdate`) — each group is
   pinned to one `choice_type` (`SKILL`/`SPELL`/`ABILITY_SCORE`/
-  `SAVING_THROW`/`ARMOR`/`WEAPON`); every option in it may only populate the
-  one effect-list field that type allows, enforced on write. Groups are
-  independent of the fixed effects and are written separately.
-- **`static_groups: list[StaticEffectGroup]` on read** — the six flat lists
-  are no longer serialized separately on responses. Instead `Feature.static_groups`
-  (a model `@property`, `app/models/features/feature_model.py`) emits one entry
-  per **non-empty** fixed-effect relationship, each a discriminated union member
-  keyed by `effect_type` (`"ability"` / `"skill"` / `"saving_throw"` / `"armor"`
-  / `"weapon"` / `"spell"`) carrying that type's `items` list. `FeatureResponse`,
-  `NestedFeatureResponse` and `FeatureEffectsResponse` all expose
-  `static_groups` this way, plus `has_static_effects` / `has_choices`
+  `SAVING_THROW`/`ARMOR`/`WEAPON`); every option carries `effects: list[EffectGroup]`
+  (on read and write) and may only hold the one effect type its group's choice type
+  allows, enforced on write. Groups are independent of the fixed effects and are
+  written separately.
+- Write payloads (`ChoiceOptionPayload`, `FeatureEffectsUpdate`) still expose each
+  type's items under the per-type attribute names (`skill_effects`, ...) for the
+  validators and `FeatureEffectsService` — an internal detail, not part of the API.
+- Responses also carry `has_static_effects` / `has_choices`
   (denormalized `Feature` columns, maintained by every effect/choice-group
   write — see `FeatureEffectsRepository.refresh_effect_flags`) and a rendered
   `effects_summary` HTML string (a `Feature` `@property`; every interpolated catalog name is HTML-escaped; amounts are signed `+1`/`-1`; option saving throws are in the genitive).
@@ -71,7 +77,7 @@ Payload rules (schema-enforced, 422 — the schemas reject unknown keys):
   not authorable on a SKILL/SPELL choice group either (`validate_no_open_picks`). Legacy rows
   may still read back with `None`.
 - No repeated row `id`, and no repeated effect (same ability / skill / armor type / item /
-  category / spell) inside one list — fixed lists and every option alike.
+  category / spell) inside one group's `items` — fixed effects and every option alike.
 - Bounds: ids 1..2^31-1, `pick_count` 1..50, `sort_order` 0..10 000, <= 50 effects per list,
   <= 50 options per group, <= 20 groups. A feature may have **at most one** `ABILITY_SCORE`
   choice group (`feat_ability_score_effects` assumes it). The `skill_id`/`item_id`/`spell_id` of

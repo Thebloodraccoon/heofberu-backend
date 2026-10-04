@@ -19,7 +19,9 @@ def auth(token):
 
 async def grant_spell_via_feature(client, gm_token, feature_id, spell_id):
     response = await client.put(
-        f"/features/{feature_id}/effects", json={"spell_effects": [{"spell_id": spell_id}]}, headers=auth(gm_token)
+        f"/features/{feature_id}/effects",
+        json={"static_groups": [{"effect_type": "spell", "items": [{"spell_id": spell_id}]}]},
+        headers=auth(gm_token),
     )
     assert response.status_code == 200, response.text
 

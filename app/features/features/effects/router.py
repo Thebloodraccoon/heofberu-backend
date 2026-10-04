@@ -57,27 +57,22 @@ async def set_feature_effects(
                 "elf-weapon-training": {
                     "summary": "Elf Weapon Training: fixed proficiency in a longsword and a bow",
                     "value": {
-                        "weapon_effects": [
-                            {"item_id": 3},
+                        "static_groups": [
+                            {"effect_type": "weapon", "items": [{"item_id": 3}, {"item_id": 7}]},
                         ]
                     },
                 },
                 "resilient-asi-only": {
                     "summary": "A feat that grants +1 CON (fixed, the saving throw rides a choice)",
                     "value": {
-                        "ability_effects": [{"ability": "CON", "amount": 1}],
+                        "static_groups": [
+                            {"effect_type": "ability", "items": [{"ability": "CON", "amount": 1}]},
+                        ]
                     },
                 },
-                "clear": {
-                    "summary": "Clear all fixed effects",
-                    "value": {
-                        "ability_effects": [],
-                        "skill_effects": [],
-                        "saving_throw_effects": [],
-                        "armor_effects": [],
-                        "weapon_effects": [],
-                        "spell_effects": [],
-                    },
+                "clear-armor": {
+                    "summary": "Clear the fixed armor effects, leave every other type untouched",
+                    "value": {"static_groups": [{"effect_type": "armor", "items": []}]},
                 },
             },
         ),
@@ -88,14 +83,15 @@ async def set_feature_effects(
     """
     Diff-update a feature's fixed effects. **GM only.**
 
-    Every effect type that is **present** in the body becomes the complete
-    set of that type, diffed by id: an item with an existing row's ``id``
-    updates it in place, an item with no ``id`` inserts a new row, and an
-    existing row whose ``id`` is missing from the list is deleted (send ``[]``
-    to clear a type). An effect type that is **omitted** is left untouched.
-    An ``id`` that doesn't belong to this feature, a repeated id/effect, a
-    fixed skill/spell effect without its ``skill_id``/``spell_id`` and an
-    unknown skill/item/spell id are all a 422. When something changed, every
+    The body is the same ``static_groups`` list the read returns. Every
+    effect type that has a **group** becomes the complete set of that type,
+    diffed by id: an item with an existing row's ``id`` updates it in place,
+    an item with no ``id`` inserts a new row, and an existing row whose ``id``
+    is missing from ``items`` is deleted (a group with empty ``items`` clears
+    the type). An effect type with **no group** is left untouched. A repeated
+    ``effect_type``, an ``id`` that doesn't belong to this feature, a repeated
+    id/effect, a fixed skill/spell effect without its ``skill_id``/``spell_id``
+    and an unknown skill/item/spell id are all a 422. When something changed, every
     character the feature is granted to is refreshed in the same transaction.
     Choice groups are managed via ``PUT /features/{id}/choice-groups``.
     """
@@ -150,8 +146,16 @@ async def set_feature_choice_groups(
                                 "pick_count": 1,
                                 "choice_type": "ABILITY_SCORE",
                                 "options": [
-                                    {"ability_effects": [{"ability": "STR", "amount": 1}]},
-                                    {"ability_effects": [{"ability": "DEX", "amount": 1}]},
+                                    {
+                                        "effects": [
+                                            {"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}
+                                        ]
+                                    },
+                                    {
+                                        "effects": [
+                                            {"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}
+                                        ]
+                                    },
                                 ],
                             }
                         ]
@@ -176,13 +180,13 @@ async def set_feature_choice_groups(
     updates it in place, one with no ``id`` creates a new row, and an
     existing row whose ``id`` is missing from the payload is removed. An
     ``id`` that doesn't belong to this feature is a 422. Each option is a
-    bundle — picking it applies all of its child effects together. Removing
-    an option or a whole group that a character already picked clears that
-    character's stored pick (it reverts to pending, see ``GET
-    /characters/{id}/grants/pending``) instead of failing; every character
-    currently granted the feature is re-materialized in the same
-    transaction, so the removed option's effects disappear immediately for
-    everyone it applied to.
+    bundle (``effects``, the same group list the read returns) — picking it
+    applies all of its effects together. Removing an option or a whole group
+    that a character already picked clears that character's stored pick (it
+    reverts to pending, see ``GET /characters/{id}/grants/pending``) instead
+    of failing; grant effects are computed on read, so the removed option's
+    effects disappear on everyone's next read, and the stat caches of every
+    character granted the feature are refreshed in the same transaction.
     """
 
     return await service.set_choice_groups(feature_id, data)

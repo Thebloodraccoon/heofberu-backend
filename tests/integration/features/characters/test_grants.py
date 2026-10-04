@@ -98,8 +98,8 @@ class TestPendingChoiceGroups:
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id}]},
-                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
                         ],
                     }
                 ]
@@ -185,8 +185,8 @@ class TestAnswerChoices:
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id}]},
-                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
                         ],
                     }
                 ]
@@ -240,7 +240,7 @@ class TestAnswerChoices:
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
                         ],
                     }
                 ]
@@ -283,8 +283,8 @@ class TestAnswerChoices:
                         "pick_count": 2,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill1.id}]},
-                            {"skill_effects": [{"skill_id": skill1.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill1.id}]}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill1.id}]}]},
                         ],
                     }
                 ]
@@ -328,8 +328,8 @@ class TestAnswerChoices:
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill_a.id}]},
-                            {"skill_effects": [{"skill_id": skill_b.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill_a.id}]}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill_b.id}]}]},
                         ],
                     }
                 ]
@@ -461,14 +461,14 @@ class TestAnswerChoices:
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
                         ],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
                         ],
                     },
                 ]
@@ -512,7 +512,7 @@ class TestAnswerChoices:
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
                         ],
                     }
                 ]
@@ -646,7 +646,7 @@ class TestOpenSpellResolution:
 
         fx_resp = await client.put(
             f"/features/{feature.id}/effects",
-            json={"spell_effects": [{"spell_id": cantrip.id}]},
+            json={"static_groups": [{"effect_type": "spell", "items": [{"spell_id": cantrip.id}]}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert fx_resp.status_code == 200

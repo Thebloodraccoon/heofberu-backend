@@ -76,7 +76,12 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
             client,
             gm_token,
             feature.id,
-            [{**group_of("SKILL", [{"skill_effects": [{"skill_id": skill.id}]}]), "pick_count": pick_count}],
+            [
+                {
+                    **group_of("SKILL", [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}]),
+                    "pick_count": pick_count,
+                }
+            ],
         )
 
         assert response.status_code == 422
@@ -85,7 +90,10 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
         feature = await create_feature(name="Skilled")
 
         response = await put_groups(
-            client, gm_token, feature.id, [group_of("SKILL", [{"skill_effects": [{"skill_id": 987654}]}])]
+            client,
+            gm_token,
+            feature.id,
+            [group_of("SKILL", [{"effects": [{"effect_type": "skill", "items": [{"skill_id": 987654}]}]}])],
         )
 
         assert response.status_code == 422
@@ -96,7 +104,10 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
         feature = await create_feature(name="Caster")
 
         response = await put_groups(
-            client, gm_token, feature.id, [group_of("SPELL", [{"spell_effects": [{"spell_id": 424242}]}])]
+            client,
+            gm_token,
+            feature.id,
+            [group_of("SPELL", [{"effects": [{"effect_type": "spell", "items": [{"spell_id": 424242}]}]}])],
         )
 
         assert response.status_code == 422
@@ -105,7 +116,10 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
         feature = await create_feature(name="Armed")
 
         response = await put_groups(
-            client, gm_token, feature.id, [group_of("WEAPON", [{"weapon_effects": [{"item_id": 31337}]}])]
+            client,
+            gm_token,
+            feature.id,
+            [group_of("WEAPON", [{"effects": [{"effect_type": "weapon", "items": [{"item_id": 31337}]}]}])],
         )
 
         assert response.status_code == 422
@@ -114,7 +128,10 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
         feature = await create_feature(name="Skilled")
 
         response = await put_groups(
-            client, gm_token, feature.id, [group_of("SKILL", [{"skill_effects": [{"skill_id": 2**40}]}])]
+            client,
+            gm_token,
+            feature.id,
+            [group_of("SKILL", [{"effects": [{"effect_type": "skill", "items": [{"skill_id": 2**40}]}]}])],
         )
 
         assert response.status_code == 422
@@ -125,7 +142,12 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
             client,
             gm_token,
             feature.id,
-            [group_of("ABILITY_SCORE", [{"ability_effects": [{"ability": "STR", "amount": 1}]}])],
+            [
+                group_of(
+                    "ABILITY_SCORE",
+                    [{"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}],
+                )
+            ],
         )
 
         response = await client.put(f"/features/{feature.id}/choice-groups", json={}, headers=auth(gm_token))
@@ -156,7 +178,18 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
             client,
             gm_token,
             feature.id,
-            [group_of("SKILL", [{"skill_effects": [{"skill_id": skill.id}, {"skill_id": skill.id}]}])],
+            [
+                group_of(
+                    "SKILL",
+                    [
+                        {
+                            "effects": [
+                                {"effect_type": "skill", "items": [{"skill_id": skill.id}, {"skill_id": skill.id}]}
+                            ]
+                        }
+                    ],
+                )
+            ],
         )
 
         assert response.status_code == 422
@@ -167,7 +200,12 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
             client,
             gm_token,
             feature.id,
-            [group_of("ABILITY_SCORE", [{"ability_effects": [{"ability": "STR", "amount": 1}]}])],
+            [
+                group_of(
+                    "ABILITY_SCORE",
+                    [{"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}],
+                )
+            ],
         )
         group = created.json()[0]
         option_id = group["options"][0]["id"]
@@ -179,7 +217,7 @@ class TestChoiceGroupInputIsRejectedWithA4xx:
             [
                 group_of(
                     "ABILITY_SCORE",
-                    [{"id": option_id, "ability_effects": []}, {"id": option_id, "ability_effects": []}],
+                    [{"id": option_id, "effects": []}, {"id": option_id, "effects": []}],
                     id=group["id"],
                 )
             ],
@@ -194,14 +232,21 @@ class TestFixedEffectInput:
     async def test_fixed_skill_without_skill_id_is_422(self, client, gm_token, create_feature):
         feature = await create_feature(name="Skilled")
 
-        response = await put_effects(client, gm_token, feature.id, {"skill_effects": [{"grants_expertise": True}]})
+        response = await put_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"grants_expertise": True}]}]},
+        )
 
         assert response.status_code == 422
 
     async def test_unknown_skill_id_is_422(self, client, gm_token, create_feature):
         feature = await create_feature(name="Skilled")
 
-        response = await put_effects(client, gm_token, feature.id, {"skill_effects": [{"skill_id": 555555}]})
+        response = await put_effects(
+            client, gm_token, feature.id, {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": 555555}]}]}
+        )
 
         assert response.status_code == 422
         assert "555555" in response.text
@@ -210,10 +255,20 @@ class TestFixedEffectInput:
         feature = await create_feature(name="Armed")
 
         assert (
-            await put_effects(client, gm_token, feature.id, {"weapon_effects": [{"item_id": 4040}]})
+            await put_effects(
+                client,
+                gm_token,
+                feature.id,
+                {"static_groups": [{"effect_type": "weapon", "items": [{"item_id": 4040}]}]},
+            )
         ).status_code == 422
         assert (
-            await put_effects(client, gm_token, feature.id, {"spell_effects": [{"spell_id": 4041}]})
+            await put_effects(
+                client,
+                gm_token,
+                feature.id,
+                {"static_groups": [{"effect_type": "spell", "items": [{"spell_id": 4041}]}]},
+            )
         ).status_code == 422
 
     async def test_duplicate_skill_is_422(self, client, gm_token, create_feature, create_skill):
@@ -221,7 +276,10 @@ class TestFixedEffectInput:
         skill = await create_skill(name="Stealth")
 
         response = await put_effects(
-            client, gm_token, feature.id, {"skill_effects": [{"skill_id": skill.id}, {"skill_id": skill.id}]}
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}, {"skill_id": skill.id}]}]},
         )
 
         assert response.status_code == 422
@@ -237,20 +295,33 @@ class TestFixedEffectInput:
     async def test_duplicate_effects_of_every_type_are_422(self, client, gm_token, create_feature, field, items):
         feature = await create_feature(name="Dupes")
 
-        response = await put_effects(client, gm_token, feature.id, {field: items})
+        payload = {"static_groups": [{"effect_type": field.removesuffix("_effects"), "items": items}]}
+        response = await put_effects(client, gm_token, feature.id, payload)
 
         assert response.status_code == 422
 
     async def test_same_row_id_twice_is_422(self, client, gm_token, create_feature):
         feature = await create_feature(name="Dupes")
-        created = await put_effects(client, gm_token, feature.id, {"armor_effects": [{"armor_type": "LIGHT"}]})
+        created = await put_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]},
+        )
         row_id = created.json()["static_groups"][0]["items"][0]["id"]
 
         response = await put_effects(
             client,
             gm_token,
             feature.id,
-            {"armor_effects": [{"id": row_id, "armor_type": "LIGHT"}, {"id": row_id, "armor_type": "HEAVY"}]},
+            {
+                "static_groups": [
+                    {
+                        "effect_type": "armor",
+                        "items": [{"id": row_id, "armor_type": "LIGHT"}, {"id": row_id, "armor_type": "HEAVY"}],
+                    }
+                ]
+            },
         )
 
         assert response.status_code == 422
@@ -259,7 +330,10 @@ class TestFixedEffectInput:
         feature = await create_feature(name="Huge")
 
         response = await put_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 2**33}]}
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 2**33}]}]},
         )
 
         assert response.status_code == 422
@@ -281,10 +355,20 @@ class TestPutEffectsDoesNotWipeOmittedTypes:
             client,
             gm_token,
             feature.id,
-            {"ability_effects": [{"ability": "STR", "amount": 1}], "armor_effects": [{"armor_type": "LIGHT"}]},
+            {
+                "static_groups": [
+                    {"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]},
+                    {"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]},
+                ]
+            },
         )
 
-        response = await put_effects(client, gm_token, feature.id, {"weapon_effects": [{"weapon_category": "SIMPLE"}]})
+        response = await put_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "weapon", "items": [{"weapon_category": "SIMPLE"}]}]},
+        )
 
         assert response.status_code == 200
         types = {group["effect_type"] for group in response.json()["static_groups"]}
@@ -296,16 +380,28 @@ class TestPutEffectsDoesNotWipeOmittedTypes:
             client,
             gm_token,
             feature.id,
-            {"ability_effects": [{"ability": "STR", "amount": 1}], "armor_effects": [{"armor_type": "LIGHT"}]},
+            {
+                "static_groups": [
+                    {"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]},
+                    {"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]},
+                ]
+            },
         )
 
-        response = await put_effects(client, gm_token, feature.id, {"armor_effects": []})
+        response = await put_effects(
+            client, gm_token, feature.id, {"static_groups": [{"effect_type": "armor", "items": []}]}
+        )
 
         assert {group["effect_type"] for group in response.json()["static_groups"]} == {"ability"}
 
     async def test_empty_body_is_a_no_op(self, client, gm_token, create_feature):
         feature = await create_feature(name="Mixed")
-        await put_effects(client, gm_token, feature.id, {"armor_effects": [{"armor_type": "LIGHT"}]})
+        await put_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]},
+        )
 
         response = await put_effects(client, gm_token, feature.id, {})
 
@@ -314,10 +410,17 @@ class TestPutEffectsDoesNotWipeOmittedTypes:
 
     async def test_resending_the_same_tree_keeps_row_ids(self, client, gm_token, create_feature):
         feature = await create_feature(name="Stable")
-        first = await put_effects(client, gm_token, feature.id, {"armor_effects": [{"armor_type": "LIGHT"}]})
+        first = await put_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]},
+        )
         items = first.json()["static_groups"][0]["items"]
 
-        second = await put_effects(client, gm_token, feature.id, {"armor_effects": items})
+        second = await put_effects(
+            client, gm_token, feature.id, {"static_groups": [{"effect_type": "armor", "items": items}]}
+        )
 
         assert second.status_code == 200
         assert second.json()["static_groups"][0]["items"] == items
@@ -331,15 +434,23 @@ class TestEffectFlagsInvariant:
         skill_id = (await create_skill(name="Stealth")).id
         await assert_flags_match_tables(db_session, feature_id)
 
-        await put_effects(client, gm_token, feature_id, {"armor_effects": [{"armor_type": "LIGHT"}]})
-        await assert_flags_match_tables(db_session, feature_id)
-
-        await put_groups(
-            client, gm_token, feature_id, [group_of("SKILL", [{"skill_effects": [{"skill_id": skill_id}]}])]
+        await put_effects(
+            client,
+            gm_token,
+            feature_id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]},
         )
         await assert_flags_match_tables(db_session, feature_id)
 
-        await put_effects(client, gm_token, feature_id, {"armor_effects": []})
+        await put_groups(
+            client,
+            gm_token,
+            feature_id,
+            [group_of("SKILL", [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill_id}]}]}])],
+        )
+        await assert_flags_match_tables(db_session, feature_id)
+
+        await put_effects(client, gm_token, feature_id, {"static_groups": [{"effect_type": "armor", "items": []}]})
         await assert_flags_match_tables(db_session, feature_id)
 
         await put_groups(client, gm_token, feature_id, [])
@@ -352,13 +463,23 @@ class TestEffectFlagsInvariant:
 
     async def test_failed_write_leaves_flags_and_rows_untouched(self, client, gm_token, db_session, create_feature):
         feature_id = (await create_feature(name="Atomic")).id
-        await put_effects(client, gm_token, feature_id, {"armor_effects": [{"armor_type": "LIGHT"}]})
+        await put_effects(
+            client,
+            gm_token,
+            feature_id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]},
+        )
 
         response = await put_effects(
             client,
             gm_token,
             feature_id,
-            {"armor_effects": [], "weapon_effects": [{"item_id": 99999}]},
+            {
+                "static_groups": [
+                    {"effect_type": "armor", "items": []},
+                    {"effect_type": "weapon", "items": [{"item_id": 99999}]},
+                ]
+            },
         )
 
         assert response.status_code == 422

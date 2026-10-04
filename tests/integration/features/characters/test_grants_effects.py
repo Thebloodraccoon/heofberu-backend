@@ -49,9 +49,11 @@ class TestFixedEffectTypes:
         fx_resp = await client.put(
             f"/features/{feature.id}/effects",
             json={
-                "saving_throw_effects": [{"ability": "STR"}],
-                "armor_effects": [{"armor_type": "MEDIUM"}],
-                "weapon_effects": [{"weapon_category": "MARTIAL"}],
+                "static_groups": [
+                    {"effect_type": "saving_throw", "items": [{"ability": "STR"}]},
+                    {"effect_type": "armor", "items": [{"armor_type": "MEDIUM"}]},
+                    {"effect_type": "weapon", "items": [{"weapon_category": "MARTIAL"}]},
+                ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -84,7 +86,7 @@ class TestFixedEffectTypes:
 
         fx_resp = await client.put(
             f"/features/{feature.id}/effects",
-            json={"weapon_effects": [{"item_id": longsword.id}]},
+            json={"static_groups": [{"effect_type": "weapon", "items": [{"item_id": longsword.id}]}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert fx_resp.status_code == 200
@@ -123,17 +125,17 @@ class TestChoiceOptionEffectTypes:
                     {
                         "pick_count": 1,
                         "choice_type": "SAVING_THROW",
-                        "options": [{"saving_throw_effects": [{"ability": "CON"}]}],
+                        "options": [{"effects": [{"effect_type": "saving_throw", "items": [{"ability": "CON"}]}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "ARMOR",
-                        "options": [{"armor_effects": [{"armor_type": "SHIELD"}]}],
+                        "options": [{"effects": [{"effect_type": "armor", "items": [{"armor_type": "SHIELD"}]}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "WEAPON",
-                        "options": [{"weapon_effects": [{"weapon_category": "SIMPLE"}]}],
+                        "options": [{"effects": [{"effect_type": "weapon", "items": [{"weapon_category": "SIMPLE"}]}]}],
                     },
                 ]
             },
@@ -185,8 +187,8 @@ class TestChoiceOptionEffectTypes:
                         "pick_count": 1,
                         "choice_type": "WEAPON",
                         "options": [
-                            {"weapon_effects": [{"weapon_category": "MARTIAL"}]},
-                            {"weapon_effects": [{"weapon_category": "SIMPLE"}]},
+                            {"effects": [{"effect_type": "weapon", "items": [{"weapon_category": "MARTIAL"}]}]},
+                            {"effects": [{"effect_type": "weapon", "items": [{"weapon_category": "SIMPLE"}]}]},
                         ],
                     }
                 ]
@@ -257,8 +259,22 @@ class TestSkillExpertiseFollowsPick:
                         "pick_count": 1,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id, "grants_expertise": False}]},
-                            {"skill_effects": [{"skill_id": skill.id, "grants_expertise": True}]},
+                            {
+                                "effects": [
+                                    {
+                                        "effect_type": "skill",
+                                        "items": [{"skill_id": skill.id, "grants_expertise": False}],
+                                    }
+                                ]
+                            },
+                            {
+                                "effects": [
+                                    {
+                                        "effect_type": "skill",
+                                        "items": [{"skill_id": skill.id, "grants_expertise": True}],
+                                    }
+                                ]
+                            },
                         ],
                     }
                 ]
@@ -326,7 +342,7 @@ class TestAnswerChoicesAdditionalErrors:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}],
                     }
                 ]
             },
@@ -366,8 +382,8 @@ class TestAnswerChoicesAdditionalErrors:
                         "pick_count": 2,
                         "choice_type": "SKILL",
                         "options": [
-                            {"skill_effects": [{"skill_id": skill.id}]},
-                            {"skill_effects": [{"skill_id": skill.id}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
+                            {"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
                         ],
                     }
                 ]
@@ -422,7 +438,7 @@ class TestGmGrantInlineChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}],
                     }
                 ]
             },
@@ -472,7 +488,7 @@ class TestGmGrantInlineChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}],
                     }
                 ]
             },
@@ -512,7 +528,7 @@ class TestAllPendingChoicesSurface:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}],
                     }
                 ]
             },
@@ -616,8 +632,8 @@ class TestSpellResolutionEdgeCases:
                         "pick_count": 1,
                         "choice_type": "SPELL",
                         "options": [
-                            {"spell_effects": [{"spell_id": fireball.id}]},
-                            {"spell_effects": [{"spell_id": cure_wounds.id}]},
+                            {"effects": [{"effect_type": "spell", "items": [{"spell_id": fireball.id}]}]},
+                            {"effects": [{"effect_type": "spell", "items": [{"spell_id": cure_wounds.id}]}]},
                         ],
                     }
                 ]

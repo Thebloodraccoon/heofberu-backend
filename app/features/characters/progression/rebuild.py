@@ -2,16 +2,15 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import GrantSource, ProficiencySourceType, ProficiencyType
+from app.constants import GrantSource, ProficiencySourceType
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.crud.rules import validate_chosen_skills
 from app.features.characters.crud.service import CharacterService
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.proficiencies.writer import add_skill_proficiencies
+from app.features.characters.proficiencies.writer import add_skill_proficiencies, delete_skill_proficiencies
 from app.features.characters.progression.asi import AsiChoiceService
 from app.features.characters.progression.exceptions import InvalidRebuildMaxHpException
 from app.features.characters.progression.feature_sync import sync_progression_features
@@ -24,7 +23,6 @@ from app.features.races.crud.repository import RaceRepository
 from app.features.races.exceptions import RaceNotFoundException, SubraceNotFoundException
 from app.models import Class
 from app.models.character.character_model import Character
-from app.models.character.character_proficiency_model import CharacterProficiency
 
 _REBUILT_SKILL_SOURCES = [
     ProficiencySourceType.CLASS_CHOICE,
@@ -172,13 +170,7 @@ class CharacterRebuilder:
         actual source.
         """
 
-        await self.db.execute(
-            delete(CharacterProficiency).where(
-                CharacterProficiency.character_id == character.id,
-                CharacterProficiency.proficiency_type == ProficiencyType.SKILL,
-                CharacterProficiency.source_type.in_(_REBUILT_SKILL_SOURCES),
-            )
-        )
+        await delete_skill_proficiencies(self.db, character.id, _REBUILT_SKILL_SOURCES)
 
         add_skill_proficiencies(self.db, character.id, plan.chosen_skill_ids, ProficiencySourceType.CLASS_CHOICE)
         add_skill_proficiencies(self.db, character.id, plan.background_skill_ids, ProficiencySourceType.BACKGROUND)

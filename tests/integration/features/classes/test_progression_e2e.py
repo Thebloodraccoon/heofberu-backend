@@ -169,7 +169,7 @@ class TestProgressionWithFeatures:
         await create_feature(name="Combat Superiority", source_type="SUBCLASS", subclass_id=master.id, level=3)
         effects = await client.put(
             f"/features/{second_wind.id}/effects",
-            json={"skill_effects": [{"skill_id": skill.id}]},
+            json={"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert effects.status_code == 200

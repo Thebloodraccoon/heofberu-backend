@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.constants import AbilityScore, FeatureSourceType
 from app.features.features.effects.rendering import render_effects_summary
 from app.models.enums import AbilityScoreType, FeatureSourceTypeType
+from app.models.features.feature_engine_models import effect_groups
 from app.settings.base import Base
 
 if TYPE_CHECKING:
@@ -143,21 +144,12 @@ class Feature(Base):
     @property
     def static_groups(self) -> list[dict]:
         """
-        This feature's fixed effects grouped by kind (one entry per non-empty
-        effect relationship), for ``FeatureResponse``/``NestedFeatureResponse``'s
-        ``static_groups`` field — see ``StaticEffectGroup`` in
-        ``app.features.features.effects.schemas``.
+        This feature's fixed effects as non-empty effect groups, for
+        ``FeatureResponse``/``NestedFeatureResponse``'s ``static_groups`` field
+        (see :func:`~app.models.features.feature_engine_models.effect_groups`).
         """
 
-        groups = [
-            ("ability", self.ability_effects),
-            ("skill", self.skill_effects),
-            ("saving_throw", self.saving_throw_effects),
-            ("armor", self.armor_effects),
-            ("weapon", self.weapon_effects),
-            ("spell", self.spell_effects),
-        ]
-        return [{"effect_type": effect_type, "items": items} for effect_type, items in groups if items]
+        return effect_groups(self)
 
     @property
     def effects_summary(self) -> str:

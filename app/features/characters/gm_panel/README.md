@@ -60,7 +60,7 @@ effect (`feature_ability_score_effects`), computed on read from the grant.
 The level-up endpoint (`AsiChoiceService.apply_feat` in `progression/asi.py`) writes the
 same table through this repository with `source_type=ASI`. The response
 carries no dedicated ASI field — a picked ASI option surfaces in the
-generic `choices` list (`ability_effects`), same as any other feature's
+generic `choices` list (`effects`, an `effect_type: "ability"` group), same as any other feature's
 choice group; `FeatBriefResponse` also carries `effects_summary`.
 
 ### `features` — feature grants

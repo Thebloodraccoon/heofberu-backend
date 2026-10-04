@@ -64,7 +64,7 @@ class FakeCharacterItemRepository:
 
 @pytest.fixture(autouse=True)
 def no_cache_invalidate(monkeypatch):
-    monkeypatch.setattr("app.features.characters.gm_panel.items.service.invalidate_character_cache", AsyncMock())
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", AsyncMock())
 
 
 def make_item(item_id=5) -> SimpleNamespace:

@@ -105,7 +105,9 @@ class TestDeleteGuards:
         feat = await create_feat(name="Skilled")
         skill_id = skill.id
         put = await client.put(
-            f"/feats/{feat.id}/effects", json={"skill_effects": [{"skill_id": skill_id}]}, headers=auth(gm_token)
+            f"/feats/{feat.id}/effects",
+            json={"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill_id}]}]},
+            headers=auth(gm_token),
         )
         assert put.status_code == 200
 

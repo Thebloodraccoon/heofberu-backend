@@ -89,7 +89,7 @@ class TestGmPanelGrantedSpells:
 
         fx_resp = await client.put(
             f"/features/{feature.id}/effects",
-            json={"spell_effects": [{"spell_id": cantrip.id}]},
+            json={"static_groups": [{"effect_type": "spell", "items": [{"spell_id": cantrip.id}]}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert fx_resp.status_code == 200

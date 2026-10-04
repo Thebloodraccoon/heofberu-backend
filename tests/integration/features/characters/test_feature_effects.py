@@ -6,12 +6,13 @@ character's effective ability scores (and the per-ability cap).
 import pytest
 
 from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
+from tests.helpers import effect_items
 
 
 async def set_feature_effects(client, gm_token, feature_id, ability_effects):
     response = await client.put(
         f"/features/{feature_id}/effects",
-        json={"ability_effects": ability_effects},
+        json={"static_groups": [{"effect_type": "ability", "items": ability_effects}]},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
     assert response.status_code == 200, response.text
@@ -238,7 +239,9 @@ class TestPerAbilityCap:
 
         response = await client.put(
             f"/features/{feature.id}/effects",
-            json={"ability_effects": [{"ability": "STR", "amount": 4, "new_cap": 31}]},
+            json={
+                "static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 4, "new_cap": 31}]}]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -249,7 +252,9 @@ class TestPerAbilityCap:
 
         response = await client.put(
             f"/features/{feature.id}/effects",
-            json={"ability_effects": [{"ability": "STR", "amount": 1, "new_cap": 19}]},
+            json={
+                "static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1, "new_cap": 19}]}]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
@@ -328,13 +333,15 @@ class TestPerAbilityCap:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 2}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 2}]}]}
+                        ],
                     }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        feat_asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
+        feat_asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
 
         granted = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
@@ -359,13 +366,15 @@ class TestPerAbilityCap:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        feat_asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
+        feat_asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
         grant_response = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
             json={"feat_id": feat.id, "ability_score_increase_id": feat_asi_id},

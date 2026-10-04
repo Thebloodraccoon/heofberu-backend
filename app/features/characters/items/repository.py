@@ -1,5 +1,7 @@
 """Repository for the item stacks owned by a character (``character_items``)."""
 
+from collections.abc import Iterable
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -66,6 +68,17 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
             )
         )
         return result.scalars().first()
+
+    async def get_stacks_by_item_ids(self, character_id: int, item_ids: Iterable[int]) -> list[CharacterItem]:
+        """The character's stacks of the given catalog items (``Item`` not loaded)."""
+
+        result = await self.db.execute(
+            select(CharacterItem).where(
+                CharacterItem.character_id == character_id,
+                CharacterItem.item_id.in_(list(item_ids)),
+            )
+        )
+        return list(result.scalars().all())
 
     async def add_character_item(
         self,

@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType, GrantSource
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.features.repository import CharacterFeatureRepository
 from app.features.characters.features.schemas import CharacterFeatureBriefResponse, CharacterFeatureResponse
 from app.features.characters.gm_panel.exceptions import (
@@ -14,7 +13,6 @@ from app.features.characters.gm_panel.exceptions import (
     FeatureIsAFeatException,
 )
 from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd
-from app.features.characters.grants.schemas import GrantEffectsResponse
 from app.features.characters.grants.service import FeatureGrantService
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
@@ -85,7 +83,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
         """Recompute the ability-score cache in the caller's transaction; purge the payload after its commit."""
 
         await self.stats_service.refresh(character, commit=False)
-        await invalidate_character_cache(character.id, db=self.repository.db)
+        await self._invalidate_character(character.id)
 
     @staticmethod
     def _to_response(grant: CharacterFeature) -> CharacterFeatureResponse:
@@ -103,7 +101,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
             feature_id=grant.feature_id,
             grant_source=grant.grant_source,
             feature=CharacterFeatureBriefResponse.model_validate(grant.feature),
-            effects=GrantEffectsResponse(),
+            effects=[],
             choices=[],
         )
 

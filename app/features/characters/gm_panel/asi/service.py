@@ -1,15 +1,11 @@
 """GM free-form ASI adjustment service (no class level attached)."""
 
-from functools import partial
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import MAX_ABILITY_SCORE_CAP, ASILevelChoice
-from app.core.base.transaction import unit_of_work
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.feats.exceptions import AbilityScoreCapExceededException
 from app.features.characters.gm_panel.asi.repository import GmAsiRepository
 from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd, GmAsiChoiceResponse
@@ -53,7 +49,7 @@ class GmPanelAsiService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        async with unit_of_work(self.repository.db) as uow:
+        async with self._atomic():
             await lock_character(self.repository.db, character.id)
             row = await self.asi_repository.add(
                 character.id,
@@ -75,7 +71,7 @@ class GmPanelAsiService(CharacterSubDomainService):
                     )
 
             response = GmAsiChoiceResponse.model_validate(row)
-            await uow.after_commit(partial(invalidate_character_cache, character_id))
+            await self._invalidate_character(character_id)
 
         return response
 
@@ -93,7 +89,7 @@ class GmPanelAsiService(CharacterSubDomainService):
                 character_id=character_id, adjustment_id=adjustment_id, class_level=choice.class_level
             )
 
-        async with unit_of_work(self.repository.db) as uow:
+        async with self._atomic():
             await self.asi_repository.delete_adjustment(choice)
             await self.stats_service.refresh(character, commit=False)
-            await uow.after_commit(partial(invalidate_character_cache, character_id))
+            await self._invalidate_character(character_id)

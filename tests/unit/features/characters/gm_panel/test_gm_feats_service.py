@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import AbilityScore, ASILevelChoice, GrantSource
+from app.features.characters.cache import character_cache_key
 from app.features.characters.feats.exceptions import (
     CharacterFeatAlreadyKnownException,
     FeatAsiChoiceRequiredException,
@@ -169,7 +170,7 @@ class FakeASIChoiceRepository:
 @pytest.fixture(autouse=True)
 def no_cache_invalidate(monkeypatch):
     invalidate = AsyncMock()
-    monkeypatch.setattr("app.features.characters.gm_panel.feats.service.invalidate_character_cache", invalidate)
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", invalidate)
     return invalidate
 
 
@@ -212,7 +213,7 @@ class TestAddFeat:
         assert service.stats_service.refresh_calls == [character]
         service.get_character_for_user.assert_awaited_once()
         no_feature_sync.assert_awaited_once_with(service.repository.db, character)
-        no_cache_invalidate.assert_awaited_once_with(character.id, db=service.repository.db)
+        no_cache_invalidate.assert_awaited_once_with(character_cache_key(character.id))
         assert service.stats_service.refresh_commits == [False]
         assert service.repository.db.commits == 1
 
@@ -290,7 +291,7 @@ class TestUpdateFeat:
 
         result = await service.update_feat(1, 3, CharacterFeatUpdate(ability_score_increase_id=201), SimpleNamespace())
 
-        assert result.choices[0].ability_effects[0].id == 201
+        assert result.choices[0].effects[0].items[0].id == 201
         assert service.feat_grant_repository.set_calls == [(grant, 201)]
         assert service.feat_grant_repository.set_commits == [False]
         assert service.stats_service.refresh_calls == [character]
@@ -345,13 +346,8 @@ class TestRefreshFailureIsAtomic:
 
     @pytest.fixture
     def real_purge(self, monkeypatch, no_cache_invalidate):
-        from app.features.characters.cache import invalidate_character_cache
-
         purge = AsyncMock()
         monkeypatch.setattr("app.features.characters.cache.cache_delete_key", purge)
-        monkeypatch.setattr(
-            "app.features.characters.gm_panel.feats.service.invalidate_character_cache", invalidate_character_cache
-        )
         return purge
 
     async def test_add_feat_rolls_back_and_purges_nothing(self, real_purge):

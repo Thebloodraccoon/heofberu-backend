@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.helpers import effect_items
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -78,14 +80,16 @@ class TestCharacterFeats:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert asi_response.status_code == 200
-        asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
+        asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
 
         grant_response = await client.post(
             f"/characters/{character.id}/gm-panel/feats",
@@ -96,7 +100,7 @@ class TestCharacterFeats:
         assert grant_response.status_code == 201
         choices = grant_response.json()["choices"]
         assert len(choices) == 1
-        assert choices[0]["ability_effects"][0]["id"] == asi_id
+        assert effect_items(choices[0]["effects"], "ability")[0]["id"] == asi_id
 
     async def test_grant_feat_with_asi_options_without_choice_leaves_it_pending(
         self, client, gm, gm_token, create_class, create_character, create_feat
@@ -113,7 +117,9 @@ class TestCharacterFeats:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     }
                 ]
             },
@@ -142,13 +148,15 @@ class TestCharacterFeats:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
+        asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
 
         await client.post(
             f"/characters/{character.id}/gm-panel/feats",

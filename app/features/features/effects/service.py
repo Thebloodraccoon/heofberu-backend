@@ -64,9 +64,10 @@ class FeatureEffectsService:
     ``ondelete RESTRICT``: ``set_choice_groups`` deletes the stored picks of
     a removed option/group itself (the pick reverts to pending) before
     removing it. Each write is one transaction (``unit_of_work``): the diff,
-    the denormalized ``has_*`` flags, the re-materialization of every
-    granted character (``refresh_feature_effect_caches``) and the post-commit
-    cache purge. A write that changes nothing skips the character refresh.
+    the denormalized ``has_*`` flags, the stat-cache refresh of every granted
+    character (``refresh_feature_effect_caches``; their other effects are
+    computed on read) and the post-commit cache purge. A write that changes
+    nothing skips the character refresh.
     """
 
     repository: FeatureEffectsRepository
@@ -170,10 +171,10 @@ class FeatureEffectsService:
         """
         Diff a feature's fixed effects against the payload.
 
-        Only the effect types present in the payload are touched (``[]``
-        clears a type); choice groups are untouched. When something changed,
-        every character granted the feature is re-materialized in the same
-        transaction.
+        Only the effect types with a group in the payload are touched (an
+        empty group clears a type); choice groups are untouched. When something changed,
+        the stat caches of every character granted the feature are refreshed
+        in the same transaction.
         """
 
         feature = await self._get_feature_or_404(feature_id, for_update=True)
@@ -214,8 +215,8 @@ class FeatureEffectsService:
         Diff a feature's choice groups (and their options/effects) against
         the payload — see the class docstring. Dropping an option or a whole
         group that a character already picked clears that character's
-        stored pick (reverting it to pending) instead of failing; every
-        character currently granted the feature is then re-materialized.
+        stored pick (reverting it to pending) instead of failing; the stat
+        caches of every character currently granted the feature are then refreshed.
         """
 
         feature = await self._get_feature_or_404(feature_id, for_update=True)

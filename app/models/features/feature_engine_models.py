@@ -40,6 +40,33 @@ if TYPE_CHECKING:
     from app.models.skill_model import Skill
     from app.models.spells.spell_model import Spell
 
+# ``effect_type`` of each effect group and the relationship that holds its rows, on both
+# ``Feature`` (fixed effects) and ``FeatureChoiceOption`` (an option's bundle). The order is
+# the order groups are listed in API responses.
+EFFECT_TYPES: tuple[tuple[str, str], ...] = (
+    ("ability", "ability_effects"),
+    ("skill", "skill_effects"),
+    ("saving_throw", "saving_throw_effects"),
+    ("armor", "armor_effects"),
+    ("weapon", "weapon_effects"),
+    ("spell", "spell_effects"),
+)
+
+
+def effect_groups(holder: Feature | FeatureChoiceOption) -> list[dict]:
+    """
+    ``holder``'s effects as ``[{effect_type, items}]``, one entry per NON-EMPTY effect
+    relationship — the single API shape of an effect bundle (``EffectGroup`` in
+    ``app.features.features.effects.schemas``). The relationships must be loaded.
+    """
+
+    return [
+        {"effect_type": effect_type, "items": items}
+        for effect_type, attr in EFFECT_TYPES
+        if (items := getattr(holder, attr))
+    ]
+
+
 # "Exactly one of the two parents" invariant shared by every effect table.
 _EFFECT_PARENT_CONSTRAINT = """
     (feature_id IS NOT NULL AND choice_option_id IS NULL)
@@ -133,6 +160,12 @@ class FeatureChoiceOption(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    @property
+    def effects(self) -> list[dict]:
+        """This option's bundle as non-empty effect groups (see :func:`effect_groups`)."""
+
+        return effect_groups(self)
 
     def __repr__(self) -> str:
         return f"<FeatureChoiceOption(id={self.id}, group_id={self.group_id})>"

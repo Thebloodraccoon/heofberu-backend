@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from pydantic import ValidationError
 import pytest
 
+from app.features.characters.cache import character_cache_key
 from app.features.characters.gm_panel.exceptions import (
     CharacterGrantedSpellNotFoundException,
     GrantedSpellAlreadyGrantedException,
@@ -49,7 +50,7 @@ def make_service(**repository_kwargs):
 def stubs(monkeypatch):
     invalidate = AsyncMock()
     lock = AsyncMock()
-    monkeypatch.setattr("app.features.characters.gm_panel.spells.service.invalidate_character_cache", invalidate)
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", invalidate)
     monkeypatch.setattr("app.features.characters.gm_panel.spells.service.lock_character", lock)
     return SimpleNamespace(invalidate=invalidate, lock=lock)
 
@@ -66,7 +67,7 @@ class TestAddGrantedSpell:
         assert service.granted_spell_repository.added == [(1, 5)]
         assert db.commits == 1
         stubs.lock.assert_awaited_once()
-        stubs.invalidate.assert_awaited_once_with(1)
+        stubs.invalidate.assert_awaited_once_with(character_cache_key(1))
 
     async def test_unknown_spell_is_404(self):
         service, db = make_service(spell=None)
@@ -103,7 +104,7 @@ class TestRemoveGrantedSpell:
 
         assert service.granted_spell_repository.removed == [row]
         assert db.commits == 1
-        stubs.invalidate.assert_awaited_once_with(1)
+        stubs.invalidate.assert_awaited_once_with(character_cache_key(1))
 
     async def test_missing_grant_is_404(self):
         service, db = make_service(existing=None)

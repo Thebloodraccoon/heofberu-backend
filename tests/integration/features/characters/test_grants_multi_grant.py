@@ -13,13 +13,15 @@ mix-up.
 
 import pytest
 
+from tests.helpers import effect_items
+
 
 def _grant_for_feature(grants: list[dict], feature_id: int) -> dict:
     return next(g for g in grants if g["feature_id"] == feature_id)
 
 
 def _skill_row(grant: dict, skill_id: int) -> dict:
-    return next(s for s in grant["effects"]["skills"] if s["skill_id"] == skill_id)
+    return next(s for s in effect_items(grant["effects"], "skill") if s["skill_id"] == skill_id)
 
 
 @pytest.mark.integration
@@ -56,7 +58,11 @@ class TestMultiGrantDedup:
         for feature in (class_feature, race_feature):
             fx_resp = await client.put(
                 f"/features/{feature.id}/effects",
-                json={"skill_effects": [{"skill_id": skill.id, "grants_expertise": False}]},
+                json={
+                    "static_groups": [
+                        {"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}
+                    ]
+                },
                 headers={"Authorization": f"Bearer {gm_token}"},
             )
             assert fx_resp.status_code == 200, fx_resp.text
@@ -113,14 +119,20 @@ class TestMultiGrantExpertiseIndependence:
 
         class_fx = await client.put(
             f"/features/{class_feature.id}/effects",
-            json={"skill_effects": [{"skill_id": skill.id, "grants_expertise": True}]},
+            json={
+                "static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert class_fx.status_code == 200, class_fx.text
 
         race_fx = await client.put(
             f"/features/{race_feature.id}/effects",
-            json={"skill_effects": [{"skill_id": skill.id, "grants_expertise": False}]},
+            json={
+                "static_groups": [
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert race_fx.status_code == 200, race_fx.text
@@ -172,7 +184,11 @@ class TestMultiGrantSyncPreservesSiblingRows:
         race_feature = await create_feature(name="Gnomish Cunning", source_type="RACE", race_id=race.id, level=None)
         race_fx = await client.put(
             f"/features/{race_feature.id}/effects",
-            json={"skill_effects": [{"skill_id": skill.id, "grants_expertise": False}]},
+            json={
+                "static_groups": [
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert race_fx.status_code == 200, race_fx.text
@@ -182,7 +198,9 @@ class TestMultiGrantSyncPreservesSiblingRows:
         )
         class_fx = await client.put(
             f"/features/{class_feature.id}/effects",
-            json={"skill_effects": [{"skill_id": skill.id, "grants_expertise": True}]},
+            json={
+                "static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert class_fx.status_code == 200, class_fx.text

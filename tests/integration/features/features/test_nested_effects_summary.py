@@ -11,9 +11,12 @@ import pytest
 
 
 async def set_feature_effects(client, gm_token, feature_id, **effects):
+    """``skill_effects=[...]`` style kwargs, sent as ``static_groups``."""
+
+    static_groups = [{"effect_type": key.removesuffix("_effects"), "items": items} for key, items in effects.items()]
     response = await client.put(
         f"/features/{feature_id}/effects",
-        json=effects,
+        json={"static_groups": static_groups},
         headers={"Authorization": f"Bearer {gm_token}"},
     )
     assert response.status_code == 200, response.text
@@ -59,8 +62,8 @@ class TestNestedFeatureSummary:
                         "choice_type": "ABILITY_SCORE",
                         "label": "Choose an ability",
                         "options": [
-                            {"ability_effects": [{"ability": "STR", "amount": 1}]},
-                            {"ability_effects": [{"ability": "DEX", "amount": 1}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}]},
                         ],
                     }
                 ]
@@ -127,7 +130,7 @@ class TestParentCacheInvalidatedByEffectsEdit:
                         "pick_count": 1,
                         "choice_type": "SAVING_THROW",
                         "label": "Direction",
-                        "options": [{"saving_throw_effects": [{"ability": "WIS"}]}],
+                        "options": [{"effects": [{"effect_type": "saving_throw", "items": [{"ability": "WIS"}]}]}],
                     }
                 ]
             },

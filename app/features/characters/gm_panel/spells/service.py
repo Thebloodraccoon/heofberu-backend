@@ -1,12 +1,8 @@
 """GM-panel spell service: grant/revoke a free-form (non-feature) spell on a character."""
 
-from functools import partial
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.transaction import unit_of_work
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.gm_panel.exceptions import (
     CharacterGrantedSpellNotFoundException,
     GrantedSpellAlreadyGrantedException,
@@ -45,14 +41,14 @@ class GmPanelSpellService(CharacterSubDomainService):
         if spell is None:
             raise SpellNotFoundException(spell_id=data.spell_id)
 
-        async with unit_of_work(self.repository.db) as uow:
+        async with self._atomic():
             await lock_character(self.repository.db, character_id)
 
             if await self.granted_spell_repository.get_granted_spell(character_id, data.spell_id) is not None:
                 raise GrantedSpellAlreadyGrantedException(character_id=character_id, spell_id=data.spell_id)
 
             await self.granted_spell_repository.add_granted_spell(character_id, data.spell_id)
-            await uow.after_commit(partial(invalidate_character_cache, character_id))
+            await self._invalidate_character(character_id)
 
         return CharacterSpellResponse.model_validate(spell)
 
@@ -69,6 +65,6 @@ class GmPanelSpellService(CharacterSubDomainService):
         if row is None:
             raise CharacterGrantedSpellNotFoundException(character_id=character_id, spell_id=spell_id)
 
-        async with unit_of_work(self.repository.db) as uow:
+        async with self._atomic():
             await self.granted_spell_repository.remove_granted_spell(row)
-            await uow.after_commit(partial(invalidate_character_cache, character_id))
+            await self._invalidate_character(character_id)

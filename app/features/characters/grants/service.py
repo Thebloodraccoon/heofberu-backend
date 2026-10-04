@@ -2,14 +2,12 @@
 
 from collections.abc import Iterable
 
-from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
+from app.features.characters.features.repository import CharacterFeatureRepository
 from app.features.characters.grants.effects import (
-    GRANT_CHOICES_LOADS,
     build_chosen_options,
     load_feature_effect_trees,
     pending_groups,
@@ -36,10 +34,8 @@ from app.features.users.schemas import UserResponse
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.character.character_model import Character
-from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption, effect_groups
 from app.models.features.feature_model import Feature
-
-_ANSWERED_LOAD_OPTIONS = [selectinload(CharacterFeature.feature), *GRANT_CHOICES_LOADS]
 
 
 def _option_has_open_skill(option: FeatureChoiceOption) -> bool:
@@ -75,12 +71,7 @@ def _to_pending_response(
                             "id": option.id,
                             "needs_skill": _option_has_open_skill(option),
                             "needs_spell": _option_has_open_spell(option),
-                            "ability_effects": option.ability_effects,
-                            "skill_effects": option.skill_effects,
-                            "saving_throw_effects": option.saving_throw_effects,
-                            "armor_effects": option.armor_effects,
-                            "weapon_effects": option.weapon_effects,
-                            "spell_effects": option.spell_effects,
+                            "effects": effect_groups(option),
                         },
                         from_attributes=True,
                     )
@@ -171,19 +162,17 @@ class FeatureGrantService(CharacterSubDomainService):
 
         super().__init__(db)
         self.db = db
+        self.grant_repository = CharacterFeatureRepository(db)
         self.stats_service = CharacterStatsService(db)
 
-    async def _load_grant(self, character_id: int, grant_id: int, *, for_update: bool = False) -> CharacterFeature:
-        """Fetch the grant scoped to the character (row-locked for writes), or raise ``GrantNotFoundError``."""
+    async def _load_grant(
+        self, character_id: int, grant_id: int, *, for_update: bool = False, with_answers: bool = False
+    ) -> CharacterFeature:
+        """Fetch the grant scoped to the character, or raise ``GrantNotFoundError``."""
 
-        query = select(CharacterFeature).where(
-            CharacterFeature.id == grant_id,
-            CharacterFeature.character_id == character_id,
+        grant = await self.grant_repository.get_grant(
+            character_id, grant_id, for_update=for_update, with_answers=with_answers
         )
-        if for_update:
-            query = query.with_for_update()
-
-        grant = (await self.db.execute(query)).scalar_one_or_none()
         if grant is None:
             raise GrantNotFoundError(character_id=character_id, grant_id=grant_id)
         return grant
@@ -196,11 +185,8 @@ class FeatureGrantService(CharacterSubDomainService):
         """
 
         feature_ids = {grant.feature_id for grant in grants}
-        if only_with_choices and feature_ids:
-            result = await self.db.execute(
-                select(Feature.id).where(Feature.id.in_(feature_ids), Feature.has_choices.is_(True))
-            )
-            feature_ids = set(result.scalars().all())
+        if only_with_choices:
+            feature_ids = await self.grant_repository.filter_features_with_choices(feature_ids)
 
         return await load_feature_effect_trees(self.db, feature_ids)
 
@@ -209,13 +195,7 @@ class FeatureGrantService(CharacterSubDomainService):
 
         ids = list(grant_ids)
         stored: dict[int, list[CharacterFeatureChoice]] = {grant_id: [] for grant_id in ids}
-        if not ids:
-            return stored
-
-        result = await self.db.execute(
-            select(CharacterFeatureChoice).where(CharacterFeatureChoice.character_feature_id.in_(ids))
-        )
-        for choice in result.scalars().unique().all():
+        for choice in await self.grant_repository.get_choices(ids):
             stored[choice.character_feature_id].append(choice)
         return stored
 
@@ -249,12 +229,7 @@ class FeatureGrantService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        result = await self.db.execute(
-            select(CharacterFeature)
-            .join(Feature, Feature.id == CharacterFeature.feature_id)
-            .where(CharacterFeature.character_id == character_id, Feature.has_choices.is_(True))
-        )
-        grants = list(result.scalars().unique().all())
+        grants = await self.grant_repository.get_grants_with_choices(character_id)
         if not grants:
             return []
 
@@ -285,15 +260,7 @@ class FeatureGrantService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        result = await self.db.execute(
-            select(CharacterFeature)
-            .where(CharacterFeature.id == grant_id, CharacterFeature.character_id == character_id)
-            .options(*_ANSWERED_LOAD_OPTIONS)
-        )
-        grant = result.unique().scalar_one_or_none()
-        if grant is None:
-            raise GrantNotFoundError(character_id=character_id, grant_id=grant_id)
-
+        grant = await self._load_grant(character_id, grant_id, with_answers=True)
         return _to_answered_response(grant)
 
     async def get_all_answered_choices(
@@ -307,12 +274,8 @@ class FeatureGrantService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        result = await self.db.execute(
-            select(CharacterFeature)
-            .where(CharacterFeature.character_id == character_id, CharacterFeature.choices.any())
-            .options(*_ANSWERED_LOAD_OPTIONS)
-        )
-        return [_to_answered_response(grant) for grant in result.unique().scalars().all()]
+        grants = await self.grant_repository.get_answered_grants(character_id)
+        return [_to_answered_response(grant) for grant in grants]
 
     async def _store_answers(
         self,
@@ -330,22 +293,9 @@ class FeatureGrantService(CharacterSubDomainService):
         if not answered:
             return stored
 
-        await self.db.execute(
-            delete(CharacterFeatureChoice).where(
-                CharacterFeatureChoice.character_feature_id == grant.id,
-                CharacterFeatureChoice.choice_group_id.in_(list(answered)),
-            )
+        new_choices = await self.grant_repository.replace_choices(
+            grant.id, {group_id: [option.id for option in options] for group_id, options in answered.items()}
         )
-        await self.db.flush()
-
-        new_choices = [
-            CharacterFeatureChoice(character_feature_id=grant.id, choice_group_id=group_id, choice_option_id=option.id)
-            for group_id, options in answered.items()
-            for option in options
-        ]
-        self.db.add_all(new_choices)
-        await self.db.flush()
-
         return [choice for choice in stored if choice.choice_group_id not in answered] + new_choices
 
     async def resolve_grants_choices(
@@ -429,7 +379,7 @@ class FeatureGrantService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        async with self._unit_of_work():
+        async with self._atomic():
             grant = await self._load_grant(character_id, grant_id, for_update=True)
             feature = (await self._load_trees([grant], only_with_choices=False)).get(grant.feature_id)
             if feature is None:

@@ -12,11 +12,13 @@ from app.features.characters.grants.effects import (
     grant_effects,
     pending_groups,
 )
+from tests.helpers import effect_items
 from tests.unit.fakes import FakeAsyncSession
 
 
 def make_holder(option_id=None, *, skills=(), saves=(), armor=(), weapons=(), spells=()) -> SimpleNamespace:
     return SimpleNamespace(
+        ability_effects=[],
         id=option_id,
         skill_effects=[
             SimpleNamespace(skill_id=skill_id, grants_expertise=expertise) for skill_id, expertise in skills
@@ -82,7 +84,7 @@ class TestWeaponOrdering:
             weapons={(WeaponProficiency.SIMPLE, None), (None, 9), (WeaponProficiency.MARTIAL, None), (None, 2)}
         )
 
-        weapons = _to_response(effects, {}).weapons
+        weapons = effect_items(_to_response(effects, {}), "weapon")
 
         assert [(weapon.weapon_category, weapon.item_id) for weapon in weapons] == [
             (WeaponProficiency.MARTIAL, None),
@@ -101,5 +103,8 @@ class TestGrantEffectsMapFromLoadedTrees:
 
         effects = await get_grant_effects_map(FakeAsyncSession(), [grant])
 
-        assert [(skill.skill_id, skill.is_expertise) for skill in effects[7].skills] == [(1, False), (7, True)]
-        assert [saving_throw.ability for saving_throw in effects[7].saving_throws] == ["STR"]
+        assert [(skill.skill_id, skill.is_expertise) for skill in effect_items(effects[7], "skill")] == [
+            (1, False),
+            (7, True),
+        ]
+        assert [saving_throw.ability for saving_throw in effect_items(effects[7], "saving_throw")] == ["STR"]

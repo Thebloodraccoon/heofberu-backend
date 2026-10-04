@@ -7,7 +7,6 @@ from fastapi import APIRouter, Body, Query, status
 from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
 from app.features.auth.dependencies import GmUserDep
 from app.features.characters.gm_panel.dependencies import GmPanelProficienciesDep
-from app.features.characters.gm_panel.exceptions import InvalidWeaponProficiencyTargetException
 from app.features.characters.gm_panel.proficiencies.schemas import (
     ArmorProficiencyAdd,
     SavingThrowProficiencyAdd,
@@ -218,9 +217,6 @@ async def remove_character_weapon_proficiency(
     item_id: Annotated[int | None, Query(gt=0)] = None,
 ):
     """Revoke a character's proficiency in a weapon category or a single item. **GM only.**"""
-
-    if (weapon_category is None) == (item_id is None):
-        raise InvalidWeaponProficiencyTargetException()
 
     await service.remove_weapon(character_id, current_user, weapon_category=weapon_category, item_id=item_id)
     return None

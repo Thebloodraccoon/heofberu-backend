@@ -95,7 +95,7 @@ def make_grant(grant_id=6, feature_id=4) -> SimpleNamespace:
 
 @pytest.fixture(autouse=True)
 def no_cache_invalidate(monkeypatch):
-    monkeypatch.setattr("app.features.characters.gm_panel.features.service.invalidate_character_cache", AsyncMock())
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", AsyncMock())
 
 
 def make_service(character=None, *, grants_by_id=None, feature_exists=True):

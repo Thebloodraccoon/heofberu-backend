@@ -16,7 +16,7 @@ from app.constants import ASILevelChoice, CharacterFeatSource, FeatureSourceType
 from app.core.base.repository import BaseRepository
 from app.features.characters.feats.schemas import CharacterFeatResponse, FeatBriefResponse
 from app.features.characters.grants.effects import GRANT_CHOICES_LOADS, build_chosen_options
-from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
+from app.features.characters.grants.schemas import ChosenOptionResponse
 from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_asi_choice_model import CharacterASIChoice
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
@@ -41,7 +41,7 @@ _LOAD_OPTIONS = [*feature_summary_loads(base=selectinload(CharacterFeature.featu
 
 def to_character_feat_response(
     grant: CharacterFeature,
-    effects: GrantEffectsResponse | None = None,
+    effects: list[dict] | None = None,
     choices: list[ChosenOptionResponse] | None = None,
 ) -> CharacterFeatResponse:
     """
@@ -69,7 +69,7 @@ def to_character_feat_response(
         feat_id=grant.feature_id,
         source_type=_FEAT_SOURCE_BY_GRANT_SOURCE.get(grant.grant_source, CharacterFeatSource.GM),
         feat=feat_brief,
-        effects=effects if effects is not None else GrantEffectsResponse(),
+        effects=effects if effects is not None else [],
         choices=choices if choices is not None else build_chosen_options(grant),
     )
 

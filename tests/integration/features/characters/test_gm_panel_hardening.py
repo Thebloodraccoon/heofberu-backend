@@ -45,7 +45,11 @@ class TestRegrantAfterGmVeto:
         skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Sneaky", source_type="CLASS", level=None)
         await put_effects_and_grant(
-            client, gm_token, character.id, feature.id, {"skill_effects": [{"skill_id": skill.id}]}
+            client,
+            gm_token,
+            character.id,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
         )
         url = PROFICIENCIES.format(character_id=character.id) + "/skills"
 
@@ -67,7 +71,11 @@ class TestRegrantAfterGmVeto:
         skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Sneaky", source_type="CLASS", level=None)
         grant_id = await put_effects_and_grant(
-            client, gm_token, character.id, feature.id, {"skill_effects": [{"skill_id": skill.id}]}
+            client,
+            gm_token,
+            character.id,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
         )
         url = PROFICIENCIES.format(character_id=character.id) + "/skills"
         await client.delete(url, params={"skill_id": skill.id}, headers=auth(gm_token))
@@ -92,7 +100,11 @@ class TestRegrantAfterGmVeto:
         add = await client.post(url, json={"skill_id": skill.id}, headers=auth(gm_token))
         assert add.status_code == 201, add.text
         await put_effects_and_grant(
-            client, gm_token, character.id, feature.id, {"skill_effects": [{"skill_id": skill.id}]}
+            client,
+            gm_token,
+            character.id,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
         )
 
         removal = await client.delete(url, params={"skill_id": skill.id}, headers=auth(gm_token))
@@ -115,7 +127,7 @@ class TestGmOwnsExpertise:
             gm_token,
             character.id,
             feature.id,
-            {"skill_effects": [{"skill_id": skill.id, "grants_expertise": True}]},
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
         )
         assert (await read_skills(client, gm_token, character.id))[skill.id]["is_expertise"] is True
         url = PROFICIENCIES.format(character_id=character.id) + "/skills/expertise"
@@ -149,7 +161,7 @@ class TestGmOwnsExpertise:
             gm_token,
             character.id,
             feature.id,
-            {"skill_effects": [{"skill_id": skill.id, "grants_expertise": True}]},
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
         )
 
         assert (await read_skills(client, gm_token, character.id))[skill.id]["is_expertise"] is True

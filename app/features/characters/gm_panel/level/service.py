@@ -2,7 +2,6 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.transaction import unit_of_work
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.gm_panel.exceptions import (
     MaxLevelBelowCharacterLevelException,
@@ -42,7 +41,7 @@ class GmPanelLevelService(CharacterSubDomainService):
                 character_id=character_id, max_level=data.max_level, character_level=character.level
             )
 
-        async with unit_of_work(self.repository.db):
+        async with self._atomic():
             await lock_character(self.repository.db, character_id)
 
             row = await self.max_level_repository.get_by_character_id(character_id)

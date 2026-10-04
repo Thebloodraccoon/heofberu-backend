@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from pydantic import ValidationError
 import pytest
 
+from app.features.characters.cache import character_cache_key
 from app.features.characters.spells.exceptions import (
     CharacterSpellAlreadyKnownException,
     CharacterSpellNotFoundException,
@@ -75,7 +76,7 @@ def make_service(*, spell=None, known=None, eligibility=None):
 def stubs(monkeypatch):
     invalidate = AsyncMock()
     lock = AsyncMock()
-    monkeypatch.setattr("app.features.characters.spells.service.invalidate_character_cache", invalidate)
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", invalidate)
     monkeypatch.setattr("app.features.characters.spells.service.lock_character", lock)
     return SimpleNamespace(invalidate=invalidate, lock=lock)
 
@@ -93,7 +94,7 @@ class TestAddKnownSpell:
         assert db.commits == 1
         assert db.executes == []
         stubs.lock.assert_awaited_once()
-        stubs.invalidate.assert_awaited_once_with(1)
+        stubs.invalidate.assert_awaited_once_with(character_cache_key(1))
 
     async def test_unknown_spell_is_404_before_any_lock(self, stubs):
         service, db = make_service(spell=None)
@@ -142,7 +143,7 @@ class TestRemoveKnownSpell:
 
         assert service.character_spell_repository.removed == [known]
         assert db.commits == 1
-        stubs.invalidate.assert_awaited_once_with(1)
+        stubs.invalidate.assert_awaited_once_with(character_cache_key(1))
 
     async def test_unknown_entry_is_404(self):
         service, db = make_service(known=None)

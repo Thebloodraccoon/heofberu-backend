@@ -8,9 +8,10 @@ read derives them from the current effect tree, so a GM edit to a feature
 (or a player's re-answer) is visible on the next read without touching
 any character row.
 
-Ability effects are not handled here — they feed the ability-score
-calculator (``CharacterStatsRepository.get_feature_increases_many``) — and open
-("any skill"/"any spell") effects contribute nothing, since picking one
+Ability effects are collected for display only (``GrantEffects.abilities``):
+the totals still come from the ability-score calculator
+(``CharacterStatsRepository.get_feature_increases_many``) and its cache row.
+Open ("any skill"/"any spell") effects contribute nothing, since picking one
 isn't supported (``FeatureGrantService.answer_choices`` rejects it).
 """
 
@@ -27,24 +28,22 @@ from app.features.characters.grants.schemas import (
     CharacterSavingThrowProficiencyResponse,
     CharacterWeaponProficiencyResponse,
     ChosenOptionResponse,
+    GrantedAbilityEffectResponse,
     GrantedSkillEffectResponse,
-    GrantEffectsResponse,
 )
 from app.features.characters.spells.schemas import CharacterSpellResponse
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
-from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_engine_models import (
+    EFFECT_TYPES,
+    FeatureChoiceGroup,
+    FeatureChoiceOption,
+    effect_groups,
+)
 from app.models.features.feature_model import Feature
 from app.models.spells.spell_model import Spell
 
-_EFFECT_ATTRS = (
-    "ability_effects",
-    "skill_effects",
-    "saving_throw_effects",
-    "armor_effects",
-    "weapon_effects",
-    "spell_effects",
-)
+_EFFECT_ATTRS = tuple(attr for _, attr in EFFECT_TYPES)
 
 
 def choice_option_effect_loads(base_loader) -> list:
@@ -86,8 +85,12 @@ async def load_feature_effect_trees(db: AsyncSession, feature_ids: Iterable[int]
 
 @dataclass
 class GrantEffects:
-    """What one grant gives the character: skill id -> expertise, plus the other proficiency keys and spell ids."""
+    """
+    What one grant gives the character: skill id -> expertise, the other
+    proficiency keys and spell ids, plus its ability effects (display only).
+    """
 
+    abilities: list[tuple] = field(default_factory=list)
     skills: dict[int, bool] = field(default_factory=dict)
     saving_throws: set = field(default_factory=set)
     armor: set = field(default_factory=set)
@@ -97,6 +100,7 @@ class GrantEffects:
     def add(self, holder: Feature | FeatureChoiceOption) -> None:
         """Fold one effect bundle (a feature's fixed rows or a picked option's rows) in."""
 
+        self.abilities.extend((effect.ability, effect.amount, effect.new_cap) for effect in holder.ability_effects)
         for effect in holder.skill_effects:
             if effect.skill_id is not None:
                 self.skills[effect.skill_id] = self.skills.get(effect.skill_id, False) or bool(effect.grants_expertise)
@@ -206,29 +210,38 @@ def _weapon_sort_key(weapon: tuple) -> tuple:
     return (category is None, getattr(category, "value", category) or "", item_id is None, item_id or 0)
 
 
-def _to_response(effects: GrantEffects, spells: dict[int, CharacterSpellResponse]) -> GrantEffectsResponse:
-    """Serialize one grant's computed effects."""
+def _to_response(effects: GrantEffects, spells: dict[int, CharacterSpellResponse]) -> list[dict]:
+    """Serialize one grant's computed effects as non-empty ``GrantEffectGroup`` entries, in ``EFFECT_TYPES`` order."""
 
-    return GrantEffectsResponse(
-        skills=[
+    items_by_type: dict[str, list] = {
+        "ability": [
+            GrantedAbilityEffectResponse(ability=ability, amount=amount, new_cap=new_cap)
+            for ability, amount, new_cap in effects.abilities
+        ],
+        "skill": [
             GrantedSkillEffectResponse(skill_id=skill_id, is_expertise=expertise)
             for skill_id, expertise in sorted(effects.skills.items())
         ],
-        saving_throws=[
+        "saving_throw": [
             CharacterSavingThrowProficiencyResponse(ability=ability) for ability in sorted(effects.saving_throws)
         ],
-        armor=[CharacterArmorProficiencyResponse(armor_type=armor_type) for armor_type in sorted(effects.armor)],
-        weapons=[
+        "armor": [CharacterArmorProficiencyResponse(armor_type=armor_type) for armor_type in sorted(effects.armor)],
+        "weapon": [
             CharacterWeaponProficiencyResponse(weapon_category=category, item_id=item_id)
             for category, item_id in sorted(effects.weapons, key=_weapon_sort_key)
         ],
-        spells=spell_list(effects.spells, spells),
-    )
+        "spell": spell_list(effects.spells, spells),
+    }
+    return [
+        {"effect_type": effect_type, "items": items_by_type[effect_type]}
+        for effect_type, _ in EFFECT_TYPES
+        if items_by_type[effect_type]
+    ]
 
 
-async def get_grant_effects_map(db: AsyncSession, grants: list[CharacterFeature]) -> dict[int, GrantEffectsResponse]:
+async def get_grant_effects_map(db: AsyncSession, grants: list[CharacterFeature]) -> dict[int, list[dict]]:
     """
-    ``{grant_id: GrantEffectsResponse}`` for listing endpoints. Computes from
+    ``{grant_id: [GrantEffectGroup, ...]}`` for listing endpoints. Computes from
     the trees the caller already loaded: each grant needs ``feature`` (with
     its full effect tree — see ``feature_summary_loads``) and ``choices``
     (see ``GRANT_CHOICES_LOADS``) eager-loaded, so the only query here is
@@ -253,14 +266,14 @@ def build_chosen_options(grant: CharacterFeature) -> list[ChosenOptionResponse]:
     its six effect relationships) eager-loaded — see ``choice_option_effect_loads``.
     """
 
-    responses = []
-    for choice in grant.choices:
-        option = choice.choice_option
-        responses.append(
-            ChosenOptionResponse(
-                choice_group_id=choice.choice_group_id,
-                choice_option_id=choice.choice_option_id,
-                **{attr: getattr(option, attr) if option is not None else [] for attr in _EFFECT_ATTRS},
-            )
+    return [
+        ChosenOptionResponse.model_validate(
+            {
+                "choice_group_id": choice.choice_group_id,
+                "choice_option_id": choice.choice_option_id,
+                "effects": effect_groups(choice.choice_option) if choice.choice_option is not None else [],
+            },
+            from_attributes=True,
         )
-    return responses
+        for choice in grant.choices
+    ]

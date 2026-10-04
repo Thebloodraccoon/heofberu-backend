@@ -1,18 +1,13 @@
 """Character grant schemas: choice-answering payloads and pending-group views."""
 
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
 from app.core.types import EntityId
 from app.features.characters.spells.schemas import CharacterSpellResponse
-from app.features.features.effects.schemas import (
-    AbilityEffectItem,
-    ArmorEffectItem,
-    SavingThrowEffectItem,
-    SkillEffectItem,
-    SpellEffectItem,
-    WeaponEffectItem,
-)
+from app.features.features.effects.schemas import EffectGroup
 
 # Upper bound on the answers of one request (a feature has a handful of groups).
 MAX_ANSWERS = 50
@@ -59,12 +54,7 @@ class PendingChoiceOption(BaseModel):
     id: int
     needs_skill: bool = False
     needs_spell: bool = False
-    ability_effects: list[AbilityEffectItem] = Field(default_factory=list)
-    skill_effects: list[SkillEffectItem] = Field(default_factory=list)
-    saving_throw_effects: list[SavingThrowEffectItem] = Field(default_factory=list)
-    armor_effects: list[ArmorEffectItem] = Field(default_factory=list)
-    weapon_effects: list[WeaponEffectItem] = Field(default_factory=list)
-    spell_effects: list[SpellEffectItem] = Field(default_factory=list)
+    effects: list[EffectGroup] = Field(default_factory=list)
 
 
 class PendingChoiceGroup(BaseModel):
@@ -121,30 +111,76 @@ class GrantedSkillEffectResponse(BaseModel):
     is_expertise: bool
 
 
-class GrantEffectsResponse(BaseModel):
-    """
-    What a single grant gives the character — its feature's fixed effects
-    plus the picked options' bundles, computed from the current effect tree.
-    """
+class GrantedAbilityEffectResponse(BaseModel):
+    """An ability-score effect a grant gives (display only — totals come from the stats cache)."""
 
-    skills: list[GrantedSkillEffectResponse] = Field(default_factory=list)
-    saving_throws: list[CharacterSavingThrowProficiencyResponse] = Field(default_factory=list)
-    armor: list[CharacterArmorProficiencyResponse] = Field(default_factory=list)
-    weapons: list[CharacterWeaponProficiencyResponse] = Field(default_factory=list)
-    spells: list[CharacterSpellResponse] = Field(default_factory=list)
+    ability: AbilityScore
+    amount: int
+    new_cap: int | None = None
+
+
+class GrantedAbilityGroup(BaseModel):
+    """Ability-score effects of a grant."""
+
+    effect_type: Literal["ability"]
+    items: list[GrantedAbilityEffectResponse]
+
+
+class GrantedSkillGroup(BaseModel):
+    """Skill proficiencies of a grant (expertise merged across its sources)."""
+
+    effect_type: Literal["skill"]
+    items: list[GrantedSkillEffectResponse]
+
+
+class GrantedSavingThrowGroup(BaseModel):
+    """Saving-throw proficiencies of a grant."""
+
+    effect_type: Literal["saving_throw"]
+    items: list[CharacterSavingThrowProficiencyResponse]
+
+
+class GrantedArmorGroup(BaseModel):
+    """Armor proficiencies of a grant."""
+
+    effect_type: Literal["armor"]
+    items: list[CharacterArmorProficiencyResponse]
+
+
+class GrantedWeaponGroup(BaseModel):
+    """Weapon proficiencies of a grant."""
+
+    effect_type: Literal["weapon"]
+    items: list[CharacterWeaponProficiencyResponse]
+
+
+class GrantedSpellGroup(BaseModel):
+    """Spells a grant gives, as full spell records."""
+
+    effect_type: Literal["spell"]
+    items: list[CharacterSpellResponse]
+
+
+# What a single grant gives the character — its feature's fixed effects plus the picked options'
+# bundles, computed from the current effect tree — in the same ``{effect_type, items}`` shape as
+# ``EffectGroup``, only non-empty types, but with resolved items (deduplicated, spells expanded).
+GrantEffectGroup = Annotated[
+    GrantedAbilityGroup
+    | GrantedSkillGroup
+    | GrantedSavingThrowGroup
+    | GrantedArmorGroup
+    | GrantedWeaponGroup
+    | GrantedSpellGroup,
+    Field(discriminator="effect_type"),
+]
 
 
 class ChosenOptionResponse(BaseModel):
-    """One of the player's stored picks for a grant's choice group, with the option's effect bundle."""
+    """One of the player's stored picks for a grant's choice group, with the option's non-empty effect groups."""
 
     choice_group_id: int
     choice_option_id: int
-    ability_effects: list[AbilityEffectItem] = Field(default_factory=list)
-    skill_effects: list[SkillEffectItem] = Field(default_factory=list)
-    saving_throw_effects: list[SavingThrowEffectItem] = Field(default_factory=list)
-    armor_effects: list[ArmorEffectItem] = Field(default_factory=list)
-    weapon_effects: list[WeaponEffectItem] = Field(default_factory=list)
-    spell_effects: list[SpellEffectItem] = Field(default_factory=list)
+    effects: list[EffectGroup] = Field(default_factory=list)
 
 
 class AnsweredChoicesResponse(BaseModel):

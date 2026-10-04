@@ -60,44 +60,49 @@ class TestChoiceGroupBounds:
 class TestOptionEffectDuplicates:
     def test_duplicate_skill_in_one_option_rejected(self):
         with pytest.raises(ValidationError, match="Duplicate entry in skill_effects"):
-            ChoiceOptionPayload(skill_effects=[{"skill_id": 1}, {"skill_id": 1}])
+            ChoiceOptionPayload(effects=[{"effect_type": "skill", "items": [{"skill_id": 1}, {"skill_id": 1}]}])
 
     def test_duplicate_effect_row_ids_in_option_rejected(self):
         with pytest.raises(ValidationError, match="Duplicate id in ability_effects"):
             ChoiceOptionPayload(
-                ability_effects=[
-                    {"id": 4, "ability": "STR", "amount": 1},
-                    {"id": 4, "ability": "DEX", "amount": 1},
+                effects=[
+                    {
+                        "effect_type": "ability",
+                        "items": [
+                            {"id": 4, "ability": "STR", "amount": 1},
+                            {"id": 4, "ability": "DEX", "amount": 1},
+                        ],
+                    }
                 ]
             )
 
     def test_distinct_effects_in_one_option_are_fine(self):
-        option = ChoiceOptionPayload(skill_effects=[{"skill_id": 1}, {"skill_id": 2}])
+        option = ChoiceOptionPayload(effects=[{"effect_type": "skill", "items": [{"skill_id": 1}, {"skill_id": 2}]}])
         assert len(option.skill_effects) == 2
 
     def test_open_skill_in_a_skill_group_still_rejected(self):
         with pytest.raises(ValidationError, match="skill_id is required"):
-            ChoiceGroupPayload(choice_type="SKILL", options=[{"skill_effects": [{}]}])
+            ChoiceGroupPayload(choice_type="SKILL", options=[{"effects": [{"effect_type": "skill", "items": [{}]}]}])
 
 
 @pytest.mark.unit
 class TestFixedEffectsUpdate:
     def test_omitted_types_are_none_not_empty(self):
-        data = FeatureEffectsUpdate(weapon_effects=[{"item_id": 3}])
+        data = FeatureEffectsUpdate(static_groups=[{"effect_type": "weapon", "items": [{"item_id": 3}]}])
         assert data.ability_effects is None
         assert data.skill_effects is None
         assert data.weapon_effects is not None
 
     def test_empty_list_is_kept_as_an_explicit_clear(self):
-        assert FeatureEffectsUpdate(armor_effects=[]).armor_effects == []
+        assert FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": []}]).armor_effects == []
 
     def test_fixed_skill_requires_skill_id(self):
         with pytest.raises(ValidationError, match="skill_effects entry requires skill_id"):
-            FeatureEffectsUpdate(skill_effects=[{}])
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "skill", "items": [{}]}])
 
     def test_fixed_spell_requires_spell_id(self):
         with pytest.raises(ValidationError, match="spell_effects entry requires spell_id"):
-            FeatureEffectsUpdate(spell_effects=[{}])
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "spell", "items": [{}]}])
 
     @pytest.mark.parametrize(
         ("field", "items"),
@@ -113,19 +118,26 @@ class TestFixedEffectsUpdate:
     )
     def test_duplicate_effects_rejected(self, field, items):
         with pytest.raises(ValidationError, match=f"Duplicate entry in {field}"):
-            FeatureEffectsUpdate(**{field: items})
+            FeatureEffectsUpdate(static_groups=[{"effect_type": field.removesuffix("_effects"), "items": items}])
 
     def test_duplicate_row_ids_rejected(self):
         with pytest.raises(ValidationError, match="Duplicate id in armor_effects"):
-            FeatureEffectsUpdate(armor_effects=[{"id": 1, "armor_type": "LIGHT"}, {"id": 1, "armor_type": "HEAVY"}])
+            FeatureEffectsUpdate(
+                static_groups=[
+                    {
+                        "effect_type": "armor",
+                        "items": [{"id": 1, "armor_type": "LIGHT"}, {"id": 1, "armor_type": "HEAVY"}],
+                    }
+                ]
+            )
 
     def test_unknown_top_level_key_rejected(self):
         with pytest.raises(ValidationError, match="Extra inputs"):
             FeatureEffectsUpdate(weapon_effect=[{"item_id": 3}])
 
     def test_list_length_is_bounded(self):
-        with pytest.raises(ValidationError, match="armor_effects"):
-            FeatureEffectsUpdate(armor_effects=[{"armor_type": "LIGHT"}] * 51)
+        with pytest.raises(ValidationError, match="items"):
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}] * 51}])
 
 
 @pytest.mark.unit
@@ -143,11 +155,11 @@ class TestEffectItemBounds:
 
     def test_oversized_catalog_id_rejected_instead_of_overflowing_the_driver(self):
         with pytest.raises(ValidationError, match="skill_id"):
-            FeatureEffectsUpdate(skill_effects=[{"skill_id": 2**31}])
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "skill", "items": [{"skill_id": 2**31}]}])
 
     def test_non_positive_row_id_rejected(self):
         with pytest.raises(ValidationError, match="id"):
-            FeatureEffectsUpdate(armor_effects=[{"id": 0, "armor_type": "LIGHT"}])
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"id": 0, "armor_type": "LIGHT"}]}])
 
     def test_unknown_key_in_item_rejected(self):
         with pytest.raises(ValidationError, match="Extra inputs"):

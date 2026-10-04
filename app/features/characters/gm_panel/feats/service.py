@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import ASILevelChoice, GrantSource
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.feats.exceptions import CharacterFeatAlreadyKnownException
 from app.features.characters.feats.repository import CharacterFeatRepository, to_character_feat_response
 from app.features.characters.feats.schemas import CharacterFeatResponse
@@ -137,7 +136,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         """Recompute the ability-score cache in the caller's transaction; purge the payload after its commit."""
 
         await self.stats_service.refresh(character, commit=False)
-        await invalidate_character_cache(character.id, db=self.repository.db)
+        await self._invalidate_character(character.id)
 
     @staticmethod
     def _validate_asi_choice(feat: Feature, ability_score_increase_id: int | None) -> None:

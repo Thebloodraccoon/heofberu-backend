@@ -91,7 +91,7 @@ class FakeASIChoiceRepository:
 
 @pytest.fixture(autouse=True)
 def stub_cache_and_lock(monkeypatch):
-    monkeypatch.setattr("app.features.characters.gm_panel.asi.service.invalidate_character_cache", AsyncMock())
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", AsyncMock())
     lock = AsyncMock()
     monkeypatch.setattr("app.features.characters.gm_panel.asi.service.lock_character", lock)
     return lock
@@ -210,7 +210,7 @@ class TestAddAsiAdjustment:
             events.append("invalidate")
 
         service.repository.db.commit = commit
-        monkeypatch.setattr("app.features.characters.gm_panel.asi.service.invalidate_character_cache", invalidate)
+        monkeypatch.setattr("app.features.characters.cache.cache_delete_key", invalidate)
 
         await service.add_asi_adjustment(
             1,
@@ -222,7 +222,7 @@ class TestAddAsiAdjustment:
 
     async def test_cache_is_not_invalidated_when_the_cap_check_rolls_back(self, monkeypatch):
         invalidate = AsyncMock()
-        monkeypatch.setattr("app.features.characters.gm_panel.asi.service.invalidate_character_cache", invalidate)
+        monkeypatch.setattr("app.features.characters.cache.cache_delete_key", invalidate)
         service = make_service(make_character(), stats=FakeStatsService(totals={**TOTALS, "strength_total": 31}))
 
         with pytest.raises(AbilityScoreCapExceededException):

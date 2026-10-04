@@ -8,7 +8,8 @@ names straight off each effect row's own relationship (``.skill``/
 that make this synchronous, no query at render time). This is the read-side
 replacement for hand-typed choice-option labels: the option's *effects* are
 the single source of truth for what it grants, so this text can never drift
-from what actually gets materialized (see ``FeatureGrantMaterializer``).
+from what a grant actually gives (computed on read, see
+``app.features.characters.grants.effects``).
 
 The result is HTML (``<p>``/``<ul>``/``<li>``/``<a>``): every catalog name that
 is interpolated into it is HTML-escaped, so a name can never inject markup.

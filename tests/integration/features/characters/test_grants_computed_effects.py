@@ -32,7 +32,11 @@ class TestGmProficiencyChecksSeeFeatureGrants:
         skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Sneaky", source_type="CLASS", level=None)
         await _grant_feature_with_effects(
-            client, gm_token, character.id, feature.id, {"skill_effects": [{"skill_id": skill.id}]}
+            client,
+            gm_token,
+            character.id,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
         )
 
         remove_resp = await client.delete(
@@ -54,7 +58,11 @@ class TestGmProficiencyChecksSeeFeatureGrants:
         skill = await create_skill(name="Acrobatics", ability="DEX")
         feature = await create_feature(name="Nimble", source_type="CLASS", level=None)
         await _grant_feature_with_effects(
-            client, gm_token, character.id, feature.id, {"skill_effects": [{"skill_id": skill.id}]}
+            client,
+            gm_token,
+            character.id,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
         )
 
         add_resp = await client.post(
@@ -70,7 +78,11 @@ class TestGmProficiencyChecksSeeFeatureGrants:
         character = await create_character(owner_id=gm.id, class_id=(await create_class(name="Fighter")).id)
         feature = await create_feature(name="Resilient", source_type="CLASS", level=None)
         await _grant_feature_with_effects(
-            client, gm_token, character.id, feature.id, {"saving_throw_effects": [{"ability": "CON"}]}
+            client,
+            gm_token,
+            character.id,
+            feature.id,
+            {"static_groups": [{"effect_type": "saving_throw", "items": [{"ability": "CON"}]}]},
         )
 
         remove_resp = await client.delete(
@@ -97,7 +109,11 @@ class TestGmCanOnlyRemoveOwnSpells:
         gm_spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
         feature = await create_feature(name="Arcane Gift", source_type="CLASS", level=None)
         await _grant_feature_with_effects(
-            client, gm_token, character.id, feature.id, {"spell_effects": [{"spell_id": feature_spell.id}]}
+            client,
+            gm_token,
+            character.id,
+            feature.id,
+            {"static_groups": [{"effect_type": "spell", "items": [{"spell_id": feature_spell.id}]}]},
         )
 
         add_resp = await client.post(

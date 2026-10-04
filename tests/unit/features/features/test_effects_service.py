@@ -121,7 +121,9 @@ class TestFixedEffectsDiff:
     async def test_item_without_id_is_inserted(self, spies):
         service, db = make_service()
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[{"armor_type": "LIGHT"}]))
+        await service.set_fixed_effects(
+            1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}])
+        )
 
         assert [type(row) for row in service.repository.added] == [FeatureArmorProficiencyEffect]
         assert service.repository.added[0].feature_id == 1
@@ -131,7 +133,10 @@ class TestFixedEffectsDiff:
         row = armor_row(7)
         service, _ = make_service(rows={FeatureArmorProficiencyEffect: {1: {7: row}}})
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[{"id": 7, "armor_type": "HEAVY"}]))
+        await service.set_fixed_effects(
+            1,
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"id": 7, "armor_type": "HEAVY"}]}]),
+        )
 
         assert row.armor_type == ArmorProficiency.HEAVY
         assert service.repository.added == []
@@ -141,7 +146,10 @@ class TestFixedEffectsDiff:
         keep, drop = armor_row(7), armor_row(8, ArmorProficiency.SHIELD)
         service, _ = make_service(rows={FeatureArmorProficiencyEffect: {1: {7: keep, 8: drop}}})
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[{"id": 7, "armor_type": "LIGHT"}]))
+        await service.set_fixed_effects(
+            1,
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"id": 7, "armor_type": "LIGHT"}]}]),
+        )
 
         assert service.repository.removed == [drop]
 
@@ -149,7 +157,7 @@ class TestFixedEffectsDiff:
         rows = {FeatureArmorProficiencyEffect: {1: {7: armor_row(7)}}}
         service, _ = make_service(rows=rows)
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[]))
+        await service.set_fixed_effects(1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": []}]))
 
         assert len(service.repository.removed) == 1
 
@@ -157,7 +165,9 @@ class TestFixedEffectsDiff:
         rows = {FeatureAbilityScoreEffect: {1: {3: ability_row(3)}}}
         service, _ = make_service(rows=rows)
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[{"armor_type": "LIGHT"}]))
+        await service.set_fixed_effects(
+            1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}])
+        )
 
         assert service.repository.removed == []
 
@@ -165,7 +175,12 @@ class TestFixedEffectsDiff:
         service, db = make_service(rows={FeatureArmorProficiencyEffect: {1: {7: armor_row(7)}}})
 
         with pytest.raises(InvalidFeatureEffectDataError):
-            await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[{"id": 999, "armor_type": "LIGHT"}]))
+            await service.set_fixed_effects(
+                1,
+                FeatureEffectsUpdate(
+                    static_groups=[{"effect_type": "armor", "items": [{"id": 999, "armor_type": "LIGHT"}]}]
+                ),
+            )
 
         assert db.commits == 0
         assert db.rollbacks == 1
@@ -177,7 +192,9 @@ class TestFixedEffectsDiff:
         spies.refresh.side_effect = lambda *args: seen.append(("refresh", db.commits))
         spies.invalidate.side_effect = lambda namespace: seen.append(("purge", db.commits))
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[{"armor_type": "LIGHT"}]))
+        await service.set_fixed_effects(
+            1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}])
+        )
 
         assert service.repository.flag_refreshes == 1
         assert seen[0] == ("refresh", 0)
@@ -187,7 +204,10 @@ class TestFixedEffectsDiff:
         row = armor_row(7)
         service, db = make_service(rows={FeatureArmorProficiencyEffect: {1: {7: row}}})
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[{"id": 7, "armor_type": "LIGHT"}]))
+        await service.set_fixed_effects(
+            1,
+            FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"id": 7, "armor_type": "LIGHT"}]}]),
+        )
 
         spies.refresh.assert_not_awaited()
         spies.invalidate.assert_not_awaited()
@@ -204,7 +224,7 @@ class TestFixedEffectsDiff:
     async def test_write_takes_a_row_lock(self, spies):
         service, _ = make_service()
 
-        await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[]))
+        await service.set_fixed_effects(1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": []}]))
 
         assert service.repository.for_update_calls == [True]
 
@@ -212,7 +232,12 @@ class TestFixedEffectsDiff:
         service, db = make_service(known_ids={"Skill": {1}})
 
         with pytest.raises(InvalidFeatureEffectDataError, match=r"Unknown skill_id\(s\): \[9\]"):
-            await service.set_fixed_effects(1, FeatureEffectsUpdate(skill_effects=[{"skill_id": 1}, {"skill_id": 9}]))
+            await service.set_fixed_effects(
+                1,
+                FeatureEffectsUpdate(
+                    static_groups=[{"effect_type": "skill", "items": [{"skill_id": 1}, {"skill_id": 9}]}]
+                ),
+            )
 
         assert service.repository.added == []
         assert db.commits == 0
@@ -221,7 +246,9 @@ class TestFixedEffectsDiff:
         service, _ = make_service(feature=None)
 
         with pytest.raises(RecordNotFoundError):
-            await service.set_fixed_effects(1, FeatureEffectsUpdate(armor_effects=[]))
+            await service.set_fixed_effects(
+                1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": []}])
+            )
 
 
 def group_row(group_id, options=(), pick_count=1, sort_order=0, choice_type=ChoiceType.SKILL):
@@ -247,7 +274,10 @@ class TestChoiceGroupsDiff:
             choice_groups=[
                 {
                     "choice_type": "SKILL",
-                    "options": [{"skill_effects": [{"skill_id": 1}]}, {"skill_effects": [{"skill_id": 2}]}],
+                    "options": [
+                        {"effects": [{"effect_type": "skill", "items": [{"skill_id": 1}]}]},
+                        {"effects": [{"effect_type": "skill", "items": [{"skill_id": 2}]}]},
+                    ],
                 }
             ]
         )
@@ -342,7 +372,12 @@ class TestChoiceGroupsDiff:
     async def test_unknown_spell_id_inside_an_option_is_422(self, spies):
         service, db = make_service(known_ids={"Spell": set()})
         payload = ChoiceGroupsUpdate(
-            choice_groups=[{"choice_type": "SPELL", "options": [{"spell_effects": [{"spell_id": 5}]}]}]
+            choice_groups=[
+                {
+                    "choice_type": "SPELL",
+                    "options": [{"effects": [{"effect_type": "spell", "items": [{"spell_id": 5}]}]}],
+                }
+            ]
         )
 
         with pytest.raises(InvalidFeatureEffectDataError, match=r"Unknown spell_id\(s\): \[5\]"):

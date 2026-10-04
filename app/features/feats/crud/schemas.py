@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 
 from app.constants import AbilityScore
 from app.features.features.crud.schemas import FeatPrerequisiteFields, FeatPrerequisiteFieldsUpdate
-from app.features.features.effects.schemas import ChoiceGroupResponse, StaticEffectGroup
+from app.features.features.effects.schemas import ChoiceGroupResponse, EffectGroup
 
 # Input bounds follow the column sizes; responses stay unconstrained so legacy rows always serialize.
 FeatName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -129,7 +129,7 @@ class FeatResponse(FeatBase):
 
     id: int
     choice_groups: list[ChoiceGroupResponse] = []
-    static_groups: list[StaticEffectGroup] = []
+    static_groups: list[EffectGroup] = []
     has_static_effects: bool = False
     has_choices: bool = False
     effects_summary: str = ""

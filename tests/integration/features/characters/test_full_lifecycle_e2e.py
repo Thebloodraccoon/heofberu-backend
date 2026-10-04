@@ -9,6 +9,8 @@ and finally assert GET /characters/{id} is consistent with the rules
 
 import pytest
 
+from tests.helpers import effect_items
+
 PASSWORD = "correct-horse-battery"
 
 
@@ -103,7 +105,7 @@ class TestFullCharacterLifecycle:
         assert resilient_response.status_code == 201
         feat_choice = feat_choice_response.json()
         resilient = resilient_response.json()
-        resilient_asi_id = resilient["choice_groups"][0]["options"][0]["ability_effects"][0]["id"]
+        resilient_asi_id = effect_items(resilient["choice_groups"][0]["options"][0]["effects"], "ability")[0]["id"]
 
         fire_bolt = await create_spell(name="Fire Bolt", school="EVOCATION", level="CANTRIP")
         light = await create_spell(name="Light", school="ILLUSION", level="CANTRIP")

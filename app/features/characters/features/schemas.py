@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import FeatureSourceType, GrantSource
-from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
+from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectGroup
 
 
 class CharacterFeatureBriefResponse(BaseModel):
@@ -38,5 +38,5 @@ class CharacterFeatureResponse(BaseModel):
     feature_id: int
     grant_source: GrantSource = GrantSource.AUTO
     feature: CharacterFeatureBriefResponse
-    effects: GrantEffectsResponse = Field(default_factory=GrantEffectsResponse)
+    effects: list[GrantEffectGroup] = Field(default_factory=list)
     choices: list[ChosenOptionResponse] = Field(default_factory=list)

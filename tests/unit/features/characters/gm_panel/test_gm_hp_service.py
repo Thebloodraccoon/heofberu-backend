@@ -16,7 +16,7 @@ from tests.unit.fakes import FakeAsyncSession
 
 @pytest.fixture(autouse=True)
 def no_cache_invalidate(monkeypatch):
-    monkeypatch.setattr("app.features.characters.gm_panel.hp.service.invalidate_character_cache", AsyncMock())
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", AsyncMock())
 
 
 def make_character(**overrides) -> Character:
@@ -87,7 +87,7 @@ class TestSetMaxHp:
             events.append("invalidate")
 
         service.repository.db.commit = commit
-        monkeypatch.setattr("app.features.characters.gm_panel.hp.service.invalidate_character_cache", invalidate)
+        monkeypatch.setattr("app.features.characters.cache.cache_delete_key", invalidate)
 
         await service.set_max_hp(1, MaxHpUpdate(max_hp=35), SimpleNamespace())
 

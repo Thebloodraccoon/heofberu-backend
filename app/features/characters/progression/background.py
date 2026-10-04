@@ -1,9 +1,9 @@
 """Granting a background's skills and starting equipment to an existing character."""
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType, ProficiencySourceType
+from app.features.characters.items.repository import CharacterItemRepository
 from app.features.characters.proficiencies.writer import add_skill_proficiencies
 from app.features.characters.progression.exceptions import BackgroundItemChoicesNotSupportedException
 from app.features.items.crud.repository import ItemRepository
@@ -19,6 +19,7 @@ class BackgroundGrants:
 
         self.db = db
         self.item_repository = ItemRepository(db)
+        self.character_item_repository = CharacterItemRepository(db)
 
     async def ensure_no_item_choices(self, background_id: int) -> None:
         """
@@ -59,13 +60,8 @@ class BackgroundGrants:
         for entry in entries:
             quantities[entry.item_id] = quantities.get(entry.item_id, 0) + entry.quantity
 
-        existing_result = await self.db.execute(
-            select(CharacterItem).where(
-                CharacterItem.character_id == character.id,
-                CharacterItem.item_id.in_(quantities.keys()),
-            )
-        )
-        existing_items = {row.item_id: row for row in existing_result.scalars().all()}
+        stacks = await self.character_item_repository.get_stacks_by_item_ids(character.id, quantities)
+        existing_items = {row.item_id: row for row in stacks}
 
         for item_id, quantity in quantities.items():
             stack = existing_items.get(item_id)

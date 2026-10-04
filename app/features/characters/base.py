@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.transaction import UnitOfWork, atomic, unit_of_work
+from app.core.base.transaction import atomic
 from app.features.characters.access import ensure_character_access
 from app.features.characters.access import get_character_for_user as _get_character_for_user
 from app.features.characters.cache import invalidate_character_cache
@@ -20,7 +20,7 @@ class CharacterSubDomainService:
     the GM/owner access checks and the transaction helpers.
 
     The service owns the transaction: multi-step writes run inside
-    :meth:`_atomic` / :meth:`_unit_of_work` with ``commit=False`` repository
+    :meth:`_atomic` with ``commit=False`` repository
     calls, and cache purges go through :meth:`_invalidate_character` so they
     only run after the commit.
     """
@@ -40,13 +40,6 @@ class CharacterSubDomainService:
 
         async with atomic(self.repository.db):
             yield
-
-    @asynccontextmanager
-    async def _unit_of_work(self) -> AsyncGenerator[UnitOfWork, None]:
-        """:meth:`_atomic` that yields a :class:`UnitOfWork` for post-commit side effects."""
-
-        async with unit_of_work(self.repository.db) as uow:
-            yield uow
 
     async def _invalidate_character(self, character_id: int) -> None:
         """Drop the character's cached response (deferred until commit inside an atomic block)."""

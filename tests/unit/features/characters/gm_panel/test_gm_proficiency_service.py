@@ -8,6 +8,7 @@ import pytest
 
 from app.constants import AbilityScore, ProficiencyAction, ProficiencySourceType, ProficiencyType, WeaponProficiency
 from app.core.exceptions import RecordNotFoundError
+from app.features.characters.cache import character_cache_key
 from app.features.characters.gm_panel.exceptions import (
     ProficiencyAlreadyGrantedException,
     ProficiencyNotFoundException,
@@ -55,7 +56,7 @@ def make_service(*, rows=(), features=(), skill_exists=True, item_exists=True):
 @pytest.fixture(autouse=True)
 def invalidate(monkeypatch):
     mock = AsyncMock()
-    monkeypatch.setattr("app.features.characters.gm_panel.proficiencies.service.invalidate_character_cache", mock)
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", mock)
     return mock
 
 
@@ -74,7 +75,7 @@ class TestAddSkill:
         assert row.is_expertise is None
         assert (result.skill_id, result.is_expertise) == (1, False)
         assert db.commits == 1
-        invalidate.assert_awaited_once_with(1)
+        invalidate.assert_awaited_once_with(character_cache_key(1))
 
     async def test_loads_rows_and_feature_grants_once_per_operation(self):
         service, _ = make_service()
@@ -151,7 +152,7 @@ class TestRemoveSkill:
 
         assert db.deleted == [grant]
         assert db.added == []
-        invalidate.assert_awaited_once_with(1)
+        invalidate.assert_awaited_once_with(character_cache_key(1))
 
     async def test_other_source_gets_a_revoke_row(self):
         service, db = make_service(rows=[make_row(ProficiencySourceType.CLASS_CHOICE)])

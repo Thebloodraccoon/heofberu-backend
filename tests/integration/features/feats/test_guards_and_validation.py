@@ -229,7 +229,7 @@ class TestEffectsMountIsScopedToFeats:
         read = await client.get(f"/feats/{feature.id}/effects")
         write = await client.put(
             f"/feats/{feature.id}/effects",
-            json={"ability_effects": [{"ability": "STR", "amount": 1}]},
+            json={"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
             headers=auth(gm_token),
         )
 
@@ -263,7 +263,9 @@ class TestCacheInvalidation:
         skill = await create_skill(name="Stealth", ability="DEX")
         feat_id, skill_id = feat.id, skill.id
         put = await client.put(
-            f"/feats/{feat_id}/effects", json={"skill_effects": [{"skill_id": skill_id}]}, headers=auth(gm_token)
+            f"/feats/{feat_id}/effects",
+            json={"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill_id}]}]},
+            headers=auth(gm_token),
         )
         assert put.status_code == 200
 

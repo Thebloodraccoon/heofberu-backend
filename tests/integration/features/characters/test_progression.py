@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.helpers import effect_items
+
 
 async def set_class_spell_slots(client, gm_token, character_class, class_level, slots):
     """Set a class's spell slot progression for a level via the API (GM only)."""
@@ -574,7 +576,9 @@ class TestLevelUp:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     }
                 ]
             },
@@ -697,14 +701,16 @@ class TestLevelUp:
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     }
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert asi_response.status_code == 200
-        asi_id = asi_response.json()[0]["options"][0]["ability_effects"][0]["id"]
+        asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
 
         response = await client.post(
             f"/characters/{character['id']}/progression/level-up",
@@ -857,7 +863,7 @@ class TestLevelUpFeatureChoices:
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}],
                     }
                 ]
             },
@@ -985,7 +991,7 @@ class TestLevelUpFeatureChoices:
                         {
                             "pick_count": 1,
                             "choice_type": "SKILL",
-                            "options": [{"skill_effects": [{"skill_id": skill_id}]}],
+                            "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill_id}]}]}],
                         }
                     ]
                 },
@@ -1064,7 +1070,7 @@ class TestLevelUpFeatureChoices:
         feature = await create_feature(name="Fixed Boon", source_type="CLASS", class_id=character_class.id, level=3)
         await client.put(
             f"/features/{feature.id}/effects",
-            json={"ability_effects": [{"ability": "STR", "amount": 2}]},
+            json={"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 2}]}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         character, _ = await create_api_character(class_id=character_class.id, owner=player, strength=10)

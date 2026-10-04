@@ -93,7 +93,7 @@ class TestDeleteSourceOwnedFeatureIsOneTransaction:
         feature_id = created.json()["id"]
         await client.put(
             f"/features/{feature_id}/effects",
-            json={"ability_effects": [{"ability": "CON", "amount": 2}]},
+            json={"static_groups": [{"effect_type": "ability", "items": [{"ability": "CON", "amount": 2}]}]},
             headers=auth(gm_token),
         )
         assert feature_id in await grants_of(db_session, character.id)
@@ -222,7 +222,9 @@ class TestUpdateReconcilesOnlyWhenTheLevelChanges:
         skill = await create_skill(name="Stealth")
         feature = await create_feature(name="Sneaky", source_type="OTHER")
         await client.put(
-            f"/features/{feature.id}/effects", json={"skill_effects": [{"skill_id": skill.id}]}, headers=auth(gm_token)
+            f"/features/{feature.id}/effects",
+            json={"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
+            headers=auth(gm_token),
         )
 
         response = await client.patch(f"/features/{feature.id}", json={"name": "Sneakier"}, headers=auth(gm_token))

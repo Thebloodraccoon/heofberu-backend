@@ -166,7 +166,9 @@ class TestDeleteGuards:
         feat = await create_feat(name="Weapon Master")
         item_id = item.id
         put = await client.put(
-            f"/feats/{feat.id}/effects", json={"weapon_effects": [{"item_id": item_id}]}, headers=auth(gm_token)
+            f"/feats/{feat.id}/effects",
+            json={"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item_id}]}]},
+            headers=auth(gm_token),
         )
         assert put.status_code == 200
 
@@ -211,7 +213,9 @@ class TestCacheInvalidation:
             headers=auth(gm_token),
         )
         await client.put(
-            f"/feats/{feat_id}/effects", json={"weapon_effects": [{"item_id": item_id}]}, headers=auth(gm_token)
+            f"/feats/{feat_id}/effects",
+            json={"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item_id}]}]},
+            headers=auth(gm_token),
         )
 
         assert (await client.get(f"/backgrounds/{background_id}/items")).json()[0]["item"]["name"] == "Censer"
@@ -264,7 +268,7 @@ class TestCacheInvalidation:
         for feature_id in (race_feature.id, subrace_feature.id):
             await client.put(
                 f"/features/{feature_id}/effects",
-                json={"weapon_effects": [{"item_id": item.id}]},
+                json={"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item.id}]}]},
                 headers=auth(gm_token),
             )
         assert "Pike" in (await client.get(f"/races/{race.id}")).text
