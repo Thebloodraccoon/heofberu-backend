@@ -1,7 +1,7 @@
 """
 Exception handler for SQLAlchemy errors.
 
-``IntegrityError`` becomes a 400 whose message is derived from the
+``IntegrityError`` becomes a 409 for a unique violation and a 400 otherwise, with a message derived from the
 PostgreSQL SQLSTATE (unique / foreign key / not-null / check); pool
 exhaustion becomes a 503; any other database error a generic 500.
 Statements, parameters and constraint detail are logged at most by
@@ -49,7 +49,7 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
             request_id,
         )
         message = _INTEGRITY_MESSAGES.get(state or "", "Database integrity constraint violation")
-        status_code = status.HTTP_400_BAD_REQUEST
+        status_code = status.HTTP_409_CONFLICT if state == UNIQUE_VIOLATION else status.HTTP_400_BAD_REQUEST
     elif isinstance(exc, PoolTimeoutError):
         logger.error("Database pool exhausted - Path: %s - Request ID: %s", request.url.path, request_id)
         message = "Service temporarily unavailable"

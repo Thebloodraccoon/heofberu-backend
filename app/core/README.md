@@ -68,7 +68,7 @@ One exception regime:
   and pass a human-readable message to `super().__init__`
   (`GmAccessException`, `InvalidCredentialsException`, ...).
 - **Data-layer exceptions** — feature-agnostic `AppError` subclasses:
-  `RecordNotFoundError` (404), `RecordAlreadyExistsError` (400),
+  `RecordNotFoundError` (404), `RecordAlreadyExistsError` (409),
   `RecordIdsInvalidError` (400), `RecordInUseError` (409). The single
   `AppError` handler serves them; `ServiceUnavailableError` (503) covers an
   unreachable backing service.
@@ -87,14 +87,14 @@ One exception regime:
   (pre-insert/update uniqueness checks → `RecordAlreadyExistsError`),
   `check_in_use_on_delete` (delete guard → `RecordInUseError`; requires an
   `is_in_use` override).
-- `commit_or_flush(commit=...)` — rollback-safe commit (rolls back on any
-  exception), or flush when the caller owns the transaction inside
-  `_atomic()`. The old module-level `_commit_or_rollback(db)` is a deprecated
-  alias of `base.transaction.commit_or_rollback`.
+- `flush()` — the only write path: flushes, and raises `RuntimeError` unless
+  the session is inside `atomic` (`require_atomic`), so a write the service
+  forgot to wrap fails loudly instead of being silently rolled back. Repositories
+  never commit; there is no `commit=` flag.
 - `get_all` / `get_brief` order by the requested column(s) with `id` as the
   final tie-break, so OFFSET/LIMIT pages are deterministic.
 - batch association helpers: `replace_association` (M2M tables) and
-  `replace_child_rows` (child-row sets), both `commit=False`-aware.
+  `replace_child_rows` (child-row sets); both only flush.
 - `exists_referencing` / `get_many_by_ids` — FK-existence and id-IN
   lookups defined once for reuse.
 
@@ -106,7 +106,7 @@ The "fetch → validate → persist → serialize" orchestrator:
   paginated `get_all` (with a column-select fast path when a lightweight
   `get_all_schema` is declared and it has no relationship fields),
   `get_by_id`, `create`, partial `update` (`exclude_unset=True`),
-  `delete`.
+  `delete`; each write runs in its own `_atomic()` block.
 - Writes purge the service's `cache_namespaces` via `_invalidate_cache`
   (deferred until after `COMMIT` inside `_atomic()` / `_unit_of_work()`).
 - `resolve_ids` validates FK id lists → `RecordIdsInvalidError` (→ 400).
@@ -127,21 +127,24 @@ The one transaction-ownership mechanism: **the service owns the
 transaction**, repositories only write.
 
 - `atomic(db)` / `BaseService._atomic()` — one all-or-nothing transaction
-  (savepoint + commit); every inner write passes `commit=False`. Callbacks
-  registered with `after_commit` run after the `COMMIT` and are dropped on
-  rollback.
+  (savepoint + commit); repository writes inside only flush. Re-entrant: a
+  nested block joins the outer one. Callbacks registered with `after_commit`
+  run after the `COMMIT` and are dropped on rollback.
 - `unit_of_work(db)` / `BaseService._unit_of_work()` — the same, yielding a
   `UnitOfWork` with `await uow.invalidate("ns", keys=[...])` and
   `await uow.after_commit(coro_fn)`.
 - `invalidate_after_commit(db, *namespaces, keys=())` — outside an atomic
-  block it purges immediately (the legacy `commit=True` repository call
-  already committed).
-- `commit_or_rollback(db)` — public replacement for the old private helper.
+  block it purges immediately.
+- `TransactionMixin` — `_atomic()` / `_unit_of_work()` for any service that owns writes (`BaseService`,
+  `CharacterSubDomainService`, auth, article writer/proposals, image and nested-item services). Session is
+  `self.db`; override `_tx_db` when it lives elsewhere (`self.repository.db`). Feature code never imports
+  `atomic` directly.
+- `require_atomic(db)` / `in_atomic(db)` — the guard behind `BaseRepository.flush`.
 
 ```python
 async with self._unit_of_work() as uow:
-    race = await self.repository.create(data, commit=False)
-    await self.skills_repo.set_skills(race.id, skills, commit=False)
+    race = await self.repository.create(data)
+    await self.skills_repo.set_skills(race.id, skills)
     await uow.invalidate("races", "characters")   # runs only after COMMIT
 ```
 
@@ -294,9 +297,8 @@ rules (revocation, single-use claims) live in `app/features/auth`, keeping
 
 - Python 3.10+, full type hints; layer strictly endpoint → service →
   repository → model.
-- Multi-table writes go through `_atomic()` / `_unit_of_work()` with
-  `commit=False` inner writes; single writes end with
-  `commit_or_flush(commit=True)`. Cache purges inside a transaction go through
+- Every write goes through `_atomic()` / `_unit_of_work()`; repositories only
+  flush (`flush()`), never commit. Cache purges inside a transaction go through
   `invalidate_after_commit` / `uow.invalidate`.
 - Rich Google-style docstrings; ruff clean (line length 120, double
   quotes, no relative imports).

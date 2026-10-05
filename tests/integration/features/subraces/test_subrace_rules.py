@@ -24,14 +24,14 @@ class TestRaceScopedNames:
         assert response.json()["name"] == "Mountain"
         assert response.json()["race_id"] == elf.id
 
-    async def test_rename_to_a_sibling_name_returns_400(self, client, gm_token, create_race, create_subrace):
+    async def test_rename_to_a_sibling_name_returns_409(self, client, gm_token, create_race, create_subrace):
         elf = await create_race(name="Elf")
         await create_subrace(race_id=elf.id, name="High Elf")
         wood = await create_subrace(race_id=elf.id, name="Wood Elf")
 
         response = await client.patch(f"/subraces/{wood.id}", json={"name": "High Elf"}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_patch_keeping_the_same_name_succeeds(self, client, gm_token, create_race, create_subrace):
         elf = await create_race(name="Elf")
@@ -59,7 +59,7 @@ class TestRaceScopedNames:
 
         response = await client.post("/subraces", json={"name": "Northern", "race_id": elf.id}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
 
 @pytest.mark.integration
@@ -213,10 +213,10 @@ class TestSubraceDetail:
         paths = app_module.app.openapi()["paths"]
         paths = {path.removeprefix("/api/v1"): item for path, item in paths.items()}
 
-        assert "400" in paths["/races"]["post"]["responses"]
-        assert "409" not in paths["/races"]["post"]["responses"]
-        assert "400" in paths["/races/{race_id}"]["patch"]["responses"]
-        assert "400" in paths["/subraces"]["post"]["responses"]
-        assert "400" in paths["/subraces/{subrace_id}"]["patch"]["responses"]
+        assert "409" in paths["/races"]["post"]["responses"]
+        assert "400" not in paths["/races"]["post"]["responses"]
+        assert "409" in paths["/races/{race_id}"]["patch"]["responses"]
+        assert "409" in paths["/subraces"]["post"]["responses"]
+        assert "409" in paths["/subraces/{subrace_id}"]["patch"]["responses"]
         assert "409" in paths["/subraces/{subrace_id}"]["delete"]["responses"]
         assert "400" not in paths["/subraces/{subrace_id}"]["delete"]["responses"]

@@ -65,7 +65,7 @@ async def get_background(background_id: int, background_service: BackgroundCrudD
     status_code=status.HTTP_201_CREATED,
     summary="Create a background",
     responses={
-        400: {"description": "A background with this name already exists."},
+        409: {"description": "A background with this name already exists."},
     },
 )
 async def create_background(
@@ -107,7 +107,7 @@ async def create_background(
     response_model=BackgroundResponse,
     summary="Update a background's base fields",
     responses={
-        400: {"description": "Another background already uses the requested name."},
+        409: {"description": "Another background already uses the requested name."},
         404: {"description": "No background exists with the given ID."},
     },
 )

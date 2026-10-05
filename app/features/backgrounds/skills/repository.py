@@ -13,13 +13,12 @@ class BackgroundSkillsRepository(SkillLookupMixin, BackgroundRepository):
     from :class:`SkillLookupMixin`.
     """
 
-    async def set_skills(self, background_id: int, skills: list[Skill], *, commit: bool = True) -> None:
+    async def set_skills(self, background_id: int, skills: list[Skill]) -> None:
         """
         Replace all granted skills for a background.
 
         Written through the association table (delete + insert) rather than
-        the ORM relationship to avoid an async lazy load; ``commit`` lets
-        atomic multi-write callers defer the commit.
+        the ORM relationship to avoid an async lazy load.
         """
 
         await self.replace_association(
@@ -28,5 +27,4 @@ class BackgroundSkillsRepository(SkillLookupMixin, BackgroundRepository):
             "background_id",
             "skill_id",
             [skill.id for skill in (skills or [])],
-            commit=commit,
         )

@@ -155,11 +155,11 @@ class FeatureRepository(BaseRepository[Feature]):
         )
         return list(result.scalars().all())
 
-    async def delete(self, db_obj: Feature, *, commit: bool = True) -> bool:
-        """Delete a feature; ``commit=False`` flushes and leaves the transaction to the caller."""
+    async def delete(self, db_obj: Feature) -> bool:
+        """Delete a feature and flush; the caller owns the transaction."""
 
         await self.db.delete(db_obj)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         return True
 
     @staticmethod

@@ -70,8 +70,8 @@ class FakeCacheRepository:
         self.get_many_calls.append(character_ids)
         return dict.fromkeys(character_ids, self.cache_row)
 
-    async def upsert(self, character_id, totals, *, commit=True):
-        self.upsert_calls.append((character_id, totals, commit))
+    async def upsert(self, character_id, totals):
+        self.upsert_calls.append((character_id, totals))
         return self.cache_row
 
     async def get_hit_dice(self, class_ids):
@@ -100,8 +100,8 @@ class FakeCacheRepository:
         self.get_feature_increases_many_calls.append(list(character_ids))
         return dict.fromkeys(character_ids, self.feature_increases)
 
-    async def upsert_many(self, totals_by_character_id, *, commit=True):
-        self.upsert_many_calls.append((dict(totals_by_character_id), commit))
+    async def upsert_many(self, totals_by_character_id):
+        self.upsert_many_calls.append(dict(totals_by_character_id))
         return dict.fromkeys(totals_by_character_id, self.cache_row)
 
 
@@ -254,12 +254,10 @@ class TestCharacterStatsService:
     async def test_refresh_many_persists_batched_totals(self):
         service, fake = make_service()
 
-        result = await service.refresh_many([make_character(id=1), make_character(id=2, race_id=None)], commit=False)
+        result = await service.refresh_many([make_character(id=1), make_character(id=2, race_id=None)])
 
         assert set(result) == {1, 2}
-        totals_by_character, commit = fake.upsert_many_calls[0]
-        assert set(totals_by_character) == {1, 2}
-        assert commit is False
+        assert set(fake.upsert_many_calls[0]) == {1, 2}
 
     async def test_refresh_many_with_empty_list_skips_repository(self):
         service, fake = make_service()

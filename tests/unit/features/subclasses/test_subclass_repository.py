@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.subclasses.crud.repository import SubclassRepository
 from tests.unit.fakes import FakeAsyncSession
@@ -61,7 +62,8 @@ class TestUpdateScopesUniquenessByTheExistingRow:
         session = RecordingSession(scalar_results=[None])
         row = SimpleNamespace(id=5, class_id=7, name="Old")
 
-        await SubclassRepository(session).update(row, {"name": "Champion"})
+        async with atomic(session):
+            await SubclassRepository(session).update(row, {"name": "Champion"})
 
         assert "subclasses.class_id = 7" in session.scalar_sql[0]
         assert "subclasses.id != 5" in session.scalar_sql[0]
@@ -82,15 +84,16 @@ class TestUpdateScopesUniquenessByTheExistingRow:
         session = RecordingSession()
         row = SimpleNamespace(id=5, class_id=7, description="")
 
-        await SubclassRepository(session).update(row, {"description": "text"})
+        async with atomic(session):
+            await SubclassRepository(session).update(row, {"description": "text"})
 
         assert session.scalar_sql == []
         assert row.description == "text"
 
-    async def test_commit_false_only_flushes(self):
+    async def test_update_only_flushes_until_atomic_exits(self):
         session = RecordingSession()
         row = SimpleNamespace(id=5, class_id=7, description="")
 
-        await SubclassRepository(session).update(row, {"description": "text"}, commit=False)
-
-        assert (session.flushes, session.commits) == (1, 0)
+        async with atomic(session):
+            await SubclassRepository(session).update(row, {"description": "text"})
+            assert (session.flushes, session.commits) == (1, 0)

@@ -40,7 +40,7 @@ class SpellAvailabilityService(BaseService[Spell, BaseModel, BaseModel, SpellRes
         )
 
         async with self._atomic():
-            await self.repository.set_availability(spell_id, dimension, [member.id for member in members], commit=False)
+            await self.repository.set_availability(spell_id, dimension, [member.id for member in members])
             await self._invalidate_cache()
 
         return await self._get_response(spell_id)

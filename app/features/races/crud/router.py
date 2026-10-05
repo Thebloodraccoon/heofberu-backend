@@ -54,7 +54,7 @@ async def get_race(race_id: EntityIdPath, race_service: RaceCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a race",
     responses={
-        400: {"description": "A race with this name already exists."},
+        409: {"description": "A race with this name already exists."},
     },
 )
 async def create_race(
@@ -99,7 +99,7 @@ async def create_race(
     summary="Update a race's base fields",
     responses={
         404: {"description": "No race exists with the given ID."},
-        400: {"description": "Another race already uses the requested name."},
+        409: {"description": "Another race already uses the requested name."},
     },
 )
 async def update_race(

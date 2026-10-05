@@ -28,7 +28,7 @@ async def get_subtypes(
     response_model=ArticleSubtypeResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create an article subtype",
-    responses={400: {"description": "This article_type already has a subtype with this name (case-insensitive)."}},
+    responses={409: {"description": "This article_type already has a subtype with this name (case-insensitive)."}},
 )
 async def create_subtype(data: ArticleSubtypeCreate, subtype_service: ArticleSubtypesDep, _: GmUserDep):
     """Add a subtype to one `article_type` (fixed for good). **GM only.**"""
@@ -41,7 +41,7 @@ async def create_subtype(data: ArticleSubtypeCreate, subtype_service: ArticleSub
     response_model=ArticleSubtypeResponse,
     summary="Rename an article subtype",
     responses={
-        400: {"description": "The type already has a subtype with this name."},
+        409: {"description": "The type already has a subtype with this name."},
         404: {"description": "No subtype exists with the given ID."},
     },
 )

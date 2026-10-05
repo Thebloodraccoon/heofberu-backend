@@ -51,8 +51,8 @@ Every sub-resource `PUT` and `PATCH` answers with the same full `ClassResponse` 
   Writes that only touch the class's own columns use `ClassRepository.get_row`
   (bare row). `ClassRepository.get_by_id` is also used by the characters flows.
 - **One transaction owner.** `update_class` wraps the row update and the saving-throw
-  replacement in `_unit_of_work()` (`BaseRepository.update(commit=False)` only
-  flushes); single-step writes let the repository commit. Cache purges are
+  replacement in `_unit_of_work()` (`BaseRepository.update` only
+  flushes); single-step writes run in `_atomic()` too. Cache purges are
   scheduled after the commit and dropped on rollback.
 - **Capability services** extend `ClassScopedService`: one `ClassRepository`, the
   `ClassResponse` schema, `cache_namespaces`. Only `ClassCrudService` is a `CachedService`.

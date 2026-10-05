@@ -48,8 +48,9 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
     async def create_class(self, class_data: ClassCreate) -> ClassResponse:
         """Create a class (base fields only) and return it."""
 
-        item = await self.repository.create(class_data.model_dump())
-        await self._invalidate_cache()
+        async with self._atomic():
+            item = await self.repository.create(class_data.model_dump())
+            await self._invalidate_cache()
 
         return await self.get_by_id(item.id)
 
@@ -71,11 +72,9 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
 
         async with self._unit_of_work() as uow:
             if fields:
-                await self.repository.update(character_class, fields, commit=False)
+                await self.repository.update(character_class, fields)
             if update_data.saving_throws is not None:
-                await self.repository.set_proficiencies(
-                    class_id, SAVING_THROWS, update_data.saving_throws, commit=False
-                )
+                await self.repository.set_proficiencies(class_id, SAVING_THROWS, update_data.saving_throws)
 
             await uow.invalidate(*self.cache_namespaces)
             if hit_dice_changed:
@@ -91,8 +90,9 @@ class ClassCrudService(CachedService[Class, ClassCreate, ClassUpdate, ClassRespo
         if character_class is None:
             raise RecordNotFoundError(model_name="Class", model_id=str(item_id))
 
-        result = await self.repository.delete(character_class)
-        await invalidate_after_commit(self.repository.db, *CLASS_DELETE_CACHE_NAMESPACES)
+        async with self._atomic():
+            result = await self.repository.delete(character_class)
+            await invalidate_after_commit(self.repository.db, *CLASS_DELETE_CACHE_NAMESPACES)
 
         return result
 

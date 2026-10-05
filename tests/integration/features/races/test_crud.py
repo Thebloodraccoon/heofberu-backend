@@ -82,7 +82,7 @@ class TestRaceCrud:
             "Sunlight Sensitivity",
         ]
 
-    async def test_create_duplicate_race_name_returns_400(self, client, gm_token, create_race):
+    async def test_create_duplicate_race_name_returns_409(self, client, gm_token, create_race):
         await create_race(name="Orc")
         response = await client.post(
             "/races",
@@ -90,7 +90,7 @@ class TestRaceCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_race(self, client, gm_token, create_race):
         race = await create_race(name="Old Name")

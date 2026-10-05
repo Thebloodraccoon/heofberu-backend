@@ -157,7 +157,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
         source_type = create_data.source_type
 
         async with self._atomic():
-            item = await self.repository.create(create_data.model_dump(), commit=False)
+            item = await self.repository.create(create_data.model_dump())
             await self._reconcile_characters(source_type, self._source_fk_value(source_type, create_data))
             await invalidate_feature_cache_after_commit(self.repository.db, source_type)
 
@@ -262,7 +262,7 @@ class FeatureCrudService(CachedService[Feature, FeatureCreate, FeatureUpdate, Fe
             )
 
         async with self._atomic():
-            await self.repository.delete(feature, commit=False)
+            await self.repository.delete(feature)
             await self._reconcile_characters(source_type, source_id)
             await invalidate_feature_cache_after_commit(self.repository.db, source_type)
 

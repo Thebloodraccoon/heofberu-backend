@@ -35,16 +35,17 @@ class TestCharacterAttacksHardening:
         other = await create_user()
         mine = await create_character(owner_id=player.id, class_id=fighter.id)
         theirs = await create_character(owner_id=other.id, class_id=fighter.id)
-        foreign_attack_id = (await make_attack(client, gm_token, theirs.id)).json()["id"]
+        mine_id, theirs_id = mine.id, theirs.id
+        foreign_attack_id = (await make_attack(client, gm_token, theirs_id)).json()["id"]
 
         patch = await client.patch(
-            f"/characters/{mine.id}/attacks/{foreign_attack_id}", json={"name": "Stolen"}, headers=auth(player_token)
+            f"/characters/{mine_id}/attacks/{foreign_attack_id}", json={"name": "Stolen"}, headers=auth(player_token)
         )
-        delete = await client.delete(f"/characters/{mine.id}/attacks/{foreign_attack_id}", headers=auth(player_token))
+        delete = await client.delete(f"/characters/{mine_id}/attacks/{foreign_attack_id}", headers=auth(player_token))
 
         assert patch.status_code == 404
         assert delete.status_code == 404
-        listing = await client.get(f"/characters/{theirs.id}/attacks", headers=auth(gm_token))
+        listing = await client.get(f"/characters/{theirs_id}/attacks", headers=auth(gm_token))
         assert [a["name"] for a in listing.json()] == ["Longsword"]
 
     async def test_unknown_enum_values_are_a_422(self, client, player, player_token, create_class, create_character):

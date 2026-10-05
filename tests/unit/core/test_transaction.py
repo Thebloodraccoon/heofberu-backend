@@ -6,13 +6,15 @@ from unittest.mock import AsyncMock
 from pydantic import BaseModel, ConfigDict
 import pytest
 
+from app.core.base.repository import BaseRepository
 from app.core.base.service import BaseService
 from app.core.base.transaction import (
+    TransactionMixin,
     after_commit,
     atomic,
-    commit_or_rollback,
     in_atomic,
     invalidate_after_commit,
+    require_atomic,
     unit_of_work,
 )
 from app.core.pagination import paginate
@@ -131,26 +133,6 @@ class TestAtomic:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestCommitOrRollback:
-    async def test_commits(self):
-        db = FakeAsyncSession()
-
-        await commit_or_rollback(db)
-
-        assert db.commits == 1
-
-    async def test_rolls_back_on_any_exception(self):
-        db = FakeAsyncSession()
-        db.commit = AsyncMock(side_effect=ValueError("bad"))
-
-        with pytest.raises(ValueError):
-            await commit_or_rollback(db)
-
-        assert db.rollbacks == 1
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
 class TestDeferredInvalidation:
     async def test_invalidate_after_commit_waits_for_commit(self, purge):
         db = FakeAsyncSession()
@@ -212,49 +194,89 @@ class TestPaginate:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestRepositoryTransactionHelpers:
-    async def test_commit_or_flush_rolls_back_on_any_exception(self):
-        from app.core.base.repository import BaseRepository
-
-        db = FakeAsyncSession()
-        db.commit = AsyncMock(side_effect=ValueError("bad"))
-        repository = BaseRepository(Svc, db, search_fields=[])
-
-        with pytest.raises(ValueError):
-            await repository.commit_or_flush()
-
-        assert db.rollbacks == 1
-
-    async def test_commit_or_flush_flushes_when_the_caller_owns_the_transaction(self):
-        from app.core.base.repository import BaseRepository
-
+class TestNestedAtomic:
+    async def test_inner_block_joins_outer_and_only_outer_commits(self):
         db = FakeAsyncSession()
 
-        await BaseRepository(Svc, db, search_fields=[]).commit_or_flush(commit=False)
+        async with atomic(db):
+            async with atomic(db):
+                pass
+            assert db.commits == 0
+            assert in_atomic(db)
 
-        assert db.flushes == 1
-        assert db.commits == 0
+        assert db.commits == 1
+        assert not in_atomic(db)
+
+    async def test_inner_error_rolls_back_through_the_outer_block(self):
+        db = FakeAsyncSession()
+
+        with pytest.raises(RuntimeError):
+            async with atomic(db):
+                async with atomic(db):
+                    raise RuntimeError("boom")
+
+        assert (db.commits, db.rollbacks) == (0, 1)
+
+    async def test_mixin_atomic_uses_tx_db(self):
+        db = FakeAsyncSession()
+
+        class Host(TransactionMixin):
+            @property
+            def _tx_db(self):
+                return db
+
+        async with Host()._atomic():
+            assert in_atomic(db)
+
+        assert db.commits == 1
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestRepositoryUpdateCommitFlag:
-    async def test_update_with_commit_false_only_flushes(self):
-        from app.core.base.repository import BaseRepository
+class TestRequireAtomic:
+    async def test_raises_outside_atomic(self):
+        with pytest.raises(RuntimeError):
+            require_atomic(FakeAsyncSession())
 
+    async def test_passes_inside_atomic(self):
+        db = FakeAsyncSession()
+
+        async with atomic(db):
+            require_atomic(db)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRepositoryWritesNeedAtomic:
+    async def test_flush_raises_outside_atomic(self):
+        db = FakeAsyncSession()
+
+        with pytest.raises(RuntimeError):
+            await BaseRepository(Svc, db, search_fields=[]).flush()
+
+        assert db.flushes == 0
+
+    async def test_flush_inside_atomic_flushes(self):
+        db = FakeAsyncSession()
+
+        async with atomic(db):
+            await BaseRepository(Svc, db, search_fields=[]).flush()
+
+        assert db.flushes == 1
+
+    async def test_update_flushes_without_committing_until_atomic_exits(self):
         db = FakeAsyncSession()
         row = SimpleNamespace(id=1, name="old")
 
-        await BaseRepository(Svc, db, search_fields=[]).update(row, {"name": "new"}, commit=False)
+        async with atomic(db):
+            await BaseRepository(Svc, db, search_fields=[]).update(row, {"name": "new"})
+            assert (db.flushes, db.commits) == (1, 0)
 
         assert row.name == "new"
-        assert (db.flushes, db.commits) == (1, 0)
+        assert db.commits == 1
 
-    async def test_update_commits_by_default(self):
-        from app.core.base.repository import BaseRepository
-
+    async def test_update_raises_outside_atomic(self):
         db = FakeAsyncSession()
 
-        await BaseRepository(Svc, db, search_fields=[]).update(SimpleNamespace(id=1, name="old"), {"name": "new"})
-
-        assert (db.flushes, db.commits) == (0, 1)
+        with pytest.raises(RuntimeError):
+            await BaseRepository(Svc, db, search_fields=[]).update(SimpleNamespace(id=1, name="old"), {"name": "new"})

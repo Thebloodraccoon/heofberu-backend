@@ -87,13 +87,13 @@ class TestPatchValidation:
         assert response.status_code == 200
         assert response.json()["spellcasting_ability"] is None
 
-    async def test_duplicate_name_returns_400(self, client, gm_token, create_class):
+    async def test_duplicate_name_returns_409(self, client, gm_token, create_class):
         await create_class(name="Fighter")
         other = await create_class(name="Rogue")
 
         response = await client.patch(f"/classes/{other.id}", json={"name": "Fighter"}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_renaming_to_its_own_name_is_not_a_conflict(self, client, gm_token, create_class):
         character_class = await create_class(name="Fighter")
@@ -117,7 +117,7 @@ class TestPatchIsAtomic:
             f"/classes/{other_id}", json={"name": "Fighter", "saving_throws": ["STR", "CON"]}, headers=auth(gm_token)
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
         fetched = (await client.get(f"/classes/{other_id}")).json()
         assert fetched["name"] == "Rogue"
         assert [t["ability"] for t in fetched["saving_throws"]] == ["DEX"]

@@ -18,6 +18,7 @@ isn't supported (``FeatureGrantService.answer_choices`` rejects it).
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -210,7 +211,7 @@ def _weapon_sort_key(weapon: tuple) -> tuple:
     return (category is None, getattr(category, "value", category) or "", item_id is None, item_id or 0)
 
 
-def _to_response(effects: GrantEffects, spells: dict[int, CharacterSpellResponse]) -> list[dict]:
+def _to_response(effects: GrantEffects, spells: dict[int, CharacterSpellResponse]) -> list[Any]:
     """Serialize one grant's computed effects as non-empty ``GrantEffectGroup`` entries, in ``EFFECT_TYPES`` order."""
 
     items_by_type: dict[str, list] = {
@@ -239,7 +240,7 @@ def _to_response(effects: GrantEffects, spells: dict[int, CharacterSpellResponse
     ]
 
 
-async def get_grant_effects_map(db: AsyncSession, grants: list[CharacterFeature]) -> dict[int, list[dict]]:
+async def get_grant_effects_map(db: AsyncSession, grants: list[CharacterFeature]) -> dict[int, list[Any]]:
     """
     ``{grant_id: [GrantEffectGroup, ...]}`` for listing endpoints. Computes from
     the trees the caller already loaded: each grant needs ``feature`` (with

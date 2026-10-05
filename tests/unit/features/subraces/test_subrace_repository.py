@@ -3,6 +3,7 @@
 import pytest
 
 from app.constants import AbilityScore
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.subraces.crud.repository import SubraceRepository
 from app.models.races.subrace_association_models import SubraceAbilityBonus
@@ -46,9 +47,10 @@ class TestSubraceRepository:
     async def test_set_ability_bonuses_replaces_child_rows_and_commits(self):
         session = FakeAsyncSession()
 
-        await SubraceRepository(session).set_ability_bonuses(
-            1, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
-        )
+        async with atomic(session):
+            await SubraceRepository(session).set_ability_bonuses(
+                1, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
+            )
 
         assert len(session.added) == 2
         assert all(isinstance(row, SubraceAbilityBonus) for row in session.added)
@@ -56,13 +58,13 @@ class TestSubraceRepository:
         assert session.added[0].ability == AbilityScore.DEX
         assert session.commits == 1
 
-    async def test_set_ability_bonuses_with_commit_false_flushes(self):
+    async def test_set_ability_bonuses_flushes_until_atomic_exits(self):
         session = FakeAsyncSession()
 
-        await SubraceRepository(session).set_ability_bonuses(1, [], commit=False)
-
-        assert session.flushes == 1
-        assert session.commits == 0
+        async with atomic(session):
+            await SubraceRepository(session).set_ability_bonuses(1, [])
+            assert session.flushes == 1
+            assert session.commits == 0
 
 
 @pytest.mark.unit

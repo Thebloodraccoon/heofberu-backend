@@ -68,7 +68,7 @@ def test_session(session):
         *workers,
         "--cov=app/",
         "--cov-report=term-missing",
-        "--cov-fail-under=50",
+        "--cov-fail-under=80",
         "--cov-config=pyproject.toml",
         *rest,
         external=True
@@ -101,7 +101,7 @@ def all_session(session):
     workers, rest = split_workers(session)
     session.run("poetry", "run", "ruff", "check", "app/", "tests/", external=True)
     session.run("poetry", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
-    # session.run("poetry", "run", "mypy", "app/", external=True)
+    session.run("poetry", "run", "mypy", "app/", external=True)
     session.run("poetry", "run", "bandit", "-c", "pyproject.toml", "-r", "app/", external=True)
     session.run(
         "poetry", "run", "pytest",
@@ -109,7 +109,7 @@ def all_session(session):
         *workers,
         "--cov=app/",
         "--cov-report=term-missing",
-        "--cov-fail-under=50",
+        "--cov-fail-under=80",
         "--cov-config=pyproject.toml",
         *(rest or ["tests/"]),
         external=True

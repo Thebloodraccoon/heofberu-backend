@@ -54,7 +54,7 @@ class TestArticleSubtypes:
             "/articles/subtypes", json={"article_type": "location", "name": "tavern"}, headers=gm_headers
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_same_name_allowed_in_another_type(self, client, gm_headers):
         await self._create(client, gm_headers, article_type="location", name="Capital")

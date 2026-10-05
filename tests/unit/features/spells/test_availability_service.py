@@ -76,16 +76,13 @@ class FakeSpellRepository(FakeRepository):
         self.lookup_calls = []
         self.set_calls = []
 
-    async def create(self, payload, *, commit=True):
+    async def create(self, payload):
         row = Spell(**payload)
         row.id = self._next_id
         self._next_id += 1
         self._rows[row.id] = row
         self.created.append(row)
-        if commit:
-            await self.db.commit()
-        else:
-            await self.db.flush()
+        await self.db.flush()
         return row
 
     async def get_dimension_members(self, dimension, ids):
@@ -93,16 +90,13 @@ class FakeSpellRepository(FakeRepository):
         known = self.children.get(dimension.field, {})
         return [known[item_id] for item_id in ids if item_id in known]
 
-    async def set_availability(self, spell_id, dimension, child_ids, *, commit=True):
-        self.set_calls.append((dimension.field, spell_id, child_ids, commit))
+    async def set_availability(self, spell_id, dimension, child_ids):
+        self.set_calls.append((dimension.field, spell_id, child_ids))
         spell = self._rows.get(spell_id)
         if spell is not None:
             known = self.children.get(dimension.field, {})
             setattr(spell, dimension.field, [known.get(child_id, make_child(id=child_id)) for child_id in child_ids])
-        if commit:
-            await self.db.commit()
-        else:
-            await self.db.flush()
+        await self.db.flush()
 
 
 @pytest.fixture
@@ -143,7 +137,7 @@ class TestSpellAvailabilityService:
 
         result = await getattr(service, f"set_{dimension}")(1, schema(**{id_field: [5]}))
 
-        assert service.repository.set_calls == [(field, 1, [5], False)]
+        assert service.repository.set_calls == [(field, 1, [5])]
         assert purged.await_args_list[0].args == ("spells",)
         assert commits_seen == [1]
         assert db.commits == 1
@@ -157,7 +151,7 @@ class TestSpellAvailabilityService:
 
         result = await getattr(service, f"set_{dimension}")(1, schema(**{id_field: []}))
 
-        assert service.repository.set_calls == [(field, 1, [], False)]
+        assert service.repository.set_calls == [(field, 1, [])]
         assert service.repository.lookup_calls == []
         assert purged.await_count == 1
         assert getattr(result, field) == []
@@ -170,7 +164,7 @@ class TestSpellAvailabilityService:
         await service.set_classes(1, ClassAvailabilityUpdate(class_ids=[5, 5, 5]))
 
         assert service.repository.lookup_calls == [("available_classes", [5])]
-        assert service.repository.set_calls == [("available_classes", 1, [5], False)]
+        assert service.repository.set_calls == [("available_classes", 1, [5])]
 
     async def test_set_classes_raises_when_spell_missing(self, purged):
         service, _ = make_availability_service(existing_by_id={})
@@ -234,8 +228,8 @@ class TestCreateSpellSeeding:
         result = await service.create_spell(self._spell_data(available_classes=[5], available_races=[9]))
 
         assert service.repository.set_calls == [
-            ("available_classes", 1, [5], False),
-            ("available_races", 1, [9], False),
+            ("available_classes", 1, [5]),
+            ("available_races", 1, [9]),
         ]
         assert db.commits == 1
         assert commits_seen == [1]

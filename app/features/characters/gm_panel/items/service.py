@@ -10,6 +10,7 @@ from app.features.characters.gm_panel.exceptions import (
 from app.features.characters.gm_panel.items.schemas import MAX_ITEM_QUANTITY, CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.items.repository import CharacterItemRepository
 from app.features.characters.items.schemas import CharacterItemResponse
+from app.features.characters.locking import lock_character
 from app.features.items.crud.repository import ItemRepository
 from app.features.items.exceptions import ItemNotFoundException
 from app.features.users.schemas import UserResponse
@@ -47,24 +48,28 @@ class GmPanelItemService(CharacterSubDomainService):
         if not await self.item_repository.exists_by_id(data.item_id):
             raise ItemNotFoundException(item_id=data.item_id)
 
-        existing_stack = await self.character_item_repository.get_character_item_by_item_id(character_id, data.item_id)
-
-        if existing_stack is not None:
-            if existing_stack.quantity + data.quantity > MAX_ITEM_QUANTITY:
+        async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            existing_stack = await self.character_item_repository.get_character_item_by_item_id(
+                character_id, data.item_id
+            )
+            if existing_stack is not None and existing_stack.quantity + data.quantity > MAX_ITEM_QUANTITY:
                 raise CharacterItemQuantityLimitException(
                     character_id=character_id, item_id=data.item_id, limit=MAX_ITEM_QUANTITY
                 )
-            stack = await self.character_item_repository.update_character_item(
-                existing_stack, {"quantity": existing_stack.quantity + data.quantity}
-            )
-        else:
-            stack = await self.character_item_repository.add_character_item(
-                character_id,
-                item_id=data.item_id,
-                quantity=data.quantity,
-            )
 
-        await self._invalidate_character(character_id)
+            if existing_stack is not None:
+                stack = await self.character_item_repository.update_character_item(
+                    existing_stack, {"quantity": existing_stack.quantity + data.quantity}
+                )
+            else:
+                stack = await self.character_item_repository.add_character_item(
+                    character_id,
+                    item_id=data.item_id,
+                    quantity=data.quantity,
+                )
+
+            await self._invalidate_character(character_id)
 
         return CharacterItemResponse.model_validate(stack)
 
@@ -75,11 +80,12 @@ class GmPanelItemService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        stack = await self._get_stack_or_404(character_id, character_item_id)
-
         fields = data.model_dump(exclude_unset=True)
-        updated_stack = await self.character_item_repository.update_character_item(stack, fields)
-        await self._invalidate_character(character_id)
+        async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            stack = await self._get_stack_or_404(character_id, character_item_id)
+            updated_stack = await self.character_item_repository.update_character_item(stack, fields)
+            await self._invalidate_character(character_id)
 
         return CharacterItemResponse.model_validate(updated_stack)
 
@@ -88,9 +94,11 @@ class GmPanelItemService(CharacterSubDomainService):
 
         await self.get_character_for_user(character_id, current_user)
 
-        stack = await self._get_stack_or_404(character_id, character_item_id)
-        result = await self.character_item_repository.remove_character_item(stack)
-        await self._invalidate_character(character_id)
+        async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            stack = await self._get_stack_or_404(character_id, character_item_id)
+            result = await self.character_item_repository.remove_character_item(stack)
+            await self._invalidate_character(character_id)
 
         return result
 

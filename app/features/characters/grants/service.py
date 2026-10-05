@@ -153,8 +153,8 @@ class FeatureGrantService(CharacterSubDomainService):
     GM/owner access here. :meth:`resolve_grant_choices` /
     :meth:`resolve_grants_choices` are the internal building blocks for
     callers that already hold a transaction and an authorized character
-    (level-up, the GM panel): they never commit, refresh stats or
-    invalidate the cache — the caller does.
+    (level-up, the GM panel): they only flush, never refresh stats or
+    invalidate the cache — the caller (inside its atomic block) does.
     """
 
     def __init__(self, db: AsyncSession):
@@ -324,7 +324,7 @@ class FeatureGrantService(CharacterSubDomainService):
         /features/{id}/choices``; ``get_all_pending_choices`` is the surface
         a client polls to know a grant still needs one.
 
-        Never commits and never refreshes stats / invalidates the cache.
+        Flush only; never refreshes stats / invalidates the cache.
         """
 
         features = await self._load_trees(grants, only_with_choices=True)
@@ -388,7 +388,7 @@ class FeatureGrantService(CharacterSubDomainService):
             stored = (await self._load_stored_choices([grant.id]))[grant.id]
             stored = await self._store_answers(grant, feature, stored, data.answers)
 
-            await self.stats_service.refresh(character, commit=False)
+            await self.stats_service.refresh(character)
             await self._invalidate_character(character_id)
 
             return _to_pending_response(grant, feature, pending_groups(feature, stored))

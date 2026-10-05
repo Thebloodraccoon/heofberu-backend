@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.transaction import unit_of_work
+from app.core.base.transaction import TransactionMixin
 from app.core.exceptions import RecordInUseError, RecordNotFoundError
 from app.features.characters.progression.feature_sync import refresh_feature_effect_caches
 from app.features.features.cache import invalidate_feature_cache_after_commit
@@ -50,7 +50,7 @@ _CATALOG_REFERENCES = (
 )
 
 
-class FeatureEffectsService:
+class FeatureEffectsService(TransactionMixin):
     """
     Everything about a feature's effects: its choice groups ("pick N of M",
     each option a bundle of effects) and its fixed automatic effects across
@@ -76,6 +76,10 @@ class FeatureEffectsService:
         """Initialize the service with the effect-engine repository."""
 
         self.repository = FeatureEffectsRepository(db)
+
+    @property
+    def _tx_db(self) -> AsyncSession:
+        return self.repository.db
 
     async def _get_feature_or_404(self, feature_id: int, *, for_update: bool = False) -> Feature:
         """The bare feature row (row-locked for writes), or ``RecordNotFoundError``."""
@@ -186,8 +190,7 @@ class FeatureEffectsService:
         if not provided:
             return await self.get_effects(feature_id)
 
-        db = self.repository.db
-        async with unit_of_work(db):
+        async with self._unit_of_work():
             changed = False
             for model, field_name in provided:
                 existing = (await self.repository.load_owned_rows(model, "feature_id", [feature.id])).get(
@@ -222,7 +225,7 @@ class FeatureEffectsService:
         feature = await self._get_feature_or_404(feature_id, for_update=True)
         await self._ensure_targets_exist(option for group in data.choice_groups for option in group.options)
 
-        async with unit_of_work(self.repository.db):
+        async with self._unit_of_work():
             try:
                 changed = await self._diff_choice_groups(feature, data.choice_groups)
                 if changed:

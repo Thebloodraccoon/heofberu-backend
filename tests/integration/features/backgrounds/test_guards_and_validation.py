@@ -103,13 +103,13 @@ class TestValidation:
 
         assert response.status_code == 422
 
-    async def test_patch_to_existing_name_returns_400(self, client, gm_token, create_background):
+    async def test_patch_to_existing_name_returns_409(self, client, gm_token, create_background):
         await create_background(name="Acolyte")
         other = await create_background(name="Sage")
 
         response = await client.patch(f"/backgrounds/{other.id}", json={"name": "Acolyte"}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_patch_keeps_features_in_the_response(self, client, gm_token, create_background, create_feature):
         background = await create_background(name="Sage")

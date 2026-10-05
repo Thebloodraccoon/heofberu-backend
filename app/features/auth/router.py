@@ -28,7 +28,8 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
     status_code=status.HTTP_201_CREATED,
     summary="Self-register a new account",
     responses={
-        400: {"description": "An account with this email or username already exists; invalid email; or weak password."},
+        400: {"description": "Invalid email or weak password."},
+        409: {"description": "An account with this email or username already exists."},
         422: {"description": "Validation error — username length/charset or request body shape is invalid."},
     },
 )

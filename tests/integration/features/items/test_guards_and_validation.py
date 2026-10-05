@@ -69,13 +69,13 @@ class TestValidation:
         assert response.json()["weight"] is None
         assert response.json()["cost_gold"] is not None
 
-    async def test_patch_to_existing_name_returns_400(self, client, gm_token, create_item):
+    async def test_patch_to_existing_name_returns_409(self, client, gm_token, create_item):
         await create_item(name="Longsword")
         other = await create_item(name="Dagger")
 
         response = await client.patch(f"/items/{other.id}", json={"name": "Longsword"}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_documented_create_examples_are_valid(self, client, gm_token):
         weapon = await client.post(

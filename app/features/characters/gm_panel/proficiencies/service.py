@@ -37,6 +37,7 @@ from app.features.characters.grants.schemas import (
     CharacterSavingThrowProficiencyResponse,
     CharacterWeaponProficiencyResponse,
 )
+from app.features.characters.locking import lock_character
 from app.features.characters.proficiencies.resolver import (
     ProficiencyEntry,
     ResolvedProficiency,
@@ -283,18 +284,22 @@ class GmPanelProficiencyService(CharacterSubDomainService):
         return the proficiency as it resolves afterwards.
         """
 
-        rows = await self.proficiency_repository.get_rows(character_id, proficiency_type, **discriminator)
-        features = await self.proficiency_repository.feature_entries(character_id, proficiency_type, **discriminator)
-        entries = [*map(row_entry, rows), *features]
         key = proficiency_key(proficiency_type, **discriminator)
 
-        granted_now = resolve_group(key, entries) is not None
-        if granted_now and already is not None:
-            raise already
-        if not granted_now and missing is not None:
-            raise missing
-
         async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            rows = await self.proficiency_repository.get_rows(character_id, proficiency_type, **discriminator)
+            features = await self.proficiency_repository.feature_entries(
+                character_id, proficiency_type, **discriminator
+            )
+            entries = [*map(row_entry, rows), *features]
+
+            granted_now = resolve_group(key, entries) is not None
+            if granted_now and already is not None:
+                raise already
+            if not granted_now and missing is not None:
+                raise missing
+
             gm_row = await self.proficiency_repository.apply(
                 character_id,
                 proficiency_type,

@@ -75,11 +75,13 @@ class TestRaceDeleteCascade:
             owner_id=player.id, class_id=character_class.id, race_id=other_race.id, subrace_id=subrace.id
         )
 
+        subrace_id = subrace.id
+
         response = await client.delete(f"/races/{race.id}", headers=auth(founder_token))
 
         assert response.status_code == 409
         assert storage.deleted == []
-        assert (await client.get(f"/subraces/{subrace.id}")).status_code == 200
+        assert (await client.get(f"/subraces/{subrace_id}")).status_code == 200
 
 
 @pytest.mark.integration

@@ -69,11 +69,6 @@ class FakeFeatureRepository(FakeRepository):
     async def get_plain(self, feature_id):
         return self._rows.get(feature_id)
 
-    async def delete(self, db_obj, *, commit=True):
-        self.deleted.append(db_obj)
-        await self.commit_or_flush(commit=commit)
-        return True
-
     def mark_effects_empty(self, feature):
         self.marked_empty.append(feature)
 

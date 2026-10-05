@@ -114,7 +114,8 @@ async def get_spell(spell_id: int, spell_service: SpellCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a spell",
     responses={
-        400: {"description": "A spell with this name already exists, or an availability id is invalid."},
+        400: {"description": "An availability id is invalid."},
+        409: {"description": "A spell with this name already exists."},
         422: {"description": "Invalid payload (bounds, dice/material consistency, unknown key)."},
     },
 )
@@ -235,7 +236,7 @@ async def create_spell(
     response_model=SpellResponse,
     summary="Update a spell",
     responses={
-        400: {"description": "Another spell already uses the requested name."},
+        409: {"description": "Another spell already uses the requested name."},
         404: {"description": "No spell exists with the given ID."},
         422: {"description": "Invalid payload (bounds, an explicit null for a required field, unknown key)."},
     },

@@ -63,8 +63,9 @@ class SubraceCrudService(
 
         await self._ensure_race_exists(data.race_id)
 
-        item = await self.repository.create(data.model_dump())
-        await self._invalidate_cache()
+        async with self._atomic():
+            item = await self.repository.create(data.model_dump())
+            await self._invalidate_cache()
 
         return await self._get_response(item.id)
 
@@ -73,8 +74,9 @@ class SubraceCrudService(
 
         subrace = await self._get_or_404(item_id)
 
-        await self.repository.delete(subrace)
-        await purge_after_commit(self.repository.db, *SUBRACE_DELETE_NAMESPACES)
+        async with self._atomic():
+            await self.repository.delete(subrace)
+            await purge_after_commit(self.repository.db, *SUBRACE_DELETE_NAMESPACES)
 
         if self._storage is not None:
             await self._storage.delete_image("subraces", item_id)

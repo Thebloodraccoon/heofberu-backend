@@ -51,7 +51,7 @@ class ArticleTreeRepository(ArticleScopedRepository):
 
         return article_id in await self._ancestor_chain(candidate_id)
 
-    async def set_path(self, article_id: int, parent_id: int | None, *, commit: bool = True) -> None:
+    async def set_path(self, article_id: int, parent_id: int | None) -> None:
         """
         Compute and persist ``path`` for ``article_id`` from its parent's ``path``.
 
@@ -102,7 +102,7 @@ class ArticleTreeRepository(ArticleScopedRepository):
                 {"new_path": new_path, "old_path": str(old_path), "article_id": article_id},
             )
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
     async def detach_children(self, article_id: int) -> list[int]:
         """
@@ -122,7 +122,7 @@ class ArticleTreeRepository(ArticleScopedRepository):
         path = await self.db.scalar(select(Article.path).where(Article.id == article_id))
         if path is None:
             for child_id in child_ids:
-                await self.set_path(child_id, None, commit=False)
+                await self.set_path(child_id, None)
             return child_ids
 
         await self.db.execute(

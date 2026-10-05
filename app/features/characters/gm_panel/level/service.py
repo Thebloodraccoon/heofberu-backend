@@ -28,21 +28,23 @@ class GmPanelLevelService(CharacterSubDomainService):
         """
         Raise a character's maximum allowed level; the cap can only move up.
 
-        Validated against the stored cap under the character's row lock, so
-        concurrent raises cannot interleave. A character without a row (its
-        cap is its current level) gets one seeded directly at the new value,
-        and only once validation passed.
+        Validated against the stored cap and the character's level under its
+        row lock (the row is re-read after the lock, so a concurrent level-up
+        is seen), so concurrent writes cannot interleave. A character without
+        a row (its cap is its current level) gets one seeded directly at the
+        new value, and only once validation passed.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        if data.max_level < character.level:
-            raise MaxLevelBelowCharacterLevelException(
-                character_id=character_id, max_level=data.max_level, character_level=character.level
-            )
-
         async with self._atomic():
             await lock_character(self.repository.db, character_id)
+            await self.repository.refresh(character)
+
+            if data.max_level < character.level:
+                raise MaxLevelBelowCharacterLevelException(
+                    character_id=character_id, max_level=data.max_level, character_level=character.level
+                )
 
             row = await self.max_level_repository.get_by_character_id(character_id)
             current_cap = row.max_level if row is not None else character.level
@@ -50,7 +52,7 @@ class GmPanelLevelService(CharacterSubDomainService):
                 raise MaxLevelCanOnlyIncreaseException(character_id=character_id, current_max_level=current_cap)
 
             if row is None:
-                await self.max_level_repository.create_for_character(character_id, data.max_level, commit=False)
+                await self.max_level_repository.create_for_character(character_id, data.max_level)
             else:
                 row.max_level = data.max_level
 

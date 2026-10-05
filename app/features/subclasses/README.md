@@ -22,7 +22,7 @@ subclasses/
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
 | GET | `/subclasses?class_id=` | open | Brief rows (id/class_id/name/image_url) ordered by name, cached. Without `class_id` lists all; unknown `class_id` -> 404. Not paginated (a class has a handful of subclasses). |
-| POST | `/subclasses` | GM | `name` 1-100, `class_id` > 0 (unknown -> 404), `description` <= 10000, `image_url` absolute http(s) <= 512. Name already used in that class -> 400. Responds with the full `SubclassResponse`. |
+| POST | `/subclasses` | GM | `name` 1-100, `class_id` > 0 (unknown -> 404), `description` <= 10000, `image_url` absolute http(s) <= 512. Name already used in that class -> 409. Responds with the full `SubclassResponse`. |
 | GET | `/subclasses/{subclass_id}` | open | `SubclassResponse`: base fields + SUBCLASS-source `features`, cached. |
 | PATCH | `/subclasses/{subclass_id}` | GM | `name`/`description` only; explicit `null` -> 422; `class_id` is immutable. Name clash is checked within the subclass's own class (a same-named subclass of another class is fine) -> 400. Responds with the full `SubclassResponse`. |
 | DELETE | `/subclasses/{subclass_id}` | Founder | 409 while characters reference it. |
@@ -33,8 +33,8 @@ Subclasses carry no ability bonuses; those live on the subclass features' effect
 
 ## Behaviour notes
 
-- `SubclassRepository` overrides the `BaseRepository._uniqueness_scope` hook (`BaseRepository.update` takes
-  `commit=False`): it supplies the existing row's
+- `SubclassRepository` overrides the `BaseRepository._uniqueness_scope` hook (`BaseRepository.update` only
+  flushes): it supplies the existing row's
   `class_id`, so a PATCH that only sends `name` is checked against the right siblings.
 - `get_by_id` serializes the eager-loaded `Subclass.features` (no second feature query) and
   is cached under `cache:classes:subclass:get_by_id:{id}` (own key: the `classes` namespace

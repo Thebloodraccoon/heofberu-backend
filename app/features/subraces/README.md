@@ -26,7 +26,7 @@ subraces/
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
 | GET | `/subraces?race_id=` | open | Light rows (id/race_id/name/image_url) of the race's subraces, ordered by name. Missing race -> 404. |
-| POST | `/subraces` | GM | Base fields (`race_id`, `name`, `description`); duplicate name within the race -> 400; missing race -> 404. |
+| POST | `/subraces` | GM | Base fields (`race_id`, `name`, `description`); duplicate name within the race -> 409; missing race -> 404. |
 | GET | `/subraces/{subrace_id}` | open | Full `SubraceResponse`: base fields, `ability_bonuses`, `tags`, SUBRACE-source `features`; cached under `races:subrace:get_by_id`. |
 | PATCH | `/subraces/{subrace_id}` | GM | `name`/`description`; `race_id` is immutable. Name clash within the same race -> 400, a name used by another race is fine. Explicit `null` -> 422. |
 | DELETE | `/subraces/{subrace_id}` | Founder | 409 while a character references the subrace; the stored image is removed. |

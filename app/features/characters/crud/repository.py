@@ -52,10 +52,10 @@ class CharacterRepository(BaseRepository[Character]):
             .execution_options(populate_existing=True)
         )
 
-    async def update_hp(self, character: Character, current_hp: int, temp_hp: int, *, commit: bool = True) -> Character:
-        """Set current and temp HP directly. Bounds/validation happen in the service."""
+    async def update_hp(self, character: Character, current_hp: int, temp_hp: int) -> Character:
+        """Set current and temp HP directly (flush only). Bounds/validation happen in the service."""
 
         character.current_hp = current_hp
         character.temp_hp = temp_hp
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         return character

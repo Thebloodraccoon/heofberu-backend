@@ -63,7 +63,7 @@ async def get_skill(skill_id: int, skill_service: SkillCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a skill",
     responses={
-        400: {"description": "A skill with this name already exists."},
+        409: {"description": "A skill with this name already exists."},
     },
 )
 async def create_skill(
@@ -105,7 +105,7 @@ async def create_skill(
     response_model=SkillResponse,
     summary="Update a skill",
     responses={
-        400: {"description": "Another skill already uses the requested name."},
+        409: {"description": "Another skill already uses the requested name."},
         404: {"description": "No skill exists with the given ID."},
     },
 )

@@ -108,9 +108,9 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
         payload = spell_data.model_dump(exclude={dimension.field for dimension in AVAILABILITY_DIMENSIONS})
 
         async with self._atomic():
-            item = await self.repository.create(payload, commit=False)
+            item = await self.repository.create(payload)
             for dimension, members in members_by_dimension.items():
-                await self.repository.set_availability(item.id, dimension, [m.id for m in members], commit=False)
+                await self.repository.set_availability(item.id, dimension, [m.id for m in members])
             await self._invalidate_cache()
 
         return await self._get_response(item.id)
@@ -127,7 +127,7 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
         renamed = "name" in fields and fields["name"] != item.name
 
         async with self._atomic():
-            await self.repository.update(item, fields, commit=False)
+            await self.repository.update(item, fields)
             await self._purge_after_commit(renamed)
 
         return self.response_schema.model_validate(item)
@@ -139,8 +139,9 @@ class SpellCrudService(CachedService[Spell, SpellCreate, SpellUpdate, SpellRespo
         if item is None:
             raise RecordNotFoundError(model_name="Spell", model_id=str(item_id))
 
-        result = await self.repository.delete(item)
-        await self._invalidate_cache()
+        async with self._atomic():
+            result = await self.repository.delete(item)
+            await self._invalidate_cache()
 
         return result
 

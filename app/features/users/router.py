@@ -53,7 +53,8 @@ async def get_current_user(user: CurrentUserDep):
     response_model=UserResponse,
     summary="Update the current user's profile",
     responses={
-        400: {"description": "Invalid email, or username/email already taken by another account."},
+        400: {"description": "Invalid email."},
+        409: {"description": "Username/email already taken by another account."},
         401: {"description": "Access token missing, malformed, expired, revoked, or its user no longer exists."},
         403: {"description": "The default admin's email cannot be changed."},
         422: {"description": "Validation error — payload empty, unknown fields present, or field rules violated."},
@@ -86,7 +87,8 @@ async def get_user_by_id(user_id: int, user_service: UserServiceDep, _: GmUserDe
     status_code=status.HTTP_201_CREATED,
     summary="Create a user",
     responses={
-        400: {"description": "Username/email already taken, invalid email, or weak password."},
+        400: {"description": "Invalid email or weak password."},
+        409: {"description": "Username/email already taken."},
         403: {"description": "Assigning a non-player role requires the found father."},
         422: {"description": "Validation error — username length/charset, password length, or body shape is invalid."},
     },
@@ -131,7 +133,8 @@ async def create_user(
     response_model=UserResponse,
     summary="Update a user",
     responses={
-        400: {"description": "Username/email already taken, invalid email, or default admin protection applies."},
+        400: {"description": "Invalid email, or default admin protection applies."},
+        409: {"description": "Username/email already taken."},
         403: {
             "description": (
                 "Changing a role or editing a non-player account requires the found father; "

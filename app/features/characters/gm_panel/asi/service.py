@@ -56,9 +56,8 @@ class GmPanelAsiService(CharacterSubDomainService):
                 None,
                 ASILevelChoice.ASI,
                 increases=[{"ability": item.ability.value, "amount": item.amount} for item in data.increases],
-                commit=False,
             )
-            totals = await self.stats_service.refresh(character, commit=False)
+            totals = await self.stats_service.refresh(character)
 
             for item in data.increases:
                 new_total = getattr(totals, TOTAL_FIELD_BY_ABILITY[item.ability])
@@ -91,5 +90,5 @@ class GmPanelAsiService(CharacterSubDomainService):
 
         async with self._atomic():
             await self.asi_repository.delete_adjustment(choice)
-            await self.stats_service.refresh(character, commit=False)
+            await self.stats_service.refresh(character)
             await self._invalidate_character(character_id)

@@ -146,8 +146,8 @@ class CharacterRebuilder:
 
         await sync_progression_features(self.db, character)
         await self._rebuild_skill_proficiencies(character, plan)
-        await self.character_service.reapply_spell_slot_progression(character, commit=False)
-        await self.character_spell_repository.clear_known_spells(character.id, commit=False)
+        await self.character_service.reapply_spell_slot_progression(character)
+        await self.character_spell_repository.clear_known_spells(character.id)
 
         totals = await self._reapply_asi_history(character, data)
 
@@ -187,8 +187,8 @@ class CharacterRebuilder:
         totals are re-read after each feat.
         """
 
-        await self.asi.feat_grant_repository.remove_feats_by_source(character.id, GrantSource.ASI, commit=False)
-        await self.asi.asi_repository.clear_character_choices(character.id, commit=False)
+        await self.asi.feat_grant_repository.remove_feats_by_source(character.id, GrantSource.ASI)
+        await self.asi.asi_repository.clear_character_choices(character.id)
 
         totals = await self.stats_service.compute(character)
         for asi_choice in sorted(data.asi_choices, key=lambda item: item.class_level):

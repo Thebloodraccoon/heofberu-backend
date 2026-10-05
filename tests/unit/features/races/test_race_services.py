@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import AbilityScore, FeatureSourceType, RaceSize
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordNotFoundError
 from app.features.races.ability_bonuses.service import RaceAbilityBonusService
 from app.features.races.crud.repository import RaceRepository
@@ -72,46 +73,38 @@ class FakeRaceRepository(FakeRepository):
         self.set_skills_calls = []
         self.set_tags_calls = []
 
-    async def create(self, payload, *, commit=True):
+    async def create(self, payload):
         row = make_race(id=self._next_id, **payload)
         self._next_id += 1
         self._rows[row.id] = row
         self.created.append(row)
-        if commit:
-            await self.db.commit()
         return row
 
     async def list_subrace_ids(self, race_id: int) -> list[int]:
         return self.subrace_ids
 
-    async def set_ability_bonuses(self, race_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
-        self.set_ability_bonuses_calls.append((race_id, bonuses, commit))
+    async def set_ability_bonuses(self, race_id: int, bonuses: list[dict]) -> None:
+        self.set_ability_bonuses_calls.append((race_id, bonuses))
         race = self._rows.get(race_id)
         if race is not None:
             race.ability_bonuses = [
                 RaceAbilityBonus(race_id=race_id, ability=bonus["ability"], bonus=bonus["bonus"]) for bonus in bonuses
             ]
-        if commit:
-            await self.db.commit()
 
-    async def set_skills(self, race_id: int, skills: list[Skill] | None, *, commit: bool = True) -> None:
-        self.set_skills_calls.append((race_id, skills, commit))
+    async def set_skills(self, race_id: int, skills: list[Skill] | None) -> None:
+        self.set_skills_calls.append((race_id, skills))
         race = self._rows.get(race_id)
         if race is not None:
             race.granted_skills = list(skills or [])
-        if commit:
-            await self.db.commit()
 
     async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         return [self.skills[skill_id] for skill_id in skill_ids if skill_id in self.skills]
 
-    async def set_tags(self, race_id: int, tags: list[Tag] | None, *, commit: bool = True) -> None:
-        self.set_tags_calls.append((race_id, tags, commit))
+    async def set_tags(self, race_id: int, tags: list[Tag] | None) -> None:
+        self.set_tags_calls.append((race_id, tags))
         race = self._rows.get(race_id)
         if race is not None:
             race.tags = list(tags or [])
-        if commit:
-            await self.db.commit()
 
     async def get_tags_by_ids(self, tag_ids: list[int]) -> list[Tag]:
         return [self.tags[tag_id] for tag_id in tag_ids if tag_id in self.tags]
@@ -257,7 +250,7 @@ class TestRaceAbilityBonusService:
 
         assert result.ability_bonuses[0].ability == AbilityScore.INT
         assert result.ability_bonuses[0].bonus == 1
-        assert service.repository.set_ability_bonuses_calls == [(1, [{"ability": AbilityScore.INT, "bonus": 1}], False)]
+        assert service.repository.set_ability_bonuses_calls == [(1, [{"ability": AbilityScore.INT, "bonus": 1}])]
         assert db.commits == 1
         module.reconcile_characters_for_source.assert_awaited_once_with(db, FeatureSourceType.RACE, 1)
         assert purges == [["races"]]
@@ -314,7 +307,7 @@ class TestRaceSkillService:
         result = await service.set_skills(1, SkillsUpdate(skill_ids=[1]))
 
         assert result.granted_skills[0].id == 1
-        assert service.repository.set_skills_calls == [(race.id, [race.granted_skills[0]], False)]
+        assert service.repository.set_skills_calls == [(race.id, [race.granted_skills[0]])]
         assert db.commits == 1
         assert purges == [["races"]]
 
@@ -325,7 +318,7 @@ class TestRaceSkillService:
         result = await service.set_skills(1, SkillsUpdate(skill_ids=[]))
 
         assert result.granted_skills == []
-        assert service.repository.set_skills_calls == [(race.id, None, False)]
+        assert service.repository.set_skills_calls == [(race.id, None)]
 
     async def test_set_skills_raises_when_race_missing(self):
         service, _ = make_service(RaceSkillService, existing_by_id={})
@@ -356,7 +349,7 @@ class TestRaceTagService:
         result = await service.set_tags(1, TagsUpdate(tag_ids=[3]))
 
         assert [item.id for item in result.tags] == [3]
-        assert service.repository.set_tags_calls == [(1, [tag], False)]
+        assert service.repository.set_tags_calls == [(1, [tag])]
         assert purges == [["races", "tags"]]
 
     async def test_set_tags_raises_when_race_missing(self):
@@ -449,9 +442,10 @@ class TestRaceRepository:
     async def test_set_ability_bonuses_replaces_child_rows_and_commits(self):
         session = FakeAsyncSession()
 
-        await RaceRepository(session).set_ability_bonuses(
-            1, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
-        )
+        async with atomic(session):
+            await RaceRepository(session).set_ability_bonuses(
+                1, [{"ability": AbilityScore.DEX, "bonus": 2}, {"ability": AbilityScore.INT, "bonus": 1}]
+            )
 
         assert len(session.added) == 2
         assert all(isinstance(row, RaceAbilityBonus) for row in session.added)
@@ -465,23 +459,25 @@ class TestRaceSkillsRepository:
     async def test_set_skills_replaces_association_and_commits(self):
         session = FakeAsyncSession()
 
-        await RaceSkillsRepository(session).set_skills(1, [make_skill(), make_skill(id=2, name="Acrobatics")])
+        async with atomic(session):
+            await RaceSkillsRepository(session).set_skills(1, [make_skill(), make_skill(id=2, name="Acrobatics")])
 
         assert len(session.executes) == 2
         assert session.commits == 1
 
-    async def test_set_skills_with_empty_list_and_no_commit_flushes(self):
+    async def test_set_skills_with_empty_list_flushes_until_atomic_exits(self):
         session = FakeAsyncSession()
 
-        await RaceSkillsRepository(session).set_skills(1, [], commit=False)
-
-        assert session.flushes == 1
-        assert session.commits == 0
+        async with atomic(session):
+            await RaceSkillsRepository(session).set_skills(1, [])
+            assert session.flushes == 1
+            assert session.commits == 0
 
     async def test_set_skills_with_none_clears_association(self):
         session = FakeAsyncSession()
 
-        await RaceSkillsRepository(session).set_skills(1, None)
+        async with atomic(session):
+            await RaceSkillsRepository(session).set_skills(1, None)
 
         assert session.commits == 1
 

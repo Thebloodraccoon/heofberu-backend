@@ -63,7 +63,7 @@ async def get_item(item_id: int, item_service: ItemCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create an item",
     responses={
-        400: {"description": "An item with this name already exists."},
+        409: {"description": "An item with this name already exists."},
     },
 )
 async def create_item(
@@ -131,7 +131,7 @@ async def create_item(
     response_model=ItemResponse,
     summary="Update an item",
     responses={
-        400: {"description": "Another item already uses the requested name."},
+        409: {"description": "Another item already uses the requested name."},
         404: {"description": "No item exists with the given ID."},
     },
 )

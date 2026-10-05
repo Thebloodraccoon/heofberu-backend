@@ -55,8 +55,8 @@ class FakeStatsService:
         self.totals = totals or dict(TOTALS)
         self.refresh_calls = []
 
-    async def refresh(self, character, *, commit=True):
-        self.refresh_calls.append((character, commit))
+    async def refresh(self, character):
+        self.refresh_calls.append(character)
         return SimpleNamespace(**self.totals)
 
 
@@ -72,14 +72,14 @@ class FakeASIChoiceRepository:
     async def get_adjustments(self, character_id):
         return self._adjustments
 
-    async def add(self, character_id, class_level, choice_type, *, increases=None, commit=True):
+    async def add(self, character_id, class_level, choice_type, *, increases=None):
         row = SimpleNamespace(
             id=3,
             character_id=character_id,
             class_level=class_level,
             increases=[SimpleNamespace(ability=i["ability"], amount=i["amount"]) for i in increases or []],
         )
-        self.add_calls.append((character_id, class_level, choice_type, increases, commit))
+        self.add_calls.append((character_id, class_level, choice_type, increases))
         return row
 
     async def get_choice_by_id(self, character_id, choice_id):
@@ -121,10 +121,8 @@ class TestAddAsiAdjustment:
 
         assert result.id == 3
         assert result.character_id == 1
-        assert service.asi_repository.add_calls == [
-            (1, None, ASILevelChoice.ASI, [{"ability": "STR", "amount": 2}], False)
-        ]
-        assert service.stats_service.refresh_calls == [(character, False)]
+        assert service.asi_repository.add_calls == [(1, None, ASILevelChoice.ASI, [{"ability": "STR", "amount": 2}])]
+        assert service.stats_service.refresh_calls == [character]
 
     async def test_raises_when_total_would_exceed_thirty(self):
         stats = FakeStatsService(totals={**TOTALS, "dexterity_total": 31})
@@ -195,7 +193,7 @@ class TestAddAsiAdjustment:
         )
 
         stub_cache_and_lock.assert_awaited_once()
-        assert service.stats_service.refresh_calls == [(character, False)]
+        assert service.stats_service.refresh_calls == [character]
         assert service.repository.db.commits == 1
         assert service.repository.db.rollbacks == 0
 
@@ -286,7 +284,7 @@ class TestRemoveAsiAdjustment:
         await service.remove_asi_adjustment(1, 3, SimpleNamespace())
 
         assert repository.delete_calls == [row]
-        assert service.stats_service.refresh_calls == [(character, False)]
+        assert service.stats_service.refresh_calls == [character]
 
     async def test_unknown_adjustment_raises(self):
         service = make_service(make_character())

@@ -37,7 +37,6 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         feat_id: int | None = None,
         ability_score_increase_id: int | None = None,
         increases: list[dict] | None = None,
-        commit: bool = True,
     ) -> CharacterASIChoice:
         """
         Record one resolved ASI-level choice: ``class_level`` is the ASI
@@ -63,11 +62,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
             row.increases.append(CharacterASIChoiceIncrease(ability=item["ability"], amount=item["amount"]))
 
         self.db.add(row)
-        if commit:
-            await self.commit_or_flush()
-            await self.db.refresh(row)
-        else:
-            await self.db.flush()
+        await self.flush()
 
         return row
 
@@ -84,7 +79,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         )
         return result.scalar_one_or_none()
 
-    async def clear_character_choices(self, character_id: int, *, commit: bool = True) -> None:
+    async def clear_character_choices(self, character_id: int) -> None:
         """
         Delete the character's level-resolved ASI choices (child increases
         cascade at the DB level) — a point-rebuild replaces them with freshly
@@ -99,4 +94,4 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
                 CharacterASIChoice.class_level.is_not(None),
             )
         )
-        await self.commit_or_flush(commit=commit)
+        await self.flush()

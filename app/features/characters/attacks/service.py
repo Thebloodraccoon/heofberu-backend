@@ -6,6 +6,7 @@ from app.features.characters.attacks.exceptions import AttackLimitReachedExcepti
 from app.features.characters.attacks.repository import CharacterAttackRepository
 from app.features.characters.attacks.schemas import AttackCreate, AttackResponse, AttackUpdate
 from app.features.characters.base import CharacterSubDomainService
+from app.features.characters.locking import lock_character
 from app.features.users.schemas import UserResponse
 from app.models.character.character_attack_model import Attack
 
@@ -34,12 +35,14 @@ class CharacterAttackService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        if await self.attack_repository.count_for_character(character_id) >= MAX_ATTACKS_PER_CHARACTER:
-            raise AttackLimitReachedException(character_id=character_id, limit=MAX_ATTACKS_PER_CHARACTER)
-
         payload = data.model_dump()
         payload["character_id"] = character_id
-        attack = await self.attack_repository.create(payload)
+        async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            if await self.attack_repository.count_for_character(character_id) >= MAX_ATTACKS_PER_CHARACTER:
+                raise AttackLimitReachedException(character_id=character_id, limit=MAX_ATTACKS_PER_CHARACTER)
+
+            attack = await self.attack_repository.create(payload)
         return AttackResponse.model_validate(attack)
 
     async def update_attack(
@@ -49,9 +52,11 @@ class CharacterAttackService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        attack = await self._get_attack_or_404(character_id, attack_id)
         fields = data.model_dump(exclude_unset=True)
-        updated_attack = await self.attack_repository.update(attack, fields)
+        async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            attack = await self._get_attack_or_404(character_id, attack_id)
+            updated_attack = await self.attack_repository.update(attack, fields)
         return AttackResponse.model_validate(updated_attack)
 
     async def delete_attack(self, character_id: int, attack_id: int, current_user: UserResponse) -> bool:
@@ -59,8 +64,10 @@ class CharacterAttackService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        attack = await self._get_attack_or_404(character_id, attack_id)
-        return await self.attack_repository.delete(attack)
+        async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            attack = await self._get_attack_or_404(character_id, attack_id)
+            return await self.attack_repository.delete(attack)
 
     async def _get_attack_or_404(self, character_id: int, attack_id: int) -> Attack:
         """Fetch an attack scoped to the character, or raise ``AttackNotFoundException``."""

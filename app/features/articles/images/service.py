@@ -76,20 +76,20 @@ class ArticleImagesService(ArticleScopedService):
             await image.close()
 
         async with self._atomic():
-            row = await self.repository.create_placeholder(article_id, commit=False)
+            row = await self.repository.create_placeholder(article_id)
         image_id, entity = row.id, storage_entity(article_id, row.storage_key)
 
         try:
             url = await self._storage.upload_image(entity, image_id, content, image.content_type or "")
             async with self._atomic():
-                updated = await self.repository.set_image_url(article_id, image_id, url, commit=False)
+                updated = await self.repository.set_image_url(article_id, image_id, url)
                 if updated is None:
                     raise ArticleImageNotFoundException(article_id=article_id, image_id=image_id)
                 await invalidate_articles(self.repository.db, article_id)
         except Exception:
             await self._storage.delete_image(entity, image_id)
             async with self._atomic():
-                await self.repository.delete_image_by_id(image_id, commit=False)
+                await self.repository.delete_image_by_id(image_id)
                 await invalidate_articles(self.repository.db, article_id)
             raise
 
@@ -109,7 +109,7 @@ class ArticleImagesService(ArticleScopedService):
         image_row = await self._get_image_or_404(article_id, image_id)
         entity = storage_entity(article_id, image_row.storage_key)
         async with self._atomic():
-            await self.repository.delete_image_row(image_row, commit=False)
+            await self.repository.delete_image_row(image_row)
             await invalidate_articles(self.repository.db, article_id)
         await self._storage.delete_image(entity, image_id)
 

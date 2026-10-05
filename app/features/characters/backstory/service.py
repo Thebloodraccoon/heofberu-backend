@@ -42,5 +42,6 @@ class CharacterBackstoryService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        row = await self.backstory_repository.upsert_content(character_id, data.content)
+        async with self._atomic():
+            row = await self.backstory_repository.upsert_content(character_id, data.content)
         return CharacterBackstoryResponse.model_validate(row)

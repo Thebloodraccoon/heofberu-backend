@@ -65,7 +65,7 @@ and `app.constants`.
   `GET /{source}/{id}/items`). Catalogs whose responses embed starting items (classes,
   backgrounds) include it in their invalidation; `SourceItemManagerMixin.set_items`
   purges explicitly after its replace write. Invalidation happens AFTER commit, never
-  inside the mutating methods: those run with `commit=False` inside the caller's
+  inside the mutating methods: those only flush inside the caller's
   `_atomic()` transaction (purging earlier would let a concurrent read repopulate
   pre-commit rows).
 - **Feature lists are no longer a nested namespace**: each catalog caches its own

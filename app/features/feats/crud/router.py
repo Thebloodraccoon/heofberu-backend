@@ -68,7 +68,7 @@ async def get_feat(feat_id: int, feat_service: FeatCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a feat",
     responses={
-        400: {"description": "A feat with this name already exists."},
+        409: {"description": "A feat with this name already exists."},
     },
 )
 async def create_feat(
@@ -133,7 +133,7 @@ async def create_feat(
     response_model=FeatResponse,
     summary="Update a feat's base fields",
     responses={
-        400: {"description": "Another feat already uses the requested name."},
+        409: {"description": "Another feat already uses the requested name."},
         404: {"description": "No feat exists with the given ID."},
         422: {"description": "The ability prerequisite would have only one of ability / minimum score."},
     },

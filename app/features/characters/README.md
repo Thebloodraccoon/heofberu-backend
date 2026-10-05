@@ -20,7 +20,7 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
 | `dependencies.py` | All `Character*Dep` service aliases (`CharacterServiceDep`, `CharacterSpellServiceDep`, ...). |
 | `cache.py` | Exact-key invalidation of the cached character response: `character_cache_key`, `invalidate_character_cache(id, db=None)`, `invalidate_characters_cache(ids, db=None)`, `CHARACTER_CACHE_TTL` (300 s). Pass the writing session as `db` to defer the purge until the surrounding `atomic()` block commits (dropped on rollback); there is no namespace/prefix purge and no keyspace scan. |
 
-**Transaction rule:** the service owns the transaction. A multi-step write runs inside `self._atomic()` with `commit=False` repository calls; a single-repository write may rely on the repository's own commit. Routers never commit. Cache purges always go through `self._invalidate_character(id)` (never `invalidate_character_cache` directly), which runs after the commit inside an atomic block and immediately outside one.
+**Transaction rule:** the service owns the transaction. Every write runs inside `self._atomic()`; repositories only flush and raise outside it. Routers never commit. Cache purges always go through `self._invalidate_character(id)` (never `invalidate_character_cache` directly), which runs after the commit inside an atomic block and immediately outside one.
 
 ### Sub-packages
 
@@ -28,7 +28,7 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   list/get/update/delete, HP, rests, response assembly and the response
   cache), `creation.py` (`CharacterCreationService`: `prepare` validates every
   reference and choice read-only, `persist` writes the character and its
-  starting state with `commit=False`; the caller owns the transaction),
+  starting state (flush only); the caller owns the transaction),
   `rules.py` (pure rules: skill/suggestion/equipment-choice validation,
   starting HP, HP delta/clamping), `repository.py` (owner lookup,
   `FOR UPDATE` fetch, HP and slot-usage writes), `schemas.py` (HP/rest

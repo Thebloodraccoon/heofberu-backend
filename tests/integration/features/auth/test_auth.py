@@ -50,7 +50,7 @@ class TestRegister:
             json={"username": "someone", "email": user.email, "password": "password123"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_register_rejects_invalid_email(self, client):
         response = await client.post(

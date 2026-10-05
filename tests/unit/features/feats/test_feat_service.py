@@ -4,6 +4,7 @@ from pydantic import ValidationError
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError, RecordNotFoundError
 from app.features.feats.crud.repository import FeatRepository
 from app.features.feats.crud.schemas import FeatCreate, FeatUpdate
@@ -23,12 +24,12 @@ def integrity_error(sqlstate):
     return IntegrityError("INSERT ...", {}, _Orig(sqlstate))
 
 
-class CommitFailsSession(FakeAsyncSession):
+class FlushFailsSession(FakeAsyncSession):
     def __init__(self, error, **kwargs):
         super().__init__(**kwargs)
         self.error = error
 
-    async def commit(self):
+    async def flush(self):
         raise self.error
 
 
@@ -86,25 +87,28 @@ class TestFeatSchemas:
 @pytest.mark.asyncio
 class TestFeatRepositoryNameConflict:
     async def test_unique_violation_on_create_becomes_record_already_exists(self):
-        session = CommitFailsSession(integrity_error("23505"))
+        session = FlushFailsSession(integrity_error("23505"))
         repository = FeatRepository(session)
 
         with pytest.raises(RecordAlreadyExistsError):
-            await repository.create({"name": "Alert"})
+            async with atomic(session):
+                await repository.create({"name": "Alert"})
 
     async def test_unique_violation_on_update_becomes_record_already_exists(self):
-        session = CommitFailsSession(integrity_error("23505"))
+        session = FlushFailsSession(integrity_error("23505"))
         repository = FeatRepository(session)
 
         with pytest.raises(RecordAlreadyExistsError):
-            await repository.update(Feature(id=1, name="Old"), {"name": "Alert"})
+            async with atomic(session):
+                await repository.update(Feature(id=1, name="Old"), {"name": "Alert"})
 
     async def test_other_integrity_errors_are_not_masked(self):
-        session = CommitFailsSession(integrity_error("23502"))
+        session = FlushFailsSession(integrity_error("23502"))
         repository = FeatRepository(session)
 
         with pytest.raises(IntegrityError):
-            await repository.create({"name": "Alert"})
+            async with atomic(session):
+                await repository.create({"name": "Alert"})
 
     async def test_delete_locks_the_feature_row_before_the_guard(self):
         session = FakeAsyncSession(scalar_results=[1])
@@ -216,10 +220,10 @@ class TestFeatService:
         db = FakeAsyncSession()
         service = FeatCrudService(db)
         repository = FakeFeatRepository(db)
-        created_with = {}
+        created = []
 
-        async def create(payload, *, commit=True):
-            created_with["commit"] = commit
+        async def create(payload):
+            created.append(payload)
             row = feat_row(id=1, name=payload["name"])
             repository._rows[1] = row
             return row
@@ -230,7 +234,7 @@ class TestFeatService:
         result = await service.create_feat(FeatCreate(name="Alert"))
 
         assert result.name == "Alert"
-        assert created_with == {"commit": False}
+        assert len(created) == 1
         assert db.commits == 1
         assert set(purged) == {"feats", "features"}
 

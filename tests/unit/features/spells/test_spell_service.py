@@ -33,11 +33,11 @@ def make_service(existing_by_id=None):
     async def get_plain(spell_id):
         return repo._rows.get(spell_id)
 
-    async def update(db_obj, update_data, *, refresh=False, commit=True):
+    async def update(db_obj, update_data, *, refresh=False):
         for field, value in update_data.items():
             setattr(db_obj, field, value)
         repo.updated.append(db_obj)
-        await repo.commit_or_flush(commit=commit)
+        await db.flush()
         return db_obj
 
     repo.get_plain = get_plain

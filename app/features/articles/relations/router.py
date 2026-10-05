@@ -39,10 +39,11 @@ async def list_article_relations(article_id: int, article_service: ArticleRelati
     responses={
         400: {
             "description": (
-                "to_article_id doesn't exist or equals the article itself, relation_type isn't one of "
-                "RELATION_TYPES, or the same (from, to, relation_type) relation already exists."
+                "to_article_id doesn't exist or equals the article itself, or relation_type isn't one of "
+                "RELATION_TYPES."
             )
         },
+        409: {"description": "The same (from, to, relation_type) relation already exists."},
         404: {"description": "No article exists with the given ID."},
     },
 )
@@ -84,11 +85,8 @@ async def create_article_relation(
     response_model=ArticleRelationResponse,
     summary="Edit a relation",
     responses={
-        400: {
-            "description": (
-                "relation_type isn't one of RELATION_TYPES, or the same (from, to, relation_type) relation already exists."
-            )
-        },
+        400: {"description": "relation_type isn't one of RELATION_TYPES."},
+        409: {"description": "The same (from, to, relation_type) relation already exists."},
         404: {"description": "No article or relation exists with the given IDs."},
     },
 )

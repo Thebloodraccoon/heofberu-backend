@@ -192,11 +192,11 @@ class FakeCharacterRepository(FakeRepository):
         self.last_update_fields = None
         self.hp_updates = []
 
-    async def create(self, payload, *, commit=True):
+    async def create(self, payload):
         if self.events is not None:
             self.events.append("create_row")
         self.last_create_payload = dict(payload)
-        row = await super().create(payload, commit=commit)
+        row = await super().create(payload)
         row.character_class = self.character_class_on_create
         return row
 
@@ -208,11 +208,11 @@ class FakeCharacterRepository(FakeRepository):
         self.events.append("lock_row")
         return await self.get_by_id(character_id)
 
-    async def update_hp(self, character, current_hp, temp_hp, *, commit=True):
-        self.hp_updates.append((current_hp, temp_hp, commit))
+    async def update_hp(self, character, current_hp, temp_hp):
+        self.hp_updates.append((current_hp, temp_hp))
         character.current_hp = current_hp
         character.temp_hp = temp_hp
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         return character
 
 
@@ -261,9 +261,9 @@ class FakeMaxLevelRepository:
         self.events = events
         self.calls = []
 
-    async def create_for_character(self, character_id, level, *, commit):
+    async def create_for_character(self, character_id, level):
         self.events.append("seed_max_level")
-        self.calls.append((character_id, level, commit))
+        self.calls.append((character_id, level))
 
 
 class FakeSlotUsageRepository:
@@ -271,18 +271,18 @@ class FakeSlotUsageRepository:
         self.resets = []
         self.fail = False
 
-    async def reset_all_spell_slots(self, character_id, *, commit=True):
+    async def reset_all_spell_slots(self, character_id):
         if self.fail:
             raise RuntimeError("slot reset failed")
-        self.resets.append((character_id, commit))
+        self.resets.append(character_id)
 
 
 class FakeSpellSlotRepository:
     def __init__(self):
         self.calls = []
 
-    async def apply_spell_slot_progression(self, character_id, slots_by_level, *, commit=True):
-        self.calls.append((character_id, slots_by_level, commit))
+    async def apply_spell_slot_progression(self, character_id, slots_by_level):
+        self.calls.append((character_id, slots_by_level))
 
 
 class FakeItemRepository:
@@ -311,9 +311,9 @@ class FakeStatsService:
         self.constitution_total = constitution_total
         self.refresh_calls = []
 
-    async def refresh(self, character, *, commit=True):
+    async def refresh(self, character):
         self.events.append("refresh_stats")
-        self.refresh_calls.append((character, commit))
+        self.refresh_calls.append(character)
         return SimpleNamespace(
             strength_total=14,
             dexterity_total=10,
@@ -637,10 +637,10 @@ class TestCreateCharacterHappyPath:
             [(FeatureSourceType.CLASS, 1), (FeatureSourceType.BACKGROUND, 3)]
         ]
 
-        assert service.creation.max_level_repository.calls == [(1, 1, False)]
+        assert service.creation.max_level_repository.calls == [(1, 1)]
         assert service.creation.class_repository.slot_progression_calls == [(1, 1)]
-        assert service.creation.spell_slot_repository.calls == [(1, {}, False)]
-        assert service.stats_service.refresh_calls == [(character, False)]
+        assert service.creation.spell_slot_repository.calls == [(1, {})]
+        assert service.stats_service.refresh_calls == [character]
 
         assert db.commits == 1
         assert result.id == 1
@@ -752,7 +752,7 @@ class TestCreateCharacterHappyPath:
         events = []
         service, db = make_service(monkeypatch, events)
 
-        async def broken_refresh(character, *, commit=True):
+        async def broken_refresh(character):
             raise RuntimeError("stats failed")
 
         service.stats_service.refresh = broken_refresh
@@ -826,7 +826,7 @@ class TestUpdateAndDelete:
 
         await service.update_character(5, CharacterUpdate(name="X"), make_user())
 
-        assert events == ["commit", "invalidate:5"]
+        assert events == ["lock_row", "commit", "invalidate:5"]
 
     async def test_update_denied_for_other_player(self, monkeypatch):
         character = make_owned_character(owner_id=7)
@@ -879,7 +879,7 @@ class TestUpdateAndDelete:
         assert await service.delete_character(5, make_user()) is True
 
         assert service.repository.deleted == [character]
-        assert events == ["invalidate:5"]
+        assert events == ["commit", "invalidate:5"]
 
     async def test_delete_denied_for_other_player(self, monkeypatch):
         character = make_owned_character(owner_id=7)
@@ -902,7 +902,7 @@ class TestUpdateHp:
         result = await service.update_hp(5, HpUpdate(delta=-4), make_user())
 
         assert result.current_hp == 6
-        assert service.repository.hp_updates == [(6, 0, False)]
+        assert service.repository.hp_updates == [(6, 0)]
         assert events == ["lock_row", "commit", "invalidate:5"]
         assert db.commits == 1
 
@@ -963,8 +963,8 @@ class TestRest:
         result = await service.rest(5, RestRequest(type="long"), make_user())
 
         assert (result.current_hp, result.temp_hp) == (10, 0)
-        assert service.repository.hp_updates == [(10, 0, False)]
-        assert service.character_spell_slot_repository.resets == [(5, False)]
+        assert service.repository.hp_updates == [(10, 0)]
+        assert service.character_spell_slot_repository.resets == [5]
         assert events == ["lock_row", "commit", "invalidate:5"]
         assert db.commits == 1
 

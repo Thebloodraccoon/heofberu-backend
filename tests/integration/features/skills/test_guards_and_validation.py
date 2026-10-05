@@ -31,13 +31,13 @@ class TestValidation:
 
         assert response.status_code == 422
 
-    async def test_patch_to_existing_name_returns_400(self, client, gm_token, create_skill):
+    async def test_patch_to_existing_name_returns_409(self, client, gm_token, create_skill):
         await create_skill(name="Stealth", ability="DEX")
         other = await create_skill(name="Arcana", ability="INT")
 
         response = await client.patch(f"/skills/{other.id}", json={"name": "Stealth"}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_documented_create_example_is_valid(self, client, gm_token):
         response = await client.post(

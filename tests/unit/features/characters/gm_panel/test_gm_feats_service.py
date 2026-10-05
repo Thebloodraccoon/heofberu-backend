@@ -85,14 +85,12 @@ class FakeStatsService:
         self.totals = totals or dict(TOTALS)
         self.caps = caps if caps is not None else dict.fromkeys(AbilityScore, 20)
         self.refresh_calls = []
-        self.refresh_commits = []
         self.refresh_error = None
 
-    async def refresh(self, character, *, commit=True):
+    async def refresh(self, character):
         if self.refresh_error is not None:
             raise self.refresh_error
         self.refresh_calls.append(character)
-        self.refresh_commits.append(commit)
 
     async def compute(self, character):
         return self.totals
@@ -117,23 +115,17 @@ class FakeFeatGrantRepository:
     async def get_character_feat_by_id(self, character_id, character_feat_id):
         return self._by_id.get(character_feat_id)
 
-    async def add_character_feat(
-        self, character, feat_id, ability_score_increase_id, *, source_type=GrantSource.GM, commit=True
-    ):
-        self.add_calls.append((character, feat_id, ability_score_increase_id, source_type, commit))
+    async def add_character_feat(self, character, feat_id, ability_score_increase_id, *, source_type=GrantSource.GM):
+        self.add_calls.append((character, feat_id, ability_score_increase_id, source_type))
         return make_grant(7, feat_id, ability_score_increase_id)
 
-    async def set_character_feat_ability_score_increase(
-        self, character, grant, ability_score_increase_id, *, commit=True
-    ):
+    async def set_character_feat_ability_score_increase(self, character, grant, ability_score_increase_id):
         self.set_calls.append((grant, ability_score_increase_id))
-        self.set_commits = [*getattr(self, "set_commits", []), commit]
         grant.choices = [make_choice(ability_score_increase_id)] if ability_score_increase_id is not None else []
         return grant
 
-    async def remove_character_feat(self, grant, *, commit=True):
+    async def remove_character_feat(self, grant):
         self.remove_calls.append(grant)
-        self.remove_commits = [*getattr(self, "remove_commits", []), commit]
         return True
 
 
@@ -152,7 +144,6 @@ class FakeASIChoiceRepository:
         feat_id=None,
         ability_score_increase_id=None,
         increases=None,
-        commit=True,
     ):
         self.add_calls.append(
             {
@@ -161,7 +152,6 @@ class FakeASIChoiceRepository:
                 "choice_type": choice_type,
                 "feat_id": feat_id,
                 "ability_score_increase_id": ability_score_increase_id,
-                "commit": commit,
             }
         )
         return SimpleNamespace(id=1)
@@ -202,19 +192,17 @@ class TestAddFeat:
         result = await service.add_feat(character.id, CharacterFeatAdd(feat_id=2), SimpleNamespace())
 
         assert result.id == 7
-        assert service.feat_grant_repository.add_calls == [(character, 2, None, GrantSource.GM, False)]
+        assert service.feat_grant_repository.add_calls == [(character, 2, None, GrantSource.GM)]
         assert len(service.asi_repository.add_calls) == 1
         audit = service.asi_repository.add_calls[0]
         assert audit["character_id"] == 1
         assert audit["class_level"] is None
         assert audit["choice_type"] == ASILevelChoice.FEAT
         assert audit["feat_id"] == 2
-        assert audit["commit"] is False
         assert service.stats_service.refresh_calls == [character]
         service.get_character_for_user.assert_awaited_once()
         no_feature_sync.assert_awaited_once_with(service.repository.db, character)
         no_cache_invalidate.assert_awaited_once_with(character_cache_key(character.id))
-        assert service.stats_service.refresh_commits == [False]
         assert service.repository.db.commits == 1
 
     async def test_add_feat_with_choice_writes_audit_and_refreshes_stats(self):
@@ -226,7 +214,7 @@ class TestAddFeat:
             character.id, CharacterFeatAdd(feat_id=2, ability_score_increase_id=200), SimpleNamespace()
         )
 
-        assert service.feat_grant_repository.add_calls == [(character, 2, 200, GrantSource.GM, False)]
+        assert service.feat_grant_repository.add_calls == [(character, 2, 200, GrantSource.GM)]
         assert service.asi_repository.add_calls[0]["ability_score_increase_id"] == 200
         assert stats.refresh_calls == [character]
 
@@ -240,7 +228,7 @@ class TestAddFeat:
         result = await service.add_feat(character.id, CharacterFeatAdd(feat_id=2), SimpleNamespace())
 
         assert result.id == 7
-        assert service.feat_grant_repository.add_calls == [(character, 2, None, GrantSource.GM, False)]
+        assert service.feat_grant_repository.add_calls == [(character, 2, None, GrantSource.GM)]
         assert service.asi_repository.add_calls[0]["ability_score_increase_id"] is None
 
     async def test_cap_exceeded_does_not_reject_the_choice(self):
@@ -255,7 +243,7 @@ class TestAddFeat:
         assert result.id == 7
         add_call = service.feat_grant_repository.add_calls[0]
         assert add_call[0].id == 1  # the resolved Character object
-        assert add_call[1:] == (2, 200, GrantSource.GM, False)
+        assert add_call[1:] == (2, 200, GrantSource.GM)
 
     async def test_prerequisite_not_met_rejects_the_grant(self):
         feat = make_feat(prerequisite_ability=AbilityScore.STR, prerequisite_minimum_score=15)
@@ -293,9 +281,7 @@ class TestUpdateFeat:
 
         assert result.choices[0].effects[0].items[0].id == 201
         assert service.feat_grant_repository.set_calls == [(grant, 201)]
-        assert service.feat_grant_repository.set_commits == [False]
         assert service.stats_service.refresh_calls == [character]
-        assert service.stats_service.refresh_commits == [False]
         assert service.repository.db.commits == 1
 
     async def test_clearing_choice_on_asi_offering_feat_is_rejected(self):
@@ -327,10 +313,8 @@ class TestRemoveFeat:
 
         assert result is True
         assert service.feat_grant_repository.remove_calls == [grant]
-        assert service.feat_grant_repository.remove_commits == [False]
         assert service.repository.db.commits == 1
         assert service.stats_service.refresh_calls == [character]
-        assert service.stats_service.refresh_commits == [False]
 
     async def test_missing_grant_raises(self):
         service = make_service(make_character())

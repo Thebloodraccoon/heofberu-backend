@@ -121,35 +121,28 @@ class FakeRepository:
     async def exists_by_id(self, model_id: int) -> bool:
         return model_id in self._rows
 
-    async def create(self, payload: dict[str, Any], *, commit: bool = True):
+    async def create(self, payload: dict[str, Any]):
         row = SimpleNamespace(id=self._next_id, **payload)
         self._next_id += 1
         self._rows[row.id] = row
         self.created.append(row)
-        if commit:
-            await self.db.commit()
         return row
 
-    async def update(self, db_obj, update_data: dict[str, Any], *, refresh: bool = False, commit: bool = True):
+    async def update(self, db_obj, update_data: dict[str, Any], *, refresh: bool = False):
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
         self.updated.append(db_obj)
         if refresh:
             await self.db.refresh(db_obj)
-        elif commit:
-            await self.db.commit()
         return db_obj
 
     async def delete(self, db_obj):
         self.deleted.append(db_obj)
         return True
 
-    async def commit_or_flush(self, *, commit: bool = True):
-        if commit:
-            await self.db.commit()
-        else:
-            await self.db.flush()
+    async def flush(self):
+        await self.db.flush()
 
 
 class FakeRedisPipeline:

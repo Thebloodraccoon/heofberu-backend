@@ -51,7 +51,7 @@ class RaceRepository(BaseRepository[Race]):
         result = await self.db.execute(select(Subrace.id).where(Subrace.race_id == race_id))
         return list(result.scalars().all())
 
-    async def set_ability_bonuses(self, race_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
+    async def set_ability_bonuses(self, race_id: int, bonuses: list[dict]) -> None:
         """Replace all ability bonuses for a race with the given list."""
 
         await self.replace_child_rows(
@@ -59,5 +59,4 @@ class RaceRepository(BaseRepository[Race]):
             Race(id=race_id),
             "race_id",
             bonuses,
-            commit=commit,
         )

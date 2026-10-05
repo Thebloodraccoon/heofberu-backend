@@ -37,8 +37,9 @@ class ClassProgressionService(ClassScopedService):
         await self._exists_or_404(class_id)
 
         slots_by_spell_level: dict[str, int] = {entry.spell_level: entry.slots for entry in data.slots}
-        await self.repository.set_spell_slots(class_id, class_level, slots_by_spell_level)
-        await self._invalidate_cache()
+        async with self._atomic():
+            await self.repository.set_spell_slots(class_id, class_level, slots_by_spell_level)
+            await self._invalidate_cache()
 
         return await self._get_response(class_id)
 

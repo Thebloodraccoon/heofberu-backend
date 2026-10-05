@@ -102,8 +102,8 @@ class FakeStatsRepository:
     def __init__(self):
         self.upsert_calls = []
 
-    async def upsert(self, character_id, totals, *, commit=True):
-        self.upsert_calls.append((character_id, dict(totals), commit))
+    async def upsert(self, character_id, totals):
+        self.upsert_calls.append((character_id, dict(totals)))
 
 
 class FakeStatsService:
@@ -118,8 +118,8 @@ class FakeStatsService:
         self.compute_calls.append(character)
         return dict(self.totals)
 
-    async def store(self, character, totals, *, commit=True):
-        return await self.repository.upsert(character.id, totals, commit=commit)
+    async def store(self, character, totals):
+        return await self.repository.upsert(character.id, totals)
 
 
 class FakeCharacterRepository:
@@ -137,8 +137,8 @@ class FakeCharacterService:
     def __init__(self):
         self.reapply_calls = []
 
-    async def reapply_spell_slot_progression(self, character, *, commit=True):
-        self.reapply_calls.append((character.id, commit))
+    async def reapply_spell_slot_progression(self, character):
+        self.reapply_calls.append(character.id)
 
 
 class FakeClassRepository:
@@ -177,8 +177,8 @@ class FakeCharacterSpellRepository:
     def __init__(self):
         self.clear_calls = []
 
-    async def clear_known_spells(self, character_id, *, commit=True):
-        self.clear_calls.append((character_id, commit))
+    async def clear_known_spells(self, character_id):
+        self.clear_calls.append(character_id)
 
 
 class FakeItemRepository:
@@ -211,13 +211,13 @@ class FakeFeatGrantRepository:
         return SimpleNamespace() if feat_id in self.known_feat_ids else None
 
     async def add_character_feat(
-        self, character, feat_id, ability_score_increase_id=None, *, source_type=GrantSource.ASI, commit=True
+        self, character, feat_id, ability_score_increase_id=None, *, source_type=GrantSource.ASI
     ):
-        self.add_calls.append((character, feat_id, ability_score_increase_id, source_type, commit))
+        self.add_calls.append((character, feat_id, ability_score_increase_id, source_type))
         return SimpleNamespace(id=900 + len(self.add_calls), feature_id=feat_id)
 
-    async def remove_feats_by_source(self, character_id, source_type, *, commit=True):
-        self.remove_by_source_calls.append((character_id, source_type, commit))
+    async def remove_feats_by_source(self, character_id, source_type):
+        self.remove_by_source_calls.append((character_id, source_type))
 
 
 class FakeASIRepository:
@@ -238,15 +238,12 @@ class FakeASIRepository:
         feat_id=None,
         ability_score_increase_id=None,
         increases=None,
-        commit=True,
     ):
-        self.add_calls.append(
-            (character_id, class_level, choice_type, feat_id, ability_score_increase_id, increases, commit)
-        )
+        self.add_calls.append((character_id, class_level, choice_type, feat_id, ability_score_increase_id, increases))
         return SimpleNamespace(id=len(self.add_calls))
 
-    async def clear_character_choices(self, character_id, *, commit=True):
-        self.clear_calls.append((character_id, commit))
+    async def clear_character_choices(self, character_id):
+        self.clear_calls.append(character_id)
 
 
 class FakeMaxLevelRepository:
@@ -444,7 +441,7 @@ class TestLevelUpHappyPath:
         assert character.max_hp == 28
         assert db.commits == 1
         assert service.asi.asi_repository.add_calls == []
-        assert service.character_service.reapply_calls == [(1, False)]
+        assert service.character_service.reapply_calls == [1]
         assert_purged(cache_purge, db)
 
     async def test_stats_are_computed_once_and_stored_in_the_transaction(self):
@@ -454,7 +451,7 @@ class TestLevelUpHappyPath:
         await service.level_up(1, LevelUpRequest(), make_user())
 
         assert service.stats_service.compute_calls == [character]
-        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals())]
 
     async def test_explicit_hit_points_gained_within_bounds_is_used(self):
         service, _ = self.make_ready_service()
@@ -500,7 +497,7 @@ class TestLevelUpHappyPath:
 
         no_feature_sync.assert_awaited_once()
         assert db.commits == 1
-        assert service.character_service.reapply_calls == [(1, False)]
+        assert service.character_service.reapply_calls == [1]
 
 
 @pytest.mark.unit
@@ -514,7 +511,7 @@ class TestLevelUpAsi:
             totals=totals,
         )
 
-    async def test_valid_increase_records_audit_row_with_commit_false(self):
+    async def test_valid_increase_records_audit_row_in_the_single_commit(self):
         service, db = self.make_asi_service(totals=default_totals())
         choice = ASIChoice(increases=[ASIIncreaseItem(ability=AbilityScore.STR, amount=2)])
 
@@ -527,7 +524,6 @@ class TestLevelUpAsi:
         assert call[1] == 4
         assert call[2] == ASILevelChoice.ASI
         assert call[5] == [{"ability": "STR", "amount": 2}]
-        assert call[6] is False
         assert db.commits == 1
 
     async def test_stats_computed_before_and_after_the_choice_only(self):
@@ -619,11 +615,10 @@ class TestLevelUpFeat:
         await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=12)), make_user())
 
         assert character.level == 4
-        assert service.asi.feat_grant_repository.add_calls == [(character, 12, None, GrantSource.ASI, False)]
+        assert service.asi.feat_grant_repository.add_calls == [(character, 12, None, GrantSource.ASI)]
         audit_call = service.asi.asi_repository.add_calls[0]
         assert audit_call[2] == ASILevelChoice.FEAT
         assert audit_call[3] == 12
-        assert audit_call[6] is False
         assert db.commits == 1
 
     async def test_the_feats_grant_joins_the_batched_choice_resolution(self):
@@ -641,7 +636,7 @@ class TestLevelUpFeat:
 
         await service.level_up(1, LevelUpRequest(choice=FeatChoice(feat_id=13)), make_user())
 
-        assert service.asi.feat_grant_repository.add_calls == [(character, 13, None, GrantSource.ASI, False)]
+        assert service.asi.feat_grant_repository.add_calls == [(character, 13, None, GrantSource.ASI)]
         assert db.commits == 1
 
     async def test_unknown_ability_score_increase_id_rejected_before_grant(self):
@@ -662,7 +657,7 @@ class TestLevelUpFeat:
             1, LevelUpRequest(choice=FeatChoice(feat_id=13, ability_score_increase_id=31)), make_user()
         )
 
-        assert service.asi.feat_grant_repository.add_calls == [(character, 13, 31, GrantSource.ASI, False)]
+        assert service.asi.feat_grant_repository.add_calls == [(character, 13, 31, GrantSource.ASI)]
 
     async def test_feat_asi_option_above_twenty_is_rejected(self):
         service, db = self.make_feat_service(make_asi_feat(), totals={**default_totals(), "strength_total": 20})
@@ -735,7 +730,7 @@ class TestSetSubclass:
 
         assert character.subclass_id == 7
         assert db.commits == 1
-        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals())]
         service._lock_character.assert_awaited_once_with(character)
         assert_purged(cache_purge, db)
 
@@ -777,7 +772,7 @@ class TestSetSubrace:
 
         assert character.subrace_id == 2
         assert db.commits == 1
-        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals())]
         service._lock_character.assert_awaited_once_with(character)
         assert_purged(cache_purge, db)
 
@@ -831,7 +826,7 @@ class TestSetBackground:
         assert all(row.is_expertise is False for row in added_proficiencies)
         assert existing_stack.quantity == 3
         assert db.commits == 1
-        assert service.stats_service.repository.upsert_calls == [(1, default_totals(), False)]
+        assert service.stats_service.repository.upsert_calls == [(1, default_totals())]
         service._lock_character.assert_awaited_once_with(character)
         assert_purged(cache_purge, db)
 
@@ -939,10 +934,10 @@ class TestRebuildCharacter:
         assert character.current_hp == 8
         assert character.temp_hp == 0
 
-        assert service.rebuilder.character_spell_repository.clear_calls == [(1, False)]
-        assert service.character_service.reapply_calls == [(1, False)]
-        assert service.asi.feat_grant_repository.remove_by_source_calls == [(1, GrantSource.ASI, False)]
-        assert service.asi.asi_repository.clear_calls == [(1, False)]
+        assert service.rebuilder.character_spell_repository.clear_calls == [1]
+        assert service.character_service.reapply_calls == [1]
+        assert service.asi.feat_grant_repository.remove_by_source_calls == [(1, GrantSource.ASI)]
+        assert service.asi.asi_repository.clear_calls == [1]
         assert service.stats_service.repository.upsert_calls[0][0] == 1
         assert db.commits == 1
         assert db.rollbacks == 0
@@ -980,8 +975,8 @@ class TestRebuildCharacter:
         call = service.asi.asi_repository.add_calls[0]
         assert call[1] == 4
         assert call[5] == [{"ability": "STR", "amount": 2}]
-        assert service.asi.feat_grant_repository.remove_by_source_calls == [(1, GrantSource.ASI, False)]
-        assert service.asi.asi_repository.clear_calls == [(1, False)]
+        assert service.asi.feat_grant_repository.remove_by_source_calls == [(1, GrantSource.ASI)]
+        assert service.asi.asi_repository.clear_calls == [1]
         assert db.commits == 1
 
     async def test_two_asi_choices_see_each_others_increases_for_the_cap(self):

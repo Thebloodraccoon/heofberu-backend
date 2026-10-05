@@ -8,6 +8,8 @@ no separate storage. The chosen ASI option (if any) is a single
 from it like any other grant's (``app.features.characters.grants.effects``).
 """
 
+from typing import Any
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -41,7 +43,7 @@ _LOAD_OPTIONS = [*feature_summary_loads(base=selectinload(CharacterFeature.featu
 
 def to_character_feat_response(
     grant: CharacterFeature,
-    effects: list[dict] | None = None,
+    effects: list[Any] | None = None,
     choices: list[ChosenOptionResponse] | None = None,
 ) -> CharacterFeatResponse:
     """
@@ -131,13 +133,11 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
         ability_score_increase_id: int | None,
         *,
         source_type: GrantSource = GrantSource.GM,
-        commit: bool = True,
     ) -> CharacterFeature:
         """
         Grant a feat to ``character``: create the ``character_features`` row
         and record the ASI pick (if any) as a ``character_feature_choices``
-        row. Runs standalone (``commit=True``, GM panel) or inside a caller's
-        own transaction (``commit=False``, ASI level-up).
+        row. Flush only; the caller's atomic block commits.
         """
 
         grant = CharacterFeature(
@@ -149,7 +149,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
         await self.db.flush()
 
         await self._record_asi_pick(grant.id, await self._asi_option(ability_score_increase_id))
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return await self._reload_with_feat(grant.id)
 
@@ -158,8 +158,6 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
         character: Character,
         grant: CharacterFeature,
         ability_score_increase_id: int | None,
-        *,
-        commit: bool = True,
     ) -> CharacterFeature:
         """
         Set (or clear, if ``None``) the ASI choice on an existing feat grant.
@@ -179,7 +177,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
         await self.db.flush()
 
         await self._record_asi_pick(grant.id, option)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return await self._reload_with_feat(grant.id)
 
@@ -236,7 +234,7 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
         )
         return result.scalar_one()
 
-    async def remove_character_feat(self, grant: CharacterFeature, *, commit: bool = True) -> bool:
+    async def remove_character_feat(self, grant: CharacterFeature) -> bool:
         """
         Revoke a feat grant. Cascades (``ON DELETE CASCADE`` on
         ``character_feature_id``) clear its stored picks; the feat's rows in
@@ -253,10 +251,10 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
             )
         )
         await self.db.delete(grant)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         return True
 
-    async def remove_feats_by_source(self, character_id: int, source_type: GrantSource, *, commit: bool = True) -> None:
+    async def remove_feats_by_source(self, character_id: int, source_type: GrantSource) -> None:
         """
         Revoke every feat grant of a given ``source_type`` for a character
         — a point-rebuild uses this to clear the feats granted by prior
@@ -273,4 +271,4 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
                 ),
             )
         )
-        await self.commit_or_flush(commit=commit)
+        await self.flush()

@@ -17,7 +17,7 @@ Reference catalog for the `Item` entity — weapons, armor, and general equipmen
 | GET | `/items` | open | Paginated list (`Page[ItemGetAllResponse]`: id/name/type/rarity/cost only), ordered by name. Filters: repeatable `item_type`, repeatable `rarity`, `search` on name (max 100 chars). |
 | GET | `/items/{item_id}` | open | Full `ItemResponse` including weapon/armor detail fields. |
 | POST | `/items` | GM | Duplicate `name` → 400. |
-| PATCH | `/items/{item_id}` | GM | Partial update; duplicate `name` → 400; explicit `null` for a required field → 422 (nullable weapon/armor/price fields can be cleared with `null`). |
+| PATCH | `/items/{item_id}` | GM | Partial update; duplicate `name` → 409; explicit `null` for a required field → 422 (nullable weapon/armor/price fields can be cleared with `null`). |
 | DELETE | `/items/{item_id}` | Founder | Blocked with 409 while referenced anywhere (see below). |
 
 Duplicates answer **400** (`RecordAlreadyExistsError`, platform-wide), not 409. Input bounds follow the columns: `name` 1..200 (trimmed), `weight` `Numeric(6,2)`, `cost_gold` `Numeric(10,2)` (both >= 0), `weapon_properties` <= 300, small ranges for dice count / AC / strength requirement. The item type is not cross-checked against the weapon/armor fields (GM data entry stays free-form).

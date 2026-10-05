@@ -22,7 +22,7 @@ class GmAsiRepository(CharacterASIChoiceRepository):
         return list(result.scalars().unique().all())
 
     async def delete_adjustment(self, choice: CharacterASIChoice) -> None:
-        """Delete one adjustment row (its increases cascade); the caller commits."""
+        """Delete one adjustment row (its increases cascade); the caller's atomic block commits."""
 
         await self.db.delete(choice)
         await self.db.flush()

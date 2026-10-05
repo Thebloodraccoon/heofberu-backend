@@ -1,11 +1,8 @@
 """Shared base for character sub-domain services (access-control and transaction wiring)."""
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.transaction import atomic
+from app.core.base.transaction import TransactionMixin
 from app.features.characters.access import ensure_character_access
 from app.features.characters.access import get_character_for_user as _get_character_for_user
 from app.features.characters.cache import invalidate_character_cache
@@ -14,15 +11,14 @@ from app.features.users.schemas import UserResponse
 from app.models.character.character_model import Character
 
 
-class CharacterSubDomainService:
+class CharacterSubDomainService(TransactionMixin):
     """
     Base for character sub-domain services: owns the single ``CharacterRepository``,
     the GM/owner access checks and the transaction helpers.
 
     The service owns the transaction: multi-step writes run inside
-    :meth:`_atomic` with ``commit=False`` repository
-    calls, and cache purges go through :meth:`_invalidate_character` so they
-    only run after the commit.
+    :meth:`_atomic` (repository writes only flush), and cache purges go through
+    :meth:`_invalidate_character` so they only run after the commit.
     """
 
     # ``populate_existing`` is skipped for the access-checked fetch; subclasses
@@ -34,12 +30,9 @@ class CharacterSubDomainService:
 
         self.repository = CharacterRepository(db)
 
-    @asynccontextmanager
-    async def _atomic(self) -> AsyncGenerator[None, None]:
-        """One all-or-nothing transaction (see :func:`app.core.base.transaction.atomic`)."""
-
-        async with atomic(self.repository.db):
-            yield
+    @property
+    def _tx_db(self) -> AsyncSession:
+        return self.repository.db
 
     async def _invalidate_character(self, character_id: int) -> None:
         """Drop the character's cached response (deferred until commit inside an atomic block)."""

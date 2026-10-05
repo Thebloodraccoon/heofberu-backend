@@ -64,7 +64,7 @@ class CharacterCreationService:
     """
     The creation use case split in two steps: :meth:`prepare` validates every
     reference and choice (read-only), :meth:`persist` writes the character
-    and its starting state with ``commit=False`` — the caller wraps it in the
+    and its starting state (flush only) — the caller wraps it in the
     transaction and owns the commit.
     """
 
@@ -135,28 +135,28 @@ class CharacterCreationService:
         Write the character row, its max-level cap, proficiencies, spell
         slots, feature grants (effects are computed on read, only the
         grants are stored), ability-score cache row, starting HP,
-        backstory and starting items. Never commits.
+        backstory and starting items. Flush only.
 
         Features are granted BEFORE the starting-HP math so their fixed
         ability effects (e.g. +4 CON) count in the first hit point; the
         session runs with ``autoflush=False``, hence the explicit flushes.
         """
 
-        character = await self.repository.create(plan.payload, commit=False)
+        character = await self.repository.create(plan.payload)
 
         if plan.backstory:
             self.db.add(CharacterBackstory(character_id=character.id, content=plan.backstory))
 
-        await self.max_level_repository.create_for_character(character.id, character.level, commit=False)
+        await self.max_level_repository.create_for_character(character.id, character.level)
 
         self._add_proficiencies(character, plan)
         await self.db.flush()
-        await self.apply_spell_slot_progression(character, commit=False)
+        await self.apply_spell_slot_progression(character)
 
         await sync_progression_features(self.db, character)
         await self.db.flush()
 
-        ability_scores = await self.stats_service.refresh(character, commit=False)
+        ability_scores = await self.stats_service.refresh(character)
         character.max_hp = starting_max_hp(plan.character_class.hit_dice, ability_scores.constitution_total)
         character.current_hp = character.max_hp
 
@@ -164,7 +164,7 @@ class CharacterCreationService:
         await self.db.flush()
         return character, ability_scores
 
-    async def apply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
+    async def apply_spell_slot_progression(self, character: Character) -> None:
         """Sync ``CharacterSpellSlot`` totals to the class's slot progression for the character's level."""
 
         slots_by_level = (
@@ -172,7 +172,7 @@ class CharacterCreationService:
             if character.class_id is not None
             else {}
         )
-        await self.spell_slot_repository.apply_spell_slot_progression(character.id, slots_by_level, commit=commit)
+        await self.spell_slot_repository.apply_spell_slot_progression(character.id, slots_by_level)
 
     async def _load_race(self, data: CharacterCreate):
         """Load the race (404 when missing) and validate the subrace belongs to it."""

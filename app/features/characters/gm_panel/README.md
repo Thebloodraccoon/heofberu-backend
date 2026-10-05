@@ -50,7 +50,7 @@ PATCH (which still rejects clearing an already-set choice —
 omitting it leaves the feat's ASI choice group pending, like any other
 choice group, answerable later via PATCH or the generic
 choice-answering/pending-grant endpoints. Every grant/update/remove refreshes the ability-score cache
-(`CharacterStatsService.refresh(commit=False)`) and re-syncs auto-granted features
+(`CharacterStatsService.refresh`) and re-syncs auto-granted features
 (`sync_progression_features`) in the SAME transaction as the grant (a failing refresh rolls the grant back);
 the character payload purge runs after that commit. A grant carrying an ASI choice also writes an
 audit row into `character_asi_choices` (`class_level IS NULL`, choice type
@@ -95,7 +95,7 @@ into effective totals through the calculator. A cap of 30
 
 POST is one transaction under the character's row lock (`characters/locking.py`):
 write the row, recompute the totals ONCE and upsert the cache table
-(`stats_service.refresh(commit=False)`), check every touched total against the
+(`stats_service.refresh`), check every touched total against the
 cap and roll everything back if it is exceeded. Two concurrent adjustments can
 therefore not jointly exceed the cap and the cache never lags the log. DELETE
 reverts one adjustment (cascade of the child increments) and refreshes the

@@ -239,7 +239,7 @@ class CharacterProgressionService(CharacterSubDomainService):
             character.current_hp = character.max_hp
             character.temp_hp = 0
 
-            await self.character_service.reapply_spell_slot_progression(character, commit=False)
+            await self.character_service.reapply_spell_slot_progression(character)
             await self._finish(character, totals)
 
     async def get_asi_choices(self, character_id: int, current_user: UserResponse) -> list[CharacterASIChoiceResponse]:
@@ -284,7 +284,7 @@ class CharacterProgressionService(CharacterSubDomainService):
 
         if totals is None:
             totals = await self.stats_service.compute(character)
-        await self.stats_service.store(character, totals, commit=False)
+        await self.stats_service.store(character, totals)
         await self._invalidate_character(character.id)
 
     async def _allowed_max_level(self, character: Character) -> int:

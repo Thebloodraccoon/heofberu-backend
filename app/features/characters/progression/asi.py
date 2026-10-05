@@ -25,7 +25,7 @@ class AsiChoiceService:
     """
     Resolves one ASI level: either the ability increments or a feat taken
     instead. Both validate against the character's *effective* ability
-    totals, which the caller computes once and passes in. Never commits —
+    totals, which the caller computes once and passes in. Flush only —
     callers own the transaction.
     """
 
@@ -56,7 +56,6 @@ class AsiChoiceService:
             class_level,
             ASILevelChoice.ASI,
             increases=[{"ability": item.ability.value, "amount": item.amount} for item in increases],
-            commit=False,
         )
 
     async def apply_feat(
@@ -98,7 +97,6 @@ class AsiChoiceService:
             choice.feat_id,
             choice.ability_score_increase_id,
             source_type=GrantSource.ASI,
-            commit=False,
         )
         await self.asi_repository.add(
             character.id,
@@ -106,7 +104,6 @@ class AsiChoiceService:
             ASILevelChoice.FEAT,
             feat_id=choice.feat_id,
             ability_score_increase_id=choice.ability_score_increase_id,
-            commit=False,
         )
 
         return grant

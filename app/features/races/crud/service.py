@@ -46,8 +46,9 @@ class RaceCrudService(
         capability endpoint.
         """
 
-        item = await self.repository.create(race_data.model_dump())
-        await self._invalidate_cache()
+        async with self._atomic():
+            item = await self.repository.create(race_data.model_dump())
+            await self._invalidate_cache()
 
         return await self._get_response(item.id)
 
@@ -57,8 +58,9 @@ class RaceCrudService(
         race = await self._get_or_404(item_id)
         subrace_ids = await self.repository.list_subrace_ids(item_id)
 
-        await self.repository.delete(race)
-        await purge_after_commit(self.repository.db, *RACE_DELETE_NAMESPACES)
+        async with self._atomic():
+            await self.repository.delete(race)
+            await purge_after_commit(self.repository.db, *RACE_DELETE_NAMESPACES)
 
         if self._storage is not None:
             await self._storage.delete_image("races", item_id)

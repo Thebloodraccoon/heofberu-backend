@@ -44,7 +44,7 @@ class FakeCharacterItemRepository:
         )
         self._next_id += 1
         self.add_calls.append(stack)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(stack)
         return stack
 
@@ -52,13 +52,13 @@ class FakeCharacterItemRepository:
         for field, value in fields.items():
             setattr(stack, field, value)
         self.update_calls.append((stack, fields))
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(stack)
         return stack
 
     async def remove_character_item(self, stack):
         self.remove_calls.append(stack)
-        await self.db.commit()
+        await self.db.flush()
         return True
 
 

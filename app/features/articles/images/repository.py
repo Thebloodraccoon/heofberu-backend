@@ -41,7 +41,7 @@ class ArticleImagesRepository(ArticleScopedRepository):
         )
         return result.scalar_one_or_none()
 
-    async def create_placeholder(self, article_id: int, *, commit: bool = True) -> ArticleImage:
+    async def create_placeholder(self, article_id: int) -> ArticleImage:
         """
         Insert an image row with an empty ``image_url`` and return it (id assigned).
 
@@ -53,13 +53,11 @@ class ArticleImagesRepository(ArticleScopedRepository):
 
         row = ArticleImage(article_id=article_id, image_url="", storage_key=str(uuid4()))
         self.db.add(row)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return row
 
-    async def set_image_url(
-        self, article_id: int, image_id: int, url: str, *, commit: bool = True
-    ) -> ArticleImage | None:
+    async def set_image_url(self, article_id: int, image_id: int, url: str) -> ArticleImage | None:
         """Persist the uploaded object's public URL onto the image row; ``None`` if the row vanished meanwhile."""
 
         image = await self.get_image(article_id, image_id)
@@ -67,20 +65,20 @@ class ArticleImagesRepository(ArticleScopedRepository):
             return None
 
         image.image_url = url
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return image
 
-    async def delete_image_by_id(self, image_id: int, *, commit: bool = True) -> None:
+    async def delete_image_by_id(self, image_id: int) -> None:
         """Remove an image row by id (a no-op when it is already gone)."""
 
         await self.db.execute(
             delete(ArticleImage).where(ArticleImage.id == image_id).execution_options(synchronize_session=False)
         )
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
-    async def delete_image_row(self, image: ArticleImage, *, commit: bool = True) -> None:
+    async def delete_image_row(self, image: ArticleImage) -> None:
         """Remove a single image row."""
 
         await self.db.delete(image)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()

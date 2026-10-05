@@ -24,15 +24,17 @@ class TestSubclassRename:
         assert response.json()["name"] == "Assassin"
         assert response.json()["class_id"] == fighter.id
 
-    async def test_rename_to_a_sibling_name_returns_400(self, client, gm_token, create_class, create_subclass):
+    async def test_rename_to_a_sibling_name_returns_409(self, client, gm_token, create_class, create_subclass):
         fighter = await create_class(name="Fighter")
         await create_subclass(class_id=fighter.id, name="Champion")
         other = await create_subclass(class_id=fighter.id, name="Battle Master")
 
-        response = await client.patch(f"/subclasses/{other.id}", json={"name": "Champion"}, headers=auth(gm_token))
+        other_id = other.id
 
-        assert response.status_code == 400
-        assert (await client.get(f"/subclasses/{other.id}")).json()["name"] == "Battle Master"
+        response = await client.patch(f"/subclasses/{other_id}", json={"name": "Champion"}, headers=auth(gm_token))
+
+        assert response.status_code == 409
+        assert (await client.get(f"/subclasses/{other_id}")).json()["name"] == "Battle Master"
 
     async def test_patch_keeping_its_own_name_is_not_a_conflict(self, client, gm_token, create_class, create_subclass):
         fighter = await create_class(name="Fighter")

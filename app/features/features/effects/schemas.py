@@ -384,14 +384,14 @@ class ChoiceGroupPayload(BaseModel):
 
         for index, option in enumerate(self.options):
             if self.choice_type == ChoiceType.SKILL:
-                for skill_effect in option.skill_effects:
+                for skill_effect in option.skill_effects or []:
                     if skill_effect.skill_id is None:
                         raise ValueError(
                             f"Option {index}: an open ('any skill') skill effect is not "
                             "supported — skill_id is required."
                         )
             elif self.choice_type == ChoiceType.SPELL:
-                for spell_effect in option.spell_effects:
+                for spell_effect in option.spell_effects or []:
                     if spell_effect.spell_id is None:
                         raise ValueError(
                             f"Option {index}: an open ('any spell') spell effect is not "

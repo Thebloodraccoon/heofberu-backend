@@ -46,13 +46,13 @@ class FeatCrudService(CachedService[Feature, FeatCreate, FeatUpdate, FeatRespons
         payload = feat_data.model_dump(exclude={"ability_score_increases"})
 
         async with self._atomic():
-            item = await self.repository.create(payload, commit=False)
+            item = await self.repository.create(payload)
 
             if feat_data.ability_score_increases:
                 increases = [
                     {"ability": inc.ability, "amount": inc.amount} for inc in feat_data.ability_score_increases
                 ]
-                await self.repository.set_ability_score_increases(item, increases, commit=False)
+                await self.repository.set_ability_score_increases(item, increases)
 
             await self._invalidate_cache()
 
@@ -69,8 +69,9 @@ class FeatCrudService(CachedService[Feature, FeatCreate, FeatUpdate, FeatRespons
             before_update(feat, fields)
         self._ensure_prerequisite_complete(feat, fields)
 
-        await self.repository.update(feat, fields)
-        await self._invalidate_cache()
+        async with self._atomic():
+            await self.repository.update(feat, fields)
+            await self._invalidate_cache()
 
         return await self._get_response(item_id)
 
@@ -78,8 +79,9 @@ class FeatCrudService(CachedService[Feature, FeatCreate, FeatUpdate, FeatRespons
         """Delete a feat, blocked while any character still holds it."""
 
         feat = await self._get_row_or_404(item_id)
-        result = await self.repository.delete(feat)
-        await self._invalidate_cache()
+        async with self._atomic():
+            result = await self.repository.delete(feat)
+            await self._invalidate_cache()
 
         return result
 

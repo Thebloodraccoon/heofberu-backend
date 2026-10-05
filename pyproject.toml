@@ -174,11 +174,11 @@ markers = [
 
 [tool.coverage.run]
 source = ["app"]
+branch = true
 concurrency = ["greenlet"]
 omit = [
     "*/__init__.py",
     "app/settings/*",
     "app/constants.py",
-    "app/main.py",
     "tests/*",
 ]

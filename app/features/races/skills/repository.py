@@ -10,7 +10,7 @@ from app.models.skill_model import Skill
 class RaceSkillsRepository(SkillLookupMixin, RaceRepository):
     """Race repository extended with granted-skill management."""
 
-    async def set_skills(self, race_id: int, skills: list[Skill], *, commit: bool = True) -> None:
+    async def set_skills(self, race_id: int, skills: list[Skill]) -> None:
         """Replace all granted skills for a race with the given list."""
 
         await self.replace_association(
@@ -19,5 +19,4 @@ class RaceSkillsRepository(SkillLookupMixin, RaceRepository):
             "race_id",
             "skill_id",
             [skill.id for skill in (skills or [])],
-            commit=commit,
         )

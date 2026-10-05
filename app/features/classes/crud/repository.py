@@ -100,9 +100,7 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
         )
         return list(result.scalars().all())
 
-    async def set_spell_slots(
-        self, class_id: int, class_level: int, slots_by_spell_level: dict[str, int], *, commit: bool = True
-    ) -> None:
+    async def set_spell_slots(self, class_id: int, class_level: int, slots_by_spell_level: dict[str, int]) -> None:
         """Replace the spell slot rows of a single ``class_level`` (existing rows of that level are deleted first)."""
 
         await self.replace_child_rows(
@@ -114,12 +112,9 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
                 for spell_level, slots in slots_by_spell_level.items()
             ],
             extra_filters={"class_level": class_level},
-            commit=commit,
         )
 
-    async def set_proficiencies(
-        self, class_id: int, kind: ProficiencyKind, values: list[Any], *, commit: bool = True
-    ) -> None:
+    async def set_proficiencies(self, class_id: int, kind: ProficiencyKind, values: list[Any]) -> None:
         """Replace one proficiency list (saving throws, armor or weapons) of the class."""
 
         await self.replace_child_rows(
@@ -127,10 +122,9 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
             _ParentRef(class_id),
             "class_id",
             [{kind.column: value} for value in values],
-            commit=commit,
         )
 
-    async def set_available_skills(self, class_id: int, skills: list[Skill] | None, *, commit: bool = True) -> None:
+    async def set_available_skills(self, class_id: int, skills: list[Skill] | None) -> None:
         """
         Replace all skills a class may choose proficiencies from.
 
@@ -145,7 +139,6 @@ class ClassRepository(SkillLookupMixin, BaseRepository[Class]):
             "class_id",
             "skill_id",
             [skill.id for skill in (skills or [])],
-            commit=commit,
         )
 
     async def get_subclass(self, class_id: int, subclass_id: int) -> Subclass | None:

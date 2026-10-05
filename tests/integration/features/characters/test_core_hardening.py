@@ -413,7 +413,7 @@ class TestRest:
         fighter = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=fighter.id, max_hp=20, current_hp=3)
 
-        async def broken_reset(self, character_id, *, commit=True):
+        async def broken_reset(self, character_id):
             raise RuntimeError("slot reset failed")
 
         monkeypatch.setattr(CharacterSpellSlotRepository, "reset_all_spell_slots", broken_reset)

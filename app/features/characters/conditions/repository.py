@@ -56,7 +56,7 @@ class CharacterConditionRepository(SessionRepository):
             .returning(CharacterCondition)
         )
         row = await self.db.scalar(statement)
-        await self.commit_or_flush()
+        await self.flush()
         return row
 
     async def update_character_condition(
@@ -70,7 +70,7 @@ class CharacterConditionRepository(SessionRepository):
             if hasattr(row, field):
                 setattr(row, field, value)
 
-        await self.commit_or_flush()
+        await self.flush()
         await self.db.refresh(row)
         return row
 
@@ -78,5 +78,5 @@ class CharacterConditionRepository(SessionRepository):
         """Remove an active condition from a character."""
 
         await self.db.delete(row)
-        await self.commit_or_flush()
+        await self.flush()
         return True

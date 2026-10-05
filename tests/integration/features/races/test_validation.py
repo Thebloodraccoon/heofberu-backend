@@ -88,7 +88,7 @@ class TestRaceUpdateValidation:
         assert response.json()["image_url"] is None
         assert response.json()["description"] == "ok"
 
-    async def test_duplicate_name_returns_400_as_declared(self, client, gm_token, create_race):
+    async def test_duplicate_name_returns_409_as_declared(self, client, gm_token, create_race):
         await create_race(name="Elf")
         other = await create_race(name="Dwarf")
 
@@ -96,7 +96,7 @@ class TestRaceUpdateValidation:
             f"/races/{other.id}", json={"name": "Elf"}, headers={"Authorization": f"Bearer {gm_token}"}
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
 
 @pytest.mark.integration

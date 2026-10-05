@@ -193,13 +193,13 @@ class TestSpellWriteValidation:
 
         assert response.status_code == 422
 
-    async def test_patch_to_an_existing_name_is_400(self, client, gm_token):
+    async def test_patch_to_an_existing_name_is_409(self, client, gm_token):
         await add_spell(client, gm_token, name="Taken")
         spell = await add_spell(client, gm_token, name="Free")
 
         response = await client.patch(f"/spells/{spell['id']}", json={"name": "Taken"}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
 
 @pytest.mark.integration

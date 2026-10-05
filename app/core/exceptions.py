@@ -125,9 +125,9 @@ class InvalidEmailException(AppError):
 
 
 class RecordAlreadyExistsError(AppError):
-    """Data Layer Exception (400): A record with this unique field already exists."""
+    """Data Layer Exception (409): A record with this unique field already exists."""
 
-    status_code = status.HTTP_400_BAD_REQUEST
+    status_code = status.HTTP_409_CONFLICT
 
     def __init__(self, model_name: str, field: str, value: Any):
         self.model_name = model_name

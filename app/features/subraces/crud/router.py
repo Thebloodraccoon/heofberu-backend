@@ -36,7 +36,7 @@ async def list_subraces(race_id: Annotated[int, Query(gt=0, le=INT32_MAX)], subr
     summary="Create a subrace",
     responses={
         404: {"description": "No race exists with the given ID."},
-        400: {"description": "The race already has a subrace with this name."},
+        409: {"description": "The race already has a subrace with this name."},
     },
 )
 async def create_subrace(
@@ -97,7 +97,7 @@ async def get_subrace(
     summary="Update a subrace's base fields",
     responses={
         404: {"description": "No subrace exists with the given ID."},
-        400: {"description": "Another subrace of the same race already uses the requested name."},
+        409: {"description": "Another subrace of the same race already uses the requested name."},
     },
 )
 async def update_subrace(

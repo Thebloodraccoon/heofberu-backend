@@ -38,8 +38,9 @@ class BackgroundSuggestionsService(BackgroundCapabilityService):
         """Add a single suggestion to the background."""
 
         await self._exists_or_404(background_id)
-        row = await self.repository.create_suggestion(background_id, data)
-        await self._invalidate_cache()
+        async with self._atomic():
+            row = await self.repository.create_suggestion(background_id, data)
+            await self._invalidate_cache()
 
         return SuggestionResponse.model_validate(row)
 
@@ -55,7 +56,7 @@ class BackgroundSuggestionsService(BackgroundCapabilityService):
             if new_type is not None and new_type != suggestion.suggestion_type:
                 await self._ensure_not_last_of_type(suggestion)
 
-            updated = await self.repository.update_suggestion(suggestion, data, commit=False)
+            updated = await self.repository.update_suggestion(suggestion, data)
             await self._invalidate_cache()
 
         return SuggestionResponse.model_validate(updated)
@@ -67,7 +68,7 @@ class BackgroundSuggestionsService(BackgroundCapabilityService):
             suggestion = await self._lock_and_get_suggestion(background_id, suggestion_id)
             await self._ensure_not_last_of_type(suggestion)
 
-            await self.repository.delete_suggestion(suggestion, commit=False)
+            await self.repository.delete_suggestion(suggestion)
             await self._invalidate_cache()
 
     async def _lock_and_get_suggestion(self, background_id: int, suggestion_id: int) -> BackgroundSuggestion:

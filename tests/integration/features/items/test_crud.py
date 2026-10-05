@@ -29,7 +29,7 @@ class TestItemCrud:
         assert response.json()["name"] == "Longsword"
         assert response.json()["item_type"] == "WEAPON"
 
-    async def test_create_duplicate_item_name_returns_400(self, client, gm_token, create_item):
+    async def test_create_duplicate_item_name_returns_409(self, client, gm_token, create_item):
         await create_item(name="Longsword")
         response = await client.post(
             "/items",
@@ -37,7 +37,7 @@ class TestItemCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_item(self, client, gm_token, create_item):
         item = await create_item(name="Old Item Name")
@@ -79,7 +79,9 @@ class TestItemCrud:
         db_session.add(SourceItemChoiceOption(group_id=group.id, item_id=item.id, quantity=1))
         await db_session.commit()
 
-        response = await client.delete(f"/items/{item.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        item_id = item.id
+
+        response = await client.delete(f"/items/{item_id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
-        assert (await client.get(f"/items/{item.id}")).status_code == 200
+        assert (await client.get(f"/items/{item_id}")).status_code == 200

@@ -28,7 +28,7 @@ class TestFeatCrud:
         assert response.status_code == 201
         assert response.json()["name"] == "Alert"
 
-    async def test_create_duplicate_feat_name_returns_400(self, client, gm_token, create_feat):
+    async def test_create_duplicate_feat_name_returns_409(self, client, gm_token, create_feat):
         await create_feat(name="Lucky")
         response = await client.post(
             "/feats",
@@ -36,7 +36,7 @@ class TestFeatCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_feat(self, client, gm_token, create_feat):
         feat = await create_feat(name="Old Name")
@@ -108,10 +108,12 @@ class TestFeatCrud:
         )
         assert add_response.status_code == 201
 
-        response = await client.delete(f"/feats/{feat.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        feat_id = feat.id
+
+        response = await client.delete(f"/feats/{feat_id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
-        assert (await client.get(f"/feats/{feat.id}")).status_code == 200
+        assert (await client.get(f"/feats/{feat_id}")).status_code == 200
 
     async def test_delete_feat_referenced_only_by_an_asi_log_row_returns_409(
         self, client, db_session, founder_token, player, create_class, create_character, create_feat

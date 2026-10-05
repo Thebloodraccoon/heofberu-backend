@@ -49,7 +49,7 @@ class TestUserCrud:
         assert response.status_code == 201
         assert response.json()["role"] == "gm"
 
-    async def test_create_user_duplicate_email_returns_400(self, client, gm_token, create_user):
+    async def test_create_user_duplicate_email_returns_409(self, client, gm_token, create_user):
         await create_user(email="taken@example.com")
         response = await client.post(
             "/users",
@@ -57,7 +57,7 @@ class TestUserCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_user(self, client, gm_token, create_user):
         user = await create_user(username="oldname", email="oldname@example.com")

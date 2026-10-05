@@ -152,7 +152,7 @@ class TestClassCrud:
         assert response.status_code == 201
         assert response.json()["spellcasting_ability"] == "CHA"
 
-    async def test_create_duplicate_class_name_returns_400(self, client, gm_token, create_class):
+    async def test_create_duplicate_class_name_returns_409(self, client, gm_token, create_class):
         await create_class(name="Fighter")
         response = await client.post(
             "/classes",
@@ -160,7 +160,7 @@ class TestClassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_class(self, client, gm_token, create_class):
         character_class = await create_class(name="Old Name")

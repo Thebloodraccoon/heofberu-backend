@@ -6,7 +6,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
-from app.core.base.transaction import commit_or_rollback
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.users.validators import normalize_email
 from app.models import User
@@ -53,7 +52,7 @@ class UserRepository(BaseRepository[User]):
         return None
 
     async def update_last_login(self, user_id: int) -> None:
-        """Stamp ``last_login`` with one UPDATE and commit; ``updated_at`` is left alone."""
+        """Stamp ``last_login`` with one UPDATE and flush (caller owns the transaction); ``updated_at`` is left alone."""
 
         await self.db.execute(
             update(User)
@@ -61,7 +60,7 @@ class UserRepository(BaseRepository[User]):
             .values(last_login=utcnow(), updated_at=User.updated_at)
             .execution_options(synchronize_session=False)
         )
-        await commit_or_rollback(self.db)
+        await self.flush()
 
     async def _check_uniqueness(self, data: dict[str, Any], exclude_id: int | None = None) -> None:
         """Check username exactly and email case-insensitively."""

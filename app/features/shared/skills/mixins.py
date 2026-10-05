@@ -28,7 +28,7 @@ class SkillsManagerMixin(ServiceMixin):
             await self._exists_or_404(source_id)
             skills = await self._resolve_skills(data.skill_ids)
 
-            await getattr(self.repository, self._set_skills_method)(source_id, skills, commit=False)
+            await getattr(self.repository, self._set_skills_method)(source_id, skills)
             await self._invalidate_cache()
 
         return await self._get_response(source_id)

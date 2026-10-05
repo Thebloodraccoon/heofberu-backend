@@ -47,9 +47,9 @@ class ArticleRepository(ArticleScopedRepository):
 
         super().__init__(db, load_tags_and_images=True, search_fields=["title", "slug"], unique_fields=["slug"])
 
-    async def update_fields(self, article_id: int, fields: dict, *, commit: bool = True) -> None:
+    async def update_fields(self, article_id: int, fields: dict) -> None:
         """
-        Write ``fields`` onto the article with one UPDATE, committing or flushing.
+        Write ``fields`` onto the article with one UPDATE and flush.
 
         No slug pre-check: a slug only arrives from ``write_with_unique_slug``, which picked a free one and retries
         on the unique constraint's ``IntegrityError`` if a concurrent writer took it meanwhile.
@@ -63,7 +63,7 @@ class ArticleRepository(ArticleScopedRepository):
                 .execution_options(synchronize_session=False)
             )
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
     async def lock_version(self, article_id: int) -> int | None:
         """Lock the article row until the transaction ends and return its current ``version`` (``None`` if absent)."""

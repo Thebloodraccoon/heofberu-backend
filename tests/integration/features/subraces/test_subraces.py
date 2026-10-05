@@ -76,7 +76,7 @@ class TestSubraceCrud:
 
         assert response.status_code == 404
 
-    async def test_create_duplicate_subrace_name_returns_400(self, client, gm_token, create_race, create_subrace):
+    async def test_create_duplicate_subrace_name_returns_409(self, client, gm_token, create_race, create_subrace):
         race = await create_race(name="Elf")
         await create_subrace(race_id=race.id, name="High Elf")
 
@@ -86,7 +86,7 @@ class TestSubraceCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_list_subraces_for_race(self, client, create_race, create_subrace):
         elf = await create_race(name="Elf")
@@ -168,10 +168,12 @@ class TestSubraceCrud:
         char_class = await create_class(name="Wizard")
         await create_character(owner_id=player.id, class_id=char_class.id, race_id=race.id, subrace_id=subrace.id)
 
-        response = await client.delete(f"/subraces/{subrace.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        subrace_id = subrace.id
+
+        response = await client.delete(f"/subraces/{subrace_id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
-        assert (await client.get(f"/subraces/{subrace.id}")).status_code == 200
+        assert (await client.get(f"/subraces/{subrace_id}")).status_code == 200
 
 
 @pytest.mark.integration

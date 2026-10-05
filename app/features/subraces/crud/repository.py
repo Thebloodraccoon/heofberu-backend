@@ -93,7 +93,7 @@ class SubraceRepository(BaseRepository[Subrace]):
             limit=None,
         )
 
-    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
+    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict]) -> None:
         """Replace all ability bonuses for a subrace with the given list."""
 
         await self.replace_child_rows(
@@ -101,5 +101,4 @@ class SubraceRepository(BaseRepository[Subrace]):
             Subrace(id=subrace_id),
             "subrace_id",
             bonuses,
-            commit=commit,
         )

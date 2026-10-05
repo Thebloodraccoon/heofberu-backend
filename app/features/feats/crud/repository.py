@@ -139,22 +139,20 @@ class FeatRepository(BaseRepository[Feature]):
         if await self.db.scalar(stmt) is not None:
             raise RecordAlreadyExistsError(model_name="Feat", field="name", value=name)
 
-    async def create(self, obj_data: dict, *, commit: bool = True) -> Feature:
+    async def create(self, obj_data: dict) -> Feature:
         """Create a FEAT-source feature (``source_type`` is pinned, never taken from the payload)."""
 
         try:
-            return await super().create({**obj_data, "source_type": FeatureSourceType.FEAT}, commit=commit)
+            return await super().create({**obj_data, "source_type": FeatureSourceType.FEAT})
         except IntegrityError as exc:
             _raise_if_name_conflict(exc, obj_data)
             raise
 
-    async def update(
-        self, db_obj: Feature, update_data: dict[str, Any], *, refresh: bool = False, commit: bool = True
-    ) -> Feature:
+    async def update(self, db_obj: Feature, update_data: dict[str, Any], *, refresh: bool = False) -> Feature:
         """Apply ``update_data``; a concurrent duplicate name surfaces as ``RecordAlreadyExistsError``."""
 
         try:
-            return await super().update(db_obj, update_data, refresh=refresh, commit=commit)
+            return await super().update(db_obj, update_data, refresh=refresh)
         except IntegrityError as exc:
             _raise_if_name_conflict(exc, update_data)
             raise
@@ -179,9 +177,7 @@ class FeatRepository(BaseRepository[Feature]):
         await self.db.execute(select(Feature.id).where(Feature.id == db_obj.id).with_for_update())
         return await super().delete(db_obj)
 
-    async def set_ability_score_increases(
-        self, feat: Feature, increases: list[dict], *, commit: bool = True
-    ) -> Feature:
+    async def set_ability_score_increases(self, feat: Feature, increases: list[dict]) -> Feature:
         """
         Replace a feat's ASI options.
 
@@ -220,6 +216,6 @@ class FeatRepository(BaseRepository[Feature]):
             )
             self.db.add(group)
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return feat

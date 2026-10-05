@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.constants import AbilityScore, DiceType
+from app.core.base.transaction import atomic
 from app.features.characters.ability_score.repository import CharacterStatsRepository
 from tests.unit.fakes import FakeAsyncSession, FakeResult
 
@@ -157,7 +158,8 @@ class TestCharacterStatsRepository:
         session = UpsertSession([row])
         repository = CharacterStatsRepository(session)
 
-        cache = await repository.upsert(1, {"strength_total": 15, "dexterity_total": 12})
+        async with atomic(session):
+            cache = await repository.upsert(1, {"strength_total": 15, "dexterity_total": 12})
 
         assert cache is row
         assert len(session.executes) == 1
@@ -166,16 +168,16 @@ class TestCharacterStatsRepository:
         assert "UPDATED_AT" in sql
         assert session.commits == 1
 
-    async def test_upsert_many_returns_rows_by_character_id_and_flushes_when_not_committing(self):
+    async def test_upsert_many_returns_rows_by_character_id_and_flushes_without_committing(self):
         rows = [make_cache_row(character_id=1), make_cache_row(character_id=2)]
         session = UpsertSession(rows)
         repository = CharacterStatsRepository(session)
 
-        result = await repository.upsert_many({2: {"strength_total": 20}, 1: {"strength_total": 15}}, commit=False)
+        async with atomic(session):
+            result = await repository.upsert_many({2: {"strength_total": 20}, 1: {"strength_total": 15}})
+            assert session.flushes == 1
 
         assert result == {1: rows[0], 2: rows[1]}
-        assert session.commits == 0
-        assert session.flushes == 1
 
     async def test_get_hit_dice_maps_class_ids_to_die_values(self):
         session = FakeAsyncSession(execute_results=[FakeResult([(1, DiceType.D10), (2, DiceType.D6)])])

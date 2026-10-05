@@ -5,7 +5,7 @@ from typing import Any
 from app.settings import settings
 
 #: Health/docs paths: not logged and not counted by the rate limiter. The API lives under ``/api/v1``.
-HEALTH_SKIP_PATHS = ["/api/v1/ping", "/api/v1/health", "/docs", "/openapi.json", "/redoc"]
+HEALTH_SKIP_PATHS = ["/api/v1/ping", "/api/v1/ready", "/api/v1/health", "/docs", "/openapi.json", "/redoc"]
 
 PROD_LIKE_STAGES = ("prod", "staging")
 

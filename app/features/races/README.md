@@ -40,8 +40,8 @@ races/
 | ------ | ---- | ------ | ----- |
 | GET | `/races` | open | Paginated `Page[RaceGetAllResponse]` (id/name/size/image_url); filters `race_size` (repeatable), `search` on name. |
 | GET | `/races/{race_id}` | open | Full `RaceResponse`: base fields, `ability_bonuses`, `granted_skills`, `tags`, RACE-source `features`, `subraces`; cached as one unit. |
-| POST | `/races` | GM | Base fields only (`name`, `size`, `speed`, `description`); duplicate `name` -> 400. |
-| PATCH | `/races/{race_id}` | GM | Base fields only; duplicate `name` -> 400; explicit `null` -> 422. |
+| POST | `/races` | GM | Base fields only (`name`, `size`, `speed`, `description`); duplicate `name` -> 409. |
+| PATCH | `/races/{race_id}` | GM | Base fields only; duplicate `name` -> 409; explicit `null` -> 422. |
 | DELETE | `/races/{race_id}` | Founder | 409 while a character uses the race or one of its subraces. Cascades to subraces and features; stored images are removed. |
 | PUT | `/races/{race_id}/ability-bonuses` | GM | Full replace (empty clears); duplicate abilities, `bonus` outside -10..10 or more than six entries -> 422. |
 | PUT | `/races/{race_id}/skills` | GM | Full replace (empty clears); unknown ids -> 400, malformed ids -> 422. |

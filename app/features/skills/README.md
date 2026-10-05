@@ -16,7 +16,7 @@ Reference catalog for the `Skill` entity: each skill has a unique display `name`
 | GET | `/skills` | open | Paginated list (`Page[SkillGetAllResponse]`, no description), ordered by name. Filters: `search` (name, case-insensitive, max 100 chars), repeatable `ability`. |
 | GET | `/skills/{skill_id}` | open | Full `SkillResponse`. |
 | POST | `/skills` | GM | Duplicate `name` → 400. |
-| PATCH | `/skills/{skill_id}` | GM | Partial update; duplicate `name` → 400; explicit `null` → 422. |
+| PATCH | `/skills/{skill_id}` | GM | Partial update; duplicate `name` → 409; explicit `null` → 422. |
 | DELETE | `/skills/{skill_id}` | Founder | Blocked with 409 while referenced anywhere (see below). |
 
 Duplicates answer **400** (`RecordAlreadyExistsError`, platform-wide), not 409. `name` is 1..100 characters, whitespace-trimmed.

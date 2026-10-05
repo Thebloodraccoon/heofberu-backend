@@ -85,28 +85,24 @@ class CharacterStatsService:
             subrace_name=subrace_names.get(subrace_id) if subrace_id is not None else None,
         )
 
-    async def refresh(self, character: Character, *, commit: bool = True) -> CharacterAbilityScore:
+    async def refresh(self, character: Character) -> CharacterAbilityScore:
         """Recompute effective ability scores for ``character`` and persist them."""
 
-        return await self.store(character, await self.compute(character), commit=commit)
+        return await self.store(character, await self.compute(character))
 
-    async def store(
-        self, character: Character, totals: dict[str, int], *, commit: bool = True
-    ) -> CharacterAbilityScore:
+    async def store(self, character: Character, totals: dict[str, int]) -> CharacterAbilityScore:
         """Persist already computed ``totals`` as the character's ability-score cache row (no recomputation)."""
 
-        return await self.repository.upsert(character.id, totals, commit=commit)
+        return await self.repository.upsert(character.id, totals)
 
-    async def refresh_many(
-        self, characters: list[Character], *, commit: bool = True
-    ) -> dict[int, CharacterAbilityScore]:
+    async def refresh_many(self, characters: list[Character]) -> dict[int, CharacterAbilityScore]:
         """Batched :meth:`refresh` — see :meth:`compute_many`."""
 
         if not characters:
             return {}
 
         totals_by_character = await self.compute_many(characters)
-        return await self.repository.upsert_many(totals_by_character, commit=commit)
+        return await self.repository.upsert_many(totals_by_character)
 
     async def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
         """The existing cache row as-is, or ``None`` if it was never computed."""

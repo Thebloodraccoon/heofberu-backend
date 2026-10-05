@@ -45,8 +45,8 @@ class FakeMaxLevelRepository:
     async def get_by_character_id(self, character_id):
         return self.row
 
-    async def create_for_character(self, character_id, max_level, *, commit=True):
-        self.create_calls.append((character_id, max_level, commit))
+    async def create_for_character(self, character_id, max_level):
+        self.create_calls.append((character_id, max_level))
         self.row = SimpleNamespace(character_id=character_id, max_level=max_level)
         return self.row
 
@@ -103,13 +103,13 @@ class TestSetMaxLevel:
 
         assert exc_info.value.character_level == 5
 
-    async def test_missing_row_is_seeded_directly_at_the_new_value_without_committing_itself(self):
+    async def test_missing_row_is_seeded_directly_at_the_new_value_in_the_services_single_commit(self):
         character = make_character(level=3)
         service = make_service(character, row=None)
 
         result = await service.set_max_level(1, MaxLevelUpdate(max_level=7), SimpleNamespace())
 
-        assert service.max_level_repository.create_calls == [(1, 7, False)]
+        assert service.max_level_repository.create_calls == [(1, 7)]
         assert result.max_level == 7
         assert service.repository.db.commits == 1
 

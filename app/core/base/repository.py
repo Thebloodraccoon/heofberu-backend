@@ -3,7 +3,7 @@ Generic repository layer: common CRUD operations for SQLAlchemy models.
 
 Provides :class:`BaseRepository` (a reusable, model-generic CRUD base with
 filtering, search, pagination, uniqueness checks and delete-in-use guards),
-:class:`SessionRepository` (just the session and commit helpers, for tables
+:class:`SessionRepository` (just the session and flush helper, for tables
 without an ``id``), :class:`RepositoryMixin` (typing base for repository
 mixins) plus the model protocol and type aliases they rely on.
 
@@ -11,8 +11,7 @@ Async stack: all public methods are ``async`` and run against an
 ``AsyncSession`` using 2.0-style ``select()`` statements.
 """
 
-from collections.abc import AsyncGenerator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
 
 from sqlalchemy import String, Text, delete, func, inspect, or_, select
@@ -20,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapper
 
+from app.core.base.transaction import require_atomic
 from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
 
 _UNSEARCHABLE_SUFFIXES = ("password", "token", "secret", "_url")
@@ -44,7 +44,7 @@ ModelType = TypeVar("ModelType", bound=ModelProtocol)
 
 class SessionRepository:
     """
-    Session plumbing shared by every repository: the bound ``AsyncSession`` and the commit/flush helpers.
+    Session plumbing shared by every repository: the bound ``AsyncSession`` and the guarded ``flush``.
 
     Extend it directly for tables without a surrogate ``id`` (composite-key rows such as
     ``character_conditions``): ``BaseRepository``'s id-based CRUD doesn't apply to them, so they shouldn't
@@ -54,33 +54,16 @@ class SessionRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    @asynccontextmanager
-    async def _commit_or_rollback(self) -> AsyncGenerator[None, None]:
-        """Commit on success; roll back and re-raise on any exception."""
-
-        try:
-            yield
-            await self.db.commit()
-        except Exception:
-            await self.db.rollback()
-            raise
-
-    async def commit_or_flush(self, *, commit: bool = True) -> None:
+    async def flush(self) -> None:
         """
-        Persist pending changes: commit via the rollback-safe
-        :meth:`_commit_or_rollback` path, or flush when the caller owns the
-        transaction (``commit=False`` inside a ``_atomic()`` block).
+        Flush pending changes to the database; the service's ``atomic`` block commits them.
 
-        Services doing raw ``setattr`` mutations or bulk executes should end
-        with this instead of hand-rolled ``db.commit()/db.flush()`` — a bare
-        ``commit()`` skips the rollback-on-error guarantee.
+        Services doing raw ``setattr`` mutations or bulk executes end with this instead of a hand-rolled
+        ``db.flush()``. Raises if called outside ``atomic`` (see :func:`require_atomic`).
         """
 
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-        else:
-            await self.db.flush()
+        require_atomic(self.db)
+        await self.db.flush()
 
 
 class RepositoryMixin:
@@ -342,25 +325,16 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
                 if await self.db.scalar(stmt) is not None:
                     raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
 
-    async def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
-        """
-        Create a record from ``obj_data`` and return it.
-
-        ``commit=False`` flushes instead of committing, leaving the
-        transaction open for the caller (e.g. inside ``begin_nested()``).
-        """
+    async def create(self, obj_data: dict[str, Any]) -> ModelType:
+        """Create a record from ``obj_data``, flush and refresh it, and return it (the service's ``atomic`` commits)."""
 
         await self._check_uniqueness(obj_data)
 
         db_obj = self.model(**obj_data)
         self.db.add(db_obj)
 
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-            await self.db.refresh(db_obj)
-        else:
-            await self.db.flush()
+        await self.flush()
+        await self.db.refresh(db_obj)
 
         return db_obj
 
@@ -374,14 +348,8 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
 
         return {}
 
-    async def update(
-        self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False, commit: bool = True
-    ) -> ModelType:
-        """
-        Apply ``update_data`` onto ``db_obj`` and commit. Unknown keys are ignored.
-
-        ``commit=False`` only flushes, leaving the transaction to the caller (inside ``_atomic()``).
-        """
+    async def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
+        """Apply ``update_data`` onto ``db_obj`` and flush. Unknown keys are ignored."""
 
         await self._check_uniqueness({**self._uniqueness_scope(db_obj), **update_data}, exclude_id=db_obj.id)
 
@@ -389,7 +357,7 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         if refresh:
             await self.db.refresh(db_obj)
 
@@ -412,7 +380,7 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
 
     async def delete(self, db_obj: ModelType) -> bool:
         """
-        Delete ``db_obj``, returning ``True`` on success.
+        Delete ``db_obj`` (flush; the service's ``atomic`` commits), returning ``True`` on success.
 
         If ``check_in_use_on_delete`` was set in ``__init__``, calls
         :meth:`is_in_use` first and raises ``RecordInUseError`` instead of
@@ -422,16 +390,19 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
         database errors propagate untouched.
         """
 
-        if self._check_in_use_on_delete and await self.is_in_use(db_obj.id):
-            raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
+        model_id = db_obj.id
+        if self._check_in_use_on_delete and await self.is_in_use(model_id):
+            raise RecordInUseError(model_name=self.model.__name__, model_id=model_id)
 
         try:
-            async with self._commit_or_rollback():
-                await self.db.delete(db_obj)
+            require_atomic(self.db)
+            await self.db.delete(db_obj)
+            await self.db.flush()
         except IntegrityError:
             # RESTRICT FK tripped between the check and the delete; other
-            # SQLAlchemyErrors must not be masked as "in use".
-            raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
+            # SQLAlchemyErrors must not be masked as "in use". ``model_id`` was read up front: the failed
+            # flush rolls the savepoint back and expires ``db_obj``, which can't lazy-load on the async stack.
+            raise RecordInUseError(model_name=self.model.__name__, model_id=model_id)
 
         return True
 
@@ -489,14 +460,12 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
         parent_fk: str,
         child_fk: str,
         child_ids: list[int],
-        *,
-        commit: bool = True,
     ) -> None:
         """
         Replace a many-to-many association with ``child_ids`` in one batch.
 
         Deletes the parent's existing rows, inserts one row per new child
-        id, then commits (or flushes when ``commit=False``). Written through
+        id, then flushes. Written through
         the association table instead of assigning the ORM relationship:
         assigning an unloaded many-to-many collection would trigger a lazy
         load, which is not supported on the async stack.
@@ -507,7 +476,6 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
             parent_fk: Column name on ``association`` referencing ``parent``.
             child_fk: Column name on ``association`` referencing the child.
             child_ids: New child ids (``[]`` clears the association).
-            commit: ``False`` flushes instead, leaving the transaction open.
         """
 
         parent_column = getattr(association, "c", None)
@@ -521,11 +489,7 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
                 [{parent_fk: parent.id, child_fk: child_id} for child_id in child_ids],
             )
 
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-        else:
-            await self.db.flush()
+        await self.flush()
 
     async def replace_child_rows(
         self,
@@ -535,15 +499,13 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
         rows: list[dict[str, Any]],
         *,
         extra_filters: dict[str, Any] | None = None,
-        commit: bool = True,
     ) -> None:
         """
         Replace the ``child_model`` rows owned by ``parent`` in one batch.
 
         Deletes the parent's existing rows (optionally restricted by
         ``extra_filters``, e.g. ``{"class_level": 3}``), then adds a fresh
-        ``child_model`` row per entry in ``rows``. Commits (or flushes when
-        ``commit=False``).
+        ``child_model`` row per entry in ``rows``, then flushes.
 
         Args:
             child_model: ORM model of the child rows.
@@ -552,7 +514,6 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
             rows: Child payloads, each without the FK column (it is injected).
             extra_filters: Extra exact-match filters on the delete
                 (e.g. scoping to a single ``class_level``).
-            commit: ``False`` flushes instead, leaving the transaction open.
         """
 
         stmt = delete(child_model).where(getattr(child_model, fk_name) == parent.id)
@@ -563,11 +524,7 @@ class BaseRepository(SessionRepository, Generic[ModelType]):
         for row in rows:
             self.db.add(child_model(**{fk_name: parent.id, **row}))
 
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-        else:
-            await self.db.flush()
+        await self.flush()
 
     async def exists_referencing(self, referencing_model: Any, fk_name: str, value: Any) -> bool:
         """

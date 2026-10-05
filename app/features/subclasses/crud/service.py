@@ -46,8 +46,9 @@ class SubclassCrudService(
 
         await self._ensure_class_exists(data.class_id)
 
-        item = await self.repository.create(data.model_dump())
-        await self._invalidate_cache()
+        async with self._atomic():
+            item = await self.repository.create(data.model_dump())
+            await self._invalidate_cache()
 
         return await self.get_by_id(item.id)
 
@@ -69,8 +70,9 @@ class SubclassCrudService(
         if subclass is None:
             raise RecordNotFoundError(model_name=Subclass.__name__, model_id=str(item_id))
 
-        result = await self.repository.delete(subclass)
-        await invalidate_after_commit(self.repository.db, *SUBCLASS_DELETE_CACHE_NAMESPACES)
+        async with self._atomic():
+            result = await self.repository.delete(subclass)
+            await invalidate_after_commit(self.repository.db, *SUBCLASS_DELETE_CACHE_NAMESPACES)
 
         return result
 

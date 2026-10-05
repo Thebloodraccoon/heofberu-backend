@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ArticleProposalStatus
-from app.core.base.transaction import atomic
+from app.core.base.transaction import TransactionMixin
 from app.core.exceptions import RecordNotFoundError
 from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, paginate
 from app.features.articles.access import ArticleActor
@@ -59,7 +59,7 @@ def _plain(value: Any) -> Any:
     return getattr(value, "value", value)
 
 
-class ArticleProposalsService:
+class ArticleProposalsService(TransactionMixin):
     """``/articles/{id}/proposals`` and the ``/articles/proposals`` queue."""
 
     def __init__(self, db: AsyncSession):
@@ -93,7 +93,7 @@ class ArticleProposalsService:
         content = {field: fields.get(field, getattr(base, field)) for field in REVISED_FIELDS}
         await self._writer.validate_subtype(content["subtype_id"], content["article_type"])
 
-        async with atomic(self.db):
+        async with self._atomic():
             proposal_id = await self.repository.create(
                 {
                     "article_id": article_id,
@@ -206,7 +206,7 @@ class ArticleProposalsService:
         thing; 409 if it is closed. The proposer, the article's author or the founder only.
         """
 
-        async with atomic(self.db):
+        async with self._atomic():
             proposal, state = await self._lock_changeable(article_id, proposal_id, actor)
             if proposal.base_version != state.version:
                 content = await self._merge_or_conflict(proposal, state.version)
@@ -222,7 +222,7 @@ class ArticleProposalsService:
         must be the article's current version (409 otherwise). Same rights as ``rebase``.
         """
 
-        async with atomic(self.db):
+        async with self._atomic():
             proposal, state = await self._lock_changeable(article_id, proposal_id, actor)
             if data.base_version != state.version:
                 raise ArticleProposalStaleException(proposal_id, data.base_version, state.version)
@@ -240,7 +240,7 @@ class ArticleProposalsService:
 
         proposal, _ = await self._reviewable_or_error(article_id, proposal_id, actor)
 
-        async with atomic(self.db):
+        async with self._atomic():
             await self._close(proposal, ArticleProposalStatus.REJECTED, actor.id, review_note=reason)
 
         return await self.get_proposal(article_id, proposal_id)
@@ -252,7 +252,7 @@ class ArticleProposalsService:
         if proposal.proposer_id != actor.id:
             raise ArticleProposalWithdrawForbiddenException(proposal_id)
 
-        async with atomic(self.db):
+        async with self._atomic():
             await self._close(proposal, ArticleProposalStatus.WITHDRAWN, None)
 
         return await self.get_proposal(article_id, proposal_id)

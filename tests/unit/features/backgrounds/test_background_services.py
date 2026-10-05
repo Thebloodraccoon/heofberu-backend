@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.constants import AbilityScore, BackgroundSuggestionType
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordInUseError, RecordNotFoundError
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.backgrounds.crud.schemas import BackgroundCreate
@@ -58,7 +59,7 @@ class FakeBackgroundRepository(FakeRepository):
         self.suggestion_calls = []
         self.deleted_suggestions = []
 
-    async def create(self, payload, *, commit=True):
+    async def create(self, payload):
         row = Background(
             id=self._next_id,
             name=payload["name"],
@@ -71,17 +72,13 @@ class FakeBackgroundRepository(FakeRepository):
         self._next_id += 1
         self._rows[row.id] = row
         self.created.append(row)
-        if commit:
-            await self.db.commit()
         return row
 
-    async def set_skills(self, background_id: int, skills: list[Skill] | None, *, commit: bool = True) -> None:
-        self.set_skills_calls.append((background_id, skills, commit))
+    async def set_skills(self, background_id: int, skills: list[Skill] | None) -> None:
+        self.set_skills_calls.append((background_id, skills))
         background = self._rows.get(background_id)
         if background is not None:
             background.granted_skills = list(skills or [])
-        if commit:
-            await self.db.commit()
 
     async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         self.get_skills_calls.append(skill_ids)
@@ -91,8 +88,8 @@ class FakeBackgroundRepository(FakeRepository):
         self.bare_calls.append(background_id)
         return self._rows.get(background_id)
 
-    async def set_suggestions(self, background, suggestions, *, commit=True):
-        self.suggestion_calls.append((background, suggestions, commit))
+    async def set_suggestions(self, background, suggestions):
+        self.suggestion_calls.append((background, suggestions))
         rows = [
             BackgroundSuggestion(
                 id=index + 1, background_id=background.id, suggestion_type=entry.suggestion_type, text=entry.text
@@ -115,12 +112,12 @@ class FakeBackgroundRepository(FakeRepository):
         background = self._rows[background_id]
         return sum(1 for row in background.suggestions if row.suggestion_type == suggestion_type)
 
-    async def update_suggestion(self, suggestion, data, *, commit=True):
+    async def update_suggestion(self, suggestion, data):
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(suggestion, field, value)
         return suggestion
 
-    async def delete_suggestion(self, suggestion, *, commit=True):
+    async def delete_suggestion(self, suggestion):
         self.deleted_suggestions.append(suggestion)
 
 
@@ -205,9 +202,8 @@ class TestBackgroundCrudService:
 
         await service.create_background(BackgroundCreate(name="Criminal"))
 
-        background, suggestions, commit = service.repository.suggestion_calls[0]
+        background, suggestions = service.repository.suggestion_calls[0]
         assert background.id == 1
-        assert commit is False
         assert {(entry.suggestion_type, entry.text) for entry in suggestions} == {
             (BackgroundSuggestionType.PERSONALITY_TRAIT, "-"),
             (BackgroundSuggestionType.IDEAL, "-"),
@@ -269,7 +265,7 @@ class TestBackgroundSkillsService:
         result = await service.set_skills(1, SkillsUpdate(skill_ids=[1]))
 
         assert result.granted_skills[0].id == 1
-        assert service.repository.set_skills_calls == [(background.id, [skill], False)]
+        assert service.repository.set_skills_calls == [(background.id, [skill])]
         assert db.commits == 1
 
     async def test_set_skills_raises_when_background_missing(self):
@@ -311,7 +307,8 @@ class TestBackgroundRepository:
         repository = BackgroundRepository(session)
         background = make_background()
 
-        assert await repository.delete(background) is True
+        async with atomic(session):
+            assert await repository.delete(background) is True
         assert session.deleted == [background]
         assert session.commits == 1
 
@@ -324,20 +321,21 @@ class TestBackgroundSkillsRepository:
         repository = BackgroundSkillsRepository(session)
         background = make_background()
 
-        await repository.set_skills(background.id, [make_skill()])
+        async with atomic(session):
+            await repository.set_skills(background.id, [make_skill()])
 
         assert len(session.executes) == 2
         assert session.commits == 1
 
-    async def test_set_skills_with_empty_list_and_no_commit_flushes(self):
+    async def test_set_skills_with_empty_list_flushes_inside_atomic(self):
         session = FakeAsyncSession()
         repository = BackgroundSkillsRepository(session)
         background = make_background()
 
-        await repository.set_skills(background.id, [], commit=False)
-
-        assert session.flushes == 1
-        assert session.commits == 0
+        async with atomic(session):
+            await repository.set_skills(background.id, [])
+            assert session.flushes == 1
+            assert session.commits == 0
 
 
 @pytest.mark.unit

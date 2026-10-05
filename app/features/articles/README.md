@@ -95,8 +95,8 @@ UPDATE (`ARTICLE_TRANSITIONS`). `publish` also requires the reviewed `version`.
 
 ## Transactions
 
-The service owns the transaction: writes run inside `_atomic()` / `atomic(db)` with `commit=False` repository
-calls, and cache purges registered inside the block run only after COMMIT (dropped on rollback). Image upload is
+The service owns the transaction: writes run inside `_atomic()` / `atomic(db)` (repositories only flush),
+and cache purges registered inside the block run only after COMMIT (dropped on rollback). Image upload is
 the deliberate exception in shape, not in rule: two short transactions around the Storage call, so no connection
 is held during the upload.
 

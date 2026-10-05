@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import UserRole
 from app.core.background import add_safe_task
-from app.core.base.transaction import atomic
+from app.core.base.transaction import TransactionMixin
 from app.core.email.service import EmailService
 from app.core.exceptions import (
     InvalidCredentialsException,
@@ -109,7 +109,7 @@ def delete_refresh_cookie(response: Response) -> None:
     response.delete_cookie(key=REFRESH_COOKIE_NAME, **_REFRESH_COOKIE_ATTRIBUTES)
 
 
-class AuthService:
+class AuthService(TransactionMixin):
     """
     Orchestrates login, registration, token refresh, logout, and password reset.
 
@@ -135,8 +135,9 @@ class AuthService:
         if not user or not await verify_password_async(request.password, password_hash):
             raise InvalidCredentialsException()
 
-        await self.user_repo.update_last_login(user.id)
-        await invalidate_user_cache(self.db, user.id)
+        async with self._atomic():
+            await self.user_repo.update_last_login(user.id)
+            await invalidate_user_cache(self.db, user.id)
 
         return LoginResponse(access_token=self._issue_tokens(user.id, response))
 
@@ -150,7 +151,8 @@ class AuthService:
             "hashed_password": await get_password_hash_async(request.password),
         }
         try:
-            user = await self.user_repo.create(user_data)
+            async with self._atomic():
+                user = await self.user_repo.create(user_data)
         except RecordAlreadyExistsError:
             raise AccountAlreadyExistsException() from None
 
@@ -221,7 +223,7 @@ class AuthService:
 
         try:
             new_hash = await get_password_hash_async(request.new_password)
-            async with atomic(self.db):
+            async with self._atomic():
                 user.hashed_password = new_hash  # type: ignore[assignment]
             await revoke_user_sessions(user.id)
         except Exception:

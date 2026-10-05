@@ -143,10 +143,8 @@ class ArticleCrudService(BaseService[Article, ArticleCreate, ArticleUpdate, Arti
             raise RecordIdsInvalidError(model_name="Article", ids=[data.parent_id])
 
         async def write(slug: str) -> Article:
-            item = await self.repository.create(
-                {**data.model_dump(), "slug": slug, "author_id": author_id}, commit=False
-            )
-            await self._tree.set_path(item.id, data.parent_id, commit=False)
+            item = await self.repository.create({**data.model_dump(), "slug": slug, "author_id": author_id})
+            await self._tree.set_path(item.id, data.parent_id)
             return item
 
         async with self._atomic():

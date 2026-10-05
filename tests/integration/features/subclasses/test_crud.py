@@ -40,7 +40,7 @@ class TestSubclassCrud:
 
         assert response.status_code == 404
 
-    async def test_create_duplicate_subclass_name_returns_400(self, client, gm_token, create_class):
+    async def test_create_duplicate_subclass_name_returns_409(self, client, gm_token, create_class):
         character_class = await create_class(name="Fighter")
 
         await client.post(
@@ -54,7 +54,7 @@ class TestSubclassCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_list_subclasses_for_class(self, client, create_class, create_subclass):
         fighter = await create_class(name="Fighter")
@@ -133,9 +133,11 @@ class TestSubclassCrud:
         subclass = await create_subclass(class_id=character_class.id, name="In Use")
         await create_character(owner_id=player.id, class_id=character_class.id, subclass_id=subclass.id)
 
+        subclass_id = subclass.id
+
         response = await client.delete(
-            f"/subclasses/{subclass.id}", headers={"Authorization": f"Bearer {founder_token}"}
+            f"/subclasses/{subclass_id}", headers={"Authorization": f"Bearer {founder_token}"}
         )
 
         assert response.status_code == 409
-        assert (await client.get(f"/subclasses/{subclass.id}")).status_code == 200
+        assert (await client.get(f"/subclasses/{subclass_id}")).status_code == 200

@@ -42,7 +42,8 @@ class TagCrudService(CachedService[Tag, TagCreate, TagUpdate, TagResponse, TagGe
         cached payload yet (not even its own, new-id ``get_by_id``) — skip the flush.
         """
 
-        item = await self.repository.create(create_data.model_dump())
+        async with self._atomic():
+            item = await self.repository.create(create_data.model_dump())
         return self.response_schema.model_validate(item)
 
     async def delete(self, item_id: int) -> bool:
@@ -54,8 +55,9 @@ class TagCrudService(CachedService[Tag, TagCreate, TagUpdate, TagResponse, TagGe
         """
 
         item = await self._get_or_404(item_id)
-        result = await self.repository.delete(item)
-        await invalidate_after_commit(self.repository.db, "tags")
+        async with self._atomic():
+            result = await self.repository.delete(item)
+            await invalidate_after_commit(self.repository.db, "tags")
         return result
 
     async def get_tag(self, tag_id: int, *, include_hidden: bool) -> TagResponse:

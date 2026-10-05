@@ -25,7 +25,7 @@ class AbilityBonusesManagerMixin(ServiceMixin):
         bonuses = [{"ability": item.ability, "bonus": item.bonus} for item in data.ability_bonuses]
         async with self._atomic():
             await self._exists_or_404(source_id)
-            await self.repository.set_ability_bonuses(source_id, bonuses, commit=False)
+            await self.repository.set_ability_bonuses(source_id, bonuses)
             await reconcile_characters_for_source(self.repository.db, self._bonus_source_type, source_id)
             await self._invalidate_cache()
 

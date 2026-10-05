@@ -81,7 +81,6 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         feature_id: int,
         *,
         grant_source: GrantSource = GrantSource.GM,
-        commit: bool = True,
     ) -> CharacterFeature:
         """
         Record a reference feature on a character.
@@ -89,8 +88,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         ``grant_source`` defaults to ``GM`` (the manual-grant path;
         ``sync_progression_features`` writes ``AUTO``) so a later sync never
         mistakes a GM's grant for a stale auto-grant and revokes it.
-        ``commit=False`` flushes instead, for callers inside their own
-        transaction.
+        Flush only; the caller's atomic block commits.
         """
 
         grant = CharacterFeature(
@@ -100,18 +98,18 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         )
 
         self.db.add(grant)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         result = await self.db.execute(
             select(CharacterFeature).options(*_WITH_FEATURE_SUMMARY).where(CharacterFeature.id == grant.id)
         )
         return result.scalar_one()
 
-    async def remove_character_feature(self, grant: CharacterFeature, *, commit: bool = True) -> bool:
-        """Remove a feature grant from a character (``commit=False`` flushes, for callers inside their own transaction)."""
+    async def remove_character_feature(self, grant: CharacterFeature) -> bool:
+        """Remove a feature grant from a character (flush only; the caller's atomic block commits)."""
 
         await self.db.delete(grant)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         return True
 
     async def get_grant(
@@ -181,7 +179,7 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
     ) -> list[CharacterFeatureChoice]:
         """
         Replace the grant's stored picks of every group in ``option_ids_by_group``
-        (flush only, never commits); return the new pick rows.
+        (flush only); return the new pick rows.
         """
 
         await self.db.execute(

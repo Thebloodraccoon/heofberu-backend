@@ -82,7 +82,7 @@ class TestArticleRelations:
         assert first.status_code == 201
 
         second = await client.post(f"/articles/{from_article['id']}/relations", json=payload, headers=headers)
-        assert second.status_code == 400
+        assert second.status_code == 409
 
     async def test_relation_appears_from_both_sides(self, client, create_article, gm_token):
         headers = {"Authorization": f"Bearer {gm_token}"}

@@ -48,12 +48,13 @@ class CharacterConditionService(CharacterSubDomainService):
 
         await self.ensure_character_access(character_id, current_user)
 
-        row = await self.condition_repository.add_character_condition(
-            character_id,
-            data.condition,
-            data.exhaustion_level,
-            data.source,
-        )
+        async with self._atomic():
+            row = await self.condition_repository.add_character_condition(
+                character_id,
+                data.condition,
+                data.exhaustion_level,
+                data.source,
+            )
         if row is None:
             raise CharacterConditionAlreadyExistsException(character_id=character_id, condition=data.condition)
 
@@ -76,7 +77,8 @@ class CharacterConditionService(CharacterSubDomainService):
         merged_level = update_data.get("exhaustion_level", row.exhaustion_level)
         self._validate_exhaustion_level(condition, merged_level)
 
-        updated_row = await self.condition_repository.update_character_condition(row, update_data)
+        async with self._atomic():
+            updated_row = await self.condition_repository.update_character_condition(row, update_data)
         return CharacterConditionResponse.model_validate(updated_row)
 
     async def remove_condition(self, character_id: int, condition: ConditionType, current_user: UserResponse) -> bool:
@@ -85,7 +87,8 @@ class CharacterConditionService(CharacterSubDomainService):
         await self.ensure_character_access(character_id, current_user)
 
         row = await self._get_condition_or_404(character_id, condition)
-        return await self.condition_repository.remove_character_condition(row)
+        async with self._atomic():
+            return await self.condition_repository.remove_character_condition(row)
 
     async def _get_condition_or_404(self, character_id: int, condition: ConditionType) -> CharacterCondition:
         """Fetch a condition scoped to the character, or raise ``CharacterConditionNotFoundException``."""

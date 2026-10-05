@@ -25,7 +25,7 @@ class TestSkillCrud:
         assert response.status_code == 201
         assert response.json()["name"] == "Custom Skill"
 
-    async def test_create_duplicate_skill_name_returns_400(self, client, gm_token, create_skill):
+    async def test_create_duplicate_skill_name_returns_409(self, client, gm_token, create_skill):
         await create_skill(name="Stealth", ability="DEX")
         response = await client.post(
             "/skills",
@@ -33,7 +33,7 @@ class TestSkillCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_skill(self, client, gm_token, create_skill):
         skill = await create_skill(name="Old Name", ability="DEX")

@@ -110,7 +110,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         del user_data["password"]
         user_data["hashed_password"] = await get_password_hash_async(data.password)
 
-        user = await self.repository.create(user_data)
+        async with self._atomic():
+            user = await self.repository.create(user_data)
         return self.response_schema.model_validate(user)
 
     async def update_user(self, user_id: int, data: UserUpdate, current_role: UserRole) -> UserResponse:
@@ -132,8 +133,9 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
         fields = data.model_dump(exclude_unset=True)
         fields["updated_at"] = settings.utcnow()
 
-        updated_user = await self.repository.update(user, fields)
-        await invalidate_user_cache(self.repository.db, user_id, username_changed="username" in fields)
+        async with self._atomic():
+            updated_user = await self.repository.update(user, fields)
+            await invalidate_user_cache(self.repository.db, user_id, username_changed="username" in fields)
 
         return self.response_schema.model_validate(updated_user)
 
@@ -157,8 +159,9 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
 
         fields["updated_at"] = settings.utcnow()
 
-        updated_user = await self.repository.update(user, fields)
-        await invalidate_user_cache(self.repository.db, user_id, username_changed="username" in fields)
+        async with self._atomic():
+            updated_user = await self.repository.update(user, fields)
+            await invalidate_user_cache(self.repository.db, user_id, username_changed="username" in fields)
 
         return self.response_schema.model_validate(updated_user)
 
@@ -174,8 +177,9 @@ class UserService(BaseService[User, UserCreate, UserUpdate, UserResponse]):
             raise SelfDeletionException()
 
         self._ensure_not_default_user(user)
-        deleted = await self.repository.delete(user)
-        await invalidate_after_commit(self.repository.db, *ARTICLE_CACHE_NAMESPACES, keys=[user_cache_key(user_id)])
+        async with self._atomic():
+            deleted = await self.repository.delete(user)
+            await invalidate_after_commit(self.repository.db, *ARTICLE_CACHE_NAMESPACES, keys=[user_cache_key(user_id)])
 
         return deleted
 

@@ -25,8 +25,8 @@ feats/
 | ------ | ---- | ------ | ----- |
 | GET | `/feats` | open | Cached paginated `Page[FeatGetAllResponse]` (id/name/min_level/`has_static_effects`/`has_choices`), ordered by name; `search` on name. |
 | GET | `/feats/{feat_id}` | open | Full `FeatResponse` — base + prerequisite fields + `choice_groups` + `static_groups` + `has_static_effects`/`has_choices`/`effects_summary`, mirroring `FeatureResponse`. |
-| POST | `/feats` | GM | Top-level feat creation with optional embedded `ability_score_increases` (`{ability, amount}`); duplicate `name` → 400. Written as a FEAT-source `Feature`; the ASI list is seeded as one choice group (`pick_count=1`) with one option per alternative (each option carrying a `FeatureAbilityScoreEffect`), mirroring the legacy confirmed-pick semantics. |
-| PATCH | `/feats/{feat_id}` | GM | Update base/prerequisite fields only (see ASI note below); duplicate `name` → 400; explicit `null` for a NOT NULL field → 422; a prerequisite with only ability or only minimum score → 422. |
+| POST | `/feats` | GM | Top-level feat creation with optional embedded `ability_score_increases` (`{ability, amount}`); duplicate `name` → 409. Written as a FEAT-source `Feature`; the ASI list is seeded as one choice group (`pick_count=1`) with one option per alternative (each option carrying a `FeatureAbilityScoreEffect`), mirroring the legacy confirmed-pick semantics. |
+| PATCH | `/feats/{feat_id}` | GM | Update base/prerequisite fields only (see ASI note below); duplicate `name` → 409; explicit `null` for a NOT NULL field → 422; a prerequisite with only ability or only minimum score → 422. |
 | DELETE | `/feats/{feat_id}` | Founder | Blocked with 409 while any character still holds a grant of the feat. |
 | GET/PUT | `/feats/{feat_id}/effects` | open / GM | Read / replace the feat's **fixed** effects (all six types), GM write. 404 when the id is not a feat. |
 | GET/PUT | `/feats/{feat_id}/choice-groups` | open / GM | Read / full-replace the feat's choice-group tree (e.g. Skilled's "pick 3 skills", Resilient's "+1 to an ability score"). 404 when the id is not a feat. |

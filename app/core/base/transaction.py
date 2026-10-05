@@ -2,15 +2,15 @@
 Transaction ownership helpers (Unit of Work style).
 
 The rule for new code: **the service owns the transaction**. Repositories do
-the writes, the service wraps a business operation in :func:`atomic` (or
-:func:`unit_of_work`), and cache invalidation is scheduled with
-:func:`invalidate_after_commit` so it can only ever run once the data is
-durable. Repositories still accept the legacy ``commit=`` flag.
+the writes (flush only, guarded by :func:`require_atomic`), the service wraps
+every write in :func:`atomic` (or :func:`unit_of_work`), and cache invalidation
+is scheduled with :func:`invalidate_after_commit` so it can only ever run once
+the data is durable. There is no other commit path.
 
 Cache purges and other side effects registered through :func:`after_commit`
 inside an :func:`atomic` block run only after a successful ``COMMIT`` and are
-dropped on rollback. Outside an ``atomic`` block (legacy ``commit=True``
-flows, the repository already committed) they run immediately.
+dropped on rollback. Outside an ``atomic`` block there is nothing to wait for,
+so they run immediately.
 """
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable
@@ -48,14 +48,11 @@ def in_atomic(db: Any) -> bool:
     return _state(db)["depth"] > 0
 
 
-async def commit_or_rollback(db: AsyncSession) -> None:
-    """Commit pending changes; roll back and re-raise if the commit fails."""
+def require_atomic(db: Any) -> None:
+    """Raise unless ``db`` is inside an :func:`atomic` block: a repository write outside one would never commit."""
 
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
+    if not in_atomic(db):
+        raise RuntimeError("Repository writes must run inside atomic() / _atomic(); the service owns the transaction.")
 
 
 async def after_commit(db: AsyncSession, callback: AfterCommitCallback) -> None:
@@ -63,8 +60,7 @@ async def after_commit(db: AsyncSession, callback: AfterCommitCallback) -> None:
     Run ``callback`` once the surrounding :func:`atomic` block has committed.
 
     Dropped if the block rolls back. When no ``atomic`` block is active the
-    callback runs immediately: the legacy ``commit=True`` repository calls
-    have already committed by then.
+    callback runs immediately.
     """
 
     state = _state(db)
@@ -107,13 +103,17 @@ async def atomic(db: AsyncSession) -> AsyncGenerator[None, None]:
     """
     Wrap a multistep write on ``db`` in one all-or-nothing transaction.
 
-    Every repository write inside the block MUST pass ``commit=False``.
     Commits once on success and then runs the callbacks registered through
     :func:`after_commit`; rolls back, discards them and re-raises on any
-    exception.
+    exception. Re-entrant: a nested block joins the outer one, which owns the
+    commit.
     """
 
     state = _state(db)
+    if state["depth"] > 0:
+        yield
+        return
+
     state["depth"] += 1
     try:
         async with db.begin_nested():
@@ -154,9 +154,36 @@ async def unit_of_work(db: AsyncSession) -> AsyncGenerator[UnitOfWork, None]:
     Example::
 
         async with unit_of_work(self.repository.db) as uow:
-            await self.repository.create(data, commit=False)
+            await self.repository.create(data)
             await uow.invalidate("spells")
     """
 
     async with atomic(db):
         yield UnitOfWork(db)
+
+
+class TransactionMixin:
+    """
+    ``_atomic()`` / ``_unit_of_work()`` for any class that owns writes.
+
+    Uses ``self.db`` as the session; a host that keeps it elsewhere (e.g. ``self.repository.db``) overrides
+    ``_tx_db``.
+    """
+
+    @property
+    def _tx_db(self) -> AsyncSession:
+        return self.db  # type: ignore[attr-defined, no-any-return]
+
+    @asynccontextmanager
+    async def _atomic(self) -> AsyncGenerator[None, None]:
+        """One all-or-nothing transaction; see :func:`atomic`."""
+
+        async with atomic(self._tx_db):
+            yield
+
+    @asynccontextmanager
+    async def _unit_of_work(self) -> AsyncGenerator[UnitOfWork, None]:
+        """:meth:`_atomic` that yields a :class:`UnitOfWork` for scheduling post-commit work."""
+
+        async with unit_of_work(self._tx_db) as uow:
+            yield uow

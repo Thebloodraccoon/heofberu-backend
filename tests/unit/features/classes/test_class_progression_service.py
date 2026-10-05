@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.constants import SpellLevel
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordNotFoundError
 from app.features.classes.crud.repository import ClassRepository
 from app.features.classes.progression.schemas import (
@@ -65,7 +66,7 @@ class TestSetSpellSlots:
         result = await service.set_spell_slots(1, 3, data)
 
         assert result.id == 1
-        assert service.repository.slot_calls == [(1, 3, {"CANTRIP": 2, "LEVEL_1": 4}, True)]
+        assert service.repository.slot_calls == [(1, 3, {"CANTRIP": 2, "LEVEL_1": 4})]
         assert purged_namespaces(purged) == ["classes"]
 
     async def test_cantrip_is_a_valid_slot_row_for_the_known_cantrip_cap(self, purged):
@@ -74,7 +75,7 @@ class TestSetSpellSlots:
 
         await service.set_spell_slots(1, 1, data)
 
-        assert service.repository.slot_calls == [(1, 1, {"CANTRIP": 3}, True)]
+        assert service.repository.slot_calls == [(1, 1, {"CANTRIP": 3})]
 
     async def test_raises_when_class_missing(self, purged):
         service, _ = make_service(existing_by_id={})
@@ -156,7 +157,8 @@ class TestClassRepositorySlotHelpers:
         session = FakeAsyncSession()
         repository = ClassRepository(session)
 
-        await repository.set_spell_slots(1, 1, {"CANTRIP": 2})
+        async with atomic(session):
+            await repository.set_spell_slots(1, 1, {"CANTRIP": 2})
 
         assert len(session.added) == 1
         added = session.added[0]
@@ -165,14 +167,14 @@ class TestClassRepositorySlotHelpers:
         assert len(session.executes) == 1
         assert session.commits == 1
 
-    async def test_set_spell_slots_with_commit_false_flushes_instead(self):
+    async def test_set_spell_slots_flushes_until_atomic_exits(self):
         session = FakeAsyncSession()
         repository = ClassRepository(session)
 
-        await repository.set_spell_slots(1, 2, {"LEVEL_1": 2}, commit=False)
-
-        assert session.flushes == 1
-        assert session.commits == 0
+        async with atomic(session):
+            await repository.set_spell_slots(1, 2, {"LEVEL_1": 2})
+            assert session.flushes == 1
+            assert session.commits == 0
 
     async def test_get_spell_slot_progression_maps_rows_to_dict(self):
         rows = [

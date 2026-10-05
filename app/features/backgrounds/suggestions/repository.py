@@ -51,37 +51,33 @@ class BackgroundSuggestionsRepository(BackgroundRepository):
         )
         return (await self.db.scalar(stmt)) or 0
 
-    async def create_suggestion(
-        self, background_id: int, data: SuggestionCreate, *, commit: bool = True
-    ) -> BackgroundSuggestion:
+    async def create_suggestion(self, background_id: int, data: SuggestionCreate) -> BackgroundSuggestion:
         """Add a single suggestion to the background."""
 
         row = BackgroundSuggestion(background_id=background_id, suggestion_type=data.suggestion_type, text=data.text)
         self.db.add(row)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return row
 
-    async def update_suggestion(
-        self, suggestion: BackgroundSuggestion, data: SuggestionUpdate, *, commit: bool = True
-    ) -> BackgroundSuggestion:
+    async def update_suggestion(self, suggestion: BackgroundSuggestion, data: SuggestionUpdate) -> BackgroundSuggestion:
         """Apply the given fields to an existing suggestion."""
 
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(suggestion, field, value)
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return suggestion
 
-    async def delete_suggestion(self, suggestion: BackgroundSuggestion, *, commit: bool = True) -> None:
+    async def delete_suggestion(self, suggestion: BackgroundSuggestion) -> None:
         """Remove a single suggestion."""
 
         await self.db.delete(suggestion)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
     async def set_suggestions(
-        self, background: Background, suggestions: list[SuggestionEntry], *, commit: bool = True
+        self, background: Background, suggestions: list[SuggestionEntry]
     ) -> list[BackgroundSuggestion]:
         """Seed the background's suggestions in bulk (used at creation time only)."""
 
@@ -91,6 +87,6 @@ class BackgroundSuggestionsRepository(BackgroundRepository):
         ]
         self.db.add_all(rows)
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
 
         return rows

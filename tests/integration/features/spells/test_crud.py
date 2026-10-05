@@ -50,11 +50,11 @@ class TestSpellCrud:
 
         assert response.status_code == 422
 
-    async def test_create_duplicate_spell_name_returns_400(self, client, gm_token, create_spell):
+    async def test_create_duplicate_spell_name_returns_409(self, client, gm_token, create_spell):
         await create_spell(name="Magic Missile")
         response = await client.post("/spells", json=SPELL_PAYLOAD, headers={"Authorization": f"Bearer {gm_token}"})
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_spell(self, client, gm_token, create_spell):
         spell = await create_spell(name="Old Spell Name")
@@ -209,7 +209,9 @@ class TestSpellCrud:
         db_session.add(CharacterSpell(character_id=character.id, spell_id=spell.id))
         await db_session.commit()
 
-        response = await client.delete(f"/spells/{spell.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        spell_id = spell.id
+
+        response = await client.delete(f"/spells/{spell_id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
-        assert (await client.get(f"/spells/{spell.id}")).status_code == 200
+        assert (await client.get(f"/spells/{spell_id}")).status_code == 200

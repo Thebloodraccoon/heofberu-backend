@@ -26,7 +26,7 @@ class TestTagCrud:
 
         response = await client.post("/tags", json={"name": "dwarven"}, headers=headers)
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_create_tag_normalizes_whitespace(self, client, gm_token):
         response = await client.post(
@@ -94,7 +94,7 @@ class TestTagCrud:
 
         response = await client.patch(f"/tags/{second['id']}", json={"name": "Dwarven"}, headers=headers)
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_founder_can_delete_unused_tag(self, client, gm_token, founder_token):
         created = (

@@ -115,7 +115,7 @@ class TestAppErrorFamily:
         ("path", "status", "type_name"),
         [
             ("/not-found", 404, "RecordNotFoundError"),
-            ("/exists", 400, "RecordAlreadyExistsError"),
+            ("/exists", 409, "RecordAlreadyExistsError"),
             ("/ids", 400, "RecordIdsInvalidError"),
             ("/in-use", 409, "RecordInUseError"),
             ("/unavailable", 503, "ServiceUnavailableError"),
@@ -191,19 +191,19 @@ class TestRequestValidation:
 @pytest.mark.unit
 class TestDatabaseHandler:
     @pytest.mark.parametrize(
-        ("sqlstate", "message"),
+        ("sqlstate", "status", "message"),
         [
-            ("23505", "Record with this data already exists"),
-            ("23503", "Referenced record does not exist"),
-            ("23502", "Required field cannot be empty"),
-            ("23514", "Value violates a database constraint"),
-            ("none", "Database integrity constraint violation"),
+            ("23505", 409, "Record with this data already exists"),
+            ("23503", 400, "Referenced record does not exist"),
+            ("23502", 400, "Required field cannot be empty"),
+            ("23514", 400, "Value violates a database constraint"),
+            ("none", 400, "Database integrity constraint violation"),
         ],
     )
-    def test_integrity_error_message_comes_from_sqlstate(self, client, sqlstate, message):
+    def test_integrity_error_status_and_message_come_from_sqlstate(self, client, sqlstate, status, message):
         response = client.get(f"/integrity/{sqlstate}")
 
-        assert response.status_code == 400
+        assert response.status_code == status
         assert error_of(response)["message"] == message
 
     def test_postgres_not_null_text_is_detected_without_sqlstate(self, client):

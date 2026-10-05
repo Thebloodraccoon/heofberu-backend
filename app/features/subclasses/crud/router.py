@@ -50,7 +50,7 @@ async def get_subclass(subclass_id: int, subclass_service: SubclassCrudDep):
     summary="Create a subclass",
     responses={
         404: {"description": "No class exists with the given ID."},
-        400: {"description": "A subclass with this name already exists for this class."},
+        409: {"description": "A subclass with this name already exists for this class."},
     },
 )
 async def create_subclass(
@@ -82,7 +82,7 @@ async def create_subclass(
     response_model=SubclassResponse,
     summary="Update a subclass",
     responses={
-        400: {"description": "Another subclass of the same class already uses the requested name."},
+        409: {"description": "Another subclass of the same class already uses the requested name."},
         404: {"description": "Subclass not found."},
     },
 )

@@ -68,10 +68,8 @@ class SpellRepository(BaseRepository[Spell]):
 
         return await self.db.get(Spell, spell_id)
 
-    async def update(
-        self, db_obj: Spell, update_data: dict[str, Any], *, refresh: bool = False, commit: bool = True
-    ) -> Spell:
-        """Apply ``update_data`` onto ``db_obj``; ``commit=False`` flushes and leaves the transaction to the caller."""
+    async def update(self, db_obj: Spell, update_data: dict[str, Any], *, refresh: bool = False) -> Spell:
+        """Apply ``update_data`` onto ``db_obj`` and flush; the caller owns the transaction."""
 
         await self._check_uniqueness(update_data, exclude_id=db_obj.id)
 
@@ -79,7 +77,7 @@ class SpellRepository(BaseRepository[Spell]):
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         if refresh:
             await self.db.refresh(db_obj)
 
@@ -99,9 +97,7 @@ class SpellRepository(BaseRepository[Spell]):
 
         return await self.get_many_by_ids(dimension.model, ids)
 
-    async def set_availability(
-        self, spell_id: int, dimension: AvailabilityDimension, child_ids: list[int], *, commit: bool = True
-    ) -> None:
+    async def set_availability(self, spell_id: int, dimension: AvailabilityDimension, child_ids: list[int]) -> None:
         """Replace all of a spell's links along one dimension, via the association table to avoid a lazy load."""
 
         await self.replace_association(
@@ -110,7 +106,6 @@ class SpellRepository(BaseRepository[Spell]):
             "spell_id",
             dimension.child_fk,
             list(dict.fromkeys(child_ids)),
-            commit=commit,
         )
 
     async def load_availability(self, spell_ids: list[int]) -> dict[int, dict[str, list[dict[str, Any]]]]:

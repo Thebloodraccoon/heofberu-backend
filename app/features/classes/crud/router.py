@@ -72,7 +72,7 @@ async def get_class(class_id: int, class_service: ClassCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a class",
     responses={
-        400: {"description": "A class with this name already exists."},
+        409: {"description": "A class with this name already exists."},
     },
 )
 async def create_class(
@@ -123,7 +123,7 @@ async def create_class(
     response_model=ClassResponse,
     summary="Update a class's fields",
     responses={
-        400: {"description": "Another class already uses the requested name."},
+        409: {"description": "Another class already uses the requested name."},
         404: {"description": "No class exists with the given ID."},
     },
 )

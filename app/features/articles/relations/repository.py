@@ -66,9 +66,7 @@ class ArticleRelationsRepository(ArticleScopedRepository):
         )
         return result.scalar_one_or_none()
 
-    async def create_relation(
-        self, article_id: int, data: ArticleRelationCreate, *, commit: bool = True
-    ) -> ArticleRelation:
+    async def create_relation(self, article_id: int, data: ArticleRelationCreate) -> ArticleRelation:
         """Link ``article_id`` (source) to ``data.to_article_id`` (target)."""
 
         row = ArticleRelation(
@@ -79,24 +77,24 @@ class ArticleRelationsRepository(ArticleScopedRepository):
             visibility=data.visibility,
         )
         self.db.add(row)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         await self.db.refresh(row, attribute_names=["from_article", "to_article"])
 
         return row
 
-    async def update_relation(self, relation: ArticleRelation, fields: dict, *, commit: bool = True) -> ArticleRelation:
+    async def update_relation(self, relation: ArticleRelation, fields: dict) -> ArticleRelation:
         """Apply ``fields`` (relation_type/note/visibility) to an existing relation."""
 
         for field, value in fields.items():
             setattr(relation, field, value)
 
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         await self.db.refresh(relation, attribute_names=["from_article", "to_article"])
 
         return relation
 
-    async def delete_relation(self, relation: ArticleRelation, *, commit: bool = True) -> None:
+    async def delete_relation(self, relation: ArticleRelation) -> None:
         """Remove a single relation."""
 
         await self.db.delete(relation)
-        await self.commit_or_flush(commit=commit)
+        await self.flush()

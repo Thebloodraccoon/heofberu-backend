@@ -15,7 +15,7 @@ refreshing after a change is the ability-score cache
 (``character_ability_scores``) and the per-character Redis payload — the
 latter is purged after the caller's commit.
 
-Never commits — callers wrap it in their own transaction:
+Flush only — callers wrap it in their own atomic block:
 ``CharacterService.create_character``, ``CharacterProgressionService``,
 ``GmPanelFeatService``, the central ``FeatureCrudService`` and the
 race/subrace ability-bonus services.
@@ -73,7 +73,7 @@ async def sync_progression_features(db: AsyncSession, character: Character) -> l
     Reconcile ``character_features`` to match the character's current
     class/subclass/race/subrace/background/level, keeping FEAT/OTHER grants
     and GM manual grants. Revoking an auto-grant cascades its stored picks
-    away. Never commits — ``db.flush()`` is used so callers can read new
+    away. Flush only — ``db.flush()`` is used so callers can read new
     grant ids.
 
     Returns the grants newly added by this call (empty on a no-op sync).
@@ -110,7 +110,7 @@ async def _refresh_after_change(db: AsyncSession, characters: list[Character]) -
     one round trip once it has committed.
     """
 
-    await CharacterStatsService(db).refresh_many(characters, commit=False)
+    await CharacterStatsService(db).refresh_many(characters)
 
     await invalidate_characters_cache((character.id for character in characters), db=db)
 
@@ -125,8 +125,12 @@ async def reconcile_characters_for_source(db: AsyncSession, source_type: Feature
     away), deleted features already cleared their grants via ``ON DELETE
     CASCADE``. Two set-based statements for all characters at once — no
     per-character loop. Then refreshes the affected characters' stat caches
-    and Redis payloads. Never commits.
+    and Redis payloads. Flush only.
     """
+
+    # ponytail: no FOR UPDATE on the affected characters, so a level-up or ASI landing mid-reconcile can lose a grant
+    # or leave the stats cache stale (rare: GM catalog edit racing a player write). Fix: select the characters
+    # ORDER BY id ... FOR UPDATE before the stats refresh, same order as lock_character to avoid deadlocks.
 
     columns = _SOURCE_COLUMNS.get(source_type)
     if columns is None:
@@ -173,7 +177,7 @@ async def refresh_feature_effect_caches(db: AsyncSession, feature_id: int) -> No
     After a GM edits a feature's effects or choice groups, refresh the
     ability-score cache and the Redis payload of every character currently
     granted it. Their other effects need no work — they are computed on
-    read from the edited tree. Never commits.
+    read from the edited tree. Flush only.
     """
 
     result = await db.execute(

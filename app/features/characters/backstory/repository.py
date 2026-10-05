@@ -25,7 +25,7 @@ class CharacterBackstoryRepository(SessionRepository):
         return result.scalar_one_or_none()
 
     async def upsert_content(self, character_id: int, content: str) -> CharacterBackstory:
-        """Create the backstory row or replace its content in one ``INSERT ... ON CONFLICT DO UPDATE``, and commit."""
+        """Create the backstory row or replace its content in one ``INSERT ... ON CONFLICT DO UPDATE`` (flush only)."""
 
         insert = pg_insert(CharacterBackstory).values(character_id=character_id, content=content)
         statement = insert.on_conflict_do_update(
@@ -34,5 +34,5 @@ class CharacterBackstoryRepository(SessionRepository):
 
         result = await self.db.execute(statement, execution_options={"populate_existing": True})
         row = result.scalar_one()  # an upsert with RETURNING always yields the row
-        await self.commit_or_flush()
+        await self.flush()
         return row

@@ -21,24 +21,14 @@ class CharacterMaxLevelRepository(SessionRepository):
         result = await self.db.execute(select(CharacterMaxLevel).where(CharacterMaxLevel.character_id == character_id))
         return result.scalar_one_or_none()
 
-    async def create_for_character(
-        self,
-        character_id: int,
-        max_level: int,
-        *,
-        commit: bool = True,
-    ) -> CharacterMaxLevel:
+    async def create_for_character(self, character_id: int, max_level: int) -> CharacterMaxLevel:
         """
-        Seed a max-level row for a character.
+        Seed a max-level row for a character (flush only; the caller's atomic block commits).
         """
 
         row = CharacterMaxLevel(character_id=character_id, max_level=max_level)
 
         self.db.add(row)
-        if commit:
-            await self.commit_or_flush()
-            await self.db.refresh(row)
-        else:
-            await self.db.flush()
+        await self.flush()
 
         return row

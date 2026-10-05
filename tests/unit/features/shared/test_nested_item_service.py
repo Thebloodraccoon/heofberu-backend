@@ -13,6 +13,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.constants import DiceType, FeatureSourceType
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.features.classes.items.service import ClassItemsService
 from app.features.shared.items.nested_service import NestedSourceItemService
@@ -49,8 +50,8 @@ class FakeNestedItems:
         self.list_calls.append((source_type, source_id))
         return []
 
-    async def set_items_for_source(self, source_type, source_id, entries, *, commit=True):
-        self.set_calls.append((source_type, source_id, entries, commit))
+    async def set_items_for_source(self, source_type, source_id, entries):
+        self.set_calls.append((source_type, source_id, entries))
 
 
 def make_class_row(**overrides) -> SimpleNamespace:
@@ -110,15 +111,15 @@ class TestNestedSourceItemService:
         assert db.added[0].class_id == 3
         assert db.commits == 1
 
-    async def test_set_items_for_source_flushes_when_not_committing(self):
+    async def test_set_items_for_source_joins_an_outer_atomic_block(self):
         service, db = make_nested_item_service(items={1: SimpleNamespace(id=1)})
 
-        await service.set_items_for_source(
-            FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=1, quantity=1)], commit=False
-        )
+        async with atomic(db):
+            await service.set_items_for_source(FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=1, quantity=1)])
+            assert db.flushes == 1
+            assert db.commits == 0
 
-        assert db.flushes == 1
-        assert db.commits == 0
+        assert db.commits == 1
 
     async def test_set_items_for_source_raises_for_missing_item(self):
         service, _ = make_nested_item_service(items={})
@@ -151,7 +152,7 @@ class TestSourceItemManagerMixin:
         result = await service.set_items(1, data)
 
         assert result.id == 1
-        assert service._items.set_calls == [(FeatureSourceType.CLASS, 1, data.items, True)]
+        assert service._items.set_calls == [(FeatureSourceType.CLASS, 1, data.items)]
 
 
 @pytest.mark.unit

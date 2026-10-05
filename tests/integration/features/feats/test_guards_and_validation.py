@@ -90,13 +90,13 @@ class TestCreateValidation:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestUpdate:
-    async def test_patch_to_existing_name_returns_400(self, client, gm_token, create_feat):
+    async def test_patch_to_existing_name_returns_409(self, client, gm_token, create_feat):
         await create_feat(name="Alert")
         other = await create_feat(name="Lucky")
 
         response = await client.patch(f"/feats/{other.id}", json={"name": "Alert"}, headers=auth(gm_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_patch_keeping_own_name_is_fine(self, client, gm_token, create_feat):
         feat = await create_feat(name="Alert")

@@ -95,8 +95,8 @@ class TestUpdate:
         )
 
         repository = service.repository
-        assert repository.update_calls == [(row, {"description": "Martial archetype."}, False)]
-        assert repository.proficiency_calls == [(1, SAVING_THROWS, [AbilityScore.STR, AbilityScore.CON], False)]
+        assert repository.update_calls == [(row, {"description": "Martial archetype."})]
+        assert repository.proficiency_calls == [(1, SAVING_THROWS, [AbilityScore.STR, AbilityScore.CON])]
         assert db.commits == 1
         assert result.description == "Martial archetype."
         assert purged_namespaces(purged) == ["classes", "spells"]

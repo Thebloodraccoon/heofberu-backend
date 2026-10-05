@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.transaction import atomic
+from app.core.base.transaction import TransactionMixin
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.features.articles.cache import TREE_PAYLOAD_FIELDS, invalidate_article_trees, invalidate_articles
 from app.features.articles.crud.repository import REVISED_FIELDS, ArticleRepository
@@ -14,7 +14,7 @@ from app.features.articles.exceptions import ArticleParentCycleException, Articl
 from app.features.articles.tree.repository import ArticleTreeRepository
 
 
-class ArticleWriter:
+class ArticleWriter(TransactionMixin):
     """
     Writes already-authorized field changes to one article, in one transaction: subtype check, tree move, slug,
     version bump + revision snapshot, cache purge.
@@ -29,6 +29,10 @@ class ArticleWriter:
 
         self.repository = ArticleRepository(db)
         self.tree = ArticleTreeRepository(db)
+
+    @property
+    def _tx_db(self) -> AsyncSession:
+        return self.repository.db
 
     async def write_state_or_404(self, article_id: int) -> Any:
         """The article's ``get_write_state`` row (type, subtype, published_at, status, author, version), or 404."""
@@ -114,7 +118,7 @@ class ArticleWriter:
             )
 
         db = self.repository.db
-        async with atomic(db):
+        async with self._atomic():
             if guard is not None:
                 await guard()
 
@@ -125,14 +129,14 @@ class ArticleWriter:
             if "title" in fields and state.published_at is None:
 
                 async def write(slug: str) -> None:
-                    await self.repository.update_fields(article_id, {**fields, "slug": slug}, commit=False)
+                    await self.repository.update_fields(article_id, {**fields, "slug": slug})
 
                 await self.repository.write_with_unique_slug(fields["title"], write, exclude_id=article_id)
             else:
-                await self.repository.update_fields(article_id, fields, commit=False)
+                await self.repository.update_fields(article_id, fields)
 
             if "parent_id" in fields:
-                await self.tree.set_path(article_id, fields["parent_id"], commit=False)
+                await self.tree.set_path(article_id, fields["parent_id"])
 
             if any(field in fields for field in REVISED_FIELDS):
                 await self.repository.record_revision(

@@ -111,7 +111,7 @@ class ArticleRelationsService(ArticleScopedService):
 
         try:
             async with self._atomic():
-                row = await self.repository.create_relation(article_id, data, commit=False)
+                row = await self.repository.create_relation(article_id, data)
                 await invalidate_relations(self.repository.db, article_id, data.to_article_id)
         except IntegrityError as exc:
             _raise_if_duplicate(exc, article_id, data.to_article_id, data.relation_type)
@@ -137,7 +137,7 @@ class ArticleRelationsService(ArticleScopedService):
 
         try:
             async with self._atomic():
-                updated = await self.repository.update_relation(relation, fields, commit=False)
+                updated = await self.repository.update_relation(relation, fields)
                 await invalidate_relations(self.repository.db, from_id, to_id)
         except IntegrityError as exc:
             _raise_if_duplicate(exc, from_id, to_id, fields.get("relation_type", ""))
@@ -153,7 +153,7 @@ class ArticleRelationsService(ArticleScopedService):
         from_id, to_id = relation.from_article_id, relation.to_article_id
 
         async with self._atomic():
-            await self.repository.delete_relation(relation, commit=False)
+            await self.repository.delete_relation(relation)
             await invalidate_relations(self.repository.db, from_id, to_id)
 
     async def _get_relation_or_404(self, article_id: int, relation_id: int) -> ArticleRelation:

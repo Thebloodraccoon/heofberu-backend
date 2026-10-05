@@ -179,24 +179,26 @@ class CharacterService(CharacterSubDomainService):
         clamped to ``max_hp`` and ``inspiration`` can only be raised by a GM.
         """
 
-        character = await self.get_character_for_user(character_id, current_user)
-
         fields = update_data.model_dump(exclude_unset=True)
-        if fields.get("inspiration", 0) > character.inspiration and not is_gm(current_user):
-            raise GmOnlyFieldException("inspiration")
-        if "current_hp" in fields:
-            fields["current_hp"] = min(fields["current_hp"], character.max_hp)
 
-        updated_character = await self.repository.update(character, fields)
-        await self._invalidate_character(character_id)
+        async with self._atomic():
+            character = await self._get_locked_for_user(character_id, current_user)
+            if fields.get("inspiration", 0) > character.inspiration and not is_gm(current_user):
+                raise GmOnlyFieldException("inspiration")
+            if "current_hp" in fields:
+                fields["current_hp"] = min(fields["current_hp"], character.max_hp)
+
+            updated_character = await self.repository.update(character, fields)
+            await self._invalidate_character(character_id)
         return await self._response_for(updated_character)
 
     async def delete_character(self, character_id: int, current_user: UserResponse) -> bool:
         """Delete a character, enforcing GM/owner access."""
 
         character = await self.get_character_for_user(character_id, current_user)
-        deleted = await self.repository.delete(character)
-        await self._invalidate_character(character_id)
+        async with self._atomic():
+            deleted = await self.repository.delete(character)
+            await self._invalidate_character(character_id)
         return deleted
 
     async def update_hp(self, character_id: int, data: HpUpdate, current_user: UserResponse) -> CharacterResponse:
@@ -212,7 +214,7 @@ class CharacterService(CharacterSubDomainService):
             validate_hp_update(data)
 
             current_hp, temp_hp = resolve_hp_update(character.current_hp, character.temp_hp, character.max_hp, data)
-            await self.repository.update_hp(character, current_hp, temp_hp, commit=False)
+            await self.repository.update_hp(character, current_hp, temp_hp)
             await self._invalidate_character(character_id)
 
         return await self._response_for(character)
@@ -230,16 +232,16 @@ class CharacterService(CharacterSubDomainService):
 
         async with self._atomic():
             character = await self._get_locked_for_user(character_id, current_user)
-            await self.repository.update_hp(character, character.max_hp, 0, commit=False)
-            await self.character_spell_slot_repository.reset_all_spell_slots(character_id, commit=False)
+            await self.repository.update_hp(character, character.max_hp, 0)
+            await self.character_spell_slot_repository.reset_all_spell_slots(character_id)
             await self._invalidate_character(character_id)
 
         return await self._response_for(character)
 
-    async def reapply_spell_slot_progression(self, character: Character, *, commit: bool = True) -> None:
+    async def reapply_spell_slot_progression(self, character: Character) -> None:
         """Re-sync the character's spell-slot totals to its class progression (used by the progression service)."""
 
-        await self.creation.apply_spell_slot_progression(character, commit=commit)
+        await self.creation.apply_spell_slot_progression(character)
 
     async def _get_locked_for_user(self, character_id: int, current_user: UserResponse) -> Character:
         """Fetch the character row ``FOR UPDATE`` and enforce GM/owner access."""

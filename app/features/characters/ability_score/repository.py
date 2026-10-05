@@ -148,14 +148,12 @@ class CharacterStatsRepository(SessionRepository):
 
         return grouped
 
-    async def upsert(self, character_id: int, totals: dict, *, commit: bool = True) -> CharacterAbilityScore:
+    async def upsert(self, character_id: int, totals: dict) -> CharacterAbilityScore:
         """Create or update one character's cached totals (see :meth:`upsert_many`)."""
 
-        return (await self.upsert_many({character_id: totals}, commit=commit))[character_id]
+        return (await self.upsert_many({character_id: totals}))[character_id]
 
-    async def upsert_many(
-        self, totals_by_character_id: dict[int, dict], *, commit: bool = True
-    ) -> dict[int, CharacterAbilityScore]:
+    async def upsert_many(self, totals_by_character_id: dict[int, dict]) -> dict[int, CharacterAbilityScore]:
         """
         Create or update the cached totals (``strength_total`` ..
         ``charisma_total``) of many characters in one atomic
@@ -179,7 +177,7 @@ class CharacterStatsRepository(SessionRepository):
 
         result = await self.db.execute(statement, execution_options={"populate_existing": True})
         cached = {row.character_id: row for row in result.scalars().all()}
-        await self.commit_or_flush(commit=commit)
+        await self.flush()
         return cached
 
     async def get_hit_dice(self, class_ids: Iterable[int]) -> dict[int, str]:

@@ -145,7 +145,7 @@ class TestEmailCase:
             json={"username": "copycat", "email": "Taken-Case@Example.com", "password": "password123"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_register_rejects_an_existing_mixed_case_email(self, client, create_user):
         await create_user(email="Legacy.Mixed@example.com")
@@ -155,7 +155,7 @@ class TestEmailCase:
             json={"username": "copycat2", "email": "legacy.mixed@example.com", "password": "password123"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_login_ignores_email_case(self, client, create_user):
         await create_user(email="login-case@example.com")
@@ -186,7 +186,7 @@ class TestEmailCase:
 
         response = await client.put("/users/me", json={"email": "Occupied@Example.com"}, headers=bearer(player_token))
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
 
 @pytest.mark.integration

@@ -57,14 +57,13 @@ class BackgroundCrudService(
         """Create a background and its 4 default placeholder suggestions in one transaction."""
 
         async with self._atomic():
-            item = await self.repository.create(background_data.model_dump(), commit=False)
+            item = await self.repository.create(background_data.model_dump())
             await self._suggestions.set_suggestions(
                 item,
                 [
                     SuggestionEntry(suggestion_type=suggestion_type, text=BACKGROUND_DEFAULT_SUGGESTION_TEXT)
                     for suggestion_type in BackgroundSuggestionType
                 ],
-                commit=False,
             )
             await self._invalidate_cache()
 
@@ -83,7 +82,8 @@ class BackgroundCrudService(
         if background is None:
             raise RecordNotFoundError(model_name=self.repository.model.__name__, model_id=str(item_id))
 
-        result = await self.repository.delete(background)
-        await invalidate_after_commit(self.repository.db, *BACKGROUND_DELETE_CACHE_NAMESPACES)
+        async with self._atomic():
+            result = await self.repository.delete(background)
+            await invalidate_after_commit(self.repository.db, *BACKGROUND_DELETE_CACHE_NAMESPACES)
 
         return result

@@ -37,7 +37,7 @@ def make_class_row(**overrides) -> SimpleNamespace:
 
 
 class FakeClassRepository(FakeRepository):
-    """Class repository stand-in recording the child-row writes and the commit flag of every write."""
+    """Class repository stand-in recording the child-row writes."""
 
     def __init__(self, db, existing_by_id=None, *, in_use: bool = False, character_ids: list[int] | None = None):
         from app.models.classes.class_model import Class
@@ -45,10 +45,10 @@ class FakeClassRepository(FakeRepository):
         super().__init__(db, existing_by_id=existing_by_id, model=Class)
         self.in_use = in_use
         self.character_ids = character_ids or []
-        self.update_calls: list[tuple[Any, dict, bool]] = []
-        self.proficiency_calls: list[tuple[int, Any, list, bool]] = []
-        self.skill_calls: list[tuple[int, Any, bool]] = []
-        self.slot_calls: list[tuple[int, int, dict, bool]] = []
+        self.update_calls: list[tuple[Any, dict]] = []
+        self.proficiency_calls: list[tuple[int, Any, list]] = []
+        self.skill_calls: list[tuple[int, Any]] = []
+        self.slot_calls: list[tuple[int, int, dict]] = []
         self.fail_on_proficiencies: Exception | None = None
         self.names: dict[int, str] = {}
         self.slot_rows: list[Any] = []
@@ -64,11 +64,10 @@ class FakeClassRepository(FakeRepository):
     async def get_character_ids(self, class_id):
         return list(self.character_ids)
 
-    async def update(self, db_obj, update_data, *, refresh=False, commit=True):
-        self.update_calls.append((db_obj, dict(update_data), commit))
+    async def update(self, db_obj, update_data, *, refresh=False):
+        self.update_calls.append((db_obj, dict(update_data)))
         for field, value in update_data.items():
             setattr(db_obj, field, value)
-        await self.commit_or_flush(commit=commit)
         return db_obj
 
     async def delete(self, db_obj):
@@ -76,18 +75,16 @@ class FakeClassRepository(FakeRepository):
             raise RecordInUseError(model_name="Class", model_id=db_obj.id)
         return await super().delete(db_obj)
 
-    async def set_proficiencies(self, class_id, kind, values, *, commit=True):
+    async def set_proficiencies(self, class_id, kind, values):
         if self.fail_on_proficiencies is not None:
             raise self.fail_on_proficiencies
-        self.proficiency_calls.append((class_id, kind, list(values), commit))
-        await self.commit_or_flush(commit=commit)
+        self.proficiency_calls.append((class_id, kind, list(values)))
 
-    async def set_available_skills(self, class_id, skills, *, commit=True):
-        self.skill_calls.append((class_id, skills, commit))
+    async def set_available_skills(self, class_id, skills):
+        self.skill_calls.append((class_id, skills))
 
-    async def set_spell_slots(self, class_id, class_level, slots, *, commit=True):
-        self.slot_calls.append((class_id, class_level, slots, commit))
-        await self.commit_or_flush(commit=commit)
+    async def set_spell_slots(self, class_id, class_level, slots):
+        self.slot_calls.append((class_id, class_level, slots))
 
     async def get_spell_slot_rows(self, class_id):
         return self.slot_rows

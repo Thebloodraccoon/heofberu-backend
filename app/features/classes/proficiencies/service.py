@@ -22,8 +22,9 @@ class ClassProficiencyService(ClassScopedService):
         """Replace the ``kind`` list of the class with ``values`` and return the updated class."""
 
         await self._exists_or_404(class_id)
-        await self.repository.set_proficiencies(class_id, kind, values)
-        await self._invalidate_cache()
+        async with self._atomic():
+            await self.repository.set_proficiencies(class_id, kind, values)
+            await self._invalidate_cache()
 
         return await self._get_response(class_id)
 

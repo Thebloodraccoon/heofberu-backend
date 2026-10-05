@@ -35,7 +35,7 @@ class TagsReplaceMixin(RepositoryMixin):
     #: The entity's ORM model class, used only to build the identity-only row ``replace_association`` needs.
     _tags_entity_model: Any
 
-    async def set_tags(self, entity_id: int, tags: list[Tag], *, commit: bool = True) -> None:
+    async def set_tags(self, entity_id: int, tags: list[Tag]) -> None:
         """Replace all tags for ``entity_id`` with the given list."""
 
         await self.replace_association(
@@ -44,7 +44,6 @@ class TagsReplaceMixin(RepositoryMixin):
             self._tags_entity_column,
             "tag_id",
             [tag.id for tag in (tags or [])],
-            commit=commit,
         )
 
 
@@ -58,13 +57,13 @@ class TagsManagerMixin(ServiceMixin):
             await self._exists_or_404(source_id)
             tags = await self._resolve_tags(data.tag_ids)
 
-            await self.repository.set_tags(source_id, tags, commit=False)
+            await self.repository.set_tags(source_id, tags)
             await self._after_tags_set(source_id)
 
         return await self._get_response(source_id)
 
     async def _after_tags_set(self, source_id: int) -> None:
-        """Post-write cache hook (runs after COMMIT inside the transaction); purges the service namespaces by default."""
+        """Post-write cache hook (runs inside the transaction); purges the service namespaces by default."""
 
         await self._invalidate_cache()
 

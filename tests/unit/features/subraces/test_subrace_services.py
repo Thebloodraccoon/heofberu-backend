@@ -46,35 +46,29 @@ class FakeSubraceRepository(FakeRepository):
         self.race_checks.append(race_id)
         return self._race_exists
 
-    async def create(self, payload, *, commit=True):
+    async def create(self, payload):
         row = Subrace(**payload, ability_bonuses=[], tags=[])
         row.id = self._next_id
         self._next_id += 1
         self._rows[row.id] = row
         self.created.append(row)
-        if commit:
-            await self.db.commit()
         return row
 
     async def list_for_race(self, race_id: int):
         self.list_calls.append(race_id)
         return [subrace for subrace in self._rows.values() if subrace.race_id == race_id]
 
-    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
-        self.set_bonuses_calls.append((subrace_id, bonuses, commit))
+    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict]) -> None:
+        self.set_bonuses_calls.append((subrace_id, bonuses))
         subrace = self._rows.get(subrace_id)
         if subrace is not None:
             subrace.ability_bonuses = [
                 SubraceAbilityBonus(subrace_id=subrace_id, ability=bonus["ability"], bonus=bonus["bonus"])
                 for bonus in bonuses
             ]
-        if commit:
-            await self.db.commit()
 
-    async def set_tags(self, subrace_id: int, tags, *, commit: bool = True) -> None:
+    async def set_tags(self, subrace_id: int, tags) -> None:
         self._rows[subrace_id].tags = list(tags or [])
-        if commit:
-            await self.db.commit()
 
     async def get_tags_by_ids(self, tag_ids):
         return [self.tags[tag_id] for tag_id in tag_ids if tag_id in self.tags]
@@ -239,7 +233,7 @@ class TestSubraceAbilityBonusService:
         result = await service.set_ability_bonuses(1, data)
 
         assert result.ability_bonuses[0].ability == AbilityScore.INT
-        assert service.repository.set_bonuses_calls == [(1, [{"ability": AbilityScore.INT, "bonus": 1}], False)]
+        assert service.repository.set_bonuses_calls == [(1, [{"ability": AbilityScore.INT, "bonus": 1}])]
         assert db.commits == 1
         module.reconcile_characters_for_source.assert_awaited_once_with(db, FeatureSourceType.SUBRACE, 1)
         assert purges == [["races"]]

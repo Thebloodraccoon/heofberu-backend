@@ -10,17 +10,17 @@ awaited); ``_atomic`` / ``_unit_of_work`` wrap multistep writes in one
 transaction (see ``app.core.base.transaction``).
 """
 
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Generic, cast
 
 from pydantic import BaseModel
 from sqlalchemy import inspect
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapper
 from typing_extensions import TypeVar
 
 from app.core.base.repository import BaseRepository, ModelProtocol, ModelType
-from app.core.base.transaction import UnitOfWork, after_commit, atomic, unit_of_work
+from app.core.base.transaction import TransactionMixin, after_commit
 from app.core.cache.invalidation import invalidate
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.core.pagination import Page, paginate
@@ -53,7 +53,7 @@ class ServiceMixin:
         resolve_ids: Any
 
 
-class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):
+class BaseService(TransactionMixin, Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):
     """
     Generic "fetch → validate → persist → serialize" CRUD orchestration on
     top of a :class:`BaseRepository`.
@@ -189,8 +189,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
     async def create(self, create_data: CreateSchema) -> ResponseSchema:
         """Persist a new record and return it serialized. No business-rule validation is done here."""
 
-        item = await self.repository.create(create_data.model_dump())
-        await self._invalidate_cache()
+        async with self._atomic():
+            item = await self.repository.create(create_data.model_dump())
+            await self._invalidate_cache()
         return self.response_schema.model_validate(item)
 
     async def update(
@@ -216,8 +217,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         if before_update:
             before_update(item, fields)
 
-        updated_item = await self.repository.update(item, fields)
-        await self._invalidate_cache()
+        async with self._atomic():
+            updated_item = await self.repository.update(item, fields)
+            await self._invalidate_cache()
         return self.response_schema.model_validate(updated_item)
 
     async def delete(self, item_id: int) -> bool:
@@ -230,17 +232,17 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         needed here; see ``BaseRepository.delete``/``is_in_use``.
         """
         item = await self._get_or_404(item_id)
-        result = await self.repository.delete(item)
-        await self._invalidate_cache()
+        async with self._atomic():
+            result = await self.repository.delete(item)
+            await self._invalidate_cache()
         return result
 
     async def _invalidate_cache(self) -> None:
         """
         Purge all cached entries for this service's namespaces after a write.
 
-        Inside :meth:`_atomic` / :meth:`_unit_of_work` the purge runs only
-        after the transaction commits (and is dropped on rollback); outside
-        it runs immediately, the repository having already committed.
+        Call it inside :meth:`_atomic` / :meth:`_unit_of_work`: the purge runs only
+        after the transaction commits and is dropped on rollback.
         """
 
         if self.cache_namespaces:
@@ -294,23 +296,6 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         return founds
 
-    @asynccontextmanager
-    async def _atomic(self) -> AsyncGenerator[None, None]:
-        """
-        Wrap a multistep write in a single all-or-nothing transaction.
-
-        Every repository write inside the ``async with`` block MUST pass
-        ``commit=False``. Commits once on success and then runs the deferred
-        cache purges; rolls back and re-raises on any exception. For a single
-        repository call, ``commit=True`` (the default) is enough.
-        """
-
-        async with atomic(self.repository.db):
-            yield
-
-    @asynccontextmanager
-    async def _unit_of_work(self) -> AsyncGenerator[UnitOfWork, None]:
-        """:meth:`_atomic` that yields a :class:`UnitOfWork` for scheduling post-commit work."""
-
-        async with unit_of_work(self.repository.db) as uow:
-            yield uow
+    @property
+    def _tx_db(self) -> AsyncSession:
+        return self.repository.db

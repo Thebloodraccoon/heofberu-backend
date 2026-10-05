@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.constants import AbilityScore, ArmorProficiency, FeatureSourceType, WeaponProficiency
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.features.classes.cache import CLASS_ITEMS_CACHE_NAMESPACES
 from app.features.classes.crud.repository import ClassRepository
@@ -62,7 +63,7 @@ class TestClassProficiencyService:
         result = await getattr(service, method)(1, payload)
 
         assert result.id == 1
-        assert service.repository.proficiency_calls == [(1, kind, values, True)]
+        assert service.repository.proficiency_calls == [(1, kind, values)]
         assert purged_namespaces(purged) == ["classes"]
 
     async def test_missing_class_raises_before_writing(self, purged):
@@ -81,7 +82,7 @@ class TestClassProficiencyService:
 
         await service.set_armor_proficiencies(1, ArmorProficienciesUpdate(armor_proficiencies=[]))
 
-        assert service.repository.proficiency_calls == [(1, ARMOR_PROFICIENCIES, [], True)]
+        assert service.repository.proficiency_calls == [(1, ARMOR_PROFICIENCIES, [])]
 
 
 @pytest.mark.unit
@@ -98,7 +99,8 @@ class TestClassRepositoryProficiencies:
     async def test_replace_deletes_then_adds_rows_of_the_right_table(self, kind, model, column, value):
         session = FakeAsyncSession()
 
-        await ClassRepository(session).set_proficiencies(4, kind, [value])
+        async with atomic(session):
+            await ClassRepository(session).set_proficiencies(4, kind, [value])
 
         assert len(session.executes) == 1
         assert [type(row) for row in session.added] == [model]
@@ -106,17 +108,18 @@ class TestClassRepositoryProficiencies:
         assert getattr(session.added[0], column) == value
         assert session.commits == 1
 
-    async def test_commit_false_only_flushes(self):
+    async def test_set_proficiencies_only_flushes_until_atomic_exits(self):
         session = FakeAsyncSession()
 
-        await ClassRepository(session).set_proficiencies(4, SAVING_THROWS, [AbilityScore.STR], commit=False)
-
-        assert (session.flushes, session.commits) == (1, 0)
+        async with atomic(session):
+            await ClassRepository(session).set_proficiencies(4, SAVING_THROWS, [AbilityScore.STR])
+            assert (session.flushes, session.commits) == (1, 0)
 
     async def test_set_available_skills_replaces_association_by_class_id(self):
         session = FakeAsyncSession()
 
-        await ClassRepository(session).set_available_skills(4, [SimpleNamespace(id=1), SimpleNamespace(id=2)])
+        async with atomic(session):
+            await ClassRepository(session).set_available_skills(4, [SimpleNamespace(id=1), SimpleNamespace(id=2)])
 
         assert len(session.executes) == 2
         assert session.commits == 1
@@ -138,7 +141,7 @@ class TestClassSkillService:
         result = await service.set_available_skills(1, AvailableSkillsUpdate(skill_ids=[3, 7]))
 
         assert result.id == 1
-        assert service.repository.skill_calls == [(1, skills, False)]
+        assert service.repository.skill_calls == [(1, skills)]
         assert purged_namespaces(purged) == ["classes"]
 
     async def test_unknown_skill_id_is_rejected(self, purged):
@@ -162,7 +165,7 @@ class TestClassSkillService:
 
         await service.set_available_skills(1, AvailableSkillsUpdate(skill_ids=[]))
 
-        assert service.repository.skill_calls == [(1, None, False)]
+        assert service.repository.skill_calls == [(1, None)]
 
 
 @pytest.mark.unit
