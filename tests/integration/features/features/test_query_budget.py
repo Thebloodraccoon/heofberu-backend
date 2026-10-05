@@ -6,6 +6,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import event
 
+from tests.helpers import set_choice_groups, set_effects
+
 
 def auth(token):
     return {"Authorization": f"Bearer {token}"}
@@ -30,19 +32,22 @@ def count_statements(db_session):
 async def feature_with_tree(client, gm_token, create_feature, create_skill):
     feature_id = (await create_feature(name="Tree", source_type="OTHER")).id
     skill_id = (await create_skill(name="Stealth")).id
-    await client.put(
-        f"/features/{feature_id}/effects",
-        json={
+    await set_effects(
+        client,
+        gm_token,
+        feature_id,
+        {
             "static_groups": [
                 {"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]},
                 {"effect_type": "skill", "items": [{"skill_id": skill_id}]},
             ]
         },
-        headers=auth(gm_token),
     )
-    await client.put(
-        f"/features/{feature_id}/choice-groups",
-        json={
+    await set_choice_groups(
+        client,
+        gm_token,
+        feature_id,
+        {
             "choice_groups": [
                 {
                     "choice_type": "SKILL",
@@ -50,7 +55,6 @@ async def feature_with_tree(client, gm_token, create_feature, create_skill):
                 }
             ]
         },
-        headers=auth(gm_token),
     )
     return feature_id
 
@@ -89,17 +93,3 @@ class TestQueryBudget:
 
         assert response.status_code == 201
         assert len(statements) <= 6
-
-    async def test_noop_effects_put_skips_the_character_refresh(self, client, gm_token, db_session, feature_with_tree):
-        current = (await client.get(f"/features/{feature_with_tree}/effects")).json()
-        armor = next(group["items"] for group in current["static_groups"] if group["effect_type"] == "armor")
-
-        with count_statements(db_session) as statements:
-            response = await client.put(
-                f"/features/{feature_with_tree}/effects",
-                json={"static_groups": [{"effect_type": "armor", "items": armor}]},
-                headers=auth(gm_token),
-            )
-
-        assert response.status_code == 200
-        assert not any("character_features" in statement for statement in statements)

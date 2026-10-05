@@ -1,19 +1,43 @@
-"""Feature effects endpoints: read + diff-based write of a feature's fixed effects and choice groups."""
+"""Feature effects endpoints: read + point writes of a feature's fixed effects and choice groups."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, status
 
 from app.features.auth.dependencies import GmUserDep
 from app.features.features.dependencies import FeatureEffectsDep
 from app.features.features.effects.schemas import (
+    ChoiceGroupPatch,
+    ChoiceGroupPayload,
     ChoiceGroupResponse,
-    ChoiceGroupsUpdate,
+    ChoiceOptionPatch,
+    ChoiceOptionPayload,
+    EffectType,
     FeatureEffectsResponse,
     FeatureEffectsUpdate,
 )
 
 router = APIRouter()
+
+_FORBIDDEN = {"description": "You are not a GM."}
+_NOT_FOUND = {"description": "No such feature, group, option or effect (or it belongs to another parent)."}
+_INVALID_PAYLOAD = {
+    "description": (
+        "Invalid payload (an id on a new row, duplicates, a missing/unknown skill/item/spell id, "
+        "or an equal effect already exists)."
+    )
+}
+
+# PATCH body of one effect: only the item fields to change.
+EffectChanges = Annotated[
+    dict[str, Any],
+    Body(
+        openapi_examples={
+            "expertise": {"summary": "Skill effect: grant expertise", "value": {"grants_expertise": True}},
+            "ability": {"summary": "Ability effect: change the amount", "value": {"amount": 2}},
+        }
+    ),
+]
 
 
 @router.get(
@@ -24,55 +48,36 @@ router = APIRouter()
         404: {"description": "No feature exists with the given ID."},
     },
 )
-async def get_feature_effects(
-    feature_id: int,
-    service: FeatureEffectsDep,
-):
+async def get_feature_effects(feature_id: int, service: FeatureEffectsDep):
     """Return a feature's choice groups (with their option effect bundles) and its fixed effects. Open endpoint."""
 
     return await service.get_effects(feature_id)
 
 
-@router.put(
+@router.post(
     "/{feature_id:int}/effects",
     response_model=FeatureEffectsResponse,
-    summary="Diff-update a feature's fixed (automatic) effects",
+    status_code=status.HTTP_201_CREATED,
+    summary="Add fixed effects to a feature",
     responses={
-        403: {"description": "You are not a GM."},
+        403: _FORBIDDEN,
         404: {"description": "No feature exists with the given ID."},
-        422: {
-            "description": (
-                "Invalid effect payload (duplicates, a fixed skill/spell without its id, out-of-range values, "
-                "unknown skill/item/spell id, unknown key), or an item's id doesn't belong to this feature."
-            )
-        },
+        422: _INVALID_PAYLOAD,
     },
 )
-async def set_feature_effects(
+async def add_feature_effects(
     feature_id: int,
     data: Annotated[
         FeatureEffectsUpdate,
         Body(
             openapi_examples={
-                "elf-weapon-training": {
-                    "summary": "Elf Weapon Training: fixed proficiency in a longsword and a bow",
+                "add-armor": {
+                    "summary": "Add medium and heavy armor proficiency",
                     "value": {
                         "static_groups": [
-                            {"effect_type": "weapon", "items": [{"item_id": 3}, {"item_id": 7}]},
+                            {"effect_type": "armor", "items": [{"armor_type": "MEDIUM"}, {"armor_type": "HEAVY"}]},
                         ]
                     },
-                },
-                "resilient-asi-only": {
-                    "summary": "A feat that grants +1 CON (fixed, the saving throw rides a choice)",
-                    "value": {
-                        "static_groups": [
-                            {"effect_type": "ability", "items": [{"ability": "CON", "amount": 1}]},
-                        ]
-                    },
-                },
-                "clear-armor": {
-                    "summary": "Clear the fixed armor effects, leave every other type untouched",
-                    "value": {"static_groups": [{"effect_type": "armor", "items": []}]},
                 },
             },
         ),
@@ -81,22 +86,62 @@ async def set_feature_effects(
     _: GmUserDep,
 ):
     """
-    Diff-update a feature's fixed effects. **GM only.**
+    Add fixed effects. **GM only.**
 
-    The body is the same ``static_groups`` list the read returns. Every
-    effect type that has a **group** becomes the complete set of that type,
-    diffed by id: an item with an existing row's ``id`` updates it in place,
-    an item with no ``id`` inserts a new row, and an existing row whose ``id``
-    is missing from ``items`` is deleted (a group with empty ``items`` clears
-    the type). An effect type with **no group** is left untouched. A repeated
-    ``effect_type``, an ``id`` that doesn't belong to this feature, a repeated
-    id/effect, a fixed skill/spell effect without its ``skill_id``/``spell_id``
-    and an unknown skill/item/spell id are all a 422. When something changed, every
-    character the feature is granted to is refreshed in the same transaction.
-    Choice groups are managed via ``PUT /features/{id}/choice-groups``.
+    Same ``static_groups`` shape as the read; every item is inserted as a **new**
+    row (an item with an ``id`` is a 422). Returns the feature's full effect tree.
     """
 
-    return await service.set_fixed_effects(feature_id, data)
+    return await service.add_fixed_effects(feature_id, data)
+
+
+@router.patch(
+    "/{feature_id:int}/effects/{effect_type}/{effect_id:int}",
+    response_model=FeatureEffectsResponse,
+    summary="Change one fixed effect of a feature",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+        422: _INVALID_PAYLOAD,
+    },
+)
+async def update_feature_effect(
+    feature_id: int,
+    effect_type: EffectType,
+    effect_id: int,
+    changes: EffectChanges,
+    service: FeatureEffectsDep,
+    _: GmUserDep,
+):
+    """
+    Change fields of one fixed effect (``id`` as returned by the read). **GM only.**
+
+    The body holds only the item fields to change (e.g. ``{"grants_expertise": true}``);
+    the result must still be a valid item of that ``effect_type``. Returns the feature's full effect tree.
+    """
+
+    return await service.update_fixed_effect(feature_id, effect_type, effect_id, changes)
+
+
+@router.delete(
+    "/{feature_id:int}/effects/{effect_type}/{effect_id:int}",
+    response_model=FeatureEffectsResponse,
+    summary="Remove one fixed effect from a feature",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+    },
+)
+async def remove_feature_effect(
+    feature_id: int,
+    effect_type: EffectType,
+    effect_id: int,
+    service: FeatureEffectsDep,
+    _: GmUserDep,
+):
+    """Delete one fixed effect. **GM only.** Returns the feature's full effect tree."""
+
+    return await service.remove_fixed_effect(feature_id, effect_type, effect_id)
 
 
 @router.get(
@@ -107,64 +152,41 @@ async def set_feature_effects(
         404: {"description": "No feature exists with the given ID."},
     },
 )
-async def get_feature_choice_groups(
-    feature_id: int,
-    service: FeatureEffectsDep,
-):
+async def get_feature_choice_groups(feature_id: int, service: FeatureEffectsDep):
     """Return a feature's "pick N of M" choice groups with their option effect bundles. Open endpoint."""
 
     return await service.get_choice_groups(feature_id)
 
 
-@router.put(
+@router.post(
     "/{feature_id:int}/choice-groups",
     response_model=list[ChoiceGroupResponse],
-    summary="Diff-update a feature's choice groups",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a choice group",
     responses={
-        403: {"description": "You are not a GM."},
+        403: _FORBIDDEN,
         404: {"description": "No feature exists with the given ID."},
-        409: {"description": "A removed option/group is still referenced by a character's answered choice."},
-        422: {
-            "description": (
-                "Invalid choice-group payload (pick_count outside 1-50, duplicates, unknown skill/item/spell id, "
-                "unknown key, missing choice_groups), or a group/option id doesn't belong to this feature."
-            )
-        },
+        422: _INVALID_PAYLOAD,
     },
 )
-async def set_feature_choice_groups(
+async def add_feature_choice_group(
     feature_id: int,
     data: Annotated[
-        ChoiceGroupsUpdate,
+        ChoiceGroupPayload,
         Body(
             openapi_examples={
                 "ability_score": {
                     "summary": "Choose an ability score to raise by 1",
                     "value": {
-                        "choice_groups": [
-                            {
-                                "pick_count": 1,
-                                "choice_type": "ABILITY_SCORE",
-                                "options": [
-                                    {
-                                        "effects": [
-                                            {"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}
-                                        ]
-                                    },
-                                    {
-                                        "effects": [
-                                            {"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}
-                                        ]
-                                    },
-                                ],
-                            }
-                        ]
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}]},
+                        ],
                     },
                 },
-                "clear": {
-                    "summary": "Remove all choice groups",
-                    "value": {"choice_groups": []},
-                },
+                "empty": {"summary": "An empty group, options added later", "value": {"choice_type": "SKILL"}},
             },
         ),
     ],
@@ -172,21 +194,176 @@ async def set_feature_choice_groups(
     _: GmUserDep,
 ):
     """
-    Diff-update all choice groups for a feature. **GM only.** ``choice_groups`` is required
-    (``[]`` removes every group).
+    Create a choice group, optionally with its options and their effects. **GM only.**
 
-    The given tree becomes the complete set, but existing rows aren't
-    deleted and recreated wholesale: a group/option with an existing ``id``
-    updates it in place, one with no ``id`` creates a new row, and an
-    existing row whose ``id`` is missing from the payload is removed. An
-    ``id`` that doesn't belong to this feature is a 422. Each option is a
-    bundle (``effects``, the same group list the read returns) — picking it
-    applies all of its effects together. Removing an option or a whole group
-    that a character already picked clears that character's stored pick (it
-    reverts to pending, see ``GET /characters/{id}/grants/pending``) instead
-    of failing; grant effects are computed on read, so the removed option's
-    effects disappear on everyone's next read, and the stat caches of every
-    character granted the feature are refreshed in the same transaction.
+    No ``id`` anywhere in the body. ``choice_type`` fixes the one effect type its options may
+    carry and can't be changed later. Returns the feature's choice groups.
     """
 
-    return await service.set_choice_groups(feature_id, data)
+    return await service.add_choice_group(feature_id, data)
+
+
+@router.patch(
+    "/{feature_id:int}/choice-groups/{group_id:int}",
+    response_model=list[ChoiceGroupResponse],
+    summary="Change a choice group's pick_count / sort_order",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+    },
+)
+async def update_feature_choice_group(
+    feature_id: int, group_id: int, data: ChoiceGroupPatch, service: FeatureEffectsDep, _: GmUserDep
+):
+    """Change ``pick_count`` and/or ``sort_order`` of a group. **GM only.** Returns the feature's choice groups."""
+
+    return await service.update_choice_group(feature_id, group_id, data)
+
+
+@router.delete(
+    "/{feature_id:int}/choice-groups/{group_id:int}",
+    response_model=list[ChoiceGroupResponse],
+    summary="Delete a choice group",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+    },
+)
+async def remove_feature_choice_group(feature_id: int, group_id: int, service: FeatureEffectsDep, _: GmUserDep):
+    """
+    Delete a group with its options. **GM only.**
+
+    A character's pick of it is cleared (it reverts to pending, see ``GET /characters/{id}/grants/pending``).
+    Returns the feature's choice groups.
+    """
+
+    return await service.remove_choice_group(feature_id, group_id)
+
+
+@router.post(
+    "/{feature_id:int}/choice-groups/{group_id:int}/options",
+    response_model=list[ChoiceGroupResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Add an option to a choice group",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+        422: _INVALID_PAYLOAD,
+    },
+)
+async def add_feature_choice_option(
+    feature_id: int, group_id: int, data: ChoiceOptionPayload, service: FeatureEffectsDep, _: GmUserDep
+):
+    """
+    Create an option (with its effect bundle ``effects``) in a group. **GM only.**
+
+    Only the effect type the group's ``choice_type`` allows may carry items. Returns the feature's choice groups.
+    """
+
+    return await service.add_choice_option(feature_id, group_id, data)
+
+
+@router.patch(
+    "/{feature_id:int}/choice-groups/{group_id:int}/options/{option_id:int}",
+    response_model=list[ChoiceGroupResponse],
+    summary="Change a choice option's sort_order",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+    },
+)
+async def update_feature_choice_option(
+    feature_id: int, group_id: int, option_id: int, data: ChoiceOptionPatch, service: FeatureEffectsDep, _: GmUserDep
+):
+    """Change an option's ``sort_order``; its effects are edited via ``.../effects``. **GM only.**"""
+
+    return await service.update_choice_option(feature_id, group_id, option_id, data)
+
+
+@router.delete(
+    "/{feature_id:int}/choice-groups/{group_id:int}/options/{option_id:int}",
+    response_model=list[ChoiceGroupResponse],
+    summary="Delete a choice option",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+    },
+)
+async def remove_feature_choice_option(
+    feature_id: int, group_id: int, option_id: int, service: FeatureEffectsDep, _: GmUserDep
+):
+    """Delete an option. **GM only.** A character's pick of it is cleared (reverts to pending)."""
+
+    return await service.remove_choice_option(feature_id, group_id, option_id)
+
+
+@router.post(
+    "/{feature_id:int}/choice-groups/{group_id:int}/options/{option_id:int}/effects",
+    response_model=list[ChoiceGroupResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Add effects to a choice option's bundle",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+        422: _INVALID_PAYLOAD,
+    },
+)
+async def add_feature_option_effects(
+    feature_id: int,
+    group_id: int,
+    option_id: int,
+    data: FeatureEffectsUpdate,
+    service: FeatureEffectsDep,
+    _: GmUserDep,
+):
+    """Add new effect rows (same ``static_groups`` body as the fixed ones) to an option. **GM only.**"""
+
+    return await service.add_option_effects(feature_id, group_id, option_id, data)
+
+
+@router.patch(
+    "/{feature_id:int}/choice-groups/{group_id:int}/options/{option_id:int}/effects/{effect_type}/{effect_id:int}",
+    response_model=list[ChoiceGroupResponse],
+    summary="Change one effect of a choice option",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+        422: _INVALID_PAYLOAD,
+    },
+)
+async def update_feature_option_effect(
+    feature_id: int,
+    group_id: int,
+    option_id: int,
+    effect_type: EffectType,
+    effect_id: int,
+    changes: EffectChanges,
+    service: FeatureEffectsDep,
+    _: GmUserDep,
+):
+    """Change fields of one effect row of an option (body: only the fields to change). **GM only.**"""
+
+    return await service.update_option_effect(feature_id, group_id, option_id, effect_type, effect_id, changes)
+
+
+@router.delete(
+    "/{feature_id:int}/choice-groups/{group_id:int}/options/{option_id:int}/effects/{effect_type}/{effect_id:int}",
+    response_model=list[ChoiceGroupResponse],
+    summary="Remove one effect from a choice option",
+    responses={
+        403: _FORBIDDEN,
+        404: _NOT_FOUND,
+    },
+)
+async def remove_feature_option_effect(
+    feature_id: int,
+    group_id: int,
+    option_id: int,
+    effect_type: EffectType,
+    effect_id: int,
+    service: FeatureEffectsDep,
+    _: GmUserDep,
+):
+    """Delete one effect row of an option. **GM only.**"""
+
+    return await service.remove_option_effect(feature_id, group_id, option_id, effect_type, effect_id)

@@ -3,7 +3,7 @@
 import pytest
 
 from app.models import CharacterASIChoice
-from tests.helpers import effect_items
+from tests.helpers import effect_items, set_choice_groups
 
 
 @pytest.mark.integration
@@ -51,9 +51,11 @@ class TestFeatCrud:
     async def test_gm_can_set_ability_score_increases(self, client, gm_token, create_feat):
         feat = await create_feat(name="Resilient")
 
-        response = await client.put(
-            f"/feats/{feat.id}/choice-groups",
-            json={
+        response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -65,7 +67,7 @@ class TestFeatCrud:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
+            base="/feats",
         )
         assert response.status_code == 200
 

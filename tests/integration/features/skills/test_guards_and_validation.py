@@ -3,6 +3,7 @@
 import pytest
 
 from app.settings import settings
+from tests.helpers import set_effects
 
 
 def auth(token):
@@ -104,10 +105,12 @@ class TestDeleteGuards:
         skill = await create_skill(name="Stealth", ability="DEX")
         feat = await create_feat(name="Skilled")
         skill_id = skill.id
-        put = await client.put(
-            f"/feats/{feat.id}/effects",
-            json={"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill_id}]}]},
-            headers=auth(gm_token),
+        put = await set_effects(
+            client,
+            gm_token,
+            feat.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill_id}]}]},
+            base="/feats",
         )
         assert put.status_code == 200
 

@@ -9,13 +9,14 @@ from app.models.features.feature_engine_models import (
     FeatureSkillProficiencyEffect,
     FeatureSpellGrantEffect,
 )
+from tests.helpers import set_choice_groups, set_effects
 
 
 async def _seed_open_skill_choice_group(db_session, feature_id: int) -> tuple[int, int]:
     """
     Insert a SKILL choice group with one "any skill" (``skill_id=None``) option directly.
 
-    Authoring an open pick through ``PUT /features/{id}/choice-groups`` is
+    Authoring an open pick through ``POST /features/{id}/choice-groups`` is
     rejected by ``ChoiceGroupPayload.validate_no_open_picks`` — this
     simulates a pre-existing catalog row from before that validation was
     added, which the PATCH-time resolution guard still has to handle.
@@ -90,9 +91,11 @@ class TestPendingChoiceGroups:
         feature = await create_feature(name="Skill Training", source_type="CLASS", level=None)
 
         # Add a choice group with two options, each granting a skill
-        resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -104,7 +107,6 @@ class TestPendingChoiceGroups:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert resp.status_code == 200
 
@@ -177,9 +179,11 @@ class TestAnswerChoices:
         feature = await create_feature(name="Skill Pick", source_type="CLASS", level=None)
 
         # Set up a choice group with two skill options
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        cg_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -191,7 +195,6 @@ class TestAnswerChoices:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert cg_resp.status_code == 200
         group_id = cg_resp.json()[0]["id"]
@@ -232,9 +235,11 @@ class TestAnswerChoices:
         skill = await create_skill(name="Stealth", ability="DEX")
         feature = await create_feature(name="Skill Pick", source_type="CLASS", level=None)
 
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        cg_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -245,7 +250,6 @@ class TestAnswerChoices:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert cg_resp.status_code == 200
         group_id = cg_resp.json()[0]["id"]
@@ -275,9 +279,11 @@ class TestAnswerChoices:
         feature = await create_feature(name="Double Pick", source_type="CLASS", level=None)
 
         # Group requires pick_count=2
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        cg_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 2,
@@ -289,7 +295,6 @@ class TestAnswerChoices:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert cg_resp.status_code == 200
         group_id = cg_resp.json()[0]["id"]
@@ -320,9 +325,11 @@ class TestAnswerChoices:
         skill_b = await create_skill(name="Perception", ability="WIS")
         feature = await create_feature(name="Skill Switch", source_type="CLASS", level=None)
 
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        cg_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -334,7 +341,6 @@ class TestAnswerChoices:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert cg_resp.status_code == 200
         group_id = cg_resp.json()[0]["id"]
@@ -453,9 +459,11 @@ class TestAnswerChoices:
         skill = await create_skill(name="Persuasion", ability="CHA")
         feature = await create_feature(name="Multi Group", source_type="CLASS", level=None)
 
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        cg_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -473,7 +481,6 @@ class TestAnswerChoices:
                     },
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert cg_resp.status_code == 200
         group_a_id = cg_resp.json()[0]["id"]
@@ -504,9 +511,11 @@ class TestAnswerChoices:
         skill = await create_skill(name="Athletics", ability="STR")
         feature = await create_feature(name="Switcheroo", source_type="CLASS", level=None)
 
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        cg_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -517,7 +526,6 @@ class TestAnswerChoices:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert cg_resp.status_code == 200
         group_id = cg_resp.json()[0]["id"]
@@ -644,10 +652,11 @@ class TestOpenSpellResolution:
 
         cantrip = await create_spell(name="Prestidigitation", school="TRANSMUTATION", level="CANTRIP")
 
-        fx_resp = await client.put(
-            f"/features/{feature.id}/effects",
-            json={"static_groups": [{"effect_type": "spell", "items": [{"spell_id": cantrip.id}]}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
+        fx_resp = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "spell", "items": [{"spell_id": cantrip.id}]}]},
         )
         assert fx_resp.status_code == 200
 

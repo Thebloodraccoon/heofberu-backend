@@ -5,27 +5,14 @@ from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
-from app.core.types import EntityId
-
-# The one ``effect_type`` a given ``ChoiceType`` allows in its options' bundles — see
-# ``ChoiceGroupPayload.validate_options_match_choice_type``.
-_ALLOWED_EFFECT_TYPE_BY_CHOICE_TYPE: dict[ChoiceType, str] = {
-    ChoiceType.SKILL: "skill",
-    ChoiceType.SPELL: "spell",
-    ChoiceType.ABILITY_SCORE: "ability",
-    ChoiceType.SAVING_THROW: "saving_throw",
-    ChoiceType.ARMOR: "armor",
-    ChoiceType.WEAPON: "weapon",
-}
-_ALL_OPTION_EFFECT_FIELDS = (
-    "ability_effects",
-    "skill_effects",
-    "saving_throw_effects",
-    "armor_effects",
-    "weapon_effects",
-    "spell_effects",
+from app.constants import (
+    EFFECT_TYPE_BY_CHOICE_TYPE,
+    AbilityScore,
+    ArmorProficiency,
+    ChoiceType,
+    WeaponProficiency,
 )
+from app.core.types import EntityId
 
 VALID_NEW_CAP_MIN = 20
 VALID_NEW_CAP_MAX = 30
@@ -39,7 +26,7 @@ MAX_ABILITY_AMOUNT = 30
 
 
 # What makes two effects of the same type "the same effect" (and so a duplicate).
-_DUPLICATE_KEY_BY_EFFECT_FIELD: dict[str, Callable[[Any], Any]] = {
+DUPLICATE_KEY_BY_EFFECT_FIELD: dict[str, Callable[[Any], Any]] = {
     "ability_effects": lambda effect: effect.ability,
     "skill_effects": lambda effect: effect.skill_id,
     "saving_throw_effects": lambda effect: effect.ability,
@@ -47,6 +34,7 @@ _DUPLICATE_KEY_BY_EFFECT_FIELD: dict[str, Callable[[Any], Any]] = {
     "weapon_effects": lambda effect: (effect.weapon_category, effect.item_id),
     "spell_effects": lambda effect: effect.spell_id,
 }
+_ALL_OPTION_EFFECT_FIELDS = tuple(DUPLICATE_KEY_BY_EFFECT_FIELD)
 
 
 def _reject_duplicates(values: list, label: str) -> None:
@@ -68,7 +56,7 @@ def _validate_effect_lists(model: BaseModel, field_names: tuple[str, ...]) -> No
             continue
 
         _reject_duplicates([item.id for item in items if item.id is not None], f"id in {field_name}")
-        key = _DUPLICATE_KEY_BY_EFFECT_FIELD[field_name]
+        key = DUPLICATE_KEY_BY_EFFECT_FIELD[field_name]
         _reject_duplicates([key(item) for item in items], f"entry in {field_name}")
 
 
@@ -106,10 +94,8 @@ class SkillEffectItem(BaseModel):
     support resolving an open skill pick end to end. Reads may still show
     ``None`` on a pre-existing catalog row.
 
-    ``id`` is the DB row id — absent (or omitted) on a write payload means
-    "create"; set it to an existing row's id to update that row in place
-    instead of replacing it (see ``FeatureEffectsService`` — writes diff by
-    id rather than deleting and recreating every row).
+    ``id`` is the DB row id: present on a response, and the path's ``effect_id``
+    for a point write — a new row's payload must not carry one (422).
     """
 
     model_config = ConfigDict(from_attributes=True, extra="forbid")
@@ -138,7 +124,7 @@ class ArmorEffectItem(BaseModel):
 
 
 class WeaponEffectItem(BaseModel):
-    """A fixed/option weapon-proficiency effect: category OR concrete item — exactly one. ``id``: see ``SkillEffectItem``."""
+    """A fixed/option weapon-proficiency effect: a category OR a concrete item. ``id``: see ``SkillEffectItem``."""
 
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -241,6 +227,18 @@ EffectGroup = Annotated[
 ]
 
 
+EffectType = Literal["ability", "skill", "saving_throw", "armor", "weapon", "spell"]
+
+ITEM_BY_EFFECT_TYPE: dict[str, type[BaseModel]] = {
+    "ability": AbilityEffectItem,
+    "skill": SkillEffectItem,
+    "saving_throw": SavingThrowEffectItem,
+    "armor": ArmorEffectItem,
+    "weapon": WeaponEffectItem,
+    "spell": SpellEffectItem,
+}
+
+
 class _EffectGroupsPayload(BaseModel):
     """
     Write-side base for a payload carrying a list of effect groups (each type at most once).
@@ -300,11 +298,9 @@ class ChoiceOptionPayload(_EffectGroupsPayload):
     Carries no label of its own — what it grants is read straight off its
     effects (and rendered to text on read, see ``effects.rendering``).
 
-    ``id``: see ``SkillEffectItem`` — omit to create a new option, set to an
-    existing option's id to update it in place. Dropping an option a
-    character has already picked from the payload clears that pick (it
-    reverts to pending). A bundle may not repeat an effect type, and an
-    effect group may not repeat an id or an effect.
+    ``id``: see ``SkillEffectItem`` — present on a response only; a new option
+    must not carry one. A bundle may not repeat an effect type, and an
+    effect group may not repeat an effect.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -335,8 +331,8 @@ class ChoiceGroupPayload(BaseModel):
     type allows (e.g. ``SKILL`` → only ``skill``). One effect type per group,
     no mixed bundles.
 
-    ``id``: see ``SkillEffectItem`` — omit to create a new group, set to an
-    existing group's id to update it (and diff its ``options``) in place.
+    ``id``: see ``SkillEffectItem`` — present on a response only; a new group
+    (and its options) must not carry one.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -360,7 +356,7 @@ class ChoiceGroupPayload(BaseModel):
     def validate_options_match_choice_type(self):
         """Reject an option carrying an effect list outside its group's declared ``choice_type``."""
 
-        allowed_type = _ALLOWED_EFFECT_TYPE_BY_CHOICE_TYPE[self.choice_type]
+        allowed_type = EFFECT_TYPE_BY_CHOICE_TYPE[self.choice_type]
         for index, option in enumerate(self.options):
             for group in option.effects:
                 if group.effect_type != allowed_type and group.items:
@@ -433,18 +429,11 @@ class FeatureEffectsResponse(BaseModel):
 
 class FeatureEffectsUpdate(_EffectGroupsPayload):
     """
-    Diff-update payload for a feature's FIXED (automatic) effects, as the
-    same ``static_groups`` list ``GET /features/{id}/effects`` returns.
-
-    Each effect type that has a **group** becomes the complete set for that
-    type, diffed by id rather than deleted and recreated wholesale: an item
-    with an existing row's ``id`` updates it in place, one with no ``id``
-    inserts a new row, and an existing row absent from ``items`` is deleted
-    (a group with empty ``items`` clears the type). An effect type with **no
-    group** is left untouched. Choice groups are managed separately via
-    ``PUT /features/{id}/choice-groups``. A fixed skill/spell effect needs a
-    concrete ``skill_id``/``spell_id``; a type may appear once, and a group
-    may not repeat an id or an effect.
+    Payload for adding fixed effects, as the same ``static_groups`` list
+    ``GET /features/{id}/effects`` returns (also the body of an option's
+    ``POST .../effects``). Every item becomes a new row. A fixed skill/spell
+    effect needs a concrete ``skill_id``/``spell_id``; a type may appear once,
+    and a group may not repeat an id or an effect.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -473,32 +462,26 @@ class FeatureEffectsUpdate(_EffectGroupsPayload):
         return self
 
 
-class ChoiceGroupsUpdate(BaseModel):
-    """Full-replace payload for a feature's choice groups (options included); ``choice_groups`` is required."""
+class ChoiceGroupPatch(BaseModel):
+    """PATCH payload for a choice group: only the fields sent change (``choice_type`` is fixed at creation)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    choice_groups: list[ChoiceGroupPayload] = Field(max_length=MAX_CHOICE_GROUPS)
+    pick_count: int | None = Field(None, ge=1, le=MAX_PICK_COUNT)
+    sort_order: int | None = Field(None, ge=0, le=MAX_SORT_ORDER)
 
     @model_validator(mode="after")
-    def validate_unique_group_ids(self):
-        """Reject the same group id appearing twice."""
+    def reject_explicit_null(self):
+        """``null`` isn't a valid value for either column."""
 
-        _reject_duplicates([group.id for group in self.choice_groups if group.id is not None], "group id")
+        if any(getattr(self, name) is None for name in self.model_fields_set):
+            raise ValueError("pick_count and sort_order cannot be null.")
         return self
 
-    @model_validator(mode="after")
-    def validate_single_ability_choice_group(self):
-        """
-        Reject a second choice group of type ``ABILITY_SCORE``.
 
-        ``feat_ability_score_effects`` (and every ASI grant-answering path
-        built on it) assumes "at most one" choice group carries the ASI
-        alternatives — a feature offering, say, "+2 STR or +2 DEX" is one
-        group with two options, not two separate groups.
-        """
+class ChoiceOptionPatch(BaseModel):
+    """PATCH payload for a choice option: its order. Its effects are edited via the option's ``/effects`` routes."""
 
-        ability_groups = [group for group in self.choice_groups if group.choice_type == ChoiceType.ABILITY_SCORE]
-        if len(ability_groups) > 1:
-            raise ValueError("A feature may have at most one choice group of type ABILITY_SCORE.")
-        return self
+    model_config = ConfigDict(extra="forbid")
+
+    sort_order: int = Field(ge=0, le=MAX_SORT_ORDER)

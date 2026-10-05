@@ -169,8 +169,8 @@ async def update_feat(
     Partially update a feat's base fields. **GM only.**
 
     Only fields included in the request body are changed. ASI choices are
-    not part of this payload: set them at creation, or replace them with
-    `PUT /feats/{feat_id}/choice-groups` (see also `/feats/{feat_id}/effects`).
+    not part of this payload: set them at creation, or change them via
+    `/feats/{feat_id}/choice-groups/...` (see also `/feats/{feat_id}/effects`).
     """
 
     return await feat_service.update(feat_id, data)

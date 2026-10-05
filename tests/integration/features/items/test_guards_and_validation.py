@@ -4,6 +4,7 @@ import pytest
 
 from app.models import CharacterProficiency
 from app.settings import settings
+from tests.helpers import set_effects
 
 
 def auth(token):
@@ -165,10 +166,12 @@ class TestDeleteGuards:
         item = await create_item(name="Longsword")
         feat = await create_feat(name="Weapon Master")
         item_id = item.id
-        put = await client.put(
-            f"/feats/{feat.id}/effects",
-            json={"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item_id}]}]},
-            headers=auth(gm_token),
+        put = await set_effects(
+            client,
+            gm_token,
+            feat.id,
+            {"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item_id}]}]},
+            base="/feats",
         )
         assert put.status_code == 200
 
@@ -212,10 +215,12 @@ class TestCacheInvalidation:
             json={"items": [{"item_id": item_id, "quantity": 1}]},
             headers=auth(gm_token),
         )
-        await client.put(
-            f"/feats/{feat_id}/effects",
-            json={"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item_id}]}]},
-            headers=auth(gm_token),
+        await set_effects(
+            client,
+            gm_token,
+            feat_id,
+            {"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item_id}]}]},
+            base="/feats",
         )
 
         assert (await client.get(f"/backgrounds/{background_id}/items")).json()[0]["item"]["name"] == "Censer"
@@ -266,10 +271,11 @@ class TestCacheInvalidation:
         race_feature = await create_feature(name="Pike Training", source_type="RACE", race_id=race.id)
         subrace_feature = await create_feature(name="Hill Training", source_type="SUBRACE", subrace_id=subrace.id)
         for feature_id in (race_feature.id, subrace_feature.id):
-            await client.put(
-                f"/features/{feature_id}/effects",
-                json={"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item.id}]}]},
-                headers=auth(gm_token),
+            await set_effects(
+                client,
+                gm_token,
+                feature_id,
+                {"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item.id}]}]},
             )
         assert "Pike" in (await client.get(f"/races/{race.id}")).text
         assert "Pike" in (await client.get(f"/subraces/{subrace.id}")).text

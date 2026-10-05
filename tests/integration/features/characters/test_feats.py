@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.helpers import effect_items
+from tests.helpers import effect_items, set_choice_groups
 
 
 @pytest.mark.integration
@@ -73,9 +73,11 @@ class TestCharacterFeats:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
         feat = await create_feat(name="Resilient")
-        asi_response = await client.put(
-            f"/feats/{feat.id}/choice-groups",
-            json={
+        asi_response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -86,7 +88,7 @@ class TestCharacterFeats:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
+            base="/feats",
         )
         assert asi_response.status_code == 200
         asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
@@ -110,9 +112,11 @@ class TestCharacterFeats:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id)
         feat = await create_feat(name="Resilient")
-        await client.put(
-            f"/feats/{feat.id}/choice-groups",
-            json={
+        await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -123,7 +127,7 @@ class TestCharacterFeats:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
+            base="/feats",
         )
 
         response = await client.post(
@@ -141,9 +145,11 @@ class TestCharacterFeats:
         character_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
         feat = await create_feat(name="Resilient")
-        asi_response = await client.put(
-            f"/feats/{feat.id}/choice-groups",
-            json={
+        asi_response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -154,7 +160,7 @@ class TestCharacterFeats:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
+            base="/feats",
         )
         asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
 

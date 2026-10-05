@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 
 from app.models import CharacterMaxLevel
 from app.models.character.character_asi_choice_model import CharacterASIChoice
+from tests.helpers import set_effects
 
 PROFICIENCIES = "/characters/{character_id}/gm-panel/proficiencies"
 
@@ -19,7 +20,7 @@ def auth(token):
 async def put_effects_and_grant(client, gm_token, character_id, feature_id, effects) -> int:
     """Set a feature's effects and grant it to the character; returns the grant id."""
 
-    fx_resp = await client.put(f"/features/{feature_id}/effects", json=effects, headers=auth(gm_token))
+    fx_resp = await set_effects(client, gm_token, feature_id, effects)
     assert fx_resp.status_code == 200, fx_resp.text
 
     grant_resp = await client.post(

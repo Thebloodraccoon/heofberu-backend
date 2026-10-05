@@ -5,15 +5,19 @@ from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
-from app.features.features.crud.repository import EFFECT_ATTRS, FeatureRepository, load_effect_flags
+from app.constants import EFFECT_TYPE_BY_CHOICE_TYPE
+from app.features.features.crud.repository import FeatureRepository, load_effect_flags
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
-from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
+from app.models.features.feature_engine_models import EFFECT_TYPES, FeatureChoiceGroup, FeatureChoiceOption
 from app.models.features.feature_model import Feature
+
+_ATTR_BY_EFFECT_TYPE = dict(EFFECT_TYPES)
 
 
 class FeatureEffectsRepository(FeatureRepository):
-    """:class:`FeatureRepository` plus the effect-row / choice-group queries the diff engine needs."""
+    """:class:`FeatureRepository` plus the effect-row / choice-group queries behind the point writes."""
 
     async def load_owned_rows(
         self, model: Any, owner_field: str, owner_ids: Iterable[int]
@@ -33,29 +37,61 @@ class FeatureEffectsRepository(FeatureRepository):
 
         return by_owner
 
-    async def list_choice_groups(self, feature_id: int) -> list[FeatureChoiceGroup]:
-        """A feature's choice groups with their options loaded (no effect rows)."""
+    async def list_choice_groups(self, feature_id: int, *, refresh: bool = False) -> list[FeatureChoiceGroup]:
+        """A feature's choice groups with their options loaded (no effect rows); ``refresh`` re-reads loaded ones."""
 
-        result = await self.db.execute(
+        statement = (
             select(FeatureChoiceGroup)
             .where(FeatureChoiceGroup.feature_id == feature_id)
             .options(selectinload(FeatureChoiceGroup.options))
             .order_by(FeatureChoiceGroup.sort_order, FeatureChoiceGroup.id)
         )
-        return list(result.unique().scalars().all())
+        if refresh:
+            statement = statement.execution_options(populate_existing=True)
+
+        return list((await self.db.execute(statement)).unique().scalars().all())
 
     async def get_choice_group_tree(self, feature_id: int) -> list[FeatureChoiceGroup]:
-        """A feature's choice groups with options and every option effect loaded, ordered for responses."""
+        """
+        A feature's choice groups with options and every option effect loaded, ordered for responses.
 
-        options_load = selectinload(FeatureChoiceGroup.options)
-        result = await self.db.execute(
-            select(FeatureChoiceGroup)
-            .where(FeatureChoiceGroup.feature_id == feature_id)
-            .options(*(options_load.selectinload(getattr(FeatureChoiceOption, attr)) for attr in EFFECT_ATTRS))
-            .order_by(FeatureChoiceGroup.sort_order, FeatureChoiceGroup.id)
+        A group's options carry only the one effect type its ``choice_type`` allows, so only that type is
+        queried (one query per type present) and the other collections are set empty: 2 + k queries, not 2 + 6.
+        """
+
+        groups = await self.list_choice_groups(feature_id, refresh=True)
+        options = [option for group in groups for option in group.options]
+
+        option_ids_by_attr: dict[str, list[int]] = {attr: [] for _, attr in EFFECT_TYPES}
+        for group in groups:
+            attr = _ATTR_BY_EFFECT_TYPE[EFFECT_TYPE_BY_CHOICE_TYPE[group.choice_type]]
+            option_ids_by_attr[attr].extend(option.id for option in group.options)
+
+        for attr, option_ids in option_ids_by_attr.items():
+            rows_by_option = await self._option_effect_rows(attr, option_ids)
+            for option in options:
+                set_committed_value(option, attr, rows_by_option.get(option.id, []))
+
+        return groups
+
+    async def _option_effect_rows(self, attr: str, option_ids: list[int]) -> dict[int, list[Any]]:
+        """The ``attr`` effect rows of the given options (one query, none when there are no options), by option id."""
+
+        if not option_ids:
+            return {}
+
+        model = getattr(FeatureChoiceOption, attr).property.mapper.class_
+        statement = (
+            select(model)
+            .where(model.choice_option_id.in_(option_ids))
+            .order_by(model.id)
             .execution_options(populate_existing=True)
         )
-        return list(result.unique().scalars().all())
+        by_option: dict[int, list[Any]] = {}
+        for row in (await self.db.execute(statement)).scalars():
+            by_option.setdefault(row.choice_option_id, []).append(row)
+
+        return by_option
 
     def add(self, *rows: Any) -> None:
         """Stage new rows for insert."""
@@ -99,7 +135,7 @@ class FeatureEffectsRepository(FeatureRepository):
         """
         Recompute and store ``feature.has_static_effects``/``has_choices``.
 
-        Must run after the diff was flushed (so the existence query sees the
+        Must run after the change was flushed (so the existence query sees the
         rows just written) and before the transaction commits: these two
         columns are what ``GET /features``/``GET /feats`` listings read.
         """

@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.helpers import effect_items
+from tests.helpers import effect_items, set_choice_groups, set_effects
 
 
 async def set_class_spell_slots(client, gm_token, character_class, class_level, slots):
@@ -569,9 +569,11 @@ class TestLevelUp:
         character, _ = await create_api_character(class_id=character_class.id, owner=player)
         await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Resilient")
-        await client.put(
-            f"/feats/{feat.id}/choice-groups",
-            json={
+        await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -582,7 +584,7 @@ class TestLevelUp:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
+            base="/feats",
         )
 
         response = await client.post(
@@ -694,9 +696,11 @@ class TestLevelUp:
         character, _ = await create_api_character(class_id=character_class.id, owner=player, strength=13)
         await level_up_to(client, player_token, character["id"], target_level=3)
         feat = await create_feat(name="Resilient")
-        asi_response = await client.put(
-            f"/feats/{feat.id}/choice-groups",
-            json={
+        asi_response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -707,7 +711,7 @@ class TestLevelUp:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
+            base="/feats",
         )
         assert asi_response.status_code == 200
         asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
@@ -856,9 +860,11 @@ class TestLevelUpFeatureChoices:
         """Create a CLASS feature at level 3 carrying a "pick one skill" choice group; return ids."""
         skill = await create_skill(name="Athletics", ability="STR")
         feature = await create_feature(name="Skill Reader", source_type="CLASS", class_id=class_id, level=3)
-        choice_response = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        choice_response = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -867,7 +873,6 @@ class TestLevelUpFeatureChoices:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert choice_response.status_code == 200, choice_response.text
         effects = (await client.get(f"/features/{feature.id}/effects")).json()
@@ -984,9 +989,11 @@ class TestLevelUpFeatureChoices:
         feat_b_id = feat_b.id
 
         def _configure_feature(feature_id, skill_id):
-            response = client.put(
-                f"/features/{feature_id}/choice-groups",
-                json={
+            response = set_choice_groups(
+                client,
+                gm_token,
+                feature_id,
+                {
                     "choice_groups": [
                         {
                             "pick_count": 1,
@@ -995,7 +1002,6 @@ class TestLevelUpFeatureChoices:
                         }
                     ]
                 },
-                headers={"Authorization": f"Bearer {gm_token}"},
             )
             return response
 
@@ -1068,10 +1074,11 @@ class TestLevelUpFeatureChoices:
     ):
         character_class = await create_class(name="Fighter", hit_dice="D10")
         feature = await create_feature(name="Fixed Boon", source_type="CLASS", class_id=character_class.id, level=3)
-        await client.put(
-            f"/features/{feature.id}/effects",
-            json={"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 2}]}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
+        await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 2}]}]},
         )
         character, _ = await create_api_character(class_id=character_class.id, owner=player, strength=10)
         character_id = character["id"]

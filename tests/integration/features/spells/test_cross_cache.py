@@ -3,6 +3,7 @@
 import pytest
 
 from app.settings import settings
+from tests.helpers import set_effects
 
 
 @pytest.fixture(autouse=True)
@@ -18,10 +19,8 @@ def auth(token):
 
 
 async def grant_spell_via_feature(client, gm_token, feature_id, spell_id):
-    response = await client.put(
-        f"/features/{feature_id}/effects",
-        json={"static_groups": [{"effect_type": "spell", "items": [{"spell_id": spell_id}]}]},
-        headers=auth(gm_token),
+    response = await set_effects(
+        client, gm_token, feature_id, {"static_groups": [{"effect_type": "spell", "items": [{"spell_id": spell_id}]}]}
     )
     assert response.status_code == 200, response.text
 

@@ -5,7 +5,7 @@ revoke and rebuild, authorization of the grant endpoints, and cache freshness af
 
 import pytest
 
-from tests.helpers import effect_items
+from tests.helpers import effect_items, set_choice_groups
 from tests.integration.features.characters.test_progression import level_up_to
 
 
@@ -15,9 +15,11 @@ def auth(token):
 
 async def author_asi_options(client, gm_token, feat, abilities=("STR",)):
     """Give a feat one ABILITY_SCORE group with a +1 option per ability; return the ASI effect ids in order."""
-    response = await client.put(
-        f"/feats/{feat.id}/choice-groups",
-        json={
+    response = await set_choice_groups(
+        client,
+        gm_token,
+        feat.id,
+        {
             "choice_groups": [
                 {
                     "pick_count": 1,
@@ -29,7 +31,7 @@ async def author_asi_options(client, gm_token, feat, abilities=("STR",)):
                 }
             ]
         },
-        headers=auth(gm_token),
+        base="/feats",
     )
     assert response.status_code == 200, response.text
     return [effect_items(option["effects"], "ability")[0]["id"] for option in response.json()[0]["options"]]
@@ -179,9 +181,11 @@ class TestFeatAsiUpdateKeepsOtherPicks:
         fighter = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=fighter.id)
         feat = await create_feat(name="Defensive Duelist")
-        response = await client.put(
-            f"/feats/{feat.id}/choice-groups",
-            json={
+        response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -198,7 +202,7 @@ class TestFeatAsiUpdateKeepsOtherPicks:
                     },
                 ]
             },
-            headers=auth(gm_token),
+            base="/feats",
         )
         assert response.status_code == 200, response.text
         asi_group, save_group = response.json()
@@ -352,9 +356,11 @@ class TestRebuildAsiHistory:
 async def feature_with_ability_choice(client, gm_token, create_feature, class_id, abilities=("STR", "DEX")):
     """A level-1 CLASS feature with one "pick one" ABILITY_SCORE group; return (feature, group, options)."""
     feature = await create_feature(name="Gifted", source_type="CLASS", class_id=class_id, level=1)
-    response = await client.put(
-        f"/features/{feature.id}/choice-groups",
-        json={
+    response = await set_choice_groups(
+        client,
+        gm_token,
+        feature.id,
+        {
             "choice_groups": [
                 {
                     "pick_count": 1,
@@ -366,7 +372,6 @@ async def feature_with_ability_choice(client, gm_token, create_feature, class_id
                 }
             ]
         },
-        headers=auth(gm_token),
     )
     assert response.status_code == 200, response.text
     group = response.json()[0]
@@ -503,9 +508,11 @@ class TestLevelUpBatchesFeatureChoices:
         picks = []
         for name in ("Gift of Strength", "Gift of Grace"):
             feature = await create_feature(name=name, source_type="CLASS", class_id=fighter.id, level=2)
-            response = await client.put(
-                f"/features/{feature.id}/choice-groups",
-                json={
+            response = await set_choice_groups(
+                client,
+                gm_token,
+                feature.id,
+                {
                     "choice_groups": [
                         {
                             "pick_count": 1,
@@ -516,7 +523,6 @@ class TestLevelUpBatchesFeatureChoices:
                         }
                     ]
                 },
-                headers=auth(gm_token),
             )
             assert response.status_code == 200, response.text
             group = response.json()[0]

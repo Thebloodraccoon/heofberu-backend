@@ -29,8 +29,16 @@ features/
 | POST | `/features` | GM | Create a feature of **any** source type, including `FEAT` (feat rows carry `min_level`/`prerequisite_*`). Source FK + `level` rules enforced at the schema layer (422). |
 | PATCH | `/features/{feature_id}` | GM | Editable fields only: `name`, `level`, `description` (+ `min_level`/`prerequisite_*` for FEAT rows). `source_type` and its FK are **immutable** — ownership is permanent. Rule violations (level outside 1-20, a cleared CLASS/SUBCLASS level, FEAT-only columns on a non-FEAT feature, half a prerequisite) -> 400 (`InvalidFeatureSourceException`). Characters are re-reconciled **only when `level` changes**. |
 | DELETE | `/features/{feature_id}` | GM | One transaction. A standalone FEAT/OTHER feature held by a character -> **409** (same guard as `DELETE /feats/{id}`). A source-owned feature cascades its grants away and re-reconciles the owning record's characters before the commit. |
-| GET/PUT | `/features/{feature_id}/effects` | open / GM | Read / **diff-update** the fixed effects by row id. Only the effect types **present** in the body are touched (`[]` clears a type); omitted types are left alone. Choice groups untouched. |
-| GET/PUT | `/features/{feature_id}/choice-groups` | open / GM | Read / **diff-update** the choice-group tree by id (groups -> options -> effects); `choice_groups` is required. Dropping an option/group a character has already picked clears that pick (reverts to pending) instead of failing. |
+| GET | `/features/{feature_id}/effects` | open | Read the whole effect tree (`choice_groups` + `static_groups`). |
+| POST | `/features/{feature_id}/effects` | GM | **Add** fixed effects (`static_groups` body; every item is a new row, `id` -> 422). Returns the tree. |
+| PATCH / DELETE | `/features/{feature_id}/effects/{effect_type}/{effect_id}` | GM | Change fields of / remove **one** fixed effect (PATCH body = only the item fields to change). Returns the tree. |
+| GET | `/features/{feature_id}/choice-groups` | open | Read the choice-group tree. |
+| POST | `/features/{feature_id}/choice-groups` | GM | Create a group (optionally with options and their effects; no ids). |
+| PATCH / DELETE | `/features/{feature_id}/choice-groups/{group_id}` | GM | Change `pick_count`/`sort_order` / delete the group (characters' picks of it revert to pending). |
+| POST | `/features/{feature_id}/choice-groups/{group_id}/options` | GM | Add an option with its `effects` bundle (only the type the group's `choice_type` allows). |
+| PATCH / DELETE | `.../options/{option_id}` | GM | Change `sort_order` / delete the option (picks revert to pending). |
+| POST | `.../options/{option_id}/effects` | GM | Add effects to an option's bundle (`static_groups` body). |
+| PATCH / DELETE | `.../options/{option_id}/effects/{effect_type}/{effect_id}` | GM | Change / remove one effect of an option. All choice routes return the feature's choice groups. |
 
 ## The effect engine
 
@@ -47,11 +55,11 @@ A feature's mechanical payload lives in `app/models/features/feature_engine_mode
 
 - **Fixed effects**: `static_groups` on `FeatureResponse` / `NestedFeatureResponse` /
   `FeatureEffectsResponse`, and the same `static_groups` on write
-  (`FeatureEffectsUpdate`, `PUT /features/{feature_id}/effects`): a type with a group
-  becomes the complete set of that type (diffed by id; a group with empty `items`
-  clears it), a type with no group is left untouched, a repeated `effect_type` is a 422.
+  (`FeatureEffectsUpdate`, the body of `POST /features/{feature_id}/effects`): every item
+  becomes a new row, a repeated `effect_type` is a 422. Existing rows change only through the
+  per-effect PATCH / DELETE.
   A fixed effect applies automatically to any character granted the feature.
-- **Choice groups** ("pick N of M", `ChoiceGroupsUpdate`) — each group is
+- **Choice groups** ("pick N of M", `ChoiceGroupPayload`) — each group is
   pinned to one `choice_type` (`SKILL`/`SPELL`/`ABILITY_SCORE`/
   `SAVING_THROW`/`ARMOR`/`WEAPON`); every option carries `effects: list[EffectGroup]`
   (on read and write) and may only hold the one effect type its group's choice type
@@ -130,20 +138,17 @@ need no reconciliation, and a held one can't be deleted.
 ## FeatureEffectsService
 
 `FeatureEffectsService` (in `effects/`, exposed via `FeatureEffectsDep`; a plain class over
-`FeatureEffectsRepository`, which holds every query and row write) owns the two write endpoints
-above. Both take a row lock on the feature and **diff by row id** against the existing rows
-instead of deleting everything and recreating it: an item with an existing id updates that row,
-an item with no id creates one, and an existing row whose id is missing from the payload is
-deleted — an id that doesn't belong to this feature is a 422. `CharacterFeatureChoice.choice_option_id`
-is `ondelete RESTRICT`, so `set_choice_groups` deletes the stored picks of a removed option/group
-itself first (the pick reverts to pending); the `IntegrityError` safety net only maps a violation
-on `character_feature_choices` to a 409 — every other integrity error is not disguised.
+`FeatureEffectsRepository`, which holds every query and row write) owns the write endpoints above.
+Every write touches one row (or one new group/option with its bundle), takes a row lock on the
+feature and never diffs: PATCH merges the sent fields over the row's current values and validates
+the result as a whole item. Rules that depend on what the feature already has live in the service
+(a new/changed effect equal to an existing row of the same owner, <= 20 groups, one `ABILITY_SCORE`
+group) and are 422s; an order-only change (`sort_order`) skips the has-flag and character-cache
+refresh. `CharacterFeatureChoice.choice_option_id` is `ondelete RESTRICT`, so
+deleting an option/group deletes the stored picks of it first (the pick reverts to pending).
 
-Each write is one `unit_of_work`: diff -> flush -> `has_*` flags (one `UNION ALL` query) ->
-`refresh_feature_effect_caches` for the granted characters -> COMMIT -> cache purge. A write that
-changes nothing skips the character refresh and the purge. Choice groups are written in two
-batches (new groups, then new options) and the existing options' effect rows are loaded with one
-query per effect type across all groups.
+Each write is one `unit_of_work`: change -> flush -> `has_*` flags (one `UNION ALL` query) ->
+`refresh_feature_effect_caches` for the granted characters -> COMMIT -> cache purge.
 
 The `has_static_effects` / `has_choices` columns are the single source for the listings;
 `tests/integration/features/features/test_effects_validation.py` pins the invariant that they

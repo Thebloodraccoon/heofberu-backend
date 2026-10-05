@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 
 from app.constants import GrantSource
 from app.models import CharacterFeature, Feature
+from tests.helpers import set_effects
 
 
 def auth(token):
@@ -91,10 +92,11 @@ class TestDeleteSourceOwnedFeatureIsOneTransaction:
             headers=auth(gm_token),
         )
         feature_id = created.json()["id"]
-        await client.put(
-            f"/features/{feature_id}/effects",
-            json={"static_groups": [{"effect_type": "ability", "items": [{"ability": "CON", "amount": 2}]}]},
-            headers=auth(gm_token),
+        await set_effects(
+            client,
+            gm_token,
+            feature_id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "CON", "amount": 2}]}]},
         )
         assert feature_id in await grants_of(db_session, character.id)
 
@@ -221,10 +223,11 @@ class TestUpdateReconcilesOnlyWhenTheLevelChanges:
     ):
         skill = await create_skill(name="Stealth")
         feature = await create_feature(name="Sneaky", source_type="OTHER")
-        await client.put(
-            f"/features/{feature.id}/effects",
-            json={"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
-            headers=auth(gm_token),
+        await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
         )
 
         response = await client.patch(f"/features/{feature.id}", json={"name": "Sneakier"}, headers=auth(gm_token))

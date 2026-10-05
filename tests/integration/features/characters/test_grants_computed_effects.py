@@ -7,11 +7,11 @@ existing characters through the set-based grant sync.
 
 import pytest
 
+from tests.helpers import set_effects
+
 
 async def _grant_feature_with_effects(client, gm_token, character_id: int, feature_id: int, effects: dict) -> None:
-    fx_resp = await client.put(
-        f"/features/{feature_id}/effects", json=effects, headers={"Authorization": f"Bearer {gm_token}"}
-    )
+    fx_resp = await set_effects(client, gm_token, feature_id, effects)
     assert fx_resp.status_code == 200, fx_resp.text
 
     grant_resp = await client.post(

@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.helpers import set_effects
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -87,10 +89,11 @@ class TestGmPanelGrantedSpells:
         cantrip = await create_spell(name="Prestidigitation", school="TRANSMUTATION", level="CANTRIP")
         feature = await create_feature(name="Bonus Cantrip", source_type="CLASS", level=None)
 
-        fx_resp = await client.put(
-            f"/features/{feature.id}/effects",
-            json={"static_groups": [{"effect_type": "spell", "items": [{"spell_id": cantrip.id}]}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
+        fx_resp = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "spell", "items": [{"spell_id": cantrip.id}]}]},
         )
         assert fx_resp.status_code == 200
 

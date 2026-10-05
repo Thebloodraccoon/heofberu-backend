@@ -28,8 +28,8 @@ feats/
 | POST | `/feats` | GM | Top-level feat creation with optional embedded `ability_score_increases` (`{ability, amount}`); duplicate `name` → 409. Written as a FEAT-source `Feature`; the ASI list is seeded as one choice group (`pick_count=1`) with one option per alternative (each option carrying a `FeatureAbilityScoreEffect`), mirroring the legacy confirmed-pick semantics. |
 | PATCH | `/feats/{feat_id}` | GM | Update base/prerequisite fields only (see ASI note below); duplicate `name` → 409; explicit `null` for a NOT NULL field → 422; a prerequisite with only ability or only minimum score → 422. |
 | DELETE | `/feats/{feat_id}` | Founder | Blocked with 409 while any character still holds a grant of the feat. |
-| GET/PUT | `/feats/{feat_id}/effects` | open / GM | Read / replace the feat's **fixed** effects (all six types), GM write. 404 when the id is not a feat. |
-| GET/PUT | `/feats/{feat_id}/choice-groups` | open / GM | Read / full-replace the feat's choice-group tree (e.g. Skilled's "pick 3 skills", Resilient's "+1 to an ability score"). 404 when the id is not a feat. |
+| GET / POST / PATCH / DELETE | `/feats/{feat_id}/effects[/{effect_type}/{effect_id}]` | open / GM | Read / add / change one / remove one **fixed** effect, same contract as `/features/{id}/effects`. 404 when the id is not a feat. |
+| GET / POST / PATCH / DELETE | `/feats/{feat_id}/choice-groups[/{group_id}[/options/{option_id}[/effects/...]]]` | open / GM | Read / point-edit the feat's choice groups, options and option effects (e.g. Skilled's "pick 3 skills"), same contract as `/features/{id}/choice-groups`. 404 when the id is not a feat. |
 
 Input bounds: `name` 1..200 (trimmed), `prerequisite_minimum_score` 1..30, ASI `amount` 1..10 (at most 6 alternatives). `prerequisite_ability` and `prerequisite_minimum_score` are set together or not at all. Duplicates answer **400** (`RecordAlreadyExistsError`, platform-wide).
 
@@ -58,7 +58,7 @@ that make this work:
 
 - `FeatCrudService` extends `CachedService` over `Feature`; the repository scopes every query (`get_by_id`, `get_row`, `exists_by_id`, `count`, `get_brief`) to `source_type=FEAT`. The listing column-selects brief fields plus the denormalized `has_static_effects`/`has_choices` (real `Feature` columns, kept in sync by every effect/choice-group write — see `FeatureEffectsService._refresh_effect_flags` and `FeatRepository.set_ability_score_increases`). The full effect tree (`feature_summary_loads()`) is loaded only by `get_by_id`, because `static_groups`/`effects_summary` read every fixed-effect relationship and the choice-group tree.
 - `update` and `delete` read the bare row (`get_row`), then `update` loads the tree once to build the response; `delete` never loads it.
-- PATCH touches **base/prerequisite fields only** — it never edits ASI options. Change ability-score choices via `PUT /feats/{feat_id}/choice-groups` and fixed ASI via `PUT /feats/{feat_id}/effects`.
+- PATCH touches **base/prerequisite fields only** — it never edits ASI options. Change ability-score choices via `/feats/{feat_id}/choice-groups/...` and fixed ASI via `/feats/{feat_id}/effects/...`.
 - Name uniqueness among FEAT rows is checked in code (`features.name` has no unique constraint). A concurrent duplicate that slips through and trips a unique index (see the migration request) is translated to the same `RecordAlreadyExistsError`.
 - Delete: `is_in_use` blocks it (409) while any character holds the feat. `character_features.feature_id` cascades, so the feature row is locked (`SELECT ... FOR UPDATE`) before the guard — a concurrent grant waits instead of being wiped.
 - Every write purges `FEAT_CACHE_NAMESPACES = ("feats", "features")` after the commit (`GET /features` reads the same table). Skill/item renames purge `feats` from their side (effect summaries render their names).

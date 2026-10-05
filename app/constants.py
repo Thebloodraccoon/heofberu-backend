@@ -274,6 +274,17 @@ class ChoiceType(str, Enum):
     WEAPON = "WEAPON"
 
 
+# The one ``effect_type`` the options of a group of each ``ChoiceType`` may carry.
+EFFECT_TYPE_BY_CHOICE_TYPE: dict[ChoiceType, str] = {
+    ChoiceType.SKILL: "skill",
+    ChoiceType.SPELL: "spell",
+    ChoiceType.ABILITY_SCORE: "ability",
+    ChoiceType.SAVING_THROW: "saving_throw",
+    ChoiceType.ARMOR: "armor",
+    ChoiceType.WEAPON: "weapon",
+}
+
+
 class ProficiencySourceType(str, Enum):
     """
     How a ``character_proficiencies`` row came to exist — a second axis

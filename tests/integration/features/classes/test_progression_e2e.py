@@ -8,6 +8,8 @@ class and subclass features.
 
 import pytest
 
+from tests.helpers import set_effects
+
 
 async def set_slots(client, gm_token, class_id, class_level, slots):
     return await client.put(
@@ -167,10 +169,11 @@ class TestProgressionWithFeatures:
         await create_feature(name="Extra Attack", source_type="CLASS", class_id=character_class.id, level=5)
         await create_feature(name="Improved Critical", source_type="SUBCLASS", subclass_id=champion.id, level=3)
         await create_feature(name="Combat Superiority", source_type="SUBCLASS", subclass_id=master.id, level=3)
-        effects = await client.put(
-            f"/features/{second_wind.id}/effects",
-            json={"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
+        effects = await set_effects(
+            client,
+            gm_token,
+            second_wind.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]},
         )
         assert effects.status_code == 200
 

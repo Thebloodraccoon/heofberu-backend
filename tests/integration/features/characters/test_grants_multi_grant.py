@@ -13,7 +13,7 @@ mix-up.
 
 import pytest
 
-from tests.helpers import effect_items
+from tests.helpers import effect_items, set_effects
 
 
 def _grant_for_feature(grants: list[dict], feature_id: int) -> dict:
@@ -56,14 +56,15 @@ class TestMultiGrantDedup:
         race_feature = await create_feature(name="Keen Senses (Race)", source_type="RACE", race_id=race.id, level=None)
 
         for feature in (class_feature, race_feature):
-            fx_resp = await client.put(
-                f"/features/{feature.id}/effects",
-                json={
+            fx_resp = await set_effects(
+                client,
+                gm_token,
+                feature.id,
+                {
                     "static_groups": [
                         {"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}
                     ]
                 },
-                headers={"Authorization": f"Bearer {gm_token}"},
             )
             assert fx_resp.status_code == 200, fx_resp.text
 
@@ -117,23 +118,19 @@ class TestMultiGrantExpertiseIndependence:
             name="Natural Stealth (Race)", source_type="RACE", race_id=race.id, level=None
         )
 
-        class_fx = await client.put(
-            f"/features/{class_feature.id}/effects",
-            json={
-                "static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
+        class_fx = await set_effects(
+            client,
+            gm_token,
+            class_feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
         )
         assert class_fx.status_code == 200, class_fx.text
 
-        race_fx = await client.put(
-            f"/features/{race_feature.id}/effects",
-            json={
-                "static_groups": [
-                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
+        race_fx = await set_effects(
+            client,
+            gm_token,
+            race_feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}]},
         )
         assert race_fx.status_code == 200, race_fx.text
 
@@ -182,26 +179,22 @@ class TestMultiGrantSyncPreservesSiblingRows:
         race = await create_race(name="Gnome")
 
         race_feature = await create_feature(name="Gnomish Cunning", source_type="RACE", race_id=race.id, level=None)
-        race_fx = await client.put(
-            f"/features/{race_feature.id}/effects",
-            json={
-                "static_groups": [
-                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
+        race_fx = await set_effects(
+            client,
+            gm_token,
+            race_feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}]},
         )
         assert race_fx.status_code == 200, race_fx.text
 
         class_feature = await create_feature(
             name="Arcane Focus", source_type="CLASS", class_id=character_class.id, level=3
         )
-        class_fx = await client.put(
-            f"/features/{class_feature.id}/effects",
-            json={
-                "static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
+        class_fx = await set_effects(
+            client,
+            gm_token,
+            class_feature.id,
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
         )
         assert class_fx.status_code == 200, class_fx.text
 

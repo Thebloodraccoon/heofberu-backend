@@ -2,23 +2,21 @@
 ``has_static_effects``/``has_choices``/``effects_summary`` on features
 embedded inside a parent catalog response (``NestedFeatureResponse``), and
 the cache-invalidation fix that keeps those parent reads from going stale
-after ``PUT /features/{id}/effects`` or ``PUT /features/{id}/choice-groups``
+after ``a write to /features/{id}/effects`` or ``/features/{id}/choice-groups``
 (FeatureEffectsService used to only purge the shared ``features`` namespace,
 never the owning catalog's own list/parent-read namespaces).
 """
 
 import pytest
 
+from tests.helpers import set_choice_groups, set_effects
+
 
 async def set_feature_effects(client, gm_token, feature_id, **effects):
     """``skill_effects=[...]`` style kwargs, sent as ``static_groups``."""
 
     static_groups = [{"effect_type": key.removesuffix("_effects"), "items": items} for key, items in effects.items()]
-    response = await client.put(
-        f"/features/{feature_id}/effects",
-        json={"static_groups": static_groups},
-        headers={"Authorization": f"Bearer {gm_token}"},
-    )
+    response = await set_effects(client, gm_token, feature_id, {"static_groups": static_groups})
     assert response.status_code == 200, response.text
 
 
@@ -53,9 +51,11 @@ class TestNestedFeatureSummary:
         race = await create_race(name="Draconic")
         feature = await create_feature(name="Ancestry", source_type="RACE", race_id=race.id)
 
-        cg_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        cg_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -68,7 +68,6 @@ class TestNestedFeatureSummary:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert cg_resp.status_code == 200
 
@@ -122,9 +121,11 @@ class TestParentCacheInvalidatedByEffectsEdit:
         first_listed = next(f for f in first.json() if f["id"] == feature.id)
         assert first_listed["has_choices"] is False
 
-        await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
@@ -134,7 +135,6 @@ class TestParentCacheInvalidatedByEffectsEdit:
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         second = await client.get(

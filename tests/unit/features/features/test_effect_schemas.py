@@ -5,8 +5,9 @@ import pytest
 
 from app.features.features.effects.schemas import (
     AbilityEffectItem,
+    ChoiceGroupPatch,
     ChoiceGroupPayload,
-    ChoiceGroupsUpdate,
+    ChoiceOptionPatch,
     ChoiceOptionPayload,
     FeatureEffectsUpdate,
 )
@@ -22,18 +23,6 @@ class TestChoiceGroupBounds:
     def test_pick_count_one_is_allowed(self):
         assert ChoiceGroupPayload(pick_count=1, choice_type="SKILL").pick_count == 1
 
-    def test_choice_groups_field_is_required(self):
-        with pytest.raises(ValidationError, match="choice_groups"):
-            ChoiceGroupsUpdate()
-
-    def test_empty_choice_groups_still_clears(self):
-        assert ChoiceGroupsUpdate(choice_groups=[]).choice_groups == []
-
-    def test_too_many_groups_rejected(self):
-        groups = [{"choice_type": "SKILL"}] * 21
-        with pytest.raises(ValidationError, match="choice_groups"):
-            ChoiceGroupsUpdate(choice_groups=groups)
-
     def test_too_many_options_rejected(self):
         with pytest.raises(ValidationError, match="options"):
             ChoiceGroupPayload(choice_type="SKILL", options=[{}] * 51)
@@ -45,11 +34,6 @@ class TestChoiceGroupBounds:
     def test_unknown_key_in_group_rejected(self):
         with pytest.raises(ValidationError, match="Extra inputs"):
             ChoiceGroupPayload(choice_type="SKILL", feature_id=1)
-
-    def test_duplicate_group_ids_rejected(self):
-        groups = [{"id": 5, "choice_type": "SKILL"}, {"id": 5, "choice_type": "SPELL"}]
-        with pytest.raises(ValidationError, match="Duplicate group id"):
-            ChoiceGroupsUpdate(choice_groups=groups)
 
     def test_duplicate_option_ids_rejected(self):
         with pytest.raises(ValidationError, match="Duplicate option id"):
@@ -93,7 +77,7 @@ class TestFixedEffectsUpdate:
         assert data.skill_effects is None
         assert data.weapon_effects is not None
 
-    def test_empty_list_is_kept_as_an_explicit_clear(self):
+    def test_empty_items_list_is_kept(self):
         assert FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": []}]).armor_effects == []
 
     def test_fixed_skill_requires_skill_id(self):
@@ -138,6 +122,52 @@ class TestFixedEffectsUpdate:
     def test_list_length_is_bounded(self):
         with pytest.raises(ValidationError, match="items"):
             FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}] * 51}])
+
+
+@pytest.mark.unit
+class TestChoiceGroupPatch:
+    def test_only_sent_fields_are_set(self):
+        patch = ChoiceGroupPatch(pick_count=2)
+        assert patch.model_dump(exclude_unset=True) == {"pick_count": 2}
+
+    def test_empty_patch_is_allowed(self):
+        assert ChoiceGroupPatch().model_dump(exclude_unset=True) == {}
+
+    @pytest.mark.parametrize("field", ["pick_count", "sort_order"])
+    def test_explicit_null_rejected(self, field):
+        with pytest.raises(ValidationError, match="cannot be null"):
+            ChoiceGroupPatch(**{field: None})
+
+    @pytest.mark.parametrize("pick_count", [0, 51])
+    def test_pick_count_outside_range_rejected(self, pick_count):
+        with pytest.raises(ValidationError, match="pick_count"):
+            ChoiceGroupPatch(pick_count=pick_count)
+
+    def test_negative_sort_order_rejected(self):
+        with pytest.raises(ValidationError, match="sort_order"):
+            ChoiceGroupPatch(sort_order=-1)
+
+    def test_choice_type_cannot_be_patched(self):
+        with pytest.raises(ValidationError, match="Extra inputs"):
+            ChoiceGroupPatch(choice_type="SPELL")
+
+
+@pytest.mark.unit
+class TestChoiceOptionPatch:
+    def test_sort_order_is_accepted(self):
+        assert ChoiceOptionPatch(sort_order=3).sort_order == 3
+
+    def test_sort_order_is_required(self):
+        with pytest.raises(ValidationError, match="sort_order"):
+            ChoiceOptionPatch()
+
+    def test_negative_sort_order_rejected(self):
+        with pytest.raises(ValidationError, match="sort_order"):
+            ChoiceOptionPatch(sort_order=-1)
+
+    def test_unknown_key_rejected(self):
+        with pytest.raises(ValidationError, match="Extra inputs"):
+            ChoiceOptionPatch(sort_order=1, effects=[])
 
 
 @pytest.mark.unit
