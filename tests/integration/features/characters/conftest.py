@@ -1,0 +1,99 @@
+"""Shared fixtures for character feature tests."""
+
+import pytest_asyncio
+
+from app.constants import CHARACTER_MAX_LEVEL
+
+
+@pytest_asyncio.fixture
+async def create_caster_class(client, gm_token, create_class):
+    """Create a class with a spell-slot progression at level 1, via the API."""
+
+    async def _create_caster_class(name="Wizard", slots=None):
+        character_class = await create_class(name=name, hit_dice="D6", spellcasting_ability="INT")
+        slots = slots or [{"spell_level": "LEVEL_1", "slots": 2}]
+        response = await client.put(
+            f"/classes/{character_class.id}/spell-slots",
+            params={"class_level": 1},
+            json={"slots": slots},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert response.status_code == 200, response.text
+        return character_class
+
+    return _create_caster_class
+
+
+@pytest_asyncio.fixture
+async def create_api_character(client, login_as, create_user, create_background, gm_token):
+    """
+    Create a character via the API and return the created payload + owner token.
+
+    There is no origin feat at creation. Characters are created with their
+    GM-set level-up cap seeded at 1; by default this fixture raises it to
+    ``CHARACTER_MAX_LEVEL`` (20) via the GM panel so tests that level up
+    freely keep working. Pass ``raise_max_level=False`` to keep the raw
+    level-1 cap (used by the max-level system's own tests).
+    """
+
+    default_background = None
+
+    async def _create_api_character(
+        class_id,
+        owner=None,
+        name="Test Character",
+        race_id=None,
+        background_id=None,
+        raise_max_level=True,
+        **kwargs,
+    ):
+        nonlocal default_background
+        if owner is None:
+            owner = await create_user()
+        # ``background_id=False`` omits the field entirely — a character
+        # with no background (for the late-background setup tests).
+        suggestion_ids = None
+        if background_id is False:
+            background_id = None
+            omit_background = True
+        else:
+            if background_id is None:
+                # Reuse one background per test so calling this fixture for
+                # several characters (each auto-picking a background) does
+                # not collide on ``backgrounds.name`` unique.
+                if default_background is None:
+                    default_background = await create_background()
+                background_id = default_background.id
+                suggestion_ids = [s.id for s in default_background.suggestions]
+            omit_background = False
+        token = await login_as(owner)
+        payload = {
+            "name": name,
+            "class_id": class_id,
+            "race_id": race_id,
+            "background_id": background_id,
+            **kwargs,
+        }
+        if omit_background:
+            del payload["background_id"]
+        elif "suggestion_ids" not in payload and suggestion_ids is not None:
+            payload["suggestion_ids"] = suggestion_ids
+        response = await client.post(
+            "/characters",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 201, response.text
+        character = response.json()
+
+        if raise_max_level and character["level"] < CHARACTER_MAX_LEVEL:
+            raise_response = await client.patch(
+                f"/characters/{character['id']}/gm-panel/max-level",
+                json={"max_level": CHARACTER_MAX_LEVEL},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            assert raise_response.status_code == 200, raise_response.text
+
+        return character, token
+
+    return _create_api_character

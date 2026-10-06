@@ -1,0 +1,224 @@
+"""Tests for GM feat endpoints: grant, update, revoke."""
+
+import pytest
+
+from tests.helpers import effect_items, set_choice_groups
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestCharacterFeats:
+    async def test_grant_and_list_feat(self, client, gm, gm_token, create_class, create_character, create_feat):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
+        feat = await create_feat(name="Alert")
+
+        grant_response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert grant_response.status_code == 201
+        assert grant_response.json()["feat_id"] == feat.id
+
+        list_response = await client.get(
+            f"/characters/{character.id}/feats",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert list_response.status_code == 200
+        assert [item["feat_id"] for item in list_response.json()] == [feat.id]
+
+    async def test_duplicate_feat_grant_returns_409(
+        self, client, gm, gm_token, create_class, create_character, create_feat
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
+        feat = await create_feat(name="Alert")
+
+        await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 409
+
+    async def test_grant_feat_whose_prerequisite_is_unmet_returns_400(
+        self, client, gm, gm_token, create_class, create_character, create_feat
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
+        feat = await create_feat(
+            name="Heavy Armor Master",
+            prerequisite_ability="STR",
+            prerequisite_minimum_score=13,
+        )
+
+        response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 400
+
+    async def test_grant_feat_with_asi_choice(self, client, gm, gm_token, create_class, create_character, create_feat):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
+        feat = await create_feat(name="Resilient")
+        asi_response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
+                    }
+                ]
+            },
+            base="/feats",
+        )
+        assert asi_response.status_code == 200
+        asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
+
+        grant_response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id, "ability_score_increase_id": asi_id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert grant_response.status_code == 201
+        choices = grant_response.json()["choices"]
+        assert len(choices) == 1
+        assert effect_items(choices[0]["effects"], "ability")[0]["id"] == asi_id
+
+    async def test_grant_feat_with_asi_options_without_choice_leaves_it_pending(
+        self, client, gm, gm_token, create_class, create_character, create_feat
+    ):
+        """A GM grant doesn't have to pick the ASI up front — it lands with the choice group left pending."""
+
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
+        feat = await create_feat(name="Resilient")
+        await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
+                    }
+                ]
+            },
+            base="/feats",
+        )
+
+        response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["choices"] == []
+
+    async def test_grant_feat_with_asi_writes_audit_row(
+        self, client, gm, gm_token, create_class, create_character, create_feat
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id, strength=13)
+        feat = await create_feat(name="Resilient")
+        asi_response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
+                    }
+                ]
+            },
+            base="/feats",
+        )
+        asi_id = effect_items(asi_response.json()[0]["options"][0]["effects"], "ability")[0]["id"]
+
+        await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id, "ability_score_increase_id": asi_id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        audit_response = await client.get(
+            f"/characters/{character.id}/progression/asi-choices",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert audit_response.status_code == 200
+        choices = audit_response.json()
+        assert len(choices) == 1
+        assert choices[0]["choice_type"] == "FEAT"
+        assert choices[0]["class_level"] is None
+        assert choices[0]["feat_id"] == feat.id
+        assert choices[0]["ability_score_increase_id"] == asi_id
+
+    async def test_revoke_feat(self, client, gm, gm_token, create_class, create_character, create_feat):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=character_class.id)
+        feat = await create_feat(name="Alert")
+
+        grant_response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        character_feat_id = grant_response.json()["id"]
+
+        response = await client.delete(
+            f"/characters/{character.id}/gm-panel/feats",
+            params={"feat_id": character_feat_id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 204
+        assert (
+            await client.get(
+                f"/characters/{character.id}/feats",
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).json() == []
+
+    async def test_player_denied_feat_grant(
+        self, client, player, player_token, create_class, create_character, create_feat
+    ):
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        feat = await create_feat(name="Alert")
+
+        response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403

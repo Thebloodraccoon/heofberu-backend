@@ -1,0 +1,97 @@
+"""Repository for the character ASI-level choices audit table."""
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.constants import ASILevelChoice
+from app.core.base.repository import BaseRepository
+from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
+
+
+class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
+    """CRUD for ``character_asi_choices`` (one row per resolved ASI level)."""
+
+    def __init__(self, db: AsyncSession):
+        """Create the ASI-choice repository."""
+
+        super().__init__(CharacterASIChoice, db)
+
+    async def get_character_choices(self, character_id: int) -> list[CharacterASIChoice]:
+        """List a character's resolved ASI-level choices, ordered by level."""
+
+        result = await self.db.execute(
+            select(CharacterASIChoice)
+            .where(CharacterASIChoice.character_id == character_id)
+            .options(selectinload(CharacterASIChoice.increases))
+            .order_by(CharacterASIChoice.class_level)
+        )
+        return list(result.scalars().unique().all())
+
+    async def add(
+        self,
+        character_id: int,
+        class_level: int | None,
+        choice_type: ASILevelChoice | str,
+        *,
+        feat_id: int | None = None,
+        ability_score_increase_id: int | None = None,
+        increases: list[dict] | None = None,
+    ) -> CharacterASIChoice:
+        """
+        Record one resolved ASI-level choice: ``class_level`` is the ASI
+        class level for level-up resolutions or ``None`` for a GM-panel
+        adjustment. ``increases`` (ASI choices) are written as typed
+        ``CharacterASIChoiceIncrease`` children — the rows the calculator
+        counts; ``feat_id``/``ability_score_increase_id`` describe FEAT
+        choices, whose stat effect flows through the granted feature row.
+        Always recorded with ``applied_to_base = False`` (the log IS the
+        counted source).
+        """
+
+        row = CharacterASIChoice(
+            character_id=character_id,
+            class_level=class_level,
+            choice_type=choice_type,
+            feat_id=feat_id,
+            ability_score_increase_id=ability_score_increase_id,
+            applied_to_base=False,
+        )
+
+        for item in increases or []:
+            row.increases.append(CharacterASIChoiceIncrease(ability=item["ability"], amount=item["amount"]))
+
+        self.db.add(row)
+        await self.flush()
+
+        return row
+
+    async def get_choice_by_id(self, character_id: int, choice_id: int) -> CharacterASIChoice | None:
+        """Fetch one choice row by its own id, scoped to the character."""
+
+        result = await self.db.execute(
+            select(CharacterASIChoice)
+            .where(
+                CharacterASIChoice.id == choice_id,
+                CharacterASIChoice.character_id == character_id,
+            )
+            .options(selectinload(CharacterASIChoice.increases))
+        )
+        return result.scalar_one_or_none()
+
+    async def clear_character_choices(self, character_id: int) -> None:
+        """
+        Delete the character's level-resolved ASI choices (child increases
+        cascade at the DB level) — a point-rebuild replaces them with freshly
+        resolved choices for the new build. GM adjustments and GM feat
+        grants (``class_level IS NULL``) are not part of that history and are
+        kept.
+        """
+
+        await self.db.execute(
+            delete(CharacterASIChoice).where(
+                CharacterASIChoice.character_id == character_id,
+                CharacterASIChoice.class_level.is_not(None),
+            )
+        )
+        await self.flush()

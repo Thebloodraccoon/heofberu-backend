@@ -1,0 +1,294 @@
+"""Spell CRUD endpoints: paginated listing, get, create, update, delete."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
+
+from app.constants import (
+    AttackType,
+    DamageType,
+    HealingTarget,
+    SpellCastTime,
+    SpellDuration,
+    SpellLevel,
+    SpellRangeType,
+    SpellSchool,
+)
+from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
+from app.features.auth.dependencies import FounderDep, GmUserDep
+from app.features.spells.crud.schemas import (
+    SpellCreate,
+    SpellGetAllResponse,
+    SpellResponse,
+    SpellUpdate,
+)
+from app.features.spells.dependencies import SpellCrudDep
+
+router = APIRouter()
+
+
+@router.get(
+    "",
+    response_model=Page[SpellGetAllResponse] | CursorPage[SpellGetAllResponse],
+    summary="List spells",
+    responses={422: {"description": "Invalid `cursor`."}},
+)
+async def get_spells(
+    spell_service: SpellCrudDep,
+    school: list[SpellSchool] | None = Query(
+        None,
+        description="Any-of match on the spell's school (repeat the key: `?school=EVOCATION&school=ILLUSION`).",
+    ),
+    level: list[SpellLevel] | None = Query(
+        None,
+        description="Any-of match on the spell level (repeat the key: `?level=CANTRIP&level=LEVEL_1`).",
+    ),
+    cast_time: list[SpellCastTime] | None = Query(None, description="Any-of match on casting time (repeat the key)."),
+    range_type: list[SpellRangeType] | None = Query(None, description="Any-of match on range type (repeat the key)."),
+    duration: list[SpellDuration] | None = Query(None, description="Any-of match on duration (repeat the key)."),
+    attack_type: list[AttackType] | None = Query(None, description="Any-of match on attack type (repeat the key)."),
+    damage_type: list[DamageType] | None = Query(None, description="Any-of match on damage type (repeat the key)."),
+    healing_target: list[HealingTarget] | None = Query(
+        None, description="Any-of match on healing target (repeat the key)."
+    ),
+    is_ritual: list[bool] | None = Query(
+        None, description="Any-of match: `[true]` ritual spells, `[false]` non-ritual, `[true, false]` both."
+    ),
+    is_concentration: list[bool] | None = Query(
+        None, description="Any-of match: `[true]` concentration spells, `[false]` non-concentration."
+    ),
+    search: str | None = Query(
+        None,
+        description="Case-insensitive substring match against the spell's name.",
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    pagination: PaginationQuery = "page",
+    cursor: CursorQuery = None,
+):
+    """
+    Return lightweight spells ordered by name (then id), with filters and search.
+    Default response is `{items, total, page, size}`; with `pagination=cursor` (or a
+    `cursor`) it is the keyset envelope `{items, next_cursor, size}` (no `total`).
+    Open endpoint.
+    """
+
+    filters = {
+        "school": school,
+        "level": level,
+        "cast_time": cast_time,
+        "range_type": range_type,
+        "duration": duration,
+        "attack_type": attack_type,
+        "damage_type": damage_type,
+        "healing_target": healing_target,
+        "is_ritual": is_ritual,
+        "is_concentration": is_concentration,
+    }
+    if use_cursor(pagination, cursor):
+        return await spell_service.get_cursor_page(size=size, cursor=cursor, filters=filters, search=search)
+
+    return await spell_service.get_all(page=page, size=size, filters=filters, search=search)
+
+
+@router.get(
+    "/{spell_id:int}",
+    response_model=SpellResponse,
+    summary="Get a spell by ID",
+    responses={
+        404: {"description": "Spell with id not found."},
+    },
+)
+async def get_spell(spell_id: int, spell_service: SpellCrudDep):
+    """
+    Return a single spell by ID, with full detail and availability lists.
+    Open endpoint.
+    """
+
+    return await spell_service.get_by_id(spell_id)
+
+
+@router.post(
+    "",
+    response_model=SpellResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a spell",
+    responses={
+        400: {"description": "An availability id is invalid."},
+        409: {"description": "A spell with this name already exists."},
+        422: {"description": "Invalid payload (bounds, dice/material consistency, unknown key)."},
+    },
+)
+async def create_spell(
+    data: Annotated[
+        SpellCreate,
+        Body(
+            openapi_examples={
+                "minimal": {
+                    "summary": "Minimal — no attack roll, damage, or healing",
+                    "value": {
+                        "name": "Mage Armor",
+                        "school": "ABJURATION",
+                        "level": "LEVEL_1",
+                        "cast_time": "ACTION",
+                        "range_type": "TOUCH",
+                        "components": ["VERBAL", "SOMATIC", "MATERIAL"],
+                        "is_material_consumed": False,
+                        "material": "a piece of cured leather",
+                        "duration": "EIGHT_HOURS",
+                        "description": "You touch a willing creature who isn't wearing armor, and its base AC becomes 13 + its Dexterity modifier.",
+                    },
+                },
+                "damage_with_availability": {
+                    "summary": "Damage spell, restricted to specific classes",
+                    "description": "available_classes/available_races are optional — omit or leave empty for an unrestricted spell.",
+                    "value": {
+                        "name": "Guiding Bolt",
+                        "school": "EVOCATION",
+                        "level": "LEVEL_1",
+                        "cast_time": "ACTION",
+                        "range_type": "RANGED",
+                        "range_value": 120,
+                        "components": ["VERBAL", "SOMATIC"],
+                        "is_material_consumed": False,
+                        "material": None,
+                        "is_ritual": False,
+                        "duration": "ONE_ROUND",
+                        "is_concentration": False,
+                        "attack_type": "RANGED_ATTACK",
+                        "save_stat": None,
+                        "damage_type": "RADIANT",
+                        "damage_dice_count": 4,
+                        "damage_dice_type": "D6",
+                        "description": "A flash of light streaks toward a creature of your choice within range. Make a ranged spell attack against the target. On a hit, the target takes 4d6 radiant damage, and the next attack roll made against this target before the end of your next turn has advantage.",
+                        "higher_levels": "When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.",
+                        "available_classes": [3, 5],
+                    },
+                },
+                "healing": {
+                    "summary": "Healing spell",
+                    "value": {
+                        "name": "Cure Wounds",
+                        "school": "EVOCATION",
+                        "level": "LEVEL_1",
+                        "cast_time": "ACTION",
+                        "range_type": "TOUCH",
+                        "components": ["VERBAL", "SOMATIC"],
+                        "is_material_consumed": False,
+                        "duration": "INSTANTANEOUS",
+                        "description": "A creature you touch regains a number of hit points.",
+                        "healing_target": "HP",
+                        "healing_dice_count": 1,
+                        "healing_dice_type": "D8",
+                        "available_classes": [2, 3, 5, 7],
+                    },
+                },
+                "ritual_utility": {
+                    "summary": "Ritual spell with no attack, damage, or healing",
+                    "description": "Shows is_ritual and a longer concentration duration.",
+                    "value": {
+                        "name": "Detect Magic",
+                        "school": "DIVINATION",
+                        "level": "LEVEL_1",
+                        "cast_time": "ACTION",
+                        "range_type": "SELF",
+                        "components": ["VERBAL", "SOMATIC"],
+                        "is_material_consumed": False,
+                        "is_ritual": True,
+                        "duration": "TEN_MINUTES",
+                        "is_concentration": True,
+                        "description": "For the duration, you sense the presence of magic within 30 feet of you.",
+                        "available_classes": [2, 3, 4, 7, 10, 11, 12],
+                    },
+                },
+                "reaction_spell": {
+                    "summary": "Reaction-cast spell",
+                    "description": "Shows cast_time=REACTION and a save-based (no attack roll) effect.",
+                    "value": {
+                        "name": "Shield",
+                        "school": "ABJURATION",
+                        "level": "LEVEL_1",
+                        "cast_time": "REACTION",
+                        "range_type": "SELF",
+                        "components": ["VERBAL", "SOMATIC"],
+                        "is_material_consumed": False,
+                        "duration": "ONE_ROUND",
+                        "description": "An invisible barrier of magical force appears and protects you, granting +5 AC until the start of your next turn.",
+                        "available_classes": [10, 12],
+                    },
+                },
+            },
+        ),
+    ],
+    spell_service: SpellCrudDep,
+    _: GmUserDep,
+):
+    """
+    Create a new spell, optionally saving its availability lists in one transaction.
+    **GM only.**
+    """
+
+    return await spell_service.create_spell(data)
+
+
+@router.patch(
+    "/{spell_id:int}",
+    response_model=SpellResponse,
+    summary="Update a spell",
+    responses={
+        409: {"description": "Another spell already uses the requested name."},
+        404: {"description": "No spell exists with the given ID."},
+        422: {"description": "Invalid payload (bounds, an explicit null for a required field, unknown key)."},
+    },
+)
+async def update_spell(
+    spell_id: int,
+    data: Annotated[
+        SpellUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the spell and edit its description",
+                    "value": {
+                        "name": "Mage Armor",
+                        "description": "You touch a willing creature who isn't wearing armor, and its base AC becomes 13 + its Dexterity modifier.",
+                    },
+                },
+                "tune-damage": {
+                    "summary": "Adjust damage dice",
+                    "value": {
+                        "damage_dice_count": 5,
+                        "damage_dice_type": "D6",
+                    },
+                },
+            }
+        ),
+    ],
+    spell_service: SpellCrudDep,
+    _: GmUserDep,
+):
+    """
+    Partially update a spell only with the provided fields (availability via the PUT endpoints).
+    A rename also refreshes every cached payload that renders the spell's name. **GM only.**
+    """
+
+    return await spell_service.update(spell_id, data)
+
+
+@router.delete(
+    "/{spell_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a spell",
+    responses={
+        404: {"description": "No spell exists with the given ID."},
+        409: {"description": "A character knows or was granted the spell, or a feature effect grants it."},
+    },
+)
+async def delete_spell(spell_id: int, spell_service: SpellCrudDep, _: FounderDep):
+    """
+    Delete a spell, also removing its availability links.
+    **Founder only.**
+    """
+
+    await spell_service.delete(spell_id)
+    return None

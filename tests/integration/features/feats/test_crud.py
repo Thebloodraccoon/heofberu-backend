@@ -1,0 +1,164 @@
+"""Tests for the feat write endpoints."""
+
+import pytest
+
+from app.models import CharacterASIChoice
+from tests.helpers import effect_items, set_choice_groups
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestFeatCrud:
+    async def test_player_cannot_create_feat(self, client, player_token):
+        response = await client.post(
+            "/feats",
+            json={"name": "Custom Feat"},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+        assert response.status_code == 403
+
+    async def test_gm_can_create_feat(self, client, gm_token):
+        response = await client.post(
+            "/feats",
+            json={"name": "Alert"},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["name"] == "Alert"
+
+    async def test_create_duplicate_feat_name_returns_409(self, client, gm_token, create_feat):
+        await create_feat(name="Lucky")
+        response = await client.post(
+            "/feats",
+            json={"name": "Lucky"},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 409
+
+    async def test_gm_can_update_feat(self, client, gm_token, create_feat):
+        feat = await create_feat(name="Old Name")
+
+        response = await client.patch(
+            f"/feats/{feat.id}", json={"name": "New Name"}, headers={"Authorization": f"Bearer {gm_token}"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "New Name"
+
+    async def test_gm_can_set_ability_score_increases(self, client, gm_token, create_feat):
+        feat = await create_feat(name="Resilient")
+
+        response = await set_choice_groups(
+            client,
+            gm_token,
+            feat.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "label": "Ability Score Increase",
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
+                    }
+                ]
+            },
+            base="/feats",
+        )
+        assert response.status_code == 200
+
+        read_response = await client.get(f"/feats/{feat.id}")
+        options = read_response.json()["choice_groups"][0]["options"]
+        assert {
+            effect["ability"]: effect["amount"]
+            for option in options
+            for effect in effect_items(option["effects"], "ability")
+        } == {"STR": 1}
+
+    async def test_gm_cannot_delete_feat(self, client, gm_token, create_feat):
+        feat = await create_feat(name="Doomed Feat")
+
+        response = await client.delete(f"/feats/{feat.id}", headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert response.status_code == 403
+        assert (await client.get(f"/feats/{feat.id}")).status_code == 200
+
+    async def test_founder_can_delete_feat(self, client, founder_token, create_feat):
+        feat = await create_feat(name="Doomed Feat")
+
+        response = await client.delete(f"/feats/{feat.id}", headers={"Authorization": f"Bearer {founder_token}"})
+
+        assert response.status_code == 204
+        assert (await client.get(f"/feats/{feat.id}")).status_code == 404
+
+    async def test_delete_feat_granted_to_character_returns_409(
+        self, client, founder_token, gm_token, player, create_class, create_character, create_feat
+    ):
+        feat = await create_feat(name="Popular Feat")
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+
+        # Feat grants are a GM-panel write.
+        add_response = await client.post(
+            f"/characters/{character.id}/gm-panel/feats",
+            json={"feat_id": feat.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert add_response.status_code == 201
+
+        feat_id = feat.id
+
+        response = await client.delete(f"/feats/{feat_id}", headers={"Authorization": f"Bearer {founder_token}"})
+
+        assert response.status_code == 409
+        assert (await client.get(f"/feats/{feat_id}")).status_code == 200
+
+    async def test_delete_feat_referenced_only_by_an_asi_log_row_returns_409(
+        self, client, db_session, founder_token, player, create_class, create_character, create_feat
+    ):
+        feat = await create_feat(name="Logged Feat")
+        character_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=player.id, class_id=character_class.id)
+        db_session.add(
+            CharacterASIChoice(character_id=character.id, class_level=4, choice_type="FEAT", feat_id=feat.id)
+        )
+        await db_session.commit()
+        feat_id = feat.id
+
+        response = await client.delete(f"/feats/{feat_id}", headers={"Authorization": f"Bearer {founder_token}"})
+
+        assert response.status_code == 409
+        assert (await client.get(f"/feats/{feat_id}")).status_code == 200
+
+    async def test_feats_have_no_feature_endpoints(self, client, gm_token, create_feat):
+        """Feats own no nested feature collection — a feat IS a feature, so the nested endpoints are gone."""
+
+        feat = await create_feat(name="Alert")
+
+        assert (
+            await client.get(
+                f"/feats/{feat.id}/features",
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+        ).status_code == 404
+
+    async def test_creating_a_feat_source_feature_via_features_succeeds(self, client, gm_token):
+        """FEAT is a valid ``FeatureSourceType``: creating one through ``/features`` is the same catalog as a feat."""
+
+        response = await client.post(
+            "/features",
+            json={"name": "Alert Initiative", "source_type": "FEAT"},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["source_type"] == "FEAT"
+
+        # The new FEAT-source feature is listed among feats (same catalog).
+        feats = await client.get("/feats")
+        assert feats.status_code == 200
+        assert "Alert Initiative" in {item["name"] for item in feats.json()["items"]}

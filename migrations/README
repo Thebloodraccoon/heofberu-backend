@@ -1,0 +1,40 @@
+Alembic migrations (single database, PostgreSQL 15+).
+
+Commands (from the repository root, with the app's environment configured):
+
+    alembic upgrade head            # apply everything
+    alembic downgrade -1            # step one revision back
+    alembic check                   # autogenerate diff against the models; must print "No new upgrade operations detected"
+    alembic heads                   # must list exactly one revision
+
+Revision 0003 seeds the default GM from the ADMIN_LOGIN / ADMIN_NAME / ADMIN_PASSWORD environment variables
+(read with os.getenv, so they must be in the process environment for `alembic upgrade`).
+
+Rules for a new revision
+
+* Exactly one head. Set `down_revision` to the current head; a second head fails tests/integration/core/test_migrations.py.
+* Keep the models in sync in the same change (Index / CheckConstraint declarations, `postgresql_where`, constraint and
+  index names). `alembic check` and the definition comparison in test_migrations.py must both stay green. Autogenerate
+  does NOT compare CHECK constraints, generated-column expressions or index expressions; the test does.
+* `downgrade()` must undo `upgrade()`. If something cannot be undone (lowercased emails, merged duplicates), say so
+  in the module docstring and keep the loss as small as possible. Never leave `pass` for a schema change.
+* Do not import application code (services, schemas, constants) into a revision: a migration must not change when the
+  application does. Copy the literal (see the frozen regex in the article search_vector revision).
+* Never delete or merge user rows silently. When a new constraint can be violated by existing data, run a pre-check
+  first and abort with ONE message listing every offender and the SELECT that shows them (see
+  a6d1f3b5c7e9_integrity_email_feat_name_and_checks.py); the whole revision runs in one transaction, so nothing is
+  half-applied. Document the matching data-check queries in the docstring.
+* Each revision is its own transaction (`transaction_per_migration=True` in env.py). Split a change in separate
+  revisions when one part can fail on data and the others cannot, so the safe parts are not blocked.
+* `CREATE INDEX CONCURRENTLY` cannot run inside that transaction and no revision uses `autocommit_block()`. Plain
+  `CREATE INDEX` takes a SHARE lock (blocks writes to the table while it builds): fine for the small catalog tables;
+  for a big table create the index by hand with CONCURRENTLY first.
+* A generated (STORED) column cannot be altered on PostgreSQL < 17: drop and re-add it together with its index, which
+  recomputes it for every row (see the article search_vector revisions).
+* Use `sa.text(...).bindparams(...)` for statements with parameters; `op.execute(str, params)` is not supported.
+* Native ENUM types are created/dropped by the revision that needs them; model columns use `create_type=False`.
+  Sets that grow with content are VARCHAR (see b6f0d4a8c2e3).
+
+Tests: tests/integration/core/test_migrations.py (single head, upgrade/downgrade/upgrade, no drift, data migrations on
+representative legacy rows). It creates and drops its own databases named heof_test_mig_<run>_<worker>_*, so it is safe
+to run in parallel and under any TEST_RUN_ID.

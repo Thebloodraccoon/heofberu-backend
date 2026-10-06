@@ -1,0 +1,46 @@
+"""Race ability-bonus endpoints: full replacement of a race's bonuses."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body
+
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
+from app.features.races.crud.schemas import RaceResponse
+from app.features.races.dependencies import RaceAbilityBonusesDep
+from app.features.shared.catalog.schemas import AbilityBonusesUpdate
+
+router = APIRouter()
+
+
+@router.put(
+    "/{race_id:int}/ability-bonuses",
+    response_model=RaceResponse,
+    summary="Replace a race's ability bonuses",
+    responses={
+        404: {"description": "No race exists with the given ID."},
+    },
+)
+async def set_ability_bonuses(
+    race_id: EntityIdPath,
+    data: Annotated[
+        AbilityBonusesUpdate,
+        Body(
+            openapi_examples={
+                "replace": {
+                    "summary": "Replace with two bonuses",
+                    "value": {"ability_bonuses": [{"ability": "DEX", "bonus": 2}, {"ability": "INT", "bonus": 1}]},
+                },
+                "clear": {
+                    "summary": "Clear all bonuses",
+                    "value": {"ability_bonuses": []},
+                },
+            },
+        ),
+    ],
+    race_service: RaceAbilityBonusesDep,
+    _: GmUserDep,
+):
+    """Replace all ability score bonuses for a race. **GM only.**"""
+
+    return await race_service.set_ability_bonuses(race_id, data)

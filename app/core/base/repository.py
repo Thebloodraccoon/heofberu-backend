@@ -1,0 +1,538 @@
+"""
+Generic repository layer: common CRUD operations for SQLAlchemy models.
+
+Provides :class:`BaseRepository` (a reusable, model-generic CRUD base with
+filtering, search, pagination, uniqueness checks and delete-in-use guards),
+:class:`SessionRepository` (just the session and flush helper, for tables
+without an ``id``), :class:`RepositoryMixin` (typing base for repository
+mixins) plus the model protocol and type aliases they rely on.
+
+Async stack: all public methods are ``async`` and run against an
+``AsyncSession`` using 2.0-style ``select()`` statements.
+"""
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
+
+from sqlalchemy import String, Text, delete, func, inspect, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapper
+
+from app.core.base.transaction import require_atomic
+from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
+
+_UNSEARCHABLE_SUFFIXES = ("password", "token", "secret", "_url")
+
+
+def _is_id_clause(clause: Any, model: Any) -> bool:
+    """Whether an ORDER BY ``clause`` already orders by ``model.id`` (plain or ``.asc()``/``.desc()``)."""
+
+    element = getattr(clause, "element", clause)
+    element = getattr(element, "expression", element)
+    return str(element) == str(model.id.expression)
+
+
+class ModelProtocol(Protocol):
+    """Protocol for determining the basic attributes of the model."""
+
+    id: Any
+
+
+ModelType = TypeVar("ModelType", bound=ModelProtocol)
+
+
+class SessionRepository:
+    """
+    Session plumbing shared by every repository: the bound ``AsyncSession`` and the guarded ``flush``.
+
+    Extend it directly for tables without a surrogate ``id`` (composite-key rows such as
+    ``character_conditions``): ``BaseRepository``'s id-based CRUD doesn't apply to them, so they shouldn't
+    inherit it.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def flush(self) -> None:
+        """
+        Flush pending changes to the database; the service's ``atomic`` block commits them.
+
+        Services doing raw ``setattr`` mutations or bulk executes end with this instead of a hand-rolled
+        ``db.flush()``. Raises if called outside ``atomic`` (see :func:`require_atomic`).
+        """
+
+        require_atomic(self.db)
+        await self.db.flush()
+
+
+class RepositoryMixin:
+    """
+    Base for repository mixins composed into a ``BaseRepository`` subclass.
+
+    Declares, for type checkers only, the host members the mixins call; adds nothing at runtime.
+    """
+
+    if TYPE_CHECKING:
+        db: AsyncSession
+        get_many_by_ids: Any
+        replace_association: Any
+
+
+class BaseRepository(SessionRepository, Generic[ModelType]):
+    """
+    Common CRUD operations for SQLAlchemy models.
+
+    Subclass and supply ``model`` for the plain CRUD case; override or
+    extend methods for feature-specific queries.
+
+    Args:
+        model: SQLAlchemy model, must expose ``id``.
+        db: Active async session.
+        default_load_options: Loader options (``selectinload``,
+            ``joinedload``, ...) applied automatically on
+            :meth:`get_by_id`/:meth:`get_all`, for relationships the
+            response schema always includes.
+        search_fields: Columns used by :meth:`_apply_search`. Defaults to
+            auto-detected ``String``/``Text`` columns; pass ``[]`` to
+            disable search.
+        unique_fields: Columns checked by :meth:`_check_uniqueness` on
+            create/update.
+        check_in_use_on_delete: If ``True``, :meth:`delete` calls
+            :meth:`is_in_use` first and raises ``RecordInUseError``
+            instead of deleting. Subclasses opting in MUST override
+            :meth:`is_in_use`; the base implementation raises
+            ``NotImplementedError``.
+
+    Example::
+
+        class SpellRepository(BaseRepository[Spell]):
+            def __init__(self, db: AsyncSession):
+                super().__init__(Spell, db)
+
+        class FeatureRepository(BaseRepository[Feature]):
+            def __init__(self, db: AsyncSession):
+                super().__init__(Feature, db, unique_fields=["name"], check_in_use_on_delete=True)
+
+            async def is_in_use(self, model_id: int) -> bool:
+                return await self.db.scalar(
+                    select(CharacterFeature.feature_id).where(CharacterFeature.feature_id == model_id)
+                ) is not None
+    """
+
+    def __init__(
+        self,
+        model: type[ModelType],
+        db: AsyncSession,
+        default_load_options: list[Any] | None = None,
+        search_fields: list[str] | None = None,
+        unique_fields: list[str] | None = None,
+        check_in_use_on_delete: bool = False,
+    ):
+        super().__init__(db)
+        self.model = model
+        self._default_load_options = default_load_options or []
+        self._search_fields = search_fields if search_fields is not None else self._detect_text_fields()
+        self._unique_fields = unique_fields or []
+        self._check_in_use_on_delete = check_in_use_on_delete
+
+    def _detect_text_fields(self) -> list[str]:
+        """Auto-detect searchable ``String``/``Text`` columns (secrets and URL columns are never searched)."""
+
+        mapper = cast(Mapper[Any], inspect(self.model))
+        return [
+            column.key
+            for column in mapper.columns
+            if isinstance(column.type, String | Text) and not column.key.endswith(_UNSEARCHABLE_SUFFIXES)
+        ]
+
+    def _apply_filters(self, stmt: Any, filters: dict[str, Any] | None) -> Any:
+        """
+        Apply exact-match, AND'd filters for known, non-``None`` keys in ``filters``.
+
+        A list/tuple/set value means "any of" — the column must match at
+        least one entry (``IN``). Scalars keep plain equality.
+        """
+
+        if not filters:
+            return stmt
+
+        for field, value in filters.items():
+            if not hasattr(self.model, field) or value is None:
+                continue
+            column = getattr(self.model, field)
+            if isinstance(value, list | tuple | set):
+                if len(value) == 0:
+                    continue
+                stmt = stmt.where(column.in_(value))
+            else:
+                stmt = stmt.where(column == value)
+
+        return stmt
+
+    def _apply_search(self, stmt: Any, search: str | None) -> Any:
+        """
+        Apply a case-insensitive ``ILIKE`` substring match, OR'd across ``self._search_fields``.
+
+        Wildcard characters (``%``, ``_``) in *search* are escaped so they
+        are matched literally rather than acting as LIKE wildcards.
+        """
+
+        if not search or not self._search_fields:
+            return stmt
+
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        conditions = [
+            getattr(self.model, field).ilike(f"%{escaped}%", escape="\\")
+            for field in self._search_fields
+            if hasattr(self.model, field)
+        ]
+
+        if not conditions:
+            return stmt
+
+        return stmt.where(or_(*conditions))
+
+    async def get_by_id(self, model_id: int) -> ModelType | None:
+        """Retrieve a single record by ID, or ``None`` if missing. Applies ``default_load_options``."""
+
+        stmt = select(self.model)
+        if self._default_load_options:
+            stmt = stmt.options(*self._default_load_options)
+
+        stmt = stmt.where(self.model.id == model_id)
+
+        # populate_existing: child-row replacement and ``db.expire`` flows leave
+        # identity-map instances out of sync with the DB.
+        return await self.db.scalar(stmt.execution_options(populate_existing=True))
+
+    async def get_all(
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+        order_by: Any = None,
+        conditions: Sequence[Any] = (),
+    ) -> list[ModelType]:
+        """
+        Retrieve records with offset-based pagination, ordered by ``id``
+        (or ``order_by`` if given).
+
+        Applies ``default_load_options``, ``filters`` (exact-match, AND'd),
+        and ``search`` (substring, OR'd across search fields).
+
+        Args:
+            skip: Records to skip.
+            limit: Max records to return. ``None`` disables the limit.
+            filters: Exact-match filters against ``self.model``.
+            search: Substring match against ``self._search_fields``.
+            order_by: Optional column(s) to order by; ``self.model.id`` is always the final tie-break.
+            conditions: Extra WHERE clauses (e.g. a keyset cursor condition).
+        """
+
+        stmt = select(self.model)
+        if self._default_load_options:
+            stmt = stmt.options(*self._default_load_options)
+
+        stmt = self._apply_filters(stmt, filters)
+        stmt = self._apply_search(stmt, search)
+        stmt = stmt.where(*conditions)
+
+        stmt = stmt.order_by(*self._ordering(order_by))
+
+        if skip:
+            stmt = stmt.offset(skip)
+
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
+
+    async def get_brief(
+        self,
+        *columns: Any,
+        order_by: Any = None,
+        skip: int = 0,
+        limit: int | None = 100,
+        filters: dict[str, Any] | None = None,
+        search: str | None = None,
+        conditions: Sequence[Any] = (),
+    ) -> list[Any]:
+        """
+        Retrieve a paginated page of specific columns (no relationship loading).
+
+        Ordering is deterministic: ``order_by`` (if given) with ``model.id`` as
+        the tie-break, so OFFSET/LIMIT pages never overlap or skip rows.
+
+        Args:
+            *columns: Model columns to select.
+            order_by: Optional column(s) to order by.
+            skip: Records to skip.
+            limit: Max records to return.
+            filters: Exact-match filters against ``self.model``.
+            search: Substring match against ``self._search_fields``.
+            conditions: Extra WHERE clauses (e.g. a keyset cursor condition).
+
+        Returns:
+            A list of ``Row`` tuples in column order.
+        """
+
+        stmt = select(*columns)
+        stmt = self._apply_filters(stmt, filters)
+        stmt = self._apply_search(stmt, search)
+        stmt = stmt.where(*conditions)
+
+        stmt = stmt.order_by(*self._ordering(order_by))
+
+        result = await self.db.execute(stmt.offset(skip).limit(limit))
+        return list(result.all())
+
+    def _ordering(self, order_by: Any = None) -> list[Any]:
+        """``order_by`` columns followed by ``model.id`` (unless already present) as a stable tie-break."""
+
+        clauses = list(order_by) if isinstance(order_by, list | tuple) else ([order_by] if order_by is not None else [])
+        if not any(_is_id_clause(clause, self.model) for clause in clauses):
+            clauses.append(self.model.id)
+
+        return clauses
+
+    async def count(self, *, filters: dict[str, Any] | None = None, search: str | None = None) -> int:
+        """Count records matching ``filters``/``search`` (same conditions as :meth:`get_all`)."""
+
+        stmt = select(func.count()).select_from(self.model)
+        stmt = self._apply_filters(stmt, filters)
+        stmt = self._apply_search(stmt, search)
+
+        return (await self.db.scalar(stmt)) or 0
+
+    async def _check_uniqueness(self, data: dict[str, Any], exclude_id: int | None = None) -> None:
+        """Raise ``RecordAlreadyExistsError`` if any ``self._unique_fields`` value already exists."""
+
+        if not self._unique_fields:
+            return
+
+        for field in self._unique_fields:
+            if field in data and data[field] is not None:
+                value = data[field]
+                stmt = select(self.model.id).where(getattr(self.model, field) == value)
+
+                if exclude_id is not None:
+                    stmt = stmt.where(self.model.id != exclude_id)
+
+                if await self.db.scalar(stmt) is not None:
+                    raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
+
+    async def create(self, obj_data: dict[str, Any]) -> ModelType:
+        """Create a record from ``obj_data``, flush and refresh it, and return it (the service's ``atomic`` commits)."""
+
+        await self._check_uniqueness(obj_data)
+
+        db_obj = self.model(**obj_data)
+        self.db.add(db_obj)
+
+        await self.flush()
+        await self.db.refresh(db_obj)
+
+        return db_obj
+
+    def _uniqueness_scope(self, db_obj: ModelType) -> dict[str, Any]:
+        """
+        Extra values merged into the uniqueness check of an update (none by default).
+
+        Lets a repository scope the check by the existing row (e.g. subclass names are unique
+        per class), which a partial PATCH payload cannot do on its own.
+        """
+
+        return {}
+
+    async def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
+        """Apply ``update_data`` onto ``db_obj`` and flush. Unknown keys are ignored."""
+
+        await self._check_uniqueness({**self._uniqueness_scope(db_obj), **update_data}, exclude_id=db_obj.id)
+
+        for field, value in update_data.items():
+            if hasattr(db_obj, field):
+                setattr(db_obj, field, value)
+
+        await self.flush()
+        if refresh:
+            await self.db.refresh(db_obj)
+
+        return db_obj
+
+    async def is_in_use(self, model_id: int) -> bool:
+        """
+        Return whether ``model_id`` is still referenced elsewhere and
+        therefore cannot be deleted.
+
+        Only called by :meth:`delete` when ``check_in_use_on_delete=True``
+        was passed in ``__init__``. Base implementation raises
+        ``NotImplementedError`` -- subclasses opting in via that flag MUST
+        override this with their own FK check (see class docstring).
+        """
+
+        raise NotImplementedError(
+            f"{type(self).__name__} was constructed with check_in_use_on_delete=True but does not override is_in_use()."
+        )
+
+    async def delete(self, db_obj: ModelType) -> bool:
+        """
+        Delete ``db_obj`` (flush; the service's ``atomic`` commits), returning ``True`` on success.
+
+        If ``check_in_use_on_delete`` was set in ``__init__``, calls
+        :meth:`is_in_use` first and raises ``RecordInUseError`` instead of
+        deleting -- plus an ``IntegrityError`` safety net around the actual
+        delete, in case of a race between the check and the delete
+        (relevant when the guarded FK is ``ON DELETE RESTRICT``). Other
+        database errors propagate untouched.
+        """
+
+        model_id = db_obj.id
+        if self._check_in_use_on_delete and await self.is_in_use(model_id):
+            raise RecordInUseError(model_name=self.model.__name__, model_id=model_id)
+
+        try:
+            require_atomic(self.db)
+            await self.db.delete(db_obj)
+            await self.db.flush()
+        except IntegrityError:
+            # RESTRICT FK tripped between the check and the delete; other
+            # SQLAlchemyErrors must not be masked as "in use". ``model_id`` was read up front: the failed
+            # flush rolls the savepoint back and expires ``db_obj``, which can't lazy-load on the async stack.
+            raise RecordInUseError(model_name=self.model.__name__, model_id=model_id)
+
+        return True
+
+    async def refresh(self, db_obj: ModelType) -> ModelType:
+        """Reload ``db_obj`` from the database and return it."""
+
+        await self.db.refresh(db_obj)
+        return db_obj
+
+    async def exists_by_id(self, model_id: int) -> bool:
+        """
+        Return whether a record with ``model_id`` exists, as a bool.
+
+        Only the primary key is selected, so the check stays a lightweight
+        presence query.
+        """
+
+        stmt = select(self.model.id).where(self.model.id == model_id).limit(1)
+        return await self.db.scalar(stmt) is not None
+
+    async def get_many_by_ids(
+        self,
+        model: Any,
+        ids: list[int],
+        *,
+        load_options: list[Any] | None = None,
+    ) -> list[Any]:
+        """
+        Fetch the ``model`` records whose ids are in ``ids`` (order not guaranteed).
+
+        Generic ``SELECT ... WHERE id IN (...)`` used by the reference
+        lookups (``get_skills_by_ids``, ``get_classes_by_ids``,
+        ``get_races_by_ids``) so the id-IN pattern is defined once.
+
+        Args:
+            model: SQLAlchemy model to query (need not be ``self.model``).
+            ids: Ids to fetch.
+            load_options: Optional loader options applied to the statement.
+        """
+
+        if not ids:
+            return []
+
+        stmt = select(model).where(model.id.in_(ids))
+        if load_options:
+            stmt = stmt.options(*load_options)
+
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
+
+    async def replace_association(
+        self,
+        association: Any,
+        parent: Any,
+        parent_fk: str,
+        child_fk: str,
+        child_ids: list[int],
+    ) -> None:
+        """
+        Replace a many-to-many association with ``child_ids`` in one batch.
+
+        Deletes the parent's existing rows, inserts one row per new child
+        id, then flushes. Written through
+        the association table instead of assigning the ORM relationship:
+        assigning an unloaded many-to-many collection would trigger a lazy
+        load, which is not supported on the async stack.
+
+        Args:
+            association: The ``Table`` (or mapped class) linking parent and child.
+            parent: The owning model instance.
+            parent_fk: Column name on ``association`` referencing ``parent``.
+            child_fk: Column name on ``association`` referencing the child.
+            child_ids: New child ids (``[]`` clears the association).
+        """
+
+        parent_column = getattr(association, "c", None)
+        parent_column = parent_column[parent_fk] if parent_column is not None else getattr(association, parent_fk)
+
+        await self.db.execute(delete(association).where(parent_column == parent.id))
+
+        if child_ids:
+            await self.db.execute(
+                association.insert(),
+                [{parent_fk: parent.id, child_fk: child_id} for child_id in child_ids],
+            )
+
+        await self.flush()
+
+    async def replace_child_rows(
+        self,
+        child_model: Any,
+        parent: Any,
+        fk_name: str,
+        rows: list[dict[str, Any]],
+        *,
+        extra_filters: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Replace the ``child_model`` rows owned by ``parent`` in one batch.
+
+        Deletes the parent's existing rows (optionally restricted by
+        ``extra_filters``, e.g. ``{"class_level": 3}``), then adds a fresh
+        ``child_model`` row per entry in ``rows``, then flushes.
+
+        Args:
+            child_model: ORM model of the child rows.
+            parent: The owning model instance.
+            fk_name: Column name on ``child_model`` referencing ``parent``.
+            rows: Child payloads, each without the FK column (it is injected).
+            extra_filters: Extra exact-match filters on the delete
+                (e.g. scoping to a single ``class_level``).
+        """
+
+        stmt = delete(child_model).where(getattr(child_model, fk_name) == parent.id)
+        for field, value in (extra_filters or {}).items():
+            stmt = stmt.where(getattr(child_model, field) == value)
+        await self.db.execute(stmt)
+
+        for row in rows:
+            self.db.add(child_model(**{fk_name: parent.id, **row}))
+
+        await self.flush()
+
+    async def exists_referencing(self, referencing_model: Any, fk_name: str, value: Any) -> bool:
+        """
+        Return whether any ``referencing_model`` row has ``fk_name`` == ``value``.
+
+        Lightweight presence check (``LIMIT 1``) used by the in-use delete
+        guards (``is_in_use``) so the FK-existence pattern is defined once.
+        """
+
+        stmt = select(1).where(getattr(referencing_model, fk_name) == value).limit(1)
+        return await self.db.scalar(stmt) is not None

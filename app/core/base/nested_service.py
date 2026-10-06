@@ -1,0 +1,84 @@
+"""
+Generic base for "per-source nested collection" services: a cached,
+FK-scoped listing behind one cache namespace.
+
+``NestedSourceItemService`` (app/features/shared/items/nested_service.py)
+is this shape:
+
+    SELECT <Model> WHERE <fk> == source_id ORDER BY id  -->  cached list
+
+Per-source feature listings do not use this base: the catalogs cache their
+own ``GET /{source}/features`` lists under dedicated namespaces via the
+central ``FeatureCrudService``, which owns every feature write.
+"""
+
+from typing import Any, Generic
+
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing_extensions import TypeVar
+
+from app.core.base.repository import ModelProtocol
+from app.core.cache import use_cache
+
+Model = TypeVar("Model", bound=ModelProtocol)
+ResponseSchema = TypeVar("ResponseSchema", bound=BaseModel)
+
+
+class NestedCollectionService(Generic[Model, ResponseSchema]):
+    """
+    Cached ``SELECT * FROM <model> WHERE <fk> = source_id ORDER BY id``,
+    behind a single cache namespace.
+
+    Subclasses set:
+      - ``model``: the SQLAlchemy model to select from.
+      - ``response_schema``: schema each row is validated into.
+      - ``cache_namespaces``: tuple, same shape as ``BaseService.cache_namespaces``;
+        purge through ``app.core.cache.invalidate`` / the owning service.
+      - ``fk_for(source_type)``: resolves the polymorphic FK column name
+        for a given source type (``"race_id"``, ``"background_id"``, ...).
+        Raise inside it (rather than returning ``None``) for source types
+        that don't support this listing — see
+        ``NestedSourceItemService.fk_for``.
+      - optional ``load_options``: extra ``.options(...)`` for the select
+        (e.g. ``NestedSourceItemService`` needs ``selectinload(item)``).
+
+    Example::
+
+        class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResponse]):
+            model = SourceItem
+            response_schema = SourceItemResponse
+            cache_namespaces = ("source_items",)
+    """
+
+    model: type[Model]
+    response_schema: type[ResponseSchema]
+    cache_namespaces: tuple[str, ...]
+    load_options: tuple[Any, ...] = ()
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    def fk_for(self, source_type: Any) -> str:
+        """Resolve the polymorphic FK column name for ``source_type``."""
+
+        raise NotImplementedError
+
+    @use_cache()
+    async def list_for_source(self, source_type: Any, source_id: int) -> list[ResponseSchema]:
+        """
+        Return every row owned by ``source_id`` (ordered by id).
+
+        Cached under ``cache_namespaces``.
+        """
+
+        fk_name = self.fk_for(source_type)
+
+        query = select(self.model).where(getattr(self.model, fk_name) == source_id).order_by(self.model.id)
+        if self.load_options:
+            query = query.options(*self.load_options)
+
+        result = await self.db.execute(query)
+        rows = result.scalars().unique().all() if self.load_options else result.scalars().all()
+        return [self.response_schema.model_validate(row) for row in rows]
