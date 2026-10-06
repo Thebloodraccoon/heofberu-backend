@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from redis.asyncio import Redis
+from redis.asyncio import BlockingConnectionPool, Redis
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
@@ -158,6 +158,9 @@ def make_get_db(session_factory: async_sessionmaker[AsyncSession]):
     return get_db
 
 
+REDIS_MAX_CONNECTIONS = 2
+
+
 def make_get_redis(redis_url: str, *, timeout: float = 0.5):
     """
     Returns an async context manager that yields a connected Redis client.
@@ -189,9 +192,16 @@ def make_get_redis(redis_url: str, *, timeout: float = 0.5):
                         await state["client"].aclose()
 
                 # Short timeouts: a blackholed Redis must degrade to a fast cache miss, not an OS-level TCP wait.
-                state["client"] = Redis.from_url(
-                    redis_url, decode_responses=True, socket_connect_timeout=timeout, socket_timeout=timeout
+                # Capped + blocking: serverless instances multiply pools, and the managed Redis limits clients.
+                pool = BlockingConnectionPool.from_url(
+                    redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=timeout,
+                    socket_timeout=timeout,
+                    max_connections=REDIS_MAX_CONNECTIONS,
+                    timeout=timeout,
                 )
+                state["client"] = Redis(connection_pool=pool)
                 state["loop"] = current_loop
 
         yield state["client"]
