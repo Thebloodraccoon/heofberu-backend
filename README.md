@@ -5,7 +5,7 @@ reference catalog (races, classes, spells, feats, items, ...) plus full
 character management with a Game Master panel.
 
 Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL**, **Redis**
-and **Alembic**. Python 3.10+, managed with Poetry.
+and **Alembic**. Python 3.10+, managed with uv.
 
 ## Quick Start
 
@@ -14,8 +14,8 @@ and **Alembic**. Python 3.10+, managed with Poetry.
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 # apply migrations, then run the API
-poetry run alembic upgrade head
-poetry run uvicorn app.main:app --reload
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
 ```
 
 The API is versioned: every endpoint lives under `/api/v1` (health probe: `/api/v1/ping`).
@@ -82,14 +82,14 @@ Tests are marked `unit` (fast, no DB) and `integration`
 (needs the Docker services `heof-test-db` and `heof-test-redis`):
 
 ```bash
-poetry run pytest tests/unit -q
+uv run pytest tests/unit -q
 
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d heof-test-db heof-test-redis
-poetry run pytest tests/integration -q
+uv run pytest tests/integration -q
 ```
 
-Linting/formatting: `poetry run ruff check app tests` /
-`poetry run ruff format app tests` (line length 120, double quotes).
+Linting/formatting: `uv run ruff check app tests` /
+`uv run ruff format app tests` (line length 120, double quotes).
 
 ## Documentation Map
 
