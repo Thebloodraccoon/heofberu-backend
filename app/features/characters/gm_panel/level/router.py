@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.auth.dependencies import CurrentUserDep, GmUserDep
 from app.features.characters.gm_panel.dependencies import GmPanelLevelDep
 from app.features.characters.gm_panel.level.schemas import CharacterMaxLevelResponse, MaxLevelUpdate
-from app.features.users.security import CurrentUserDep, GmUserDep
 
 router = APIRouter()
 

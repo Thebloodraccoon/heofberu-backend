@@ -4,12 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.backstory.schemas import (
     CharacterBackstoryResponse,
     CharacterBackstoryUpdate,
 )
 from app.features.characters.dependencies import CharacterBackstoryServiceDep
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 
@@ -45,7 +45,7 @@ async def get_character_backstory(
     responses={
         403: {"description": "You do not have access to this character."},
         404: {"description": "No character exists with the given ID."},
-        422: {"description": "`content` exceeds the 12000-character limit."},
+        422: {"description": "`content` is missing or exceeds the 12000-character limit."},
     },
 )
 async def set_character_backstory(
@@ -73,7 +73,8 @@ async def set_character_backstory(
 ):
     """
     Set or replace a character's backstory (upsert — the row is created on
-    first write). `content` is limited to 12000 characters.
+    first write). `content` is required (`""` clears it) and limited to
+    12000 characters.
     """
 
     return await character_backstory_service.set_backstory(character_id, data, current_user)

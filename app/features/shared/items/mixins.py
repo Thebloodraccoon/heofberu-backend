@@ -3,6 +3,7 @@
 from typing import Any
 
 from app.constants import FeatureSourceType
+from app.core.base.service import ServiceMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
 from app.features.shared.items.schemas import (
     ChoiceGroupsResponse,
@@ -12,7 +13,7 @@ from app.features.shared.items.schemas import (
 )
 
 
-class SourceItemManagerMixin:
+class SourceItemManagerMixin(ServiceMixin):
     """List/full-replace starting equipment attached to a source record."""
 
     _items: NestedSourceItemService
@@ -28,13 +29,14 @@ class SourceItemManagerMixin:
         """Fully replace starting items for ``source_id`` and return the source response."""
 
         await self._exists_or_404(source_id)
-        await self._items.set_items_for_source(self._source_item_source_type, source_id, data.items)
-        await self._invalidate_cache()
+        async with self._atomic():
+            await self._items.set_items_for_source(self._source_item_source_type, source_id, data.items)
+            await self._invalidate_cache()
 
         return await self._get_response(source_id)
 
 
-class ChoiceGroupManagerMixin:
+class ChoiceGroupManagerMixin(ServiceMixin):
     """List/full-replace choice groups (class starting equipment alternatives)."""
 
     _items: NestedSourceItemService
@@ -50,9 +52,10 @@ class ChoiceGroupManagerMixin:
         """Fully replace choice groups for ``source_id`` and return the updated list."""
 
         await self._exists_or_404(source_id)
-        result = await self._items.set_choice_groups_for_source(
-            self._source_item_source_type, source_id, data.choice_groups, commit=True
-        )
-        await self._invalidate_cache()
+        async with self._atomic():
+            result = await self._items.set_choice_groups_for_source(
+                self._source_item_source_type, source_id, data.choice_groups
+            )
+            await self._invalidate_cache()
 
         return result

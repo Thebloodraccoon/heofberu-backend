@@ -4,10 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
-from app.features.races.ability_bonuses.schemas import AbilityBonusesUpdate
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
 from app.features.races.crud.schemas import RaceResponse
 from app.features.races.dependencies import RaceAbilityBonusesDep
-from app.features.users.security import GmUserDep
+from app.features.shared.catalog.schemas import AbilityBonusesUpdate
 
 router = APIRouter()
 
@@ -21,7 +22,7 @@ router = APIRouter()
     },
 )
 async def set_ability_bonuses(
-    race_id: int,
+    race_id: EntityIdPath,
     data: Annotated[
         AbilityBonusesUpdate,
         Body(

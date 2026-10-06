@@ -195,22 +195,24 @@ class TestUpdateBackgroundSuggestion:
 class TestDeleteBackgroundSuggestion:
     async def test_gm_can_delete_a_suggestion(self, client, gm_token, create_background):
         background = await create_background(name="Outlander", with_suggestions=False)
-        created = await client.post(
-            f"/backgrounds/{background.id}/suggestions",
-            json={"suggestion_type": "FLAW", "text": "I am too enamored of ale."},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        suggestion_id = created.json()["id"]
+        ids = []
+        for text in ("I am too enamored of ale.", "I never trust a stranger."):
+            created = await client.post(
+                f"/backgrounds/{background.id}/suggestions",
+                json={"suggestion_type": "FLAW", "text": text},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            ids.append(created.json()["id"])
 
         response = await client.delete(
-            f"/backgrounds/{background.id}/suggestions/{suggestion_id}",
+            f"/backgrounds/{background.id}/suggestions/{ids[0]}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 204
 
         listed = await client.get(f"/backgrounds/{background.id}/suggestions")
-        assert listed.json() == []
+        assert [item["id"] for item in listed.json()] == [ids[1]]
 
     async def test_delete_for_missing_suggestion_returns_404(self, client, gm_token, create_background):
         background = await create_background(name="Sage")

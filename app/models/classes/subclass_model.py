@@ -1,16 +1,24 @@
 """ORM model for the reference table of class subclasses (archetypes)."""
 
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
-from app.settings import settings
+from typing import TYPE_CHECKING
+
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.classes.class_model import Class
+    from app.models.features.feature_model import Feature
 
 
-class Subclass(settings.Base):  # type: ignore
+class Subclass(Base):
     """
     Reference table of class subclasses (archetypes), e.g. Bard → College of Valor,
-    Fighter → Champion. Each subclass belongs to exactly one class and is unlocked
-    at a class-specific level (typically 3, sometimes 1 or 2 depending on the class).
+    Fighter → Champion. Each subclass belongs to exactly one class; no level at
+    which it unlocks is stored.
 
     Features granted by the subclass are stored in the ``features`` table with
     ``source_type=SUBCLASS`` and ``subclass_id`` pointing here.
@@ -18,29 +26,25 @@ class Subclass(settings.Base):  # type: ignore
 
     __tablename__ = "subclasses"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
-    class_id = Column(Integer, ForeignKey("classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    # No own index: ``uq_subclass_class_id_name`` already leads with ``class_id``.
+    class_id: Mapped[int] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"))
 
-    name = Column(String(100), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), index=True)
 
-    description = Column(Text, nullable=False, default="")
-    image_url = Column(String(512), nullable=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str | None] = mapped_column(String(512))
 
-    __table_args__ = (
-        # A class cannot have two subclasses with the same name.
-        UniqueConstraint("class_id", "name", name="uq_subclass_class_id_name"),
-    )
+    __table_args__ = (UniqueConstraint("class_id", "name", name="uq_subclass_class_id_name"),)
 
-    character_class = relationship("Class", back_populates="subclasses")
-    # All features granted by this subclass across all levels.
-    features = relationship(
-        "Feature",
+    character_class: Mapped[Class] = relationship(back_populates="subclasses")
+    features: Mapped[list[Feature]] = relationship(
         back_populates="subclass",
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="Feature.id",
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Subclass(id={self.id}, name='{self.name}', class_id={self.class_id})>"

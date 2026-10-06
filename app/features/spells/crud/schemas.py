@@ -1,6 +1,8 @@
 """Request/response schemas for the spell endpoints."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.constants import (
     AbilityScore,
@@ -15,6 +17,38 @@ from app.constants import (
     SpellRangeType,
     SpellSchool,
 )
+from app.core.types import EntityId
+
+_NAME_MAX_LENGTH = 300
+_TEXT_MAX_LENGTH = 20_000
+_MAX_AVAILABILITY_IDS = 500
+
+# Spell fields that map to NOT NULL columns: an explicit ``null`` in a PATCH is rejected.
+_NON_NULLABLE_UPDATE_FIELDS = (
+    "name",
+    "school",
+    "level",
+    "cast_time",
+    "range_type",
+    "components",
+    "is_material_consumed",
+    "is_ritual",
+    "duration",
+    "is_concentration",
+    "description",
+)
+
+SpellName = Annotated[str, Field(min_length=1, max_length=_NAME_MAX_LENGTH)]
+SpellText = Annotated[str, Field(max_length=_TEXT_MAX_LENGTH)]
+DiceCount = Annotated[int, Field(ge=1, le=100)]
+RangeValue = Annotated[int, Field(ge=0, le=1_000_000)]
+AvailabilityIds = Annotated[list[EntityId], Field(max_length=_MAX_AVAILABILITY_IDS)]
+
+
+def dedupe_ids(values: list[int] | None) -> list[int] | None:
+    """Collapse repeated ids (a set of ids is what the caller means), keeping the first-seen order."""
+
+    return None if values is None else list(dict.fromkeys(values))
 
 
 def _validate_unique_components(components: list[Component]) -> list[Component]:
@@ -69,39 +103,77 @@ class SpellBase(BaseModel):
 
 
 class SpellCreate(SpellBase):
-    """Create payload for a spell; empty availability lists mean unrestricted."""
+    """
+    Create payload for a spell; empty availability lists mean unrestricted.
 
-    available_classes: list[int] | None = None
-    available_subclasses: list[int] | None = None
-    available_races: list[int] | None = None
-    available_subraces: list[int] | None = None
+    Write-side rules on top of :class:`SpellBase`: bounded names/texts/numbers,
+    dice count and type given together, the material description and
+    "consumed" flag only with a ``MATERIAL`` component, unknown keys rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: SpellName
+    range_value: RangeValue | None = None
+    material: SpellText | None = None
+    damage_dice_count: DiceCount | None = None
+    healing_dice_count: DiceCount | None = None
+    description: SpellText
+    higher_levels: SpellText | None = None
+
+    available_classes: AvailabilityIds | None = None
+    available_subclasses: AvailabilityIds | None = None
+    available_races: AvailabilityIds | None = None
+    available_subraces: AvailabilityIds | None = None
+
+    @field_validator("available_classes", "available_subclasses", "available_races", "available_subraces", mode="after")
+    @classmethod
+    def dedupe_availability_ids(cls, value):
+        """Repeated ids collapse to one (the association's primary key forbids duplicates)."""
+
+        return dedupe_ids(value)
+
+    @model_validator(mode="after")
+    def validate_cross_field_rules(self):
+        """Dice count/type are given together; material text and consumption need a MATERIAL component."""
+
+        for prefix in ("damage", "healing"):
+            if (getattr(self, f"{prefix}_dice_count") is None) != (getattr(self, f"{prefix}_dice_type") is None):
+                raise ValueError(f"{prefix}_dice_count and {prefix}_dice_type must be set together.")
+
+        if (self.material or self.is_material_consumed) and Component.MATERIAL not in self.components:
+            raise ValueError("material and is_material_consumed require the MATERIAL component.")
+
+        return self
 
 
 class SpellUpdate(BaseModel):
     """All fields optional — only provided fields are updated (PATCH semantics). Availability excluded."""
 
-    name: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    name: SpellName | None = None
     school: SpellSchool | None = None
     level: SpellLevel | None = None
     cast_time: SpellCastTime | None = None
     range_type: SpellRangeType | None = None
-    range_value: int | None = None
+    range_value: RangeValue | None = None
     components: list[Component] | None = None
     is_material_consumed: bool | None = None
-    material: str | None = None
+    material: SpellText | None = None
     is_ritual: bool | None = None
     duration: SpellDuration | None = None
     is_concentration: bool | None = None
     attack_type: AttackType | None = None
     save_stat: AbilityScore | None = None
     damage_type: DamageType | None = None
-    damage_dice_count: int | None = None
+    damage_dice_count: DiceCount | None = None
     damage_dice_type: DiceType | None = None
     healing_target: HealingTarget | None = None
-    healing_dice_count: int | None = None
+    healing_dice_count: DiceCount | None = None
     healing_dice_type: DiceType | None = None
-    description: str | None = None
-    higher_levels: str | None = None
+    description: SpellText | None = None
+    higher_levels: SpellText | None = None
 
     @field_validator("components")
     def validate_unique_components(cls, value):
@@ -112,36 +184,23 @@ class SpellUpdate(BaseModel):
 
         return _validate_unique_components(value)
 
+    @model_validator(mode="after")
+    def reject_null_for_required_fields(self):
+        """An explicit ``null`` would clear a NOT NULL column; omit the field instead."""
 
-class ClassBriefResponse(BaseModel):
-    """Minimal class info, embedded in SpellResponse.available_classes."""
+        nulled = [
+            name
+            for name in _NON_NULLABLE_UPDATE_FIELDS
+            if name in self.model_fields_set and getattr(self, name) is None
+        ]
+        if nulled:
+            raise ValueError(f"{', '.join(nulled)} cannot be null.")
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-
-
-class SubclassBriefResponse(BaseModel):
-    """Minimal subclass info, embedded in SpellResponse.available_subclasses."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
+        return self
 
 
-class RaceBriefResponse(BaseModel):
-    """Minimal race info, embedded in SpellResponse.available_races."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-
-
-class SubraceBriefResponse(BaseModel):
-    """Minimal subrace info, embedded in SpellResponse.available_subraces."""
+class NamedRef(BaseModel):
+    """Minimal ``{id, name}`` of a class/subclass/race/subrace, embedded in a spell's availability lists."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -155,10 +214,10 @@ class SpellResponse(SpellBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    available_classes: list[ClassBriefResponse] = []
-    available_subclasses: list[SubclassBriefResponse] = []
-    available_races: list[RaceBriefResponse] = []
-    available_subraces: list[SubraceBriefResponse] = []
+    available_classes: list[NamedRef] = []
+    available_subclasses: list[NamedRef] = []
+    available_races: list[NamedRef] = []
+    available_subraces: list[NamedRef] = []
 
 
 class SpellGetAllResponse(BaseModel):
@@ -170,7 +229,7 @@ class SpellGetAllResponse(BaseModel):
     name: str
     school: SpellSchool
     level: SpellLevel
-    available_classes: list[ClassBriefResponse] = []
-    available_subclasses: list[SubclassBriefResponse] = []
-    available_races: list[RaceBriefResponse] = []
-    available_subraces: list[SubraceBriefResponse] = []
+    available_classes: list[NamedRef] = []
+    available_subclasses: list[NamedRef] = []
+    available_races: list[NamedRef] = []
+    available_subraces: list[NamedRef] = []

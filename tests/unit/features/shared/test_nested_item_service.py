@@ -13,6 +13,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.constants import DiceType, FeatureSourceType
+from app.core.base.transaction import atomic
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
 from app.features.classes.items.service import ClassItemsService
 from app.features.shared.items.nested_service import NestedSourceItemService
@@ -23,7 +24,6 @@ from app.features.shared.items.schemas import (
     SourceItemsUpdate,
 )
 from app.models.classes.class_model import Class
-from app.models.items.item_source_model import SourceItem
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 
@@ -50,8 +50,8 @@ class FakeNestedItems:
         self.list_calls.append((source_type, source_id))
         return []
 
-    async def set_items_for_source(self, source_type, source_id, entries, *, commit=True):
-        self.set_calls.append((source_type, source_id, entries, commit))
+    async def set_items_for_source(self, source_type, source_id, entries):
+        self.set_calls.append((source_type, source_id, entries))
 
 
 def make_class_row(**overrides) -> SimpleNamespace:
@@ -102,48 +102,6 @@ class TestNestedSourceItemService:
         assert service.fk_for(FeatureSourceType.CLASS) == "class_id"
         assert service.fk_for(FeatureSourceType.BACKGROUND) == "background_id"
 
-    async def test_create_items_for_source_is_noop_without_entries(self):
-        service, db = make_nested_item_service()
-
-        await service.create_items_for_source(FeatureSourceType.CLASS, 1, None)
-        await service.create_items_for_source(FeatureSourceType.CLASS, 1, [])
-
-        assert db.added == []
-        assert db.commits == 0
-        assert db.flushes == 0
-
-    async def test_create_items_for_source_adds_rows_and_commits(self):
-        service, db = make_nested_item_service(items={1: SimpleNamespace(id=1), 2: SimpleNamespace(id=2)})
-        entries = [SourceItemEntry(item_id=1, quantity=2), SourceItemEntry(item_id=2, quantity=1)]
-
-        await service.create_items_for_source(FeatureSourceType.CLASS, 3, entries, commit=True)
-
-        assert len(db.added) == 2
-        assert all(isinstance(row, SourceItem) for row in db.added)
-        assert db.added[0].class_id == 3
-        assert db.added[0].item_id == 1
-        assert db.added[1].quantity == 1
-        assert db.commits == 1
-
-    async def test_create_items_for_source_flushes_when_not_committing(self):
-        service, db = make_nested_item_service(items={1: SimpleNamespace(id=1)})
-
-        await service.create_items_for_source(
-            FeatureSourceType.BACKGROUND, 4, [SourceItemEntry(item_id=1, quantity=1)], commit=False
-        )
-
-        assert db.flushes == 1
-        assert db.commits == 0
-        assert db.added[0].background_id == 4
-
-    async def test_create_items_for_source_raises_for_missing_item(self):
-        service, _ = make_nested_item_service(items={})
-
-        with pytest.raises(RecordIdsInvalidError):
-            await service.create_items_for_source(
-                FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=999, quantity=1)]
-            )
-
     async def test_set_items_for_source_deletes_then_adds_and_commits(self):
         service, db = make_nested_item_service(items={1: SimpleNamespace(id=1)})
 
@@ -153,15 +111,15 @@ class TestNestedSourceItemService:
         assert db.added[0].class_id == 3
         assert db.commits == 1
 
-    async def test_set_items_for_source_flushes_when_not_committing(self):
+    async def test_set_items_for_source_joins_an_outer_atomic_block(self):
         service, db = make_nested_item_service(items={1: SimpleNamespace(id=1)})
 
-        await service.set_items_for_source(
-            FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=1, quantity=1)], commit=False
-        )
+        async with atomic(db):
+            await service.set_items_for_source(FeatureSourceType.CLASS, 3, [SourceItemEntry(item_id=1, quantity=1)])
+            assert db.flushes == 1
+            assert db.commits == 0
 
-        assert db.flushes == 1
-        assert db.commits == 0
+        assert db.commits == 1
 
     async def test_set_items_for_source_raises_for_missing_item(self):
         service, _ = make_nested_item_service(items={})
@@ -194,7 +152,7 @@ class TestSourceItemManagerMixin:
         result = await service.set_items(1, data)
 
         assert result.id == 1
-        assert service._items.set_calls == [(FeatureSourceType.CLASS, 1, data.items, True)]
+        assert service._items.set_calls == [(FeatureSourceType.CLASS, 1, data.items)]
 
 
 @pytest.mark.unit

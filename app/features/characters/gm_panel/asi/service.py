@@ -6,14 +6,14 @@ from app.constants import MAX_ABILITY_SCORE_CAP, ASILevelChoice
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.feats.exceptions import AbilityScoreCapExceededException
+from app.features.characters.gm_panel.asi.repository import GmAsiRepository
 from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd, GmAsiChoiceResponse
 from app.features.characters.gm_panel.exceptions import (
     GmAsiAdjustmentNotFoundException,
     LevelTiedAsiChoiceException,
 )
-from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
-from app.features.characters.progression.repository import CharacterASIChoiceRepository
+from app.features.characters.locking import lock_character
 from app.features.users.schemas import UserResponse
 
 
@@ -24,15 +24,15 @@ class GmPanelAsiService(CharacterSubDomainService):
         """Wire up the ASI-choice repository and ability-score service."""
 
         super().__init__(db)
-        self.asi_repository = CharacterASIChoiceRepository(db)
+        self.asi_repository = GmAsiRepository(db)
         self.stats_service = CharacterStatsService(db)
 
     async def get_asi_adjustments(self, character_id: int, current_user: UserResponse) -> list[GmAsiChoiceResponse]:
         """List every GM ASI adjustment recorded on a character (level-tied choices excluded)."""
 
         await self.get_character_for_user(character_id, current_user)
-        choices = await self.asi_repository.get_character_choices(character_id)
-        return [GmAsiChoiceResponse.model_validate(choice) for choice in choices if choice.class_level is None]
+        choices = await self.asi_repository.get_adjustments(character_id)
+        return [GmAsiChoiceResponse.model_validate(choice) for choice in choices]
 
     async def add_asi_adjustment(
         self, character_id: int, data: GmAsiChoiceAdd, current_user: UserResponse
@@ -40,35 +40,41 @@ class GmPanelAsiService(CharacterSubDomainService):
         """
         Record a free-form ±ability change as an adjustment row with no
         class level, up to ``MAX_ABILITY_SCORE_CAP`` (30).
+
+        The row is written and the ability scores recomputed once, inside
+        one transaction under the character's row lock; a total over the cap
+        rolls the whole thing back, so concurrent adjustments cannot jointly
+        exceed it and the cache table never lags the log.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        totals = await self.stats_service.compute(character)
-        for item in data.increases:
-            current_total = totals[TOTAL_FIELD_BY_ABILITY[item.ability]]
-            if current_total + item.amount > MAX_ABILITY_SCORE_CAP:
-                raise AbilityScoreCapExceededException(
-                    ability=item.ability.value,
-                    current_total=current_total,
-                    requested=current_total + item.amount,
-                )
-
         async with self._atomic():
+            await lock_character(self.repository.db, character.id)
             row = await self.asi_repository.add(
                 character.id,
                 None,
                 ASILevelChoice.ASI,
                 increases=[{"ability": item.ability.value, "amount": item.amount} for item in data.increases],
-                commit=False,
             )
+            totals = await self.stats_service.refresh(character)
 
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
+            for item in data.increases:
+                new_total = getattr(totals, TOTAL_FIELD_BY_ABILITY[item.ability])
+                if new_total > MAX_ABILITY_SCORE_CAP:
+                    raise AbilityScoreCapExceededException(
+                        ability=item.ability.value,
+                        current_total=new_total - item.amount,
+                        requested=new_total,
+                        cap=MAX_ABILITY_SCORE_CAP,
+                    )
 
-        return GmAsiChoiceResponse.model_validate(row)
+            response = GmAsiChoiceResponse.model_validate(row)
+            await self._invalidate_character(character_id)
 
-    async def remove_asi_adjustment(self, character_id: int, adjustment_id: int, current_user: UserResponse) -> bool:
+        return response
+
+    async def remove_asi_adjustment(self, character_id: int, adjustment_id: int, current_user: UserResponse) -> None:
         """Revert one GM ASI adjustment; level-tied choices cannot be removed here."""
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -82,9 +88,7 @@ class GmPanelAsiService(CharacterSubDomainService):
                 character_id=character_id, adjustment_id=adjustment_id, class_level=choice.class_level
             )
 
-        result = await self.asi_repository.remove_choice(choice)
-
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
-
-        return result
+        async with self._atomic():
+            await self.asi_repository.delete_adjustment(choice)
+            await self.stats_service.refresh(character)
+            await self._invalidate_character(character_id)

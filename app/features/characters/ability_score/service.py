@@ -1,27 +1,34 @@
-"""Character stats service: the ability-score cache and derived combat stats."""
+"""Character stats service: the ability-score cache and derived stats."""
+
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import AbilityScore
 from app.features.characters.ability_score.calculator import (
-    BASE_FIELD_BY_ABILITY,
-    DEFAULT_SPEED,
-    TOTAL_FIELD_BY_ABILITY,
     AbilityBreakdown,
     CharacterAbilityScoreCalculator,
     DerivedStats,
-    StatContribution,
-    resolve_ability_caps,
 )
-from app.features.characters.ability_score.repository import CharacterStatsRepository, _label_for_effect_row
+from app.features.characters.ability_score.repository import CharacterStatsRepository
 from app.models import Character, CharacterAbilityScore
+
+
+@dataclass(frozen=True)
+class _Sources:
+    """Calculator source rows grouped by race / subrace / character id."""
+
+    race_bonuses: dict
+    subrace_bonuses: dict
+    asi: dict
+    features: dict
 
 
 class CharacterStatsService:
     """
     Single point that decides when the effective-ability-score cache needs
     recomputing, and the only place that writes ``character_ability_scores``.
-    Also computes the derived combat stats (hit dice, speed).
+    Also provides the derived stats (hit dice).
     """
 
     def __init__(self, db: AsyncSession):
@@ -33,185 +40,100 @@ class CharacterStatsService:
     async def compute(self, character: Character) -> dict[str, int]:
         """
         Recompute a character's effective ability scores WITHOUT writing
-        to the cache table — for read-only callers (fresh data even if
-        the cache is stale).
+        to the cache table — fresh data even if the cache is stale.
         """
 
-        race_bonuses = await self.repository.get_race_bonuses(character.race_id)
-        subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
-        asi_increases = await self.repository.get_asi_increases(character.id)
-        feature_increases = await self.repository.get_feature_increases(character.id)
-        return self.calculator.compute(
-            character, race_bonuses, subrace_bonuses, asi_increases, feature_increases
-        )
-
-    async def compute_breakdown(self, character: Character) -> dict[AbilityScore, AbilityBreakdown]:
-        """
-        Compute each ability's ORIGINAL base, COMPUTED total, and the
-        labeled ``StatContribution`` sources that produced it (read-only).
-        """
-
-        race_bonuses = await self.repository.get_race_bonuses(character.race_id)
-        subrace_bonuses = await self.repository.get_subrace_bonuses(character.subrace_id)
-        asi_increases = await self.repository.get_asi_increases(character.id)
-        feature_increases = await self.repository.get_feature_increases(character.id)
-
-        totals = self.calculator.compute(
-            character, race_bonuses, subrace_bonuses, asi_increases, feature_increases
-        )
-
-        contributions: dict[AbilityScore, list[StatContribution]] = {ability: [] for ability in AbilityScore}
-
-        race_rows = await self.repository.get_races([character.race_id]) if character.race_id is not None else {}
-        subrace_rows = (
-            await self.repository.get_subraces([character.subrace_id]) if character.subrace_id is not None else {}
-        )
-        race_name = getattr(race_rows.get(character.race_id), "name", None)
-        subrace_name = getattr(subrace_rows.get(character.subrace_id), "name", None)
-
-        for bonus in race_bonuses:
-            contributions[bonus.ability].append(
-                StatContribution(source="race", label=race_name or "Race bonus", amount=bonus.bonus)
-            )
-        for bonus in subrace_bonuses:
-            contributions[bonus.ability].append(
-                StatContribution(source="subrace", label=subrace_name or "Subrace bonus", amount=bonus.bonus)
-            )
-        for increase in asi_increases:
-            choice = increase.choice
-            if choice is not None and choice.class_level is not None:
-                choice_kind = getattr(choice.choice_type, "value", choice.choice_type)
-                label = f"Level {choice.class_level} ({choice_kind})"
-            else:
-                label = "GM adjustment"
-            contributions[increase.ability].append(StatContribution(source="asi", label=label, amount=increase.amount))
-        for increase in feature_increases:
-            contributions[increase.ability].append(
-                StatContribution(
-                    source="feature",
-                    label=_label_for_effect_row(increase),
-                    amount=increase.amount,
-                )
-            )
-
-        return {
-            ability: AbilityBreakdown(
-                base=getattr(character, BASE_FIELD_BY_ABILITY[ability]),
-                total=totals[TOTAL_FIELD_BY_ABILITY[ability]],
-                contributions=contributions[ability],
-            )
-            for ability in AbilityScore
-        }
-
-    async def resolve_ability_caps(self, character: Character) -> dict[AbilityScore, int]:
-        """
-        Resolve each ability's maximum score for ``character``: the standard
-        20 raised by any granted feature effect carrying a ``new_cap``.
-        Computed fresh from the current feature grants.
-        """
-
-        feature_increases = await self.repository.get_feature_increases(character.id)
-        return resolve_ability_caps(feature_increases)
-
-    async def refresh(self, character: Character, *, commit: bool = True) -> CharacterAbilityScore:
-        """Recompute effective ability scores for ``character`` and persist them."""
-
-        totals = await self.compute(character)
-        return await self.repository.upsert(character.id, totals, commit=commit)
+        return (await self.compute_many([character]))[character.id]
 
     async def compute_many(self, characters: list[Character]) -> dict[int, dict[str, int]]:
         """
-        Batched counterpart to :meth:`compute`: 4 queries total for the
-        whole list (race/subrace bonuses grouped by the distinct ids
-        actually used, ASI/feature increases grouped by character id),
-        instead of 4 queries per character. Used when a single write
-        affects many characters at once (e.g. a GM feature/bonus edit).
+        Batched :meth:`compute`: four queries for the whole list (race/subrace
+        bonuses by distinct id, ASI/feature increases by character id) —
+        used when one write affects many characters (a GM feature/bonus edit).
         """
 
-        race_ids = [character.race_id for character in characters if character.race_id is not None]
-        subrace_ids = [character.subrace_id for character in characters if character.subrace_id is not None]
-        character_ids = [character.id for character in characters]
-
-        race_bonuses_by_race = await self.repository.get_race_bonuses_many(race_ids)
-        subrace_bonuses_by_subrace = await self.repository.get_subrace_bonuses_many(subrace_ids)
-        asi_increases_by_character = await self.repository.get_asi_increases_many(character_ids)
-        feature_increases_by_character = await self.repository.get_feature_increases_many(character_ids)
-
+        sources = await self._load_sources(characters)
         return {
             character.id: self.calculator.compute(
                 character,
-                race_bonuses_by_race.get(character.race_id, []),
-                subrace_bonuses_by_subrace.get(character.subrace_id, []),
-                asi_increases_by_character.get(character.id, []),
-                feature_increases_by_character.get(character.id, []),
+                sources.race_bonuses.get(character.race_id, []),
+                sources.subrace_bonuses.get(character.subrace_id, []),
+                sources.asi.get(character.id, []),
+                sources.features.get(character.id, []),
             )
             for character in characters
         }
 
-    async def refresh_many(
-        self, characters: list[Character], *, commit: bool = True
-    ) -> dict[int, CharacterAbilityScore]:
-        """Batched counterpart to :meth:`refresh` — see :meth:`compute_many`."""
+    async def compute_breakdown(self, character: Character) -> dict[AbilityScore, AbilityBreakdown]:
+        """
+        Each ability's ORIGINAL base, COMPUTED total, and the labeled
+        ``StatContribution`` sources that produced it (read-only).
+        """
+
+        sources = await self._load_sources([character])
+        race_names = await self.repository.get_race_names([character.race_id] if character.race_id else [])
+        subrace_names = await self.repository.get_subrace_names([character.subrace_id] if character.subrace_id else [])
+
+        race_id, subrace_id = character.race_id, character.subrace_id
+        return self.calculator.breakdown(
+            character,
+            sources.race_bonuses.get(race_id, []) if race_id is not None else [],
+            sources.subrace_bonuses.get(subrace_id, []) if subrace_id is not None else [],
+            sources.asi.get(character.id, []),
+            sources.features.get(character.id, []),
+            race_name=race_names.get(race_id) if race_id is not None else None,
+            subrace_name=subrace_names.get(subrace_id) if subrace_id is not None else None,
+        )
+
+    async def refresh(self, character: Character) -> CharacterAbilityScore:
+        """Recompute effective ability scores for ``character`` and persist them."""
+
+        return await self.store(character, await self.compute(character))
+
+    async def store(self, character: Character, totals: dict[str, int]) -> CharacterAbilityScore:
+        """Persist already computed ``totals`` as the character's ability-score cache row (no recomputation)."""
+
+        return await self.repository.upsert(character.id, totals)
+
+    async def refresh_many(self, characters: list[Character]) -> dict[int, CharacterAbilityScore]:
+        """Batched :meth:`refresh` — see :meth:`compute_many`."""
 
         if not characters:
             return {}
 
         totals_by_character = await self.compute_many(characters)
-        return await self.repository.upsert_many(totals_by_character, commit=commit)
+        return await self.repository.upsert_many(totals_by_character)
 
     async def get_or_stale(self, character_id: int) -> CharacterAbilityScore | None:
-        """
-        Return the existing cache row as-is, without recomputing, or
-        ``None`` if it was never computed.
-        """
+        """The existing cache row as-is, or ``None`` if it was never computed."""
 
         return await self.repository.get_by_character_id(character_id)
 
     async def get_many_or_stale(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
-        """
-        Return the existing cache rows for many characters in one query,
-        keyed by ``character_id``. Characters without a row are simply
-        absent from the result — see :meth:`get_or_stale`.
-        """
+        """Existing cache rows for many characters in one query, keyed by ``character_id`` (missing rows absent)."""
 
         return await self.repository.get_many_by_character_ids(character_ids)
 
-    async def for_response(self, character: Character, *, refresh: bool = False) -> CharacterAbilityScore | None:
-        """
-        Return the cache row for serializing a character response:
-        freshly recomputed+persisted when ``refresh`` is ``True``,
-        otherwise the existing row as-is (or ``None``).
-        """
-
-        if refresh:
-            return await self.refresh(character)
-
-        return await self.get_or_stale(character.id)
-
     async def compute_derived(self, character: Character) -> DerivedStats:
-        """Compute the derived combat stats for a single character (see :meth:`get_many_derived`)."""
+        """Derived stats of one character (see :meth:`get_many_derived`)."""
 
         return (await self.get_many_derived([character]))[character.id]
 
     async def get_many_derived(self, characters: list[Character]) -> dict[int, DerivedStats]:
-        """
-        Return ``{character_id: DerivedStats}`` for the given characters:
-        hit dice from the class, speed from the race (30 ft default).
-        """
+        """``{character_id: DerivedStats}`` — hit dice from the class (one two-column query)."""
 
-        class_ids = [character.class_id for character in characters if character.class_id is not None]
-        race_ids = [character.race_id for character in characters if character.race_id is not None]
+        hit_dice = await self.repository.get_hit_dice(
+            [character.class_id for character in characters if character.class_id is not None]
+        )
+        return {character.id: DerivedStats(hit_dice=hit_dice.get(character.class_id, "")) for character in characters}
 
-        classes = await self.repository.get_classes(class_ids)
-        races = await self.repository.get_races(race_ids)
+    async def _load_sources(self, characters: list[Character]) -> _Sources:
+        """Load every source row the calculator needs for ``characters`` (four batched queries)."""
 
-        result: dict[int, DerivedStats] = {}
-        for character in characters:
-            character_class = classes.get(character.class_id) if character.class_id is not None else None
-            race = races.get(character.race_id) if character.race_id is not None else None
-
-            result[character.id] = DerivedStats(
-                hit_dice=character_class.hit_dice.value if character_class is not None else "",
-                speed=race.speed if race is not None else DEFAULT_SPEED,
-            )
-        return result
+        character_ids = [character.id for character in characters]
+        return _Sources(
+            race_bonuses=await self.repository.get_race_bonuses_many([c.race_id for c in characters]),
+            subrace_bonuses=await self.repository.get_subrace_bonuses_many([c.subrace_id for c in characters]),
+            asi=await self.repository.get_asi_increases_many(character_ids),
+            features=await self.repository.get_feature_increases_many(character_ids),
+        )

@@ -1,16 +1,17 @@
 """
 Character crud endpoints: CRUD, HP updates, and resting.
 
-Top-level resource operations keep the canonical path-ID form
-(``GET/PATCH/DELETE /characters/{character_id}``); character-scoped
-sub-resources use query-style IDs (``/characters/hp?character_id=...``).
+Listing is the single ``GET /characters`` collection (``scope=mine|all`` + filters, optional
+cursor pagination); resource operations use the canonical path-ID form
+(``GET/PATCH/DELETE /characters/{character_id}``, ``PATCH /characters/{character_id}/hp``).
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.core.base.service import Page
+from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.dependencies import CharacterServiceDep
 from app.features.characters.schemas import (
@@ -19,102 +20,53 @@ from app.features.characters.schemas import (
     CharacterStatsResponse,
     CharacterUpdate,
 )
-from app.features.users.security import CurrentUserDep, GmUserDep
 
 router = APIRouter()
 
 
 @router.get(
     "",
-    response_model=Page[CharacterResponse],
+    response_model=Page[CharacterResponse] | CursorPage[CharacterResponse],
     summary="List characters",
+    responses={
+        403: {"description": "`scope=all` was requested by a non-GM."},
+        422: {"description": "Invalid `cursor`."},
+    },
 )
 async def get_characters(
     character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
-    search: str | None = Query(
-        None,
-        description="Case-insensitive substring match against the character's name.",
-    ),
-    class_id: int | None = Query(
-        None,
-        description="Filter to characters of this class.",
-    ),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
+    scope: Annotated[
+        Literal["mine", "all"],
+        Query(description="`mine` (default): the caller's own characters, GMs included. `all`: every user's, GM only."),
+    ] = "mine",
+    search: Annotated[
+        str | None,
+        Query(max_length=200, description="Case-insensitive substring match against the character's name."),
+    ] = None,
+    class_id: Annotated[int | None, Query(description="Filter to characters of this class.")] = None,
+    page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
+    size: Annotated[int, Query(ge=1, le=100, description="Page size")] = 10,
+    pagination: PaginationQuery = "page",
+    cursor: CursorQuery = None,
 ):
     """
-    Return characters visible to the caller as a `{items, total, page,
-    size}` envelope; optional `search` and `class_id` filters narrow it.
-
-    GM sees every character. Players see only their own.
+    List characters ordered by name (then id). `scope` picks the audience, `search` and
+    `class_id` narrow it. Default response is `{items, total, page, size}`; with
+    `pagination=cursor` (or a `cursor`) it is the keyset envelope `{items, next_cursor, size}`
+    (`next_cursor` is null on the last page; no `total`).
     """
 
-    return await character_service.get_characters(current_user, search=search, class_id=class_id, page=page, size=size)
-
-
-@router.get(
-    "/mine",
-    response_model=Page[CharacterResponse],
-    summary="List the current user's characters",
-)
-async def get_my_characters(
-    character_service: CharacterServiceDep,
-    current_user: CurrentUserDep,
-    search: str | None = Query(
-        None,
-        description="Case-insensitive substring match against the character's name.",
-    ),
-    class_id: int | None = Query(
-        None,
-        description="Filter to characters of this class.",
-    ),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-):
-    """
-    Return only the characters owned by the caller, in the same envelope
-    and with the same filters as `GET /characters`.
-
-    Regardless of role (a GM calling this sees their own characters, not
-    everyone's).
-    """
-
-    return await character_service.get_my_characters(
-        current_user, search=search, class_id=class_id, page=page, size=size
+    return await character_service.list_characters(
+        current_user,
+        scope=scope,
+        search=search,
+        class_id=class_id,
+        page=page,
+        size=size,
+        cursor=cursor,
+        use_cursor=use_cursor(pagination, cursor),
     )
-
-
-@router.get(
-    "/all",
-    response_model=Page[CharacterResponse],
-    summary="List every user's characters",
-    responses={
-        403: {"description": "Caller is not a GM."},
-    },
-)
-async def get_all_characters(
-    character_service: CharacterServiceDep,
-    gm_user: GmUserDep,
-    search: str | None = Query(
-        None,
-        description="Case-insensitive substring match against the character's name.",
-    ),
-    class_id: int | None = Query(
-        None,
-        description="Filter to characters of this class.",
-    ),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: int = Query(10, ge=1, le=100, description="Page size"),
-):
-    """
-    Return every character of every user, with the same filters and
-    envelope as `GET /characters`.
-
-    GM only.
-    """
-
-    return await character_service.get_all_characters(gm_user, search=search, class_id=class_id, page=page, size=size)
 
 
 @router.get(
@@ -129,8 +81,8 @@ async def get_all_characters(
 async def get_character(character_id: int, character_service: CharacterServiceDep, current_user: CurrentUserDep):
     """
     Return a single character by ID. Ability scores come from the
-    ``character_ability_scores`` cache as-is; derived stats are computed
-    fresh on every read.
+    ``character_ability_scores`` cache as-is; hit dice come from the class
+    on every read.
 
     GM can view any character. Players can only view their own.
     """
@@ -233,13 +185,9 @@ async def create_character(
     response_model=CharacterResponse,
     summary="Update a character",
     responses={
-        403: {"description": "Caller is not the owner and is not a GM."},
-        404: {
-            "description": (
-                "Character with id not found, or `class_id`/`race_id`/`background_id` "
-                "does not reference an existing record."
-            )
-        },
+        403: {"description": "Caller is not the owner and is not a GM, or a player tried to raise `inspiration`."},
+        404: {"description": "Character with id not found."},
+        422: {"description": "A field is out of bounds or an explicit `null` was sent for a non-nullable field."},
     },
 )
 async def update_character(
@@ -267,8 +215,10 @@ async def update_character(
     current_user: CurrentUserDep,
 ):
     """
-    Partially update a character: only included fields change. `class_id`,
-    `race_id`, and `background_id` are not editable here, nor is `level`.
+    Partially update a character: only included fields change (`null` is
+    rejected). `class_id`, `race_id`, `background_id` and `level` are not
+    editable here; `current_hp` is clamped to `max_hp`, and only a GM can
+    raise `inspiration` (a player may spend it down).
 
     GM can update any character; players can only update their own.
     """

@@ -5,12 +5,19 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import ASI_LEVELS, AbilityScore, ASILevelChoice
+from app.core.types import EntityId
 from app.features.characters.schemas import ABILITY_SCORE_MAX, ABILITY_SCORE_MIN
 
 # A single ASI at a level grants up to +2 total across the six abilities
 # (e.g. +2 to one ability, or +1/+1 to two). Individual increments are
 # bounded 1..2 and the total is validated to stay within that budget.
 ASI_TOTAL_BUDGET = 2
+
+# Bounds on client-supplied lists and numbers (the real limits are enforced by the service).
+MAX_FEATURE_CHOICES = 50
+MAX_REBUILD_SKILLS = 30
+MAX_HIT_POINTS_GAINED = 50
+MAX_REBUILD_HP = 1000
 
 
 class SubclassChange(BaseModel):
@@ -23,7 +30,7 @@ class SubclassChange(BaseModel):
     current level.
     """
 
-    subclass_id: int | None = None
+    subclass_id: EntityId | None = None
 
 
 class SubraceChange(BaseModel):
@@ -36,7 +43,7 @@ class SubraceChange(BaseModel):
     grants its features at or below the character's current level.
     """
 
-    subrace_id: int | None = None
+    subrace_id: EntityId | None = None
 
 
 class BackgroundChange(BaseModel):
@@ -45,12 +52,12 @@ class BackgroundChange(BaseModel):
     none (a background picked at creation can never be swapped).
 
     Grants everything a background grants at creation: its features (via
-    progression sync), its granted skills (deduplicated against existing
-    proficiencies), and its starting equipment (merged into existing
-    stacks).
+    progression sync), its granted skills (BACKGROUND-sourced proficiency
+    rows, kept alongside rows from other sources) and its starting
+    equipment (merged into existing stacks).
     """
 
-    background_id: int
+    background_id: EntityId
 
 
 class ASIIncreaseItem(BaseModel):
@@ -78,7 +85,7 @@ class ASIChoice(BaseModel):
     """Level-up choice taking the Ability Score Improvement option."""
 
     type: Literal["ASI"] = "ASI"
-    increases: list[ASIIncreaseItem]
+    increases: list[ASIIncreaseItem] = Field(max_length=len(AbilityScore))
 
     @field_validator("increases")
     def validate_increases(cls, increases):
@@ -91,15 +98,16 @@ class FeatChoice(BaseModel):
     """
     Level-up choice taking a feat instead of the Ability Score Improvement.
 
-    ``ability_score_increase_id`` is required when the chosen feat offers
-    ASI options of its own (e.g. Resilient) — pass the id of the specific
-    ASI option (a ``feature_ability_score_effects`` row) to apply; the
-    service rejects a feat with options taken without one.
+    ``ability_score_increase_id`` is the id of the specific ASI option (a
+    ``feature_ability_score_effects`` row) of a feat that offers ASI options
+    of its own (e.g. Resilient). A rebuild rejects such a feat without one
+    (422); a level-up rejects it through the unresolved choice group (422).
+    The feat's ``min_level`` and the ability cap of 20 apply to the pick.
     """
 
     type: Literal["FEAT"] = "FEAT"
-    feat_id: int
-    ability_score_increase_id: int | None = None
+    feat_id: EntityId
+    ability_score_increase_id: EntityId | None = None
 
 
 LevelUpChoice = Annotated[ASIChoice | FeatChoice, Field(discriminator="type")]
@@ -137,7 +145,7 @@ class CharacterRebuildRequest(BaseModel):
       build. The service validates it falls within the range the new
       class's hit die and current level allow (level 1's die + CON is
       fixed; each level above it contributes between 1 and die + CON) —
-      see ``CharacterProgressionService._max_hp_bounds``.
+      see ``progression.rules.max_hp_bounds``.
     - ``asi_choices``: one entry for every ASI level (see ``ASI_LEVELS``)
       the character has already reached, replacing its prior ASI/feat
       choices at those levels — the new build's ability scores/class can
@@ -156,13 +164,13 @@ class CharacterRebuildRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    class_id: int
-    subclass_id: int | None = None
+    class_id: EntityId
+    subclass_id: EntityId | None = None
 
-    race_id: int
-    subrace_id: int | None = None
+    race_id: EntityId
+    subrace_id: EntityId | None = None
 
-    background_id: int | None = None
+    background_id: EntityId | None = None
 
     strength: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     dexterity: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
@@ -171,10 +179,10 @@ class CharacterRebuildRequest(BaseModel):
     wisdom: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     charisma: int = Field(ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
 
-    max_hp: int = Field(ge=1)
+    max_hp: int = Field(ge=1, le=MAX_REBUILD_HP)
 
-    skill_ids: list[int] = Field(default_factory=list)
-    asi_choices: list[RebuildASIChoice] = Field(default_factory=list)
+    skill_ids: list[EntityId] = Field(default_factory=list, max_length=MAX_REBUILD_SKILLS)
+    asi_choices: list[RebuildASIChoice] = Field(default_factory=list, max_length=len(ASI_LEVELS))
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
@@ -211,9 +219,9 @@ class LevelUpFeatureChoiceAnswer(BaseModel):
     level-up is rejected (422) if one is picked.
     """
 
-    feature_id: int
-    choice_group_id: int
-    choice_option_id: int
+    feature_id: EntityId
+    choice_group_id: EntityId
+    choice_option_id: EntityId
 
 
 class LevelUpRequest(BaseModel):
@@ -238,9 +246,9 @@ class LevelUpRequest(BaseModel):
     entry here; its fixed effects apply automatically.
     """
 
-    hit_points_gained: int | None = Field(default=None, ge=1)
+    hit_points_gained: int | None = Field(default=None, ge=1, le=MAX_HIT_POINTS_GAINED)
     choice: LevelUpChoice | None = None
-    feature_choices: list[LevelUpFeatureChoiceAnswer] = Field(default_factory=list)
+    feature_choices: list[LevelUpFeatureChoiceAnswer] = Field(default_factory=list, max_length=MAX_FEATURE_CHOICES)
 
 
 class CanLevelUpResponse(BaseModel):

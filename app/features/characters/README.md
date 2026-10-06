@@ -13,25 +13,41 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
 | File | Role |
 | --- | --- |
 | `router.py` | Aggregates the six child routers under `/characters`, one `include_router` per child, tags declared here once. |
-| `schemas.py` | Shared domain schemas: `CharacterCreate`/`CharacterUpdate`/`CharacterResponse` plus the feat/feature grant responses (`CharacterFeatResponse`, `CharacterFeatureResponse`). `CharacterFeatResponse` embeds the resolved ASI (`ability_score_increase`: `{id, ability, amount}`) so a feat read shows which ability it improved. Sub-packages import from here — never the reverse. |
-| `exceptions.py` | Domain-wide `AppError`s: `CharacterNotFoundException`, `CharacterAccessDeniedException`, `BackgroundNotFoundException`. |
-| `access.py` | Access-control helpers: `get_character_or_404`, `check_character_access`, and the combined `get_character_for_user` (GM or owner, else 403/404). Almost every character operation starts with one of these. |
-| `base.py` | `CharacterSubDomainService` — shared base for sub-domain services: owns the single `CharacterRepository`, exposes `_atomic()` and the access-checked `get_character_for_user`. Defaults to the **light** character fetch (`_light_character_fetch = True` → scalar columns only); services that serialize a full `CharacterResponse` override it to `False`. |
+| `schemas.py` | Shared domain schemas: `CharacterCreate`/`CharacterUpdate`/`CharacterResponse`, the `PatchModel` base (explicit `null` in a PATCH is a 422 except for fields listed in `nullable_fields`) and the input bounds (`NAME_MAX_LENGTH`, `MONEY_MAX`, `HP_LIMIT`, ...). Bounds live on the input schemas only — `CharacterResponse` stays unconstrained so older stored rows still serialize. Sub-packages import from here — never the reverse. |
+| `exceptions.py` | Domain-wide `AppError`s: `CharacterNotFoundException`, `CharacterAccessDeniedException`, `GmOnlyFieldException`, `BackgroundNotFoundException`. |
+| `access.py` | Access-control helpers: `is_gm` (GM or founder), `get_character_or_404`, `check_character_access`, the combined `get_character_for_user` (GM or owner, else 403/404) and `ensure_character_access` (same decision from a single `owner_id` lookup, for sub-resources that never read the character). |
+| `base.py` | `CharacterSubDomainService` — shared base for sub-domain services: owns the single `CharacterRepository`, the access checks (`get_character_for_user`, `ensure_character_access`) and the transaction helpers (`_atomic()`, `_invalidate_character()`). `_light_character_fetch = True` only means "no `populate_existing`" (an instance already in the session is returned as it is); services that need a freshly re-read row override it to `False`. |
 | `dependencies.py` | All `Character*Dep` service aliases (`CharacterServiceDep`, `CharacterSpellServiceDep`, ...). |
-| `cache.py` | `invalidate_character_cache(character_id)` + `CHARACTER_CACHE_NAMESPACE`. The detail read is cached under a flat key the namespace-prefix pattern can't match, so both the prefix purge and the exact key delete are needed. |
+| `cache.py` | Exact-key invalidation of the cached character response: `character_cache_key`, `invalidate_character_cache(id, db=None)`, `invalidate_characters_cache(ids, db=None)`, `CHARACTER_CACHE_TTL` (300 s). Pass the writing session as `db` to defer the purge until the surrounding `atomic()` block commits (dropped on rollback); there is no namespace/prefix purge and no keyspace scan. |
+
+**Transaction rule:** the service owns the transaction. Every write runs inside `self._atomic()`; repositories only flush and raise outside it. Routers never commit. Cache purges always go through `self._invalidate_character(id)` (never `invalidate_character_cache` directly), which runs after the commit inside an atomic block and immediately outside one.
 
 ### Sub-packages
 
-- `crud/` — the character record itself: list/get/create/update/delete, HP
-  updates, rests, and the one-shot creation contract (see below).
-  `CharacterService` is the core service.
-- `ability_score/` — effective ability scores and derived combat stats:
-  pure `calculator.py` (no DB), `repository.py` for the
-  `character_ability_scores` cache table and bonus-source queries, and
-  `CharacterStatsService` as the single decision point for *when* the cache
-  is recomputed.
-- `attacks/` — weapon/attack rows on the sheet.
-- `conditions/` — conditions applied to a character.
+- `crud/` — the character record itself. `service.py` (`CharacterService`:
+  list/get/update/delete, HP, rests, response assembly and the response
+  cache), `creation.py` (`CharacterCreationService`: `prepare` validates every
+  reference and choice read-only, `persist` writes the character and its
+  starting state (flush only); the caller owns the transaction),
+  `rules.py` (pure rules: skill/suggestion/equipment-choice validation,
+  starting HP, HP delta/clamping), `repository.py` (owner lookup,
+  `FOR UPDATE` fetch, HP and slot-usage writes), `schemas.py` (HP/rest
+  payloads), `exceptions.py`, `router.py`.
+- `ability_score/` — effective ability scores and the hit-dice lookup: pure
+  `calculator.py` (no DB; also builds the per-source breakdown),
+  `repository.py` for the `character_ability_scores` cache table (atomic
+  `INSERT ... ON CONFLICT DO UPDATE`) and the batched bonus-source queries,
+  and `CharacterStatsService` as the single decision point for *when* the
+  cache is recomputed.
+- `attacks/` — weapon/attack rows on the sheet (at most 100 per character).
+- `conditions/` — conditions applied to a character, addressed as
+  `/characters/{id}/conditions[/{condition}]` (PATCH/DELETE take the condition
+  in the URL; not part of the cached response, so they never purge it). The add is an atomic
+  `INSERT ... ON CONFLICT DO NOTHING`; a duplicate is a 409.
+- `items/` — read-only inventory listing (`GET /characters/{id}/items`); the
+  stack repository is shared with the GM panel, which owns all writes.
+- `level/` — only `CharacterMaxLevelRepository` (the GM-set level-up cap row),
+  used by creation, the GM panel and progression.
 - `backstory/` — the character's backstory, isolated in its own table
   (`character_backstories`) and served ONLY through dedicated endpoints
   (`GET/PUT /characters/{id}/backstory`). Because it can run several pages of
@@ -40,7 +56,8 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   cached — reads hit the DB directly through the owner/GM access check. It is
   also not part of `CharacterCreate`/`CharacterUpdate`.
 - `spells/` — known spells + slot totals (class-derived only, no
-  spend/restore endpoints).
+  spend/restore endpoints); a spell is removed with
+  `DELETE /characters/{id}/spells/{spell_id}`.
 - `progression/` — level-up, subclass/subrace/background setup,
   progression-feature sync, the ASI-choice log repositories, and the
   point-rebuild endpoint (`POST /characters/{id}/rebuild`): a full
@@ -51,7 +68,28 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   validates and sets the caller-supplied `max_hp` against the new
   class/level's allowed range, recomputes spell slots, and clears known
   spells — while leaving level, notes, personality, backstory, inventory,
-  and GM-granted feats untouched.
+  GM-granted feats and GM ASI adjustments (`class_level IS NULL`) untouched.
+  Layout: `service.py` (use cases), `asi.py` (applying an ASI/feat and writing
+  the log), `background.py` (skills/equipment of a late background),
+  `rebuild.py`, `rules.py` (pure HP/ASI rules), `feature_sync.py`
+  (progression-feature reconciliation). Every write is owned by the service:
+  the character row is locked with `SELECT ... FOR UPDATE` (a double
+  level-up/set_background/rebuild is serialized), the ability-score cache is
+  refreshed in the same transaction and Redis is purged after COMMIT; routers
+  never commit. A feat on an ASI level (level-up and rebuild) needs
+  `Feature.min_level <= class_level`, the chosen ASI option must stay within
+  the cap of 20 and the prerequisite is checked against the effective scores;
+  a rebuild feat that offers ASI options without `ability_score_increase_id`
+  is a 422, and its other choice groups stay pending (`GET /grants/pending`).
+  Input bounds: ids <= 2147483647, `feature_choices`/`answers` <= 50,
+  `hit_points_gained` <= 50, rebuild `max_hp` <= 1000, `skill_ids` <= 30.
+- `grants/` — answering a feature's choice groups. Authorization lives in
+  `FeatureGrantService` (its methods take `current_user`); `PATCH .../choices`
+  is one service transaction with the cache purge after COMMIT;
+  `resolve_grants_choices` is the level-up batch (trees loaded in one query,
+  features without `has_choices` skipped). Grant/pick queries live in
+  `CharacterFeatureRepository` (`features/repository.py`: `get_grant`,
+  `get_choices`, `replace_choices`, ...) — the service holds no SQL.
 - `gm_panel/` — GM-only panel under `/characters/gm-panel`: feat grants
   (with mandatory ASI choice when offered), feature grants, inventory
   (items), free-form ±ASI adjustments, max-HP edit, the per-character
@@ -63,8 +101,9 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
 
 ## One-shot creation contract
 
-`POST /characters` (`crud/service.create_character`) is the ONLY path that
-creates a character. Everything is derived server-side:
+`POST /characters` (`crud/service.create_character`, steps in
+`crud/creation.py`) is the ONLY path that creates a character. Everything is
+derived server-side:
 
 - **Level pinned to 1**, `temp_hp=0`; the payload has no `level`/HP fields
   and `CharacterCreate` sets `extra="forbid"`, so stale clients sending
@@ -90,15 +129,31 @@ creates a character. Everything is derived server-side:
   and `temp_hp` is cleared.
 - **Saving throws are never stored** on the character — they are derived
   from the class on every response (the table was dropped by migration).
-- **Backstory is not part of creation** — it is written afterwards via the
-  dedicated `PUT /characters/{id}/backstory` endpoint (and read via
-  `GET /characters/{id}/backstory`), isolated in `character_backstories` and
-  never cached.
+- **Backstory** is not accepted in the payload: when a background is chosen
+  its description (capped at `BACKSTORY_MAX_LENGTH`) is stored as the
+  backstory; afterwards it is edited via `PUT /characters/{id}/backstory`
+  (`content` is required; `""` clears it), isolated in `character_backstories`
+  and never cached.
 - **`inspiration`** is a 0-13 point stockpile (not 5e's plain boolean),
-  defaults to `0` and is editable via the plain character PATCH.
-- Spell slots for level 1 are applied immediately; features and starting
+  defaults to `0`. The plain character PATCH lets a player only keep or lower
+  it; raising it is GM-only (403 `GmOnlyFieldException`).
+- Spell slots for level 1 are applied immediately; features, the ability-score
+  cache row (computed once and reused for the starting-HP math) and starting
   equipment (class + background, aggregated into one stack per item) are
-  granted in the same `_atomic()` transaction.
+  granted in the same `_atomic()` transaction. Every reference is loaded once
+  (`get_by_id`), not checked with `exists_by_id` and loaded again.
+
+## Update, HP and rest
+
+- `PATCH /characters/{id}` is bounded (name 1-200 chars, money <= int32,
+  AC/shield/speed <= 1000, free text length-capped) and rejects explicit
+  `null` with a 422. `current_hp` is clamped to `max_hp`.
+- `PATCH /characters/{id}/hp` and `POST /characters/{id}/rest` (long) read the
+  row `SELECT ... FOR UPDATE` inside one atomic block, so concurrent
+  damage/healing is applied sequentially instead of overwriting each other.
+  A long rest restores HP, clears temp HP and resets spell-slot usage in the
+  same transaction; the cache purge happens only after the commit.
+- Mixing `delta` with absolute values (or sending neither) stays a 400.
 
 ## Read-path conventions
 
@@ -106,10 +161,20 @@ creates a character. Everything is derived server-side:
   `character_ability_scores` cache is read **as-is**, never recomputed on a
   read. Write paths that can affect scores refresh it (create, feat
   grant/update/remove, level-up ASI, subrace/background setup).
-- Only **hit dice and speed** are computed on the fly
-  (`ability_score/service.py`) — they follow the class/race reference rows,
-  so no write path keeps them in sync. `armor_class`/`shield` are plain
-  editable columns; there is no derived AC.
+- Only **hit dice** are looked up on every read (`ability_score/service.py`,
+  a two-column query) — they follow the class reference row, so no write path
+  keeps them in sync. `speed`, `armor_class` and `shield` are plain editable
+  columns (speed is seeded from the race at creation); there is no derived AC.
+- `GET /characters/{id}` reads the character row once for the access check
+  and reuses it on a cache miss; the assembled response is cached under the
+  exact key `<CACHE_PREFIX>:characters:<id>` for 300 s. Access control is
+  never cached.
+- There is ONE listing, `GET /characters`: `scope=mine` (default; the caller's own,
+  GMs included) or `scope=all` (every user's, GM/founder only, 403 otherwise), plus
+  `search` (name substring) and `class_id`. Default response is the offset `Page`;
+  `pagination=cursor` / `cursor=` switches to keyset `{items, next_cursor, size}`.
+- Listings order by `name` then `id` (stable pagination) and read the
+  ability-score rows and hit dice in one batched query each.
 - `GET /characters/{id}/stats` is the only read path that **recomputes**
   per-ability totals fresh (never the cache) — it pairs each ORIGINAL base
   value with its COMPUTED total plus the per-source contribution breakdown
@@ -121,9 +186,8 @@ creates a character. Everything is derived server-side:
 Level-up ASIs and GM ±adjustments **never touch the base ability columns**
 — their points live as typed `character_asi_choice_increases` child rows of
 `character_asi_choices` and are counted by
-`CharacterStatsRepository.get_asi_increases` →
+`CharacterStatsRepository.get_asi_increases_many` →
 `CharacterAbilityScoreCalculator.compute`. Legacy pre-rework rows carry
 `applied_to_base = True` and are excluded from the count. Effective totals
-are floored at 1; per-ability caps resolve through
-`CharacterStatsService.resolve_ability_caps` (feature effects with
-`new_cap` can lift a cap above 20).
+are floored at 1. The pure `calculator.resolve_ability_caps` (feature effects
+with `new_cap` lift a cap above 20) is not wired into any validation yet.

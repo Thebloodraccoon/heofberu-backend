@@ -3,9 +3,13 @@
 from pydantic import ValidationError
 import pytest
 
+from app.features.characters.crud.rules import apply_hp_delta
 from app.features.characters.crud.schemas import RestRequest
-from app.features.characters.crud.service import CharacterService
 from app.features.characters.schemas import (
+    HP_LIMIT,
+    MONEY_MAX,
+    NAME_MAX_LENGTH,
+    NOTES_MAX_LENGTH,
     AbilityScoresResponse,
     CharacterCreate,
     CharacterResponse,
@@ -137,16 +141,16 @@ class TestApplyHpDelta:
     """The pure 5e damage/healing resolution used by PATCH /{id}/hp."""
 
     def test_healing_adds_to_current_only(self):
-        assert CharacterService._apply_hp_delta(current_hp=10, temp_hp=5, delta=4) == (14, 5)
+        assert apply_hp_delta(current_hp=10, temp_hp=5, delta=4) == (14, 5)
 
     def test_damage_absorbed_by_temp_first(self):
-        assert CharacterService._apply_hp_delta(current_hp=20, temp_hp=8, delta=-5) == (20, 3)
+        assert apply_hp_delta(current_hp=20, temp_hp=8, delta=-5) == (20, 3)
 
     def test_damage_overflow_hits_current(self):
-        assert CharacterService._apply_hp_delta(current_hp=20, temp_hp=3, delta=-7) == (16, 0)
+        assert apply_hp_delta(current_hp=20, temp_hp=3, delta=-7) == (16, 0)
 
     def test_damage_without_temp(self):
-        assert CharacterService._apply_hp_delta(current_hp=12, temp_hp=0, delta=-15) == (-3, 0)
+        assert apply_hp_delta(current_hp=12, temp_hp=0, delta=-15) == (-3, 0)
 
 
 @pytest.mark.unit
@@ -210,3 +214,111 @@ class TestCharacterResponseAbilityScoreExclusion:
 
         assert "ability_scores" in dumped
         assert dumped["ability_scores"]["strength_total"] == 16
+
+
+@pytest.mark.unit
+class TestCharacterUpdateNullAndBounds:
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "name",
+            "armor_class",
+            "shield",
+            "speed",
+            "current_hp",
+            "temp_hp",
+            "inspiration",
+            "notes",
+            "personality_traits",
+            "ideals",
+            "bonds",
+            "flaws",
+            "money_gold",
+            "money_silver",
+            "money_copper",
+        ],
+    )
+    def test_explicit_null_is_rejected_for_every_field(self, field):
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterUpdate(**{field: None})
+
+        assert field in str(exc_info.value)
+
+    def test_omitted_fields_stay_unset(self):
+        assert CharacterUpdate().model_dump(exclude_unset=True) == {}
+
+    def test_name_is_stripped_and_must_not_be_blank(self):
+        assert CharacterUpdate(name="  Aragorn ").name == "Aragorn"
+        with pytest.raises(ValidationError):
+            CharacterUpdate(name="   ")
+
+    def test_name_longer_than_the_column_is_rejected(self):
+        CharacterUpdate(name="x" * NAME_MAX_LENGTH)
+        with pytest.raises(ValidationError):
+            CharacterUpdate(name="x" * (NAME_MAX_LENGTH + 1))
+
+    def test_money_above_int32_is_rejected(self):
+        assert CharacterUpdate(money_gold=MONEY_MAX).money_gold == MONEY_MAX
+        with pytest.raises(ValidationError):
+            CharacterUpdate(money_gold=MONEY_MAX + 1)
+        with pytest.raises(ValidationError):
+            CharacterUpdate(money_copper=-1)
+
+    def test_temp_and_current_hp_are_bounded(self):
+        with pytest.raises(ValidationError):
+            CharacterUpdate(temp_hp=HP_LIMIT + 1)
+        with pytest.raises(ValidationError):
+            CharacterUpdate(current_hp=-1)
+
+    def test_free_text_is_length_limited(self):
+        with pytest.raises(ValidationError):
+            CharacterUpdate(notes="x" * (NOTES_MAX_LENGTH + 1))
+        with pytest.raises(ValidationError):
+            CharacterUpdate(ideals="x" * 5_001)
+
+    def test_inspiration_stays_within_zero_and_thirteen(self):
+        assert CharacterUpdate(inspiration=13).inspiration == 13
+        with pytest.raises(ValidationError):
+            CharacterUpdate(inspiration=14)
+
+
+@pytest.mark.unit
+class TestCharacterCreateBounds:
+    def _payload(self, **overrides):
+        return {"name": "Grog", "class_id": 1, **overrides}
+
+    def test_blank_name_is_rejected(self):
+        with pytest.raises(ValidationError):
+            CharacterCreate(**self._payload(name=""))
+
+    def test_name_longer_than_the_column_is_rejected(self):
+        with pytest.raises(ValidationError):
+            CharacterCreate(**self._payload(name="x" * (NAME_MAX_LENGTH + 1)))
+
+    def test_money_and_combat_stats_have_upper_bounds(self):
+        with pytest.raises(ValidationError):
+            CharacterCreate(**self._payload(money_gold=MONEY_MAX + 1))
+        with pytest.raises(ValidationError):
+            CharacterCreate(**self._payload(armor_class=10_000))
+
+    def test_id_lists_are_bounded(self):
+        with pytest.raises(ValidationError):
+            CharacterCreate(**self._payload(skill_ids=list(range(51))))
+
+    def test_response_schema_does_not_enforce_input_bounds(self):
+        """Stored data predating a bound must still serialize."""
+        response = CharacterResponse.model_validate(
+            {
+                "id": 1,
+                "owner_id": 1,
+                "name": "x" * 500,
+                "class_id": 1,
+                "level": 1,
+                "current_hp": 1,
+                "max_hp": 1,
+                "temp_hp": 0,
+                "notes": "n" * (NOTES_MAX_LENGTH + 1),
+            }
+        )
+
+        assert len(response.notes) == NOTES_MAX_LENGTH + 1

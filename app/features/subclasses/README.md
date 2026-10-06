@@ -1,69 +1,53 @@
 # Subclasses Catalog (`app/features/subclasses/`)
 
-Standalone reference catalog for the `Subclass` entity, split out of the
-classes domain and mounted at the top-level `/subclasses` prefix (the parent
-class is identified by `class_id`). A subclass is owned by exactly one class;
-its features are `Feature` rows with `source_type=SUBCLASS`.
+Standalone reference catalog for the `Subclass` entity, mounted at `/subclasses`
+(the owning class is the subclass's `class_id`). A subclass belongs to exactly one
+class; its features are `Feature` rows with `source_type=SUBCLASS`, written through
+the central `/features` catalog.
 
 ## Layout
 
 ```
 subclasses/
-├── router.py            # assembles /subclasses (one include_router per capability)
-├── dependencies.py      # SubclassCrudDep, SubclassFeaturesDep, SubclassImageDep
-├── cache.py             # SUBCLASS_CACHE_NAMESPACES + invalidate_subclass_cache()
-├── crud/                # subclass CRUD, optional class_id listing filter, atomic nested creation
-├── features/            # read-only cached SUBCLASS-source feature list
-└── image/               # catalog image upload/delete
+├── router.py        # assembles /subclasses
+├── dependencies.py  # SubclassCrudDep, SubclassFeaturesDep, SubclassImageDep
+├── cache.py         # SUBCLASS_CACHE_NAMESPACES, SUBCLASS_CRUD_CACHE_NAMESPACES (+spells), SUBCLASS_DELETE_CACHE_NAMESPACES
+├── crud/            # repository (class-scoped uniqueness), schemas, service, router
+├── features/        # read-only cached SUBCLASS-source feature list
+└── image/           # catalog image upload/delete
 ```
 
 ## Endpoints
 
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
-| GET | `/subclasses?class_id=` | open | Light `SubclassGetAllResponse` rows (id/class_id/name/image_url); `class_id` is an optional filter — omit it to list all subclasses, pass it to scope to one class. Missing class → 404. |
-| POST | `/subclasses` | GM | Body is base fields plus `class_id` (the owning class) only — this catalog does NOT embed features at create; attach them afterwards via `POST /features` with `source_type=SUBCLASS`/`subclass_id`. Duplicate name within the class → 409. |
-| GET | `/subclasses/{subclass_id}` | open | Full `SubclassResponse` — base fields + SUBCLASS-source `features`; cached as one unit. |
-| PATCH | `/subclasses/{subclass_id}` | GM | Base fields only (`class_id` is immutable, not in the Update schema); 409 on name clash within the class. |
-| DELETE | `/subclasses/{subclass_id}` | Founder | Removes the row; blocked with 409 while any character still references the subclass. |
-| GET | `/subclasses/{subclass_id}/features` | open | Cached SUBCLASS-source feature list (read-only). |
-| PUT | `/subclasses/{subclass_id}/image` | GM | Multipart upload/replace (JPEG/PNG/WebP/GIF, max 5 MB) → `{"image_url"}`. |
-| DELETE | `/subclasses/{subclass_id}/image` | GM | Clears `image_url` and removes the stored object. |
+| GET | `/subclasses?class_id=` | open | Brief rows (id/class_id/name/image_url) ordered by name, cached. Without `class_id` lists all; unknown `class_id` -> 404. Not paginated (a class has a handful of subclasses). |
+| POST | `/subclasses` | GM | `name` 1-100, `class_id` > 0 (unknown -> 404), `description` <= 10000, `image_url` absolute http(s) <= 512. Name already used in that class -> 409. Responds with the full `SubclassResponse`. |
+| GET | `/subclasses/{subclass_id}` | open | `SubclassResponse`: base fields + SUBCLASS-source `features`, cached. |
+| PATCH | `/subclasses/{subclass_id}` | GM | `name`/`description` only; explicit `null` -> 422; `class_id` is immutable. Name clash is checked within the subclass's own class (a same-named subclass of another class is fine) -> 400. Responds with the full `SubclassResponse`. |
+| DELETE | `/subclasses/{subclass_id}` | Founder | 409 while characters reference it. |
+| GET | `/subclasses/{subclass_id}/features` | open | Cached feature list. |
+| PUT/DELETE | `/subclasses/{subclass_id}/image` | GM | Multipart upload / clear. |
 
-Unlike subraces, subclasses carry **no ability bonuses** — that data is defined
-on the subclass feature's effects through the feature cart (e.g. an
-`AbilityEffectItem` choice group). `PUT .../subclasses/{subclass_id}/features`
-does NOT exist; subclass feature writes go through the central `/features`
-catalog with `source_type=SUBCLASS`.
+Subclasses carry no ability bonuses; those live on the subclass features' effects.
 
-## Service Composition
+## Behaviour notes
 
-`SubclassCrudService` extends `BaseService` (not `CachedService` — the listing
-is optionally class-scoped and only `get_by_id` is cached, via `@use_cache`)
-and composes explicitly in `__init__`:
+- `SubclassRepository` overrides the `BaseRepository._uniqueness_scope` hook (`BaseRepository.update` only
+  flushes): it supplies the existing row's
+  `class_id`, so a PATCH that only sends `name` is checked against the right siblings.
+- `get_by_id` serializes the eager-loaded `Subclass.features` (no second feature query) and
+  is cached under `cache:classes:subclass:get_by_id:{id}` (own key: the `classes` namespace
+  also holds `ClassCrudService.get_by_id`).
+- Single-step writes let the repository commit; `delete` runs the in-use guard first.
 
-- `self._features = FeatureCrudService(db)` — `get_by_id` folds the subclass's
-  own SUBCLASS-source `features` into `SubclassResponse` (cached under
-  `classes:subclass:get_by_id`). Note the schema's create docstring still says
-  features are created atomically, but there is no `features` field on
-  `SubclassCreate` — subclass features are written through the central
-  `/features` catalog.
-- `self._class_repository = ClassRepository(db)` — `list_for_class` /
-  `_ensure_class_exists`, translating a missing class into
-  `RecordNotFoundError` (404).
+## Cache
 
-Name uniqueness is **class-scoped** (`SubclassRepository._check_uniqueness`
-filters on `class_id`), and deletion runs the generic `check_in_use_on_delete`
-guard (`is_in_use` → any `Character` row pointing at the subclass).
+| Write | Purged |
+| --- | --- |
+| image | `classes` (subclass detail, listing, and the class reads that embed subclass rows) |
+| create / update | `classes`, `spells` (spell listings embed subclass names) |
+| delete | `classes`, `subclass_features`, `features`, `spells` (cascade) |
 
-## Cache Invalidation
-
-`cache.py` owns `invalidate_subclass_cache()`, purging `SUBCLASS_CACHE_NAMESPACES
-= ("classes", "subclass_features", "features")` after every committed write.
-`classes` is included because `ClassResponse`/`ClassGetAllResponse` embed the
-class's subclasses. `subclass_features` is additionally purged directly by the
-central `FeatureCrudService._purge_feature_cache` whenever a feature write
-touches a SUBCLASS-source feature. (Subclass feature grants reach characters
-in the same transaction as the class-feature sync; the subclass name itself
-appears in character payloads derived live, so subclass writes also trigger the
-`features`/`classes` purge path above.)
+Subclass names are not part of cached character payloads, so `characters` is never purged.
+Central feature writes purge `subclass_features` and `classes` themselves.

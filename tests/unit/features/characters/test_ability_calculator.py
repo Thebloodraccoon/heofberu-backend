@@ -7,6 +7,7 @@ import pytest
 from app.constants import AbilityScore
 from app.features.characters.ability_score.calculator import (
     CharacterAbilityScoreCalculator,
+    effect_source_label,
     resolve_ability_caps,
 )
 from app.models.character.character_model import Character
@@ -220,3 +221,93 @@ class TestResolveAbilityCaps:
         effects = [make_feature_increase(AbilityScore.STR, amount=4, new_cap=31)]
 
         assert resolve_ability_caps(effects)[AbilityScore.STR] == 30
+
+
+@pytest.mark.unit
+class TestEffectSourceLabel:
+    def test_fixed_effect_uses_its_feature_name(self):
+        assert (
+            effect_source_label(SimpleNamespace(feature=SimpleNamespace(name="Primal Champion"))) == "Primal Champion"
+        )
+
+    def test_option_effect_uses_the_owning_feature_of_its_group(self):
+        option = SimpleNamespace(group=SimpleNamespace(feature=SimpleNamespace(name="Ability Score Improvement")))
+
+        assert effect_source_label(SimpleNamespace(feature=None, choice_option=option)) == "Ability Score Improvement"
+
+    @pytest.mark.parametrize(
+        "effect",
+        [
+            SimpleNamespace(feature=SimpleNamespace(name="")),
+            SimpleNamespace(feature=None, choice_option=None),
+            SimpleNamespace(feature=None, choice_option=SimpleNamespace(group=None)),
+        ],
+    )
+    def test_falls_back_to_a_generic_label(self, effect):
+        assert effect_source_label(effect) == "Feature"
+
+
+@pytest.mark.unit
+class TestBreakdown:
+    def breakdown(self, **overrides):
+        kwargs = {
+            "race_bonuses": [],
+            "subrace_bonuses": [],
+            "asi_increases": [],
+            "feature_increases": [],
+        }
+        kwargs.update(overrides)
+        return CharacterAbilityScoreCalculator().breakdown(make_character(), **kwargs)
+
+    def test_covers_every_ability_with_base_and_total(self):
+        result = self.breakdown()
+
+        assert set(result) == set(AbilityScore)
+        assert result[AbilityScore.STR].base == 14
+        assert result[AbilityScore.STR].total == 14
+        assert result[AbilityScore.STR].contributions == []
+
+    def test_total_matches_compute_and_sources_are_labeled(self):
+        asi_choice = SimpleNamespace(class_level=4, choice_type=SimpleNamespace(value="ASI"))
+        result = self.breakdown(
+            race_bonuses=[make_race_bonus(AbilityScore.STR, 2)],
+            subrace_bonuses=[make_subrace_bonus(AbilityScore.STR, 1)],
+            asi_increases=[
+                SimpleNamespace(ability=AbilityScore.STR, amount=2, choice=asi_choice),
+                SimpleNamespace(ability=AbilityScore.STR, amount=1, choice=SimpleNamespace(class_level=None)),
+            ],
+            feature_increases=[
+                SimpleNamespace(ability=AbilityScore.STR, amount=4, feature=SimpleNamespace(name="Primal Champion"))
+            ],
+        )
+
+        strength = result[AbilityScore.STR]
+
+        assert strength.total == 14 + 2 + 1 + 2 + 1 + 4
+        assert [(c.source, c.label, c.amount) for c in strength.contributions] == [
+            ("race", "Race bonus", 2),
+            ("subrace", "Subrace bonus", 1),
+            ("asi", "Level 4 (ASI)", 2),
+            ("asi", "GM adjustment", 1),
+            ("feature", "Primal Champion", 4),
+        ]
+
+    def test_names_replace_the_generic_race_labels(self):
+        result = self.breakdown(
+            race_bonuses=[make_race_bonus(AbilityScore.DEX, 2)],
+            subrace_bonuses=[make_subrace_bonus(AbilityScore.DEX, 1)],
+            race_name="Elf",
+            subrace_name="High Elf",
+        )
+
+        assert [c.label for c in result[AbilityScore.DEX].contributions] == ["Elf", "High Elf"]
+
+    def test_total_is_floored_at_one_but_contributions_keep_their_sign(self):
+        result = self.breakdown(
+            feature_increases=[
+                SimpleNamespace(ability=AbilityScore.INT, amount=-20, feature=SimpleNamespace(name="Curse"))
+            ]
+        )
+
+        assert result[AbilityScore.INT].total == 1
+        assert result[AbilityScore.INT].contributions[0].amount == -20

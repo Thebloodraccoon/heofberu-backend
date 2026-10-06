@@ -1,58 +1,20 @@
-"""Class available-skill service: full replacement and id resolution."""
+"""Class available-skill service: full replacement."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.base.service import BaseService
-from app.features.classes.cache import CLASS_CACHE_NAMESPACES
-from app.features.classes.crud.schemas import ClassCreate, ClassResponse, ClassUpdate
-from app.features.classes.skills.repository import ClassSkillsRepository
+from app.features.classes.service_base import ClassScopedService
 from app.features.classes.skills.schemas import AvailableSkillsUpdate
 from app.features.shared.skills.mixins import SkillsManagerMixin
-from app.models.classes.class_model import Class
-from app.models.skill_model import Skill
 
 
-class ClassSkillService(
-    SkillsManagerMixin,
-    BaseService[Class, ClassCreate, ClassUpdate, ClassResponse, None],
-):
+class ClassSkillService(SkillsManagerMixin, ClassScopedService):
     """
-    Everything about the skills a class may choose proficiencies from.
+    The skills a class may choose proficiencies from.
 
-    Full replacement comes from :class:`SkillsManagerMixin`; the generic
-    CRUD machinery comes from :class:`BaseService`. Writes purge
-    ``CLASS_CACHE_NAMESPACES`` via ``cache_namespaces``.
+    Full replacement comes from :class:`SkillsManagerMixin`.
     """
-
-    repository: ClassSkillsRepository
 
     _set_skills_method = "set_available_skills"
 
-    cache_namespaces = CLASS_CACHE_NAMESPACES
-
-    def __init__(self, db: AsyncSession):
-        """Initialize the service with a repository over the session."""
-
-        super().__init__(
-            repository=ClassSkillsRepository(db),
-            response_schema=ClassResponse,
-        )
-
-    async def set_available_skills(self, class_id: int, data: AvailableSkillsUpdate) -> ClassResponse:
+    async def set_available_skills(self, class_id: int, data: AvailableSkillsUpdate):
         """Fully replace the skills a class may choose proficiencies from."""
 
         return await self.set_skills(class_id, data)
-
-    async def resolve_skills(self, skill_ids: list[int] | None) -> list[Skill] | None:
-        """
-        Resolve ``skill_ids`` to ``Skill`` rows, or ``None`` when absent/empty.
-
-        Raises ``RecordIdsInvalidError`` if any id is unknown.
-        """
-
-        return await self._resolve_skills(skill_ids)
-
-    async def set_skills_for_class(self, character_class: Class, skills: list[Skill], *, commit: bool = True) -> None:
-        """Attach ``skills`` to an existing ``class`` row."""
-
-        await self.repository.set_available_skills(character_class.id, skills, commit=commit)

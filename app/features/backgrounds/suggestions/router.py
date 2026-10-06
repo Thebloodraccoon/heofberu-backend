@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, status
 
+from app.features.auth.dependencies import GmUserDep
 from app.features.backgrounds.dependencies import BackgroundSuggestionsDep
 from app.features.backgrounds.suggestions.schemas import SuggestionCreate, SuggestionResponse, SuggestionUpdate
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -58,7 +58,10 @@ async def create_background_suggestion(
     "/suggestions/{suggestion_id}",
     response_model=SuggestionResponse,
     summary="Update a background suggestion",
-    responses={404: {"description": "No background or suggestion exists with the given IDs."}},
+    responses={
+        404: {"description": "No background or suggestion exists with the given IDs."},
+        409: {"description": "The change would leave the background without a suggestion of the old type."},
+    },
 )
 async def update_background_suggestion(
     background_id: int,
@@ -81,7 +84,8 @@ async def update_background_suggestion(
     Update an existing suggestion. **GM only.**
 
     Only fields included in the request body are changed; omitted fields
-    are left as-is.
+    are left as-is. Changing `suggestion_type` of the last suggestion of a
+    type is refused (409).
     """
 
     return await background_service.update_suggestion(background_id, suggestion_id, data)
@@ -91,7 +95,10 @@ async def update_background_suggestion(
     "/suggestions/{suggestion_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a background suggestion",
-    responses={404: {"description": "No background or suggestion exists with the given IDs."}},
+    responses={
+        404: {"description": "No background or suggestion exists with the given IDs."},
+        409: {"description": "It is the last suggestion of its type (character creation needs one per type)."},
+    },
 )
 async def delete_background_suggestion(
     background_id: int,
@@ -99,7 +106,12 @@ async def delete_background_suggestion(
     background_service: BackgroundSuggestionsDep,
     _: GmUserDep,
 ):
-    """Remove a single suggestion from the background. **GM only.**"""
+    """
+    Remove a single suggestion from the background. **GM only.**
+
+    The last suggestion of a type can't be removed (409): character creation
+    needs one suggestion per type.
+    """
 
     await background_service.delete_suggestion(background_id, suggestion_id)
     return None

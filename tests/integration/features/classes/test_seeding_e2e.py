@@ -12,8 +12,8 @@ import pytest
 @pytest.mark.asyncio
 class TestClassCreationSeeding:
     async def test_create_class_seeds_throws_proficiencies_and_skills(self, client, gm_token, create_skill):
-        skill_a = await create_skill(key="ARCANA", name="Arcana", ability="INT")
-        skill_b = await create_skill(key="HISTORY", name="History", ability="INT")
+        skill_a = await create_skill(name="Arcana", ability="INT")
+        skill_b = await create_skill(name="History", ability="INT")
 
         response = await client.post(
             "/classes",
@@ -50,7 +50,7 @@ class TestClassCreationSeeding:
 
     async def test_seeded_rows_survive_a_fresh_full_read(self, client, gm_token, create_skill):
         """GET /classes/{id} re-embeds everything attached through the capability endpoints."""
-        skill = await create_skill(key="RELIGION", name="Religion", ability="WIS")
+        skill = await create_skill(name="Religion", ability="WIS")
 
         created = await client.post(
             "/classes",

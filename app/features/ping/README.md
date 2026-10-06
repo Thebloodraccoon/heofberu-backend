@@ -2,14 +2,19 @@
 
 ## Purpose
 
-Liveness/health check for load balancers and uptime probes. Touches no
-external services (no DB, no Redis).
+Liveness (`/ping`, no external services) and readiness (`/ready`, DB + Redis) checks for load balancers,
+orchestrators and uptime probes.
 
-## Endpoints (`router.py`, prefix `/ping`, tag `Health Check`)
+## Endpoints (`router.py`, tag `Health Check`)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/ping` | Open | Returns `{"ping": "pong", "timestamp": ..., "status": "healthy"}` with the current epoch time. |
+| GET | `/api/v1/ping` | Open | Returns `{"ping": "pong", "timestamp": ..., "status": "healthy"}` with the current epoch time. Liveness only. |
+| GET | `/api/v1/ready` | Open | `SELECT 1` on the DB plus `PING` on the cache and auth Redis. `200 {"status": "ready", "checks": {...}}`, or `503 {"status": "unavailable", ...}` with `ok`/`fail` per dependency (causes are logged, never returned). |
+
+The probe is versioned with the rest of the API (`/api/v1/ping`); both probes are excluded from request
+logging and rate limiting (`HEALTH_SKIP_PATHS`). The Docker `HEALTHCHECK` stays on `/ping` (liveness): a Redis blip must not
+restart the container; point orchestrator readiness probes at `/ready`.
 
 ## Structure
 

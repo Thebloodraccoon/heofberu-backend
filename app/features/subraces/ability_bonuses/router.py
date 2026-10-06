@@ -4,10 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
-from app.features.subraces.ability_bonuses.schemas import SubraceAbilityBonusesUpdate
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
+from app.features.shared.catalog.schemas import AbilityBonusesUpdate
 from app.features.subraces.crud.schemas import SubraceResponse
 from app.features.subraces.dependencies import SubraceAbilityBonusesDep
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -16,12 +17,12 @@ router = APIRouter()
     "/{subrace_id:int}/ability-bonuses",
     response_model=SubraceResponse,
     summary="Replace a subrace's ability bonuses",
-    responses={404: {"description": "No subrace exists with the given ID under this race."}},
+    responses={404: {"description": "No subrace exists with the given ID."}},
 )
 async def set_ability_bonuses(
-    subrace_id: int,
+    subrace_id: EntityIdPath,
     data: Annotated[
-        SubraceAbilityBonusesUpdate,
+        AbilityBonusesUpdate,
         Body(
             openapi_examples={
                 "replace": {
@@ -35,9 +36,9 @@ async def set_ability_bonuses(
             },
         ),
     ],
-    race_service: SubraceAbilityBonusesDep,
+    subrace_service: SubraceAbilityBonusesDep,
     _: GmUserDep,
 ):
     """Replace all ability score bonuses for a subrace. **GM only.**"""
 
-    return await race_service.set_ability_bonuses(subrace_id, data)
+    return await subrace_service.set_ability_bonuses(subrace_id, data)

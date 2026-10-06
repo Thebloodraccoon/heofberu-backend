@@ -2,37 +2,35 @@
 Generic repository layer: common CRUD operations for SQLAlchemy models.
 
 Provides :class:`BaseRepository` (a reusable, model-generic CRUD base with
-filtering, search, pagination, uniqueness checks and delete-in-use guards)
-plus the model protocol and type aliases it relies on.
+filtering, search, pagination, uniqueness checks and delete-in-use guards),
+:class:`SessionRepository` (just the session and flush helper, for tables
+without an ``id``), :class:`RepositoryMixin` (typing base for repository
+mixins) plus the model protocol and type aliases they rely on.
 
 Async stack: all public methods are ``async`` and run against an
 ``AsyncSession`` using 2.0-style ``select()`` statements.
 """
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from typing import Any, Generic, Protocol, TypeVar
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
 
 from sqlalchemy import String, Text, delete, func, inspect, or_, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapper
 
+from app.core.base.transaction import require_atomic
 from app.core.exceptions import RecordAlreadyExistsError, RecordInUseError
 
+_UNSEARCHABLE_SUFFIXES = ("password", "token", "secret", "_url")
 
-async def _commit_or_rollback(db: AsyncSession) -> None:
-    """
-    Commit pending changes, rolling back and re-raising on a ``SQLAlchemyError``.
 
-    Standalone helper for code that does not extend :class:`BaseRepository`
-    (e.g. ``NestedSourceItemService``, ``CharacterSkillProficiencyRepository``).
-    """
+def _is_id_clause(clause: Any, model: Any) -> bool:
+    """Whether an ORDER BY ``clause`` already orders by ``model.id`` (plain or ``.asc()``/``.desc()``)."""
 
-    try:
-        await db.commit()
-    except SQLAlchemyError:
-        await db.rollback()
-        raise
+    element = getattr(clause, "element", clause)
+    element = getattr(element, "expression", element)
+    return str(element) == str(model.id.expression)
 
 
 class ModelProtocol(Protocol):
@@ -44,7 +42,44 @@ class ModelProtocol(Protocol):
 ModelType = TypeVar("ModelType", bound=ModelProtocol)
 
 
-class BaseRepository(Generic[ModelType]):
+class SessionRepository:
+    """
+    Session plumbing shared by every repository: the bound ``AsyncSession`` and the guarded ``flush``.
+
+    Extend it directly for tables without a surrogate ``id`` (composite-key rows such as
+    ``character_conditions``): ``BaseRepository``'s id-based CRUD doesn't apply to them, so they shouldn't
+    inherit it.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def flush(self) -> None:
+        """
+        Flush pending changes to the database; the service's ``atomic`` block commits them.
+
+        Services doing raw ``setattr`` mutations or bulk executes end with this instead of a hand-rolled
+        ``db.flush()``. Raises if called outside ``atomic`` (see :func:`require_atomic`).
+        """
+
+        require_atomic(self.db)
+        await self.db.flush()
+
+
+class RepositoryMixin:
+    """
+    Base for repository mixins composed into a ``BaseRepository`` subclass.
+
+    Declares, for type checkers only, the host members the mixins call; adds nothing at runtime.
+    """
+
+    if TYPE_CHECKING:
+        db: AsyncSession
+        get_many_by_ids: Any
+        replace_association: Any
+
+
+class BaseRepository(SessionRepository, Generic[ModelType]):
     """
     Common CRUD operations for SQLAlchemy models.
 
@@ -94,18 +129,22 @@ class BaseRepository(Generic[ModelType]):
         unique_fields: list[str] | None = None,
         check_in_use_on_delete: bool = False,
     ):
+        super().__init__(db)
         self.model = model
-        self.db = db
         self._default_load_options = default_load_options or []
         self._search_fields = search_fields if search_fields is not None else self._detect_text_fields()
         self._unique_fields = unique_fields or []
         self._check_in_use_on_delete = check_in_use_on_delete
 
     def _detect_text_fields(self) -> list[str]:
-        """Auto-detect ``String``/``Text`` column names on ``self.model``."""
+        """Auto-detect searchable ``String``/``Text`` columns (secrets and URL columns are never searched)."""
 
-        mapper = inspect(self.model)
-        return [column.key for column in mapper.columns if isinstance(column.type, String | Text)]
+        mapper = cast(Mapper[Any], inspect(self.model))
+        return [
+            column.key
+            for column in mapper.columns
+            if isinstance(column.type, String | Text) and not column.key.endswith(_UNSEARCHABLE_SUFFIXES)
+        ]
 
     def _apply_filters(self, stmt: Any, filters: dict[str, Any] | None) -> Any:
         """
@@ -163,9 +202,8 @@ class BaseRepository(Generic[ModelType]):
 
         stmt = stmt.where(self.model.id == model_id)
 
-        # Repopulate an existing identity-map instance instead of returning its
-        # stale state: mutation flows (child-row replacement, ``db.expire`` after
-        # feature edits) leave in-memory collections out of sync with the DB.
+        # populate_existing: child-row replacement and ``db.expire`` flows leave
+        # identity-map instances out of sync with the DB.
         return await self.db.scalar(stmt.execution_options(populate_existing=True))
 
     async def get_all(
@@ -176,6 +214,7 @@ class BaseRepository(Generic[ModelType]):
         filters: dict[str, Any] | None = None,
         search: str | None = None,
         order_by: Any = None,
+        conditions: Sequence[Any] = (),
     ) -> list[ModelType]:
         """
         Retrieve records with offset-based pagination, ordered by ``id``
@@ -189,7 +228,8 @@ class BaseRepository(Generic[ModelType]):
             limit: Max records to return. ``None`` disables the limit.
             filters: Exact-match filters against ``self.model``.
             search: Substring match against ``self._search_fields``.
-            order_by: Optional column(s) to order by; defaults to ``self.model.id``.
+            order_by: Optional column(s) to order by; ``self.model.id`` is always the final tie-break.
+            conditions: Extra WHERE clauses (e.g. a keyset cursor condition).
         """
 
         stmt = select(self.model)
@@ -198,8 +238,9 @@ class BaseRepository(Generic[ModelType]):
 
         stmt = self._apply_filters(stmt, filters)
         stmt = self._apply_search(stmt, search)
+        stmt = stmt.where(*conditions)
 
-        stmt = stmt.order_by(order_by if order_by is not None else self.model.id)
+        stmt = stmt.order_by(*self._ordering(order_by))
 
         if skip:
             stmt = stmt.offset(skip)
@@ -215,12 +256,16 @@ class BaseRepository(Generic[ModelType]):
         *columns: Any,
         order_by: Any = None,
         skip: int = 0,
-        limit: int = 100,
+        limit: int | None = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
+        conditions: Sequence[Any] = (),
     ) -> list[Any]:
         """
         Retrieve a paginated page of specific columns (no relationship loading).
+
+        Ordering is deterministic: ``order_by`` (if given) with ``model.id`` as
+        the tie-break, so OFFSET/LIMIT pages never overlap or skip rows.
 
         Args:
             *columns: Model columns to select.
@@ -229,6 +274,7 @@ class BaseRepository(Generic[ModelType]):
             limit: Max records to return.
             filters: Exact-match filters against ``self.model``.
             search: Substring match against ``self._search_fields``.
+            conditions: Extra WHERE clauses (e.g. a keyset cursor condition).
 
         Returns:
             A list of ``Row`` tuples in column order.
@@ -237,18 +283,21 @@ class BaseRepository(Generic[ModelType]):
         stmt = select(*columns)
         stmt = self._apply_filters(stmt, filters)
         stmt = self._apply_search(stmt, search)
+        stmt = stmt.where(*conditions)
 
-        if order_by is not None:
-            stmt = stmt.order_by(order_by)
+        stmt = stmt.order_by(*self._ordering(order_by))
 
         result = await self.db.execute(stmt.offset(skip).limit(limit))
         return list(result.all())
 
-    async def count_all(self) -> int:
-        """Count all records in the table."""
+    def _ordering(self, order_by: Any = None) -> list[Any]:
+        """``order_by`` columns followed by ``model.id`` (unless already present) as a stable tie-break."""
 
-        stmt = select(func.count()).select_from(self.model)
-        return (await self.db.scalar(stmt)) or 0
+        clauses = list(order_by) if isinstance(order_by, list | tuple) else ([order_by] if order_by is not None else [])
+        if not any(_is_id_clause(clause, self.model) for clause in clauses):
+            clauses.append(self.model.id)
+
+        return clauses
 
     async def count(self, *, filters: dict[str, Any] | None = None, search: str | None = None) -> int:
         """Count records matching ``filters``/``search`` (same conditions as :meth:`get_all`)."""
@@ -276,67 +325,39 @@ class BaseRepository(Generic[ModelType]):
                 if await self.db.scalar(stmt) is not None:
                     raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
 
-    @asynccontextmanager
-    async def _commit_or_rollback(self) -> AsyncGenerator[None, None]:
-        """Commit on success, rollback and re-raise on SQLAlchemyError."""
-
-        try:
-            yield
-            await self.db.commit()
-        except SQLAlchemyError:
-            await self.db.rollback()
-            raise
-
-    async def commit_or_flush(self, *, commit: bool = True) -> None:
-        """
-        Persist pending changes: commit via the rollback-safe
-        :meth:`_commit_or_rollback` path, or flush when the caller owns the
-        transaction (``commit=False`` inside a ``_atomic()`` block).
-
-        Services doing raw ``setattr`` mutations or bulk executes should end
-        with this instead of hand-rolled ``db.commit()/db.flush()`` — a bare
-        ``commit()`` skips the rollback-on-error guarantee.
-        """
-
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-        else:
-            await self.db.flush()
-
-    async def create(self, obj_data: dict[str, Any], *, commit: bool = True) -> ModelType:
-        """
-        Create a record from ``obj_data`` and return it.
-
-        ``commit=False`` flushes instead of committing, leaving the
-        transaction open for the caller (e.g. inside ``begin_nested()``).
-        """
+    async def create(self, obj_data: dict[str, Any]) -> ModelType:
+        """Create a record from ``obj_data``, flush and refresh it, and return it (the service's ``atomic`` commits)."""
 
         await self._check_uniqueness(obj_data)
 
         db_obj = self.model(**obj_data)
         self.db.add(db_obj)
 
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-            await self.db.refresh(db_obj)
-        else:
-            await self.db.flush()
+        await self.flush()
+        await self.db.refresh(db_obj)
 
         return db_obj
 
-    async def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
-        """Apply ``update_data`` onto ``db_obj`` and commit. Unknown keys are ignored."""
+    def _uniqueness_scope(self, db_obj: ModelType) -> dict[str, Any]:
+        """
+        Extra values merged into the uniqueness check of an update (none by default).
 
-        await self._check_uniqueness(update_data, exclude_id=db_obj.id)
+        Lets a repository scope the check by the existing row (e.g. subclass names are unique
+        per class), which a partial PATCH payload cannot do on its own.
+        """
+
+        return {}
+
+    async def update(self, db_obj: ModelType, update_data: dict[str, Any], *, refresh: bool = False) -> ModelType:
+        """Apply ``update_data`` onto ``db_obj`` and flush. Unknown keys are ignored."""
+
+        await self._check_uniqueness({**self._uniqueness_scope(db_obj), **update_data}, exclude_id=db_obj.id)
 
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        async with self._commit_or_rollback():
-            pass
+        await self.flush()
         if refresh:
             await self.db.refresh(db_obj)
 
@@ -359,7 +380,7 @@ class BaseRepository(Generic[ModelType]):
 
     async def delete(self, db_obj: ModelType) -> bool:
         """
-        Delete ``db_obj``, returning ``True`` on success.
+        Delete ``db_obj`` (flush; the service's ``atomic`` commits), returning ``True`` on success.
 
         If ``check_in_use_on_delete`` was set in ``__init__``, calls
         :meth:`is_in_use` first and raises ``RecordInUseError`` instead of
@@ -369,17 +390,19 @@ class BaseRepository(Generic[ModelType]):
         database errors propagate untouched.
         """
 
-        if self._check_in_use_on_delete and await self.is_in_use(db_obj.id):
-            raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
+        model_id = db_obj.id
+        if self._check_in_use_on_delete and await self.is_in_use(model_id):
+            raise RecordInUseError(model_name=self.model.__name__, model_id=model_id)
 
         try:
-            async with self._commit_or_rollback():
-                await self.db.delete(db_obj)
+            require_atomic(self.db)
+            await self.db.delete(db_obj)
+            await self.db.flush()
         except IntegrityError:
-            # A RESTRICT-guarded FK tripped between the is_in_use check and
-            # the delete. Any OTHER SQLAlchemyError (deadlock, connectivity,
-            # ...) must NOT be masked as "in use" — let it propagate.
-            raise RecordInUseError(model_name=self.model.__name__, model_id=db_obj.id)
+            # RESTRICT FK tripped between the check and the delete; other
+            # SQLAlchemyErrors must not be masked as "in use". ``model_id`` was read up front: the failed
+            # flush rolls the savepoint back and expires ``db_obj``, which can't lazy-load on the async stack.
+            raise RecordInUseError(model_name=self.model.__name__, model_id=model_id)
 
         return True
 
@@ -437,14 +460,12 @@ class BaseRepository(Generic[ModelType]):
         parent_fk: str,
         child_fk: str,
         child_ids: list[int],
-        *,
-        commit: bool = True,
     ) -> None:
         """
         Replace a many-to-many association with ``child_ids`` in one batch.
 
         Deletes the parent's existing rows, inserts one row per new child
-        id, then commits (or flushes when ``commit=False``). Written through
+        id, then flushes. Written through
         the association table instead of assigning the ORM relationship:
         assigning an unloaded many-to-many collection would trigger a lazy
         load, which is not supported on the async stack.
@@ -455,7 +476,6 @@ class BaseRepository(Generic[ModelType]):
             parent_fk: Column name on ``association`` referencing ``parent``.
             child_fk: Column name on ``association`` referencing the child.
             child_ids: New child ids (``[]`` clears the association).
-            commit: ``False`` flushes instead, leaving the transaction open.
         """
 
         parent_column = getattr(association, "c", None)
@@ -469,11 +489,7 @@ class BaseRepository(Generic[ModelType]):
                 [{parent_fk: parent.id, child_fk: child_id} for child_id in child_ids],
             )
 
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-        else:
-            await self.db.flush()
+        await self.flush()
 
     async def replace_child_rows(
         self,
@@ -483,15 +499,13 @@ class BaseRepository(Generic[ModelType]):
         rows: list[dict[str, Any]],
         *,
         extra_filters: dict[str, Any] | None = None,
-        commit: bool = True,
     ) -> None:
         """
         Replace the ``child_model`` rows owned by ``parent`` in one batch.
 
         Deletes the parent's existing rows (optionally restricted by
         ``extra_filters``, e.g. ``{"class_level": 3}``), then adds a fresh
-        ``child_model`` row per entry in ``rows``. Commits (or flushes when
-        ``commit=False``).
+        ``child_model`` row per entry in ``rows``, then flushes.
 
         Args:
             child_model: ORM model of the child rows.
@@ -500,7 +514,6 @@ class BaseRepository(Generic[ModelType]):
             rows: Child payloads, each without the FK column (it is injected).
             extra_filters: Extra exact-match filters on the delete
                 (e.g. scoping to a single ``class_level``).
-            commit: ``False`` flushes instead, leaving the transaction open.
         """
 
         stmt = delete(child_model).where(getattr(child_model, fk_name) == parent.id)
@@ -511,11 +524,7 @@ class BaseRepository(Generic[ModelType]):
         for row in rows:
             self.db.add(child_model(**{fk_name: parent.id, **row}))
 
-        if commit:
-            async with self._commit_or_rollback():
-                pass
-        else:
-            await self.db.flush()
+        await self.flush()
 
     async def exists_referencing(self, referencing_model: Any, fk_name: str, value: Any) -> bool:
         """

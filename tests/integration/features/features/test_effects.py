@@ -1,14 +1,8 @@
-"""Tests for the feature effects endpoints: GET/PUT /features/{id}/effects and choice-groups."""
+"""Tests for the feature effects endpoints: GET /features/{id}/effects and choice-groups."""
 
 import pytest
 
-
-async def set_effects(client, gm_token, feature_id, payload):
-    return await client.put(
-        f"/features/{feature_id}/effects",
-        json=payload,
-        headers={"Authorization": f"Bearer {gm_token}"},
-    )
+from tests.helpers import effect_items, set_choice_groups, set_effects
 
 
 def static_items(body, effect_type):
@@ -38,7 +32,14 @@ class TestFeatureEffectsCrud:
             client,
             gm_token,
             feature.id,
-            {"ability_effects": [{"ability": "STR", "amount": 4, "new_cap": 24}, {"ability": "CON", "amount": 4}]},
+            {
+                "static_groups": [
+                    {
+                        "effect_type": "ability",
+                        "items": [{"ability": "STR", "amount": 4, "new_cap": 24}, {"ability": "CON", "amount": 4}],
+                    }
+                ]
+            },
         )
 
         assert response.status_code == 200
@@ -48,59 +49,6 @@ class TestFeatureEffectsCrud:
         assert {item["ability"]: item["amount"] for item in abilities} == {"STR": 4, "CON": 4}
         assert next(item for item in abilities if item["ability"] == "STR")["new_cap"] == 24
 
-    async def test_dropping_an_item_from_the_payload_deletes_it(self, client, gm_token, create_feature):
-        feature = await create_feature(name="Shifting Effect")
-        await set_effects(
-            client,
-            gm_token,
-            feature.id,
-            {"ability_effects": [{"ability": "STR", "amount": 2}, {"ability": "DEX", "amount": 1}]},
-        )
-
-        response = await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "CHA", "amount": -2}]}
-        )
-
-        assert response.status_code == 200
-        abilities = {item["ability"] for item in static_items(response.json(), "ability")}
-        assert abilities == {"CHA"}
-
-    async def test_passing_the_id_back_updates_the_same_row_in_place(self, client, gm_token, create_feature):
-        feature = await create_feature(name="In-Place Edit")
-        first = await set_effects(client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 1}]})
-        row_id = static_items(first.json(), "ability")[0]["id"]
-
-        response = await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"id": row_id, "ability": "STR", "amount": 5}]}
-        )
-
-        assert response.status_code == 200
-        abilities = static_items(response.json(), "ability")
-        assert len(abilities) == 1
-        assert abilities[0]["id"] == row_id
-        assert abilities[0]["amount"] == 5
-
-    async def test_foreign_id_returns_422(self, client, gm_token, create_feature):
-        feature_a = await create_feature(name="Owner A")
-        feature_b = await create_feature(name="Owner B")
-        set_a = await set_effects(client, gm_token, feature_a.id, {"ability_effects": [{"ability": "STR", "amount": 1}]})
-        stray_id = static_items(set_a.json(), "ability")[0]["id"]
-
-        response = await set_effects(
-            client, gm_token, feature_b.id, {"ability_effects": [{"id": stray_id, "ability": "DEX", "amount": 1}]}
-        )
-
-        assert response.status_code == 422
-
-    async def test_clear_with_empty_list(self, client, gm_token, create_feature):
-        feature = await create_feature(name="Temporary Effect")
-        await set_effects(client, gm_token, feature.id, {"ability_effects": [{"ability": "WIS", "amount": 1}]})
-
-        response = await set_effects(client, gm_token, feature.id, {"ability_effects": []})
-
-        assert response.status_code == 200
-        assert static_items(response.json(), "ability") == []
-
     async def test_duplicate_ability_returns_422(self, client, gm_token, create_feature):
         feature = await create_feature(name="Dup Effect")
 
@@ -108,13 +56,22 @@ class TestFeatureEffectsCrud:
             client,
             gm_token,
             feature.id,
-            {"ability_effects": [{"ability": "STR", "amount": 1}, {"ability": "STR", "amount": 1}]},
+            {
+                "static_groups": [
+                    {
+                        "effect_type": "ability",
+                        "items": [{"ability": "STR", "amount": 1}, {"ability": "STR", "amount": 1}],
+                    }
+                ]
+            },
         )
 
         assert response.status_code == 422
 
     async def test_unknown_feature_returns_404(self, client, gm_token):
-        response = await set_effects(client, gm_token, 999999, {"ability_effects": []})
+        response = await set_effects(
+            client, gm_token, 999999, {"static_groups": [{"effect_type": "ability", "items": []}]}
+        )
 
         assert response.status_code == 404
 
@@ -122,7 +79,10 @@ class TestFeatureEffectsCrud:
         feature = await create_feature(name="Player Proof")
 
         response = await set_effects(
-            client, player_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 1}]}
+            client,
+            player_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
         )
 
         assert response.status_code == 403
@@ -138,10 +98,12 @@ class TestFeatureEffectsCrud:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestFeatureEffectsAllTypes:
-    async def test_put_all_six_effect_types(self, client, gm_token, create_feature, create_skill, create_item, create_spell):
+    async def test_put_all_six_effect_types(
+        self, client, gm_token, create_feature, create_skill, create_item, create_spell
+    ):
         feature = await create_feature(name="Epic Feature", source_type="CLASS", level=None)
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
-        item = await create_item(name="Longsword", item_type="WEAPON")
+        skill = await create_skill(name="Stealth", ability="DEX")
+        await create_item(name="Longsword", item_type="WEAPON")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
         response = await set_effects(
@@ -149,12 +111,14 @@ class TestFeatureEffectsAllTypes:
             gm_token,
             feature.id,
             {
-                "ability_effects": [{"ability": "STR", "amount": 2}],
-                "skill_effects": [{"skill_id": skill.id}],
-                "saving_throw_effects": [{"ability": "DEX"}],
-                "armor_effects": [{"armor_type": "LIGHT"}],
-                "weapon_effects": [{"weapon_category": "MARTIAL"}],
-                "spell_effects": [{"spell_id": spell.id}],
+                "static_groups": [
+                    {"effect_type": "ability", "items": [{"ability": "STR", "amount": 2}]},
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id}]},
+                    {"effect_type": "saving_throw", "items": [{"ability": "DEX"}]},
+                    {"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]},
+                    {"effect_type": "weapon", "items": [{"weapon_category": "MARTIAL"}]},
+                    {"effect_type": "spell", "items": [{"spell_id": spell.id}]},
+                ]
             },
         )
 
@@ -174,7 +138,10 @@ class TestFeatureEffectsAllTypes:
         item = await create_item(name="Longsword", item_type="WEAPON")
 
         response = await set_effects(
-            client, gm_token, feature.id, {"weapon_effects": [{"item_id": item.id}]}
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "weapon", "items": [{"item_id": item.id}]}]},
         )
 
         assert response.status_code == 200
@@ -185,7 +152,9 @@ class TestFeatureEffectsAllTypes:
     async def test_weapon_effect_neither_set_returns_422(self, client, gm_token, create_feature):
         feature = await create_feature(name="Bad Weapon")
 
-        response = await set_effects(client, gm_token, feature.id, {"weapon_effects": [{}]})
+        response = await set_effects(
+            client, gm_token, feature.id, {"static_groups": [{"effect_type": "weapon", "items": [{}]}]}
+        )
 
         assert response.status_code == 422
 
@@ -197,7 +166,11 @@ class TestFeatureEffectsAllTypes:
             client,
             gm_token,
             feature.id,
-            {"weapon_effects": [{"weapon_category": "MARTIAL", "item_id": item.id}]},
+            {
+                "static_groups": [
+                    {"effect_type": "weapon", "items": [{"weapon_category": "MARTIAL", "item_id": item.id}]}
+                ]
+            },
         )
 
         assert response.status_code == 422
@@ -207,25 +180,24 @@ class TestFeatureEffectsAllTypes:
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
         response = await set_effects(
-            client, gm_token, feature.id, {"spell_effects": [{"spell_id": spell.id}]}
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "spell", "items": [{"spell_id": spell.id}]}]},
         )
 
         assert response.status_code == 200
         assert static_items(response.json(), "spell")[0]["spell_id"] == spell.id
 
-    async def test_spell_effect_open_choice(self, client, gm_token, create_feature):
+    async def test_fixed_spell_effect_without_spell_id_is_rejected(self, client, gm_token, create_feature):
         feature = await create_feature(name="Any Spell Grant")
 
         response = await set_effects(
-            client,
-            gm_token,
-            feature.id,
-            {"spell_effects": [{}]},
+            client, gm_token, feature.id, {"static_groups": [{"effect_type": "spell", "items": [{}]}]}
         )
 
-        assert response.status_code == 200
-        effect = static_items(response.json(), "spell")[0]
-        assert effect["spell_id"] is None
+        assert response.status_code == 422
+        assert (await client.get(f"/features/{feature.id}/effects")).json()["static_groups"] == []
 
 
 @pytest.mark.integration
@@ -234,21 +206,22 @@ class TestChoiceGroups:
     async def test_put_choice_groups_full_tree(self, client, gm_token, create_feature):
         feature = await create_feature(name="Resilient")
 
-        response = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        response = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
                         "options": [
-                            {"ability_effects": [{"ability": "STR", "amount": 1}]},
-                            {"ability_effects": [{"ability": "DEX", "amount": 1}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}]},
                         ],
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 200
@@ -257,107 +230,36 @@ class TestChoiceGroups:
         assert groups[0]["pick_count"] == 1
         assert "label" not in groups[0]
         assert len(groups[0]["options"]) == 2
-        str_opt = next(o for o in groups[0]["options"] if o["ability_effects"][0]["ability"] == "STR")
-        assert len(str_opt["ability_effects"]) == 1
-        assert str_opt["ability_effects"][0]["ability"] == "STR"
+        str_opt = next(o for o in groups[0]["options"] if effect_items(o["effects"], "ability")[0]["ability"] == "STR")
+        assert len(effect_items(str_opt["effects"], "ability")) == 1
+        assert effect_items(str_opt["effects"], "ability")[0]["ability"] == "STR"
 
     async def test_second_ability_choice_group_rejected(self, client, gm_token, create_feature):
         """A feature may offer only one choice group of type ABILITY_SCORE, not two."""
         feature = await create_feature(name="Double ASI")
 
-        response = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        response = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
-                        "pick_count": 1,
-                        "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
-                    },
-                    {
-                        "pick_count": 1,
-                        "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "DEX", "amount": 1}]}],
-                    },
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 422
-
-    async def test_clear_choice_groups(self, client, gm_token, create_feature):
-        feature = await create_feature(name="Temporary Choice")
-        await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={"choice_groups": [{"pick_count": 1, "choice_type": "SKILL", "options": []}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        response = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={"choice_groups": []},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 200
-        assert response.json() == []
-
-    async def test_updating_by_id_keeps_the_same_group_and_option_ids(self, client, gm_token, create_feature):
-        feature = await create_feature(name="Stable Ids")
-        first = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
-                "choice_groups": [
-                    {
-                        "pick_count": 1,
-                        "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
-                    }
-                ]
-            },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        group = first.json()[0]
-        option = group["options"][0]
-
-        response = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
-                "choice_groups": [
-                    {
-                        "id": group["id"],
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
                         "options": [
-                            {"id": option["id"], "ability_effects": [{"ability": "STR", "amount": 2}]}
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
                         ],
-                    }
+                    },
+                    {
+                        "pick_count": 1,
+                        "choice_type": "ABILITY_SCORE",
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}]}
+                        ],
+                    },
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-
-        assert response.status_code == 200
-        updated = response.json()[0]
-        assert updated["id"] == group["id"]
-        assert updated["options"][0]["id"] == option["id"]
-        assert updated["options"][0]["ability_effects"][0]["amount"] == 2
-
-    async def test_foreign_group_id_returns_422(self, client, gm_token, create_feature):
-        feature_a = await create_feature(name="Group Owner A")
-        feature_b = await create_feature(name="Group Owner B")
-        created = await client.put(
-            f"/features/{feature_a.id}/choice-groups",
-            json={"choice_groups": [{"pick_count": 1, "choice_type": "SKILL", "options": []}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
-        stray_group_id = created.json()[0]["id"]
-
-        response = await client.put(
-            f"/features/{feature_b.id}/choice-groups",
-            json={"choice_groups": [{"id": stray_group_id, "pick_count": 1, "choice_type": "SKILL", "options": []}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         assert response.status_code == 422
@@ -373,9 +275,9 @@ class TestChoiceGroups:
     async def test_player_cannot_write_choice_groups(self, client, player_token, create_feature):
         feature = await create_feature(name="Player Choice Proof")
 
-        response = await client.put(
+        response = await client.post(
             f"/features/{feature.id}/choice-groups",
-            json={"choice_groups": []},
+            json={"choice_type": "SKILL"},
             headers={"Authorization": f"Bearer {player_token}"},
         )
 
@@ -391,7 +293,7 @@ class TestFeatureResponsesEmbedEffectTree:
             client,
             gm_token,
             feature.id,
-            {"ability_effects": [{"ability": "STR", "amount": 4, "new_cap": 30}]},
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 4, "new_cap": 30}]}]},
         )
 
         response = await client.get(f"/features/{feature.id}")
@@ -408,7 +310,7 @@ class TestFeatureResponsesEmbedEffectTree:
         self, client, gm_token, create_feature, create_skill, create_item, create_spell
     ):
         feature = await create_feature(name="Primal Champion")
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
         item = await create_item(name="Longsword", item_type="WEAPON")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
@@ -417,51 +319,56 @@ class TestFeatureResponsesEmbedEffectTree:
             gm_token,
             feature.id,
             {
-                "ability_effects": [{"ability": "STR", "amount": 4, "new_cap": 30}],
-                "skill_effects": [{"skill_id": skill.id}],
-                "saving_throw_effects": [{"ability": "DEX"}],
-                "armor_effects": [{"armor_type": "LIGHT"}],
-                "weapon_effects": [{"weapon_category": "MARTIAL"}],
-                "spell_effects": [{"spell_id": spell.id}],
+                "static_groups": [
+                    {"effect_type": "ability", "items": [{"ability": "STR", "amount": 4, "new_cap": 30}]},
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id}]},
+                    {"effect_type": "saving_throw", "items": [{"ability": "DEX"}]},
+                    {"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]},
+                    {"effect_type": "weapon", "items": [{"weapon_category": "MARTIAL"}]},
+                    {"effect_type": "spell", "items": [{"spell_id": spell.id}]},
+                ]
             },
         )
-        await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
-                        "options": [{"ability_effects": [{"ability": "STR", "amount": 1}]}],
+                        "options": [
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]}
+                        ],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "SAVING_THROW",
-                        "options": [{"saving_throw_effects": [{"ability": "STR"}]}],
+                        "options": [{"effects": [{"effect_type": "saving_throw", "items": [{"ability": "STR"}]}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "SKILL",
-                        "options": [{"skill_effects": [{"skill_id": skill.id}]}],
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "ARMOR",
-                        "options": [{"armor_effects": [{"armor_type": "SHIELD"}]}],
+                        "options": [{"effects": [{"effect_type": "armor", "items": [{"armor_type": "SHIELD"}]}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "WEAPON",
-                        "options": [{"weapon_effects": [{"item_id": item.id}]}],
+                        "options": [{"effects": [{"effect_type": "weapon", "items": [{"item_id": item.id}]}]}],
                     },
                     {
                         "pick_count": 1,
                         "choice_type": "SPELL",
-                        "options": [{"spell_effects": [{"spell_id": spell.id}]}],
+                        "options": [{"effects": [{"effect_type": "spell", "items": [{"spell_id": spell.id}]}]}],
                     },
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
 
         response = await client.get(f"/features/{feature.id}")
@@ -476,12 +383,14 @@ class TestFeatureResponsesEmbedEffectTree:
         assert static_items(body, "spell")[0]["spell_id"] == spell.id
         assert len(body["choice_groups"]) == 6
         groups_by_type = {group["choice_type"]: group for group in body["choice_groups"]}
-        assert groups_by_type["ABILITY_SCORE"]["options"][0]["ability_effects"][0]["ability"] == "STR"
-        assert groups_by_type["SAVING_THROW"]["options"][0]["saving_throw_effects"][0]["ability"] == "STR"
-        assert groups_by_type["SKILL"]["options"][0]["skill_effects"][0]["skill_id"] == skill.id
-        assert groups_by_type["ARMOR"]["options"][0]["armor_effects"][0]["armor_type"] == "SHIELD"
-        assert groups_by_type["WEAPON"]["options"][0]["weapon_effects"][0]["item_id"] == item.id
-        assert groups_by_type["SPELL"]["options"][0]["spell_effects"][0]["spell_id"] == spell.id
+        assert effect_items(groups_by_type["ABILITY_SCORE"]["options"][0]["effects"], "ability")[0]["ability"] == "STR"
+        assert (
+            effect_items(groups_by_type["SAVING_THROW"]["options"][0]["effects"], "saving_throw")[0]["ability"] == "STR"
+        )
+        assert effect_items(groups_by_type["SKILL"]["options"][0]["effects"], "skill")[0]["skill_id"] == skill.id
+        assert effect_items(groups_by_type["ARMOR"]["options"][0]["effects"], "armor")[0]["armor_type"] == "SHIELD"
+        assert effect_items(groups_by_type["WEAPON"]["options"][0]["effects"], "weapon")[0]["item_id"] == item.id
+        assert effect_items(groups_by_type["SPELL"]["options"][0]["effects"], "spell")[0]["spell_id"] == spell.id
         assert body["has_choices"] is True
 
     async def test_feature_detail_patch_returns_whole_effect_tree(self, client, gm_token, create_feature):
@@ -506,7 +415,7 @@ class TestFeatureResponsesEmbedEffectTree:
             client,
             gm_token,
             feature.id,
-            {"ability_effects": [{"ability": "STR", "amount": 2, "new_cap": 30}]},
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 2, "new_cap": 30}]}]},
         )
 
         response = await client.get(f"/races/{race.id}/features")
@@ -533,14 +442,15 @@ class TestFeatureEffectsReMaterialization:
         self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         feature_class = await create_class(name="Fighter")
-        character = await create_character(
-            owner_id=gm.id, class_id=feature_class.id, name="Refresher", strength=14
-        )
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id, name="Refresher", strength=14)
         feature = await create_feature(name="Mighty", source_type="CLASS", level=None)
 
         # Set initial fixed effect: STR +2
         resp = await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 2}]}
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 2}]}]},
         )
         assert resp.status_code == 200
 
@@ -564,7 +474,10 @@ class TestFeatureEffectsReMaterialization:
 
         # Change the effect to STR +5 (no character-side write)
         await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 5}]}
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 5}]}]},
         )
 
         # STR total now reflects +5
@@ -591,13 +504,14 @@ class TestFeatureEffectsReMaterialization:
         self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         feature_class = await create_class(name="Wizard")
-        character = await create_character(
-            owner_id=gm.id, class_id=feature_class.id, name="Clearer", strength=14
-        )
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id, name="Clearer", strength=14)
         feature = await create_feature(name="Temporary", source_type="CLASS", level=None)
 
         await set_effects(
-            client, gm_token, feature.id, {"ability_effects": [{"ability": "STR", "amount": 3}]}
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 3}]}]},
         )
         grant_resp = await client.post(
             f"/characters/{character.id}/gm-panel/features",
@@ -615,7 +529,11 @@ class TestFeatureEffectsReMaterialization:
         assert stats_before["strength"]["total"] == 17
 
         # Clear the effect
-        await set_effects(client, gm_token, feature.id, {"ability_effects": []})
+        row = static_items((await client.get(f"/features/{feature.id}/effects")).json(), "ability")[0]
+        cleared = await client.delete(
+            f"/features/{feature.id}/effects/ability/{row['id']}", headers={"Authorization": f"Bearer {gm_token}"}
+        )
+        assert cleared.status_code == 200
 
         stats_after = (
             await client.get(
@@ -636,26 +554,26 @@ class TestChoiceGroupEditRevertsAnsweredPickToPending:
         character = await create_character(owner_id=gm.id, class_id=feature_class.id, name="Reverter", strength=10)
         feature = await create_feature(name="Stone's Endurance", source_type="CLASS", level=None)
 
-        groups_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
+        groups_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
                 "choice_groups": [
                     {
                         "pick_count": 1,
                         "choice_type": "ABILITY_SCORE",
                         "options": [
-                            {"ability_effects": [{"ability": "STR", "amount": 1}]},
-                            {"ability_effects": [{"ability": "DEX", "amount": 1}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
+                            {"effects": [{"effect_type": "ability", "items": [{"ability": "DEX", "amount": 1}]}]},
                         ],
                     }
                 ]
             },
-            headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert groups_resp.status_code == 200
         group = groups_resp.json()[0]
-        str_option = next(o for o in group["options"] if o["ability_effects"][0]["ability"] == "STR")
-        dex_option = next(o for o in group["options"] if o["ability_effects"][0]["ability"] == "DEX")
+        str_option = next(o for o in group["options"] if effect_items(o["effects"], "ability")[0]["ability"] == "STR")
 
         grant_resp = await client.post(
             f"/characters/{character.id}/gm-panel/features",
@@ -673,21 +591,9 @@ class TestChoiceGroupEditRevertsAnsweredPickToPending:
         assert answer_resp.status_code == 200
         assert answer_resp.json()["groups"] == []
 
-        # Remove the STR option (keep only DEX) — the character's stored pick points at it.
-        removed_resp = await client.put(
-            f"/features/{feature.id}/choice-groups",
-            json={
-                "choice_groups": [
-                    {
-                        "id": group["id"],
-                        "pick_count": 1,
-                        "choice_type": "ABILITY_SCORE",
-                        "options": [
-                            {"id": dex_option["id"], "ability_effects": [{"ability": "DEX", "amount": 1}]}
-                        ],
-                    }
-                ]
-            },
+        # Remove the STR option — the character's stored pick points at it.
+        removed_resp = await client.delete(
+            f"/features/{feature.id}/choice-groups/{group['id']}/options/{str_option['id']}",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert removed_resp.status_code == 200
@@ -709,7 +615,9 @@ class TestFeatureEffectsAuthEdgeCases:
         assert response.status_code == 404
 
     async def test_put_unknown_feature_returns_404(self, client, gm_token):
-        response = await set_effects(client, gm_token, 999999, {"ability_effects": []})
+        response = await set_effects(
+            client, gm_token, 999999, {"static_groups": [{"effect_type": "ability", "items": []}]}
+        )
         assert response.status_code == 404
 
     async def test_get_choice_groups_unknown_feature_returns_404(self, client):
@@ -717,11 +625,7 @@ class TestFeatureEffectsAuthEdgeCases:
         assert response.status_code == 404
 
     async def test_put_choice_groups_unknown_feature_returns_404(self, client, gm_token):
-        response = await client.put(
-            "/features/999999/choice-groups",
-            json={"choice_groups": []},
-            headers={"Authorization": f"Bearer {gm_token}"},
-        )
+        response = await set_choice_groups(client, gm_token, 999999, {"choice_groups": []})
         assert response.status_code == 404
 
     async def test_unauthenticated_get_effects_open(self, client, create_feature):

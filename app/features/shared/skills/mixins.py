@@ -2,10 +2,12 @@
 
 from typing import Any
 
+from app.core.base.repository import RepositoryMixin
+from app.core.base.service import ServiceMixin
 from app.models.skill_model import Skill
 
 
-class SkillLookupMixin:
+class SkillLookupMixin(RepositoryMixin):
     """Resolve skill IDs to Skill rows via the generic id-IN lookup."""
 
     async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
@@ -14,7 +16,7 @@ class SkillLookupMixin:
         return await self.get_many_by_ids(Skill, skill_ids)
 
 
-class SkillsManagerMixin:
+class SkillsManagerMixin(ServiceMixin):
     """Fully replace the skills attached to a source record."""
 
     _set_skills_method: str = "set_skills"
@@ -22,11 +24,12 @@ class SkillsManagerMixin:
     async def set_skills(self, source_id: int, data: Any) -> Any:
         """Fully replace the skills granted/available for ``source_id``."""
 
-        await self._exists_or_404(source_id)
-        skills = await self._resolve_skills(data.skill_ids)
+        async with self._atomic():
+            await self._exists_or_404(source_id)
+            skills = await self._resolve_skills(data.skill_ids)
 
-        await getattr(self.repository, self._set_skills_method)(source_id, skills)
-        await self._invalidate_cache()
+            await getattr(self.repository, self._set_skills_method)(source_id, skills)
+            await self._invalidate_cache()
 
         return await self._get_response(source_id)
 

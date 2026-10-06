@@ -13,7 +13,7 @@ from app.models.classes.subclass_model import Subclass
 
 
 class SubclassFeatureService(
-    BaseService[Subclass, SubclassCreate, SubclassUpdate, SubclassResponse, None],
+    BaseService[Subclass, SubclassCreate, SubclassUpdate, SubclassResponse],
 ):
     """
     Read-only service for a subclass's SUBCLASS-source features.

@@ -1,12 +1,22 @@
 """ORM model for the reference table of race subraces (lineages)."""
 
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
-from app.settings import settings
+from typing import TYPE_CHECKING
+
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.features.feature_model import Feature
+    from app.models.races.race_model import Race
+    from app.models.races.subrace_association_models import SubraceAbilityBonus
+    from app.models.tag_model import Tag
 
 
-class Subrace(settings.Base):  # type: ignore
+class Subrace(Base):
     """
     Reference table of race subraces (e.g. Elf -> High Elf / Wood Elf / Drow).
 
@@ -16,34 +26,32 @@ class Subrace(settings.Base):  # type: ignore
 
     __tablename__ = "subraces"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
-    race_id = Column(Integer, ForeignKey("races.id", ondelete="CASCADE"), nullable=False, index=True)
-    name = Column(String(100), nullable=False, index=True)
-    description = Column(Text, nullable=False, default="")
-    image_url = Column(String(512), nullable=True)
+    # No own index: ``uq_subrace_race_id_name`` already leads with ``race_id``.
+    race_id: Mapped[int] = mapped_column(ForeignKey("races.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str | None] = mapped_column(String(512))
 
     __table_args__ = (UniqueConstraint("race_id", "name", name="uq_subrace_race_id_name"),)
 
-    race = relationship("Race", back_populates="subraces")
-    ability_bonuses = relationship(
-        "SubraceAbilityBonus",
+    race: Mapped[Race] = relationship(back_populates="subraces")
+    ability_bonuses: Mapped[list[SubraceAbilityBonus]] = relationship(
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    features = relationship(
-        "Feature",
+    features: Mapped[list[Feature]] = relationship(
         back_populates="subrace",
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="Feature.id",
     )
-    tags = relationship(
-        "SubraceTag",
-        secondary="subrace_tag_links",
+    tags: Mapped[list[Tag]] = relationship(
+        secondary="subrace_tags",
         back_populates="subraces",
-        order_by="SubraceTag.name",
+        order_by="Tag.name",
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Subrace(id={self.id}, name='{self.name}', race_id={self.race_id})>"

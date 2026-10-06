@@ -1,20 +1,32 @@
 """Request/response schemas for the class CRUD endpoints (class identity; capability schemas live in their own folders)."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import AbilityScore, ArmorProficiency, DiceType, WeaponProficiency
-from app.features.classes.armor.schemas import ArmorProficiencyResponse, _validate_unique_armor_proficiencies
+from app.constants import AbilityScore, DiceType
+from app.features.classes.proficiencies.schemas import (
+    ArmorProficiencyResponse,
+    SavingThrowResponse,
+    WeaponProficiencyResponse,
+)
 from app.features.classes.progression.schemas import SpellSlotProgressionResponse
+from app.features.classes.schema_utils import (
+    DESCRIPTION_MAX_LENGTH,
+    IMAGE_URL_MAX_LENGTH,
+    NAME_MAX_LENGTH,
+    ensure_unique,
+    null_guard,
+    validate_image_url,
+)
 from app.features.classes.skills.schemas import SkillResponse
-from app.features.classes.throws.schemas import SavingThrowResponse, _validate_unique_saving_throws
-from app.features.classes.weapons.schemas import WeaponProficiencyResponse, _validate_unique_weapon_proficiencies
 from app.features.features.crud.schemas import NestedFeatureResponse
 from app.features.shared.items.schemas import ChoiceGroupResponse, SourceItemResponse
 from app.features.subclasses.crud.schemas import SubclassGetAllResponse
 
+SKILL_CHOICE_COUNT_MAX = 20
+
 
 class ClassBase(BaseModel):
-    """Base class fields shared by create, update, and response schemas."""
+    """Base class fields shared by create and response schemas."""
 
     name: str
     hit_dice: DiceType
@@ -28,41 +40,43 @@ class ClassCreate(ClassBase):
     """
     Create payload for a class: base fields only.
 
-    ``saving_throws``, ``armor_proficiencies``, ``weapon_proficiencies``,
-    ``available_skills``, features, subclasses, starting items, and spell
-    slots are all deliberately not part of create — each is attached
-    afterwards through its own dedicated endpoint.
+    Saving throws, armor/weapon proficiencies, available skills, features,
+    subclasses, starting items and spell slots are attached afterwards through
+    their own endpoints.
     """
+
+    name: str = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    skill_choice_count: int = Field(2, ge=0, le=SKILL_CHOICE_COUNT_MAX)
+    description: str = Field("", max_length=DESCRIPTION_MAX_LENGTH)
+    image_url: str | None = Field(None, max_length=IMAGE_URL_MAX_LENGTH)
+
+    _image_url = field_validator("image_url")(validate_image_url)
 
 
 class ClassUpdate(BaseModel):
-    """All fields optional — PATCH semantics. ``saving_throws``, ``armor_proficiencies`` and ``weapon_proficiencies`` are full-replace when set."""
+    """All fields optional (PATCH). ``null`` is only accepted for ``spellcasting_ability`` (clears it) and ``saving_throws`` (leaves them unchanged); ``saving_throws`` is a full replace when set."""
 
-    name: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=NAME_MAX_LENGTH)
     hit_dice: DiceType | None = None
-    skill_choice_count: int | None = None
+    skill_choice_count: int | None = Field(None, ge=0, le=SKILL_CHOICE_COUNT_MAX)
     spellcasting_ability: AbilityScore | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=DESCRIPTION_MAX_LENGTH)
     saving_throws: list[AbilityScore] | None = None
 
+    _no_nulls = null_guard(nullable=frozenset({"spellcasting_ability", "saving_throws"}))
+
     @field_validator("saving_throws")
-    def validate_unique_saving_throws_update(cls, v):
+    def validate_unique_saving_throws(cls, v):
         """Reject duplicate saving throws when set."""
 
-        if v is None:
-            return v
-
-        return _validate_unique_saving_throws(v)
+        return v if v is None else ensure_unique(v, "saving throws")
 
 
 class ClassResponse(ClassBase):
     """
-    Full class representation returned by the API.
-
-    Doubles as both the create/update response and the ``GET /classes/{id}``
-    response: ``get_by_id`` folds the class's own CLASS-source ``features``
-    into it (cached as a single unit), while ``create``/``update`` return it
-    with ``features`` at its empty default.
+    Full class representation returned by the API (``GET``, ``POST``, ``PATCH``
+    and every ``PUT`` sub-resource write): base fields, child rows, CLASS-source
+    ``features`` and a brief reference to every subclass.
     """
 
     model_config = ConfigDict(from_attributes=True)

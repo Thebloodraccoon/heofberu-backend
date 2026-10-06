@@ -15,3 +15,9 @@ def get_feat_crud_service(db: DatabaseDep) -> FeatCrudService:
 
 
 FeatCrudDep = Annotated[FeatCrudService, Depends(get_feat_crud_service)]
+
+
+async def require_feat(feature_id: int, feat_service: FeatCrudDep) -> None:
+    """Route guard for the effects endpoints mounted under ``/feats``: 404 unless ``feature_id`` is a feat."""
+
+    await feat_service.ensure_exists(feature_id)

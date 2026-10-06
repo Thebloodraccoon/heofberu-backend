@@ -58,9 +58,7 @@ def upgrade() -> None:
         sa.Column("character_id", sa.Integer(), nullable=False),
         sa.Column(
             "proficiency_type",
-            postgresql.ENUM(
-                "SKILL", "SAVING_THROW", "ARMOR", "WEAPON", name="proficiency_type", create_type=False
-            ),
+            postgresql.ENUM("SKILL", "SAVING_THROW", "ARMOR", "WEAPON", name="proficiency_type", create_type=False),
             nullable=False,
         ),
         sa.Column(
@@ -78,9 +76,7 @@ def upgrade() -> None:
         sa.Column("skill_id", sa.Integer(), nullable=True),
         sa.Column(
             "ability",
-            postgresql.ENUM(
-                "STR", "DEX", "CON", "INT", "WIS", "CHA", name="ability_score", create_type=False
-            ),
+            postgresql.ENUM("STR", "DEX", "CON", "INT", "WIS", "CHA", name="ability_score", create_type=False),
             nullable=True,
         ),
         sa.Column(
@@ -121,9 +117,7 @@ def downgrade() -> None:
     op.drop_index(
         op.f("ix_character_proficiency_audit_log_actor_user_id"), table_name="character_proficiency_audit_log"
     )
-    op.drop_index(
-        op.f("ix_character_proficiency_audit_log_character_id"), table_name="character_proficiency_audit_log"
-    )
+    op.drop_index(op.f("ix_character_proficiency_audit_log_character_id"), table_name="character_proficiency_audit_log")
     op.drop_table("character_proficiency_audit_log")
     op.execute("DROP TYPE IF EXISTS proficiency_audit_action")
     op.execute("DROP TYPE IF EXISTS proficiency_type")

@@ -18,7 +18,8 @@ poetry run alembic upgrade head
 poetry run uvicorn app.main:app --reload
 ```
 
-Interactive docs are served at `/docs` (disabled in production).
+The API is versioned: every endpoint lives under `/api/v1` (health probe: `/api/v1/ping`).
+Interactive docs (`/docs`, `/redoc`, `/openapi.json`) are unversioned and disabled in production.
 
 ## Architecture
 
@@ -30,6 +31,7 @@ error envelope by a single global handler; routers stay thin and never raise.
 app/
 ├── core/           # reusable building blocks (see app/core/README.md)
 │   ├── base/       #   BaseService / BaseRepository / CachedService / NestedService
+│   ├── pagination.py #  Page / CursorPage / cursor helpers
 │   ├── cache/      #   pooled redis client + @cached decorator + invalidation
 │   ├── handlers/   #   global exception handlers (AppError first)
 │   ├── security/   #   bcrypt passwords, token verify/blacklist
@@ -42,7 +44,7 @@ app/
 │   ├── shared/     # cross-catalog mixins/services other catalogs compose
 │   └── characters/ # compound domain: CRUD, sub-resources, GM panel
 ├── models/         # SQLAlchemy ORM models, one file per domain
-├── settings/       # staged config + pooled settings.get_redis() client
+├── settings/       # staged config + pooled settings.get_redis() / get_auth_redis() clients
 ├── middleware/     # request-id, logging, timing, rate limit, error handlers
 ├── router.py       # mounts every feature router
 └── main.py         # app assembly, middleware order, lifespan

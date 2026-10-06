@@ -1,54 +1,72 @@
 """
 Exception handler for SQLAlchemy errors.
 
-Converts generic ``SQLAlchemyError`` to a 500, and ``IntegrityError`` to a
-400 with a best-effort human-readable message derived from the constraint
-type (unique / foreign key / not-null).
+``IntegrityError`` becomes a 409 for a unique violation and a 400 otherwise, with a message derived from the
+PostgreSQL SQLSTATE (unique / foreign key / not-null / check); pool
+exhaustion becomes a 503; any other database error a generic 500.
+Statements, parameters and constraint detail are logged at most by
+constraint name and never returned to the client.
 """
 
 import logging
 
 from fastapi import Request, status
-from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
-from app.core.exceptions import ErrorResponse
+from app.core.db_errors import (
+    CHECK_VIOLATION,
+    FOREIGN_KEY_VIOLATION,
+    NOT_NULL_VIOLATION,
+    UNIQUE_VIOLATION,
+    constraint_name,
+    sqlstate,
+)
+from app.core.handlers._response import build_error_response, get_request_id
 
 logger = logging.getLogger(__name__)
 
+_INTEGRITY_MESSAGES = {
+    UNIQUE_VIOLATION: "Record with this data already exists",
+    FOREIGN_KEY_VIOLATION: "Referenced record does not exist",
+    NOT_NULL_VIOLATION: "Required field cannot be empty",
+    CHECK_VIOLATION: "Value violates a database constraint",
+}
+
 
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-    """Handle SQLAlchemy database errors."""
-    request_id = getattr(request.state, "request_id", None)
+    """Handle SQLAlchemy database errors without leaking SQL or data."""
 
-    logger.error(f"Database Error: {str(exc)} - Path: {request.url.path} - Request ID: {request_id}")
+    request_id = get_request_id(request)
 
     if isinstance(exc, IntegrityError):
-        error_detail = "Database integrity constraint violation"
-        status_code = status.HTTP_400_BAD_REQUEST
-
-        error_str = str(exc.orig) if hasattr(exc, "orig") else str(exc)
-        if "UNIQUE" in error_str.upper():
-            error_detail = "Record with this data already exists"
-        elif "FOREIGN KEY" in error_str.upper():
-            error_detail = "Referenced record does not exist"
-        elif "NOT NULL" in error_str.upper():
-            error_detail = "Required field cannot be empty"
+        state = sqlstate(exc)
+        logger.warning(
+            "Integrity error: sqlstate=%s constraint=%s - Path: %s - Request ID: %s",
+            state,
+            constraint_name(exc),
+            request.url.path,
+            request_id,
+        )
+        message = _INTEGRITY_MESSAGES.get(state or "", "Database integrity constraint violation")
+        status_code = status.HTTP_409_CONFLICT if state == UNIQUE_VIOLATION else status.HTTP_400_BAD_REQUEST
+    elif isinstance(exc, PoolTimeoutError):
+        logger.error("Database pool exhausted - Path: %s - Request ID: %s", request.url.path, request_id)
+        message = "Service temporarily unavailable"
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     else:
-        error_detail = "Database operation failed"
+        logger.error(
+            "Database error: %s sqlstate=%s - Path: %s - Request ID: %s",
+            type(exc).__name__,
+            sqlstate(exc),
+            request.url.path,
+            request_id,
+            exc_info=True,
+        )
+        message = "Database operation failed"
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
-    error_response = ErrorResponse(
-        error_type="DatabaseError",
-        message=error_detail,
-        status_code=status_code,
-        request_id=request_id,
-    )
-
-    return JSONResponse(
-        status_code=status_code,
-        content=error_response.to_dict(),
-    )
+    return build_error_response(request, error_type="DatabaseError", message=message, status_code=status_code)
 
 
 HANDLERS = [

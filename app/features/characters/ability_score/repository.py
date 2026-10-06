@@ -1,10 +1,13 @@
-"""Repository for a character's effective ability scores and derived combat stats."""
+"""Repository for a character's effective ability scores and the source rows they are computed from."""
+
+from collections.abc import Iterable
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.base.repository import BaseRepository
+from app.core.base.repository import SessionRepository
 from app.models import CharacterAbilityScore, Class, Race, Subrace
 from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
@@ -16,35 +19,21 @@ from app.models.features.feature_engine_models import (
 )
 from app.models.races.race_association_models import RaceAbilityBonus
 from app.models.races.subrace_association_models import SubraceAbilityBonus
+from app.settings._common import utcnow
 
 
-def _label_for_effect_row(effect) -> str:
-    """
-    The feature-name label for an ability effect contribution: the fixed
-    row's ``feature``, or the chosen option's owning feature for an
-    option-effect row.
-    """
-
-    feature = getattr(effect, "feature", None)
-    if feature is not None:
-        return feature.name if feature.name else "Feature"
-
-    group = getattr(getattr(effect, "choice_option", None), "group", None)
-    feature = getattr(group, "feature", None)
-    return feature.name if feature is not None and feature.name else "Feature"
-
-
-class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
+class CharacterStatsRepository(SessionRepository):
     """
     Repository backing ``CharacterStatsService``: the
     ``character_ability_scores`` cache table plus the source-bonus and
-    reference-data queries the calculator and derived stats need.
+    reference-data queries the calculator needs. Source lookups are batched
+    (one query per source kind for any number of characters).
     """
 
     def __init__(self, db: AsyncSession):
         """Create the stats repository."""
 
-        super().__init__(CharacterAbilityScore, db)
+        super().__init__(db)
 
     async def get_by_character_id(self, character_id: int) -> CharacterAbilityScore | None:
         """Fetch the cached effective-ability-score row, or None if never computed."""
@@ -55,10 +44,7 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         return result.scalar_one_or_none()
 
     async def get_many_by_character_ids(self, character_ids: list[int]) -> dict[int, CharacterAbilityScore]:
-        """
-        Fetch the cache rows for many characters in one query, keyed by
-        ``character_id`` (kills the old per-row N+1 on listing).
-        """
+        """Fetch the cache rows for many characters in one query, keyed by ``character_id``."""
 
         if not character_ids:
             return {}
@@ -68,29 +54,8 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         )
         return {row.character_id: row for row in result.scalars().unique().all()}
 
-    async def get_race_bonuses(self, race_id: int | None) -> list[RaceAbilityBonus]:
-        """Fetch a race's ability bonuses, or ``[]`` for a character with no race."""
-
-        if race_id is None:
-            return []
-
-        result = await self.db.execute(select(RaceAbilityBonus).where(RaceAbilityBonus.race_id == race_id))
-        return list(result.scalars().unique().all())
-
-    async def get_subrace_bonuses(self, subrace_id: int | None) -> list[SubraceAbilityBonus]:
-        """Fetch a subrace's ability bonuses, or ``[]`` for a character with no subrace."""
-
-        if subrace_id is None:
-            return []
-
-        result = await self.db.execute(select(SubraceAbilityBonus).where(SubraceAbilityBonus.subrace_id == subrace_id))
-        return list(result.scalars().unique().all())
-
-    async def get_race_bonuses_many(self, race_ids: list[int]) -> dict[int, list[RaceAbilityBonus]]:
-        """
-        Batched counterpart to :meth:`get_race_bonuses`: one query for every
-        distinct race id (instead of one query per character sharing a race).
-        """
+    async def get_race_bonuses_many(self, race_ids: Iterable[int | None]) -> dict[int, list[RaceAbilityBonus]]:
+        """Ability bonuses of every given race, grouped by race id (one query)."""
 
         ids = {race_id for race_id in race_ids if race_id is not None}
         if not ids:
@@ -102,8 +67,8 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             grouped.setdefault(row.race_id, []).append(row)
         return grouped
 
-    async def get_subrace_bonuses_many(self, subrace_ids: list[int]) -> dict[int, list[SubraceAbilityBonus]]:
-        """Batched counterpart to :meth:`get_subrace_bonuses`."""
+    async def get_subrace_bonuses_many(self, subrace_ids: Iterable[int | None]) -> dict[int, list[SubraceAbilityBonus]]:
+        """Ability bonuses of every given subrace, grouped by subrace id (one query)."""
 
         ids = {subrace_id for subrace_id in subrace_ids if subrace_id is not None}
         if not ids:
@@ -115,70 +80,12 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
             grouped.setdefault(row.subrace_id, []).append(row)
         return grouped
 
-    async def get_asi_increases(self, character_id: int) -> list[CharacterASIChoiceIncrease]:
-        """
-        Fetch the counted increments of the character's ASI-choice log
-        (choices with ``applied_to_base == False``). Legacy pre-rework
-        choices are excluded so their points don't apply twice.
-        """
-
-        result = await self.db.execute(
-            select(CharacterASIChoiceIncrease)
-            .join(CharacterASIChoice, CharacterASIChoice.id == CharacterASIChoiceIncrease.character_asi_choice_id)
-            .where(
-                CharacterASIChoice.character_id == character_id,
-                CharacterASIChoice.applied_to_base.is_(False),
-            )
-            .options(selectinload(CharacterASIChoiceIncrease.choice))
-        )
-        return list(result.scalars().all())
-
-    async def get_feature_increases(self, character_id: int) -> list:
-        """
-        Fetch the ability-score effects of every feature granted to the
-        character — e.g. Primal Champion's +4 STR/CON. They apply
-        automatically while the grant exists: fixed rows plus the option
-        rows of the picks the player stored in ``character_feature_choices``.
-        """
-
-        fixed_result = await self.db.execute(
-            select(FeatureAbilityScoreEffect)
-            .join(CharacterFeature, CharacterFeature.feature_id == FeatureAbilityScoreEffect.feature_id)
-            .where(
-                CharacterFeature.character_id == character_id,
-                FeatureAbilityScoreEffect.feature_id.isnot(None),
-            )
-            .options(selectinload(FeatureAbilityScoreEffect.feature))
-        )
-        fixed_rows = list(fixed_result.scalars().unique().all())
-
-        option_result = await self.db.execute(
-            select(FeatureAbilityScoreEffect)
-            .join(
-                FeatureChoiceOption,
-                FeatureChoiceOption.id == FeatureAbilityScoreEffect.choice_option_id,
-            )
-            .join(
-                CharacterFeatureChoice,
-                CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id,
-            )
-            .join(CharacterFeature, CharacterFeature.id == CharacterFeatureChoice.character_feature_id)
-            .where(
-                CharacterFeature.character_id == character_id,
-                FeatureAbilityScoreEffect.choice_option_id.isnot(None),
-            )
-            .options(
-                selectinload(FeatureAbilityScoreEffect.choice_option)
-                .selectinload(FeatureChoiceOption.group)
-                .selectinload(FeatureChoiceGroup.feature)
-            )
-        )
-        option_rows = list(option_result.scalars().unique().all())
-
-        return [*fixed_rows, *option_rows]
-
     async def get_asi_increases_many(self, character_ids: list[int]) -> dict[int, list[CharacterASIChoiceIncrease]]:
-        """Batched counterpart to :meth:`get_asi_increases`: one query for every character id."""
+        """
+        Counted increments of the characters' ASI-choice logs (choices with
+        ``applied_to_base == False``; legacy pre-rework choices are excluded
+        so their points don't apply twice), grouped by character id.
+        """
 
         if not character_ids:
             return {}
@@ -198,7 +105,12 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
         return grouped
 
     async def get_feature_increases_many(self, character_ids: list[int]) -> dict[int, list]:
-        """Batched counterpart to :meth:`get_feature_increases`: two queries total, not two per character."""
+        """
+        Ability-score effects of every feature granted to the characters
+        (e.g. Primal Champion's +4 STR/CON), grouped by character id: the
+        fixed effect rows plus the option rows of the picks stored in
+        ``character_feature_choices``. Two queries total.
+        """
 
         grouped: dict[int, list] = {character_id: [] for character_id in character_ids}
         if not character_ids:
@@ -218,14 +130,8 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
 
         option_result = await self.db.execute(
             select(FeatureAbilityScoreEffect, CharacterFeature.character_id)
-            .join(
-                FeatureChoiceOption,
-                FeatureChoiceOption.id == FeatureAbilityScoreEffect.choice_option_id,
-            )
-            .join(
-                CharacterFeatureChoice,
-                CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id,
-            )
+            .join(FeatureChoiceOption, FeatureChoiceOption.id == FeatureAbilityScoreEffect.choice_option_id)
+            .join(CharacterFeatureChoice, CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id)
             .join(CharacterFeature, CharacterFeature.id == CharacterFeatureChoice.character_feature_id)
             .where(
                 CharacterFeature.character_id.in_(character_ids),
@@ -242,85 +148,64 @@ class CharacterStatsRepository(BaseRepository[CharacterAbilityScore]):
 
         return grouped
 
-    async def upsert(self, character_id: int, totals: dict, *, commit: bool = True) -> CharacterAbilityScore:
+    async def upsert(self, character_id: int, totals: dict) -> CharacterAbilityScore:
+        """Create or update one character's cached totals (see :meth:`upsert_many`)."""
+
+        return (await self.upsert_many({character_id: totals}))[character_id]
+
+    async def upsert_many(self, totals_by_character_id: dict[int, dict]) -> dict[int, CharacterAbilityScore]:
         """
-        Create or update the cached effective ability scores for a
-        character, keyed by ``strength_total`` .. ``charisma_total``.
-        """
-
-        cache = await self.get_by_character_id(character_id)
-        if cache is None:
-            cache = CharacterAbilityScore(character_id=character_id, **totals)
-            self.db.add(cache)
-        else:
-            for field, value in totals.items():
-                setattr(cache, field, value)
-
-        if commit:
-            await self.commit_or_flush()
-            await self.db.refresh(cache)
-        else:
-            await self.db.flush()
-
-        return cache
-
-    async def upsert_many(
-        self, totals_by_character_id: dict[int, dict], *, commit: bool = True
-    ) -> dict[int, CharacterAbilityScore]:
-        """
-        Batched counterpart to :meth:`upsert`: one query for the existing
-        cache rows (instead of one per character) and one flush/commit for
-        the whole batch.
+        Create or update the cached totals (``strength_total`` ..
+        ``charisma_total``) of many characters in one atomic
+        ``INSERT ... ON CONFLICT DO UPDATE`` — concurrent refreshes of the
+        same character can no longer collide on the primary key. Every
+        totals dict must carry the same keys.
         """
 
         if not totals_by_character_id:
             return {}
 
-        existing = await self.get_many_by_character_ids(list(totals_by_character_id.keys()))
+        rows = [
+            {"character_id": character_id, **totals} for character_id, totals in sorted(totals_by_character_id.items())
+        ]
+        insert = pg_insert(CharacterAbilityScore).values(rows)
+        updates = {field: insert.excluded[field] for field in rows[0] if field != "character_id"}
+        statement = insert.on_conflict_do_update(
+            index_elements=[CharacterAbilityScore.character_id],
+            set_={**updates, "updated_at": utcnow()},
+        ).returning(CharacterAbilityScore)
 
-        result: dict[int, CharacterAbilityScore] = {}
-        for character_id, totals in totals_by_character_id.items():
-            cache = existing.get(character_id)
-            if cache is None:
-                cache = CharacterAbilityScore(character_id=character_id, **totals)
-                self.db.add(cache)
-            else:
-                for field, value in totals.items():
-                    setattr(cache, field, value)
-            result[character_id] = cache
+        result = await self.db.execute(statement, execution_options={"populate_existing": True})
+        cached = {row.character_id: row for row in result.scalars().all()}
+        await self.flush()
+        return cached
 
-        if commit:
-            await self.commit_or_flush()
-            for cache in result.values():
-                await self.db.refresh(cache)
-        else:
-            await self.db.flush()
+    async def get_hit_dice(self, class_ids: Iterable[int]) -> dict[int, str]:
+        """``{class_id: hit die}`` (e.g. ``"D10"``) for the given classes, selecting only those two columns."""
 
-        return result
-
-    async def get_classes(self, class_ids: list[int]) -> dict[int, Class]:
-        """Return ``{id: Class}`` for the given class ids (missing ids are absent)."""
-
-        if not class_ids:
+        ids = set(class_ids)
+        if not ids:
             return {}
 
-        result = await self.db.execute(select(Class).where(Class.id.in_(class_ids)))
-        return {row.id: row for row in result.scalars().unique().all()}
+        result = await self.db.execute(select(Class.id, Class.hit_dice).where(Class.id.in_(ids)))
+        return {class_id: hit_dice.value for class_id, hit_dice in result.all()}
 
-    async def get_races(self, race_ids: list[int]) -> dict[int, Race]:
-        """Return ``{id: Race}`` for the given race ids (missing ids are absent)."""
+    async def get_race_names(self, race_ids: Iterable[int]) -> dict[int, str]:
+        """``{race_id: name}`` for the given races."""
 
-        if not race_ids:
+        ids = set(race_ids)
+        if not ids:
             return {}
 
-        result = await self.db.execute(select(Race).where(Race.id.in_(race_ids)))
-        return {row.id: row for row in result.scalars().unique().all()}
+        result = await self.db.execute(select(Race.id, Race.name).where(Race.id.in_(ids)))
+        return {entity_id: name for entity_id, name in result.all()}  # noqa: C416 - dict(rows) fails mypy
 
-    async def get_subraces(self, subrace_ids: list[int]) -> dict[int, Subrace]:
-        """Return ``{id: Subrace}`` for the given subrace ids (missing ids are absent)."""
+    async def get_subrace_names(self, subrace_ids: Iterable[int]) -> dict[int, str]:
+        """``{subrace_id: name}`` for the given subraces."""
 
-        if not subrace_ids:
+        ids = set(subrace_ids)
+        if not ids:
             return {}
 
-        result = await self.db.execute(select(Subrace).where(Subrace.id.in_(subrace_ids)))
-        return {row.id: row for row in result.scalars().unique().all()}
+        result = await self.db.execute(select(Subrace.id, Subrace.name).where(Subrace.id.in_(ids)))
+        return {entity_id: name for entity_id, name in result.all()}  # noqa: C416 - dict(rows) fails mypy

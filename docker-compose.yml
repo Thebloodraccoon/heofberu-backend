@@ -3,14 +3,13 @@ services:
     image: postgres:15.4-alpine
     container_name: heof-db
     restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=${DB_MAX_CONNECTIONS:-100}"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - heof_db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     networks:
       - app_network
     healthcheck:
@@ -24,14 +23,43 @@ services:
     image: redis:7.2.3-alpine
     container_name: heof-redis
     restart: unless-stopped
-    ports:
-      - "6380:6379"
+    command:
+      - sh
+      - -c
+      - exec redis-server --maxmemory 256mb --maxmemory-policy volatile-lru $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
       - heof_redis_data:/data
     networks:
       - app_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD-SHELL
+        - 'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping; else redis-cli ping; fi | grep -q PONG'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  heof-auth-redis:
+    image: redis:7.2.3-alpine
+    container_name: heof-auth-redis
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - exec redis-server --maxmemory 64mb --maxmemory-policy noeviction --appendonly yes $${AUTH_REDIS_PASSWORD:+--requirepass "$$AUTH_REDIS_PASSWORD"}
+    environment:
+      AUTH_REDIS_PASSWORD: ${AUTH_REDIS_PASSWORD:-}
+    volumes:
+      - heof_auth_redis_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'if [ -n "$$AUTH_REDIS_PASSWORD" ]; then redis-cli -a "$$AUTH_REDIS_PASSWORD" --no-auth-warning ping; else redis-cli ping; fi | grep -q PONG'
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,18 +80,15 @@ services:
         condition: service_healthy
       heof-redis:
         condition: service_healthy
+      heof-auth-redis:
+        condition: service_healthy
     networks:
       - app_network
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8000/api/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
 volumes:
   heof_db_data:
   heof_redis_data:
+  heof_auth_redis_data:
 
 networks:
   app_network:

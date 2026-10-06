@@ -28,7 +28,7 @@ class TestRaceCrud:
         assert body["ability_bonuses"] == []
 
     async def test_create_race_with_ability_bonuses_and_skills(self, client, gm_token, create_skill):
-        skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill = await create_skill(name="Perception", ability="WIS")
 
         response = await client.post(
             "/races",
@@ -82,7 +82,7 @@ class TestRaceCrud:
             "Sunlight Sensitivity",
         ]
 
-    async def test_create_duplicate_race_name_returns_400(self, client, gm_token, create_race):
+    async def test_create_duplicate_race_name_returns_409(self, client, gm_token, create_race):
         await create_race(name="Orc")
         response = await client.post(
             "/races",
@@ -90,7 +90,7 @@ class TestRaceCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_race(self, client, gm_token, create_race):
         race = await create_race(name="Old Name")
@@ -129,7 +129,7 @@ class TestRaceCrud:
 
     async def test_gm_can_set_granted_skills(self, client, gm_token, create_race, create_skill):
         race = await create_race(name="Skillful")
-        skill = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill = await create_skill(name="Stealth", ability="DEX")
 
         response = await client.put(
             f"/races/{race.id}/skills",

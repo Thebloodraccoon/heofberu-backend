@@ -1,13 +1,55 @@
 """Character schemas, including the aggregated CharacterResponse."""
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Annotated, Any, ClassVar
 
-# Standard D&D 5e ability-score range for values entered directly by a
-# player (before racial/feat bonuses are applied) — matches the typical
-# point-buy/standard-array range. Bonuses on top of this (race, feats)
-# are computed separately and are not bound by this range themselves.
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+
+# Range of a base ability score entered directly by a player (before
+# racial/feat bonuses): the typical point-buy/standard-array range.
 ABILITY_SCORE_MIN = 3
 ABILITY_SCORE_MAX = 18
+
+# Input bounds: ``characters.name`` is VARCHAR(200), the money/stat columns are
+# int32, and free text is capped because it is part of the cached response.
+NAME_MAX_LENGTH = 200
+NOTES_MAX_LENGTH = 20_000
+PERSONALITY_MAX_LENGTH = 5_000
+MONEY_MAX = 2_000_000_000
+COMBAT_STAT_MAX = 1_000
+HP_LIMIT = 100_000
+INSPIRATION_MAX = 13
+
+CharacterName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NAME_MAX_LENGTH)]
+Notes = Annotated[str, Field(max_length=NOTES_MAX_LENGTH)]
+PersonalityText = Annotated[str, Field(max_length=PERSONALITY_MAX_LENGTH)]
+Money = Annotated[int, Field(ge=0, le=MONEY_MAX)]
+CombatStat = Annotated[int, Field(ge=0, le=COMBAT_STAT_MAX)]
+
+
+class PatchModel(BaseModel):
+    """
+    Base for PATCH payloads: an explicit ``null`` is a 422 for every field not
+    listed in ``nullable_fields`` (omit the field to leave it unchanged).
+    Without this a ``null`` for a NOT NULL column would reach the database.
+    """
+
+    nullable_fields: ClassVar[frozenset[str]] = frozenset()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_explicit_null(cls, data: Any) -> Any:
+        """Reject ``null`` for fields that cannot be null."""
+
+        if isinstance(data, dict):
+            offending = sorted(
+                name
+                for name, value in data.items()
+                if value is None and name in cls.model_fields and name not in cls.nullable_fields
+            )
+            if offending:
+                raise ValueError(f"null is not allowed for: {', '.join(offending)}")
+
+        return data
 
 
 class CharacterBase(BaseModel):
@@ -21,11 +63,8 @@ class CharacterBase(BaseModel):
     subrace_id: int | None = None
     background_id: int | None = None
 
-    # Combat stats entered/set directly on the sheet — there is no
-    # dynamic armor calculation anymore; whatever is stored here is what
-    # every read returns.
-    armor_class: int = Field(default=10, ge=0)
-    shield: int = Field(default=0, ge=0)
+    armor_class: int = 10
+    shield: int = 0
 
     # Base ability scores — what the player entered, before racial or
     # feat bonuses. Effective (post-bonus) totals are exposed separately
@@ -39,15 +78,14 @@ class CharacterBase(BaseModel):
 
     notes: str = ""
 
-    # Personality card free-text fields (5e "Personality" section).
     personality_traits: str = ""
     ideals: str = ""
     bonds: str = ""
     flaws: str = ""
 
-    money_gold: int = Field(default=0, ge=0)
-    money_silver: int = Field(default=0, ge=0)
-    money_copper: int = Field(default=0, ge=0)
+    money_gold: int = 0
+    money_silver: int = 0
+    money_copper: int = 0
 
 
 class CharacterCreate(CharacterBase):
@@ -58,6 +96,21 @@ class CharacterCreate(CharacterBase):
 
     model_config = ConfigDict(extra="forbid")
 
+    name: CharacterName
+
+    armor_class: CombatStat = 10
+    shield: CombatStat = 0
+
+    notes: Notes = ""
+    personality_traits: PersonalityText = ""
+    ideals: PersonalityText = ""
+    bonds: PersonalityText = ""
+    flaws: PersonalityText = ""
+
+    money_gold: Money = 0
+    money_silver: Money = 0
+    money_copper: Money = 0
+
     strength: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     dexterity: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     constitution: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
@@ -65,9 +118,9 @@ class CharacterCreate(CharacterBase):
     wisdom: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
     charisma: int = Field(default=10, ge=ABILITY_SCORE_MIN, le=ABILITY_SCORE_MAX)
 
-    skill_ids: list[int] = Field(default_factory=list)
-    item_choice_ids: list[int] = Field(default_factory=list)
-    suggestion_ids: list[int] = Field(default_factory=list)
+    skill_ids: list[int] = Field(default_factory=list, max_length=50)
+    item_choice_ids: list[int] = Field(default_factory=list, max_length=50)
+    suggestion_ids: list[int] = Field(default_factory=list, max_length=10)
 
     @field_validator("skill_ids")
     def validate_unique_skill_ids(cls, skill_ids):
@@ -97,34 +150,35 @@ class CharacterCreate(CharacterBase):
         return item_choice_ids
 
 
-class CharacterUpdate(BaseModel):
+class CharacterUpdate(PatchModel):
     """
-    All fields optional — only provided fields are updated (PATCH semantics).
-    Class/race/background, level, and base ability scores are not editable here.
+    All fields optional — only provided fields are updated (PATCH semantics);
+    an explicit ``null`` is a 422. Class/race/background, level, and base
+    ability scores are not editable here. ``inspiration`` can only be raised
+    by a GM (a player may spend it down).
     """
 
-    name: str | None = None
+    name: CharacterName | None = None
 
-    current_hp: int | None = Field(default=None, ge=0)
-    temp_hp: int | None = Field(default=None, ge=0)
+    current_hp: int | None = Field(default=None, ge=0, le=HP_LIMIT)
+    temp_hp: int | None = Field(default=None, ge=0, le=HP_LIMIT)
 
-    armor_class: int | None = Field(default=None, ge=0)
-    shield: int | None = Field(default=None, ge=0)
-    speed: int | None = Field(default=None, ge=0)
+    armor_class: CombatStat | None = None
+    shield: CombatStat | None = None
+    speed: CombatStat | None = None
 
-    # Inspiration points (0-13) the GM grants.
-    inspiration: int | None = Field(default=None, ge=0, le=13)
+    inspiration: int | None = Field(default=None, ge=0, le=INSPIRATION_MAX)
 
-    notes: str | None = None
+    notes: Notes | None = None
 
-    personality_traits: str | None = None
-    ideals: str | None = None
-    bonds: str | None = None
-    flaws: str | None = None
+    personality_traits: PersonalityText | None = None
+    ideals: PersonalityText | None = None
+    bonds: PersonalityText | None = None
+    flaws: PersonalityText | None = None
 
-    money_gold: int | None = Field(default=None, ge=0)
-    money_silver: int | None = Field(default=None, ge=0)
-    money_copper: int | None = Field(default=None, ge=0)
+    money_gold: Money | None = None
+    money_silver: Money | None = None
+    money_copper: Money | None = None
 
 
 class AbilityScoresResponse(BaseModel):
@@ -178,15 +232,6 @@ class CharacterStatsResponse(BaseModel):
     charisma: AbilityStatsView
 
 
-class SkillProficiencyResponse(BaseModel):
-    """A skill proficiency row (used by the GM-panel skills endpoints)."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    skill_id: int
-    is_expertise: bool
-
-
 class CharacterResponse(CharacterBase):
     """
     Aggregates response schemas from every sub-domain into one payload.
@@ -222,7 +267,7 @@ class CharacterResponse(CharacterBase):
     wisdom: int = Field(default=10, exclude=True)
     charisma: int = Field(default=10, exclude=True)
 
-    # Derived combat stats — populated by ``CharacterService._to_response``.
+    # Filled by ``CharacterService`` when serializing (hit dice from the class); ``speed`` is a plain column.
     hit_dice: str = ""
     speed: int = 30
 

@@ -31,9 +31,10 @@ class TestSpellsPayloadShape:
 
         assert response.status_code == 200
         body = response.json()
-        assert set(body) == {"spell_slots", "spells", "granted_spells"}
+        assert set(body) == {"spell_slots", "spells", "gm_spells", "feature_spells"}
         assert body["spells"] == []
-        assert body["granted_spells"] == []
+        assert body["gm_spells"] == []
+        assert body["feature_spells"] == []
         assert len(body["spell_slots"]) == 1
         assert set(body["spell_slots"][0]) == {"spell_level", "total"}
         assert body["spell_slots"][0] == {"spell_level": "CANTRIP", "total": 2}
@@ -53,8 +54,9 @@ class TestSpellsPayloadShape:
             headers={"Authorization": f"Bearer {player_token}"},
         )
         body = list_response.json()
-        assert [entry["spell_id"] for entry in body["spells"]] == [spell.id]
-        assert body["spells"][0]["spell"]["name"] == "Magic Missile"
+        assert [entry["id"] for entry in body["spells"]] == [spell.id]
+        assert body["spells"][0]["name"] == "Magic Missile"
+        assert not any(key.startswith("available_") for key in body["spells"][0])
         assert {slot["spell_level"]: slot["total"] for slot in body["spell_slots"]} == {"LEVEL_1": 2}
 
 
@@ -87,30 +89,34 @@ class TestPerLevelKnownSpellCaps:
         missile = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
         charm = await create_spell(name="Charm Person", school="ENCHANTMENT", level="LEVEL_1")
         shield = await create_spell(name="Shield", school="ABJURATION", level="LEVEL_1")
+        missile_id, charm_id, shield_id = (
+            missile.id,
+            charm.id,
+            shield.id,
+        )  # a rejected add rolls the shared test session back
 
-        first = await add_spell(client, character["id"], missile.id, player_token)
-        second = await add_spell(client, character["id"], charm.id, player_token)
+        first = await add_spell(client, character["id"], missile_id, player_token)
+        second = await add_spell(client, character["id"], charm_id, player_token)
         assert first.status_code == 201
         assert second.status_code == 201
 
-        over_cap = await add_spell(client, character["id"], shield.id, player_token)
+        over_cap = await add_spell(client, character["id"], shield_id, player_token)
         assert over_cap.status_code == 400
 
         remove_response = await client.delete(
-            f"/characters/{character['id']}/spells",
-            params={"spell_id": missile.id},
+            f"/characters/{character['id']}/spells/{missile_id}",
             headers={"Authorization": f"Bearer {player_token}"},
         )
         assert remove_response.status_code == 204
 
-        swap = await add_spell(client, character["id"], shield.id, player_token)
+        swap = await add_spell(client, character["id"], shield_id, player_token)
         assert swap.status_code == 201
 
         list_response = await client.get(
             f"/characters/{character['id']}/spells",
             headers={"Authorization": f"Bearer {player_token}"},
         )
-        assert sorted(entry["spell_id"] for entry in list_response.json()["spells"]) == [charm.id, shield.id]
+        assert sorted(entry["id"] for entry in list_response.json()["spells"]) == [charm.id, shield.id]
 
     async def test_missing_slot_row_means_zero_capacity(
         self, client, player, player_token, create_caster_class, create_api_character, create_spell

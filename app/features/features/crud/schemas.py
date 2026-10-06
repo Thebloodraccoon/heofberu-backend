@@ -1,9 +1,9 @@
 """Request/response schemas for the feature endpoints and nested parent feature payloads."""
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.constants import AbilityScore, FeatureSourceType
-from app.features.features.effects.schemas import ChoiceGroupResponse, StaticEffectGroup
+from app.features.features.effects.schemas import ChoiceGroupResponse, EffectGroup
 
 # Which FK field must be set (and which must be empty) for each source_type.
 # SUBCLASS keys off subclass_id (not class_id — the old denorm approach).
@@ -27,9 +27,15 @@ _LEVEL_REQUIRED_SOURCE_TYPES = (FeatureSourceType.CLASS, FeatureSourceType.SUBCL
 _FEATURE_LEVEL_MIN = 1
 _FEATURE_LEVEL_MAX = 20
 
+# Columns that only make sense on a FEAT-source row.
+_FEAT_ONLY_FIELDS = ("min_level", "prerequisite_ability", "prerequisite_minimum_score", "prerequisite_description")
+
+_NAME_MAX_LENGTH = 200
+_TEXT_MAX_LENGTH = 20_000
+
 
 def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict) -> None:
-    """Enforce that exactly the FK matching ``source_type`` is set (and the others empty), plus the level rules."""
+    """Enforce that exactly the FK matching ``source_type`` is set, plus the level and feat-column rules."""
 
     required_fk = _REQUIRED_FK_BY_SOURCE_TYPE[source_type]
 
@@ -48,14 +54,30 @@ def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict
 
     level = values.get("level")
 
-    if source_type in _LEVEL_REQUIRED_SOURCE_TYPES:
-        if level is None:
-            raise ValueError(f"source_type='{source_type.value}' requires 'level' to be set.")
+    if source_type in _LEVEL_REQUIRED_SOURCE_TYPES and level is None:
+        raise ValueError(f"source_type='{source_type.value}' requires 'level' to be set.")
 
-        if not (_FEATURE_LEVEL_MIN <= level <= _FEATURE_LEVEL_MAX):
+    if level is not None and not (_FEATURE_LEVEL_MIN <= level <= _FEATURE_LEVEL_MAX):
+        raise ValueError(f"'level' must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}.")
+
+    if source_type == FeatureSourceType.FEAT:
+        if level is not None:
+            raise ValueError("FEAT features do not use 'level' — set 'min_level' instead.")
+    else:
+        feat_fields = [name for name in _FEAT_ONLY_FIELDS if values.get(name) not in (None, "")]
+        if feat_fields:
             raise ValueError(
-                f"'level' for CLASS/SUBCLASS features must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}."
+                f"{', '.join(feat_fields)} {'is' if len(feat_fields) == 1 else 'are'} only valid for FEAT features."
             )
+
+    _validate_prerequisite_pair(values.get("prerequisite_ability"), values.get("prerequisite_minimum_score"))
+
+
+def _validate_prerequisite_pair(ability, minimum_score) -> None:
+    """``prerequisite_ability`` and ``prerequisite_minimum_score`` are set together or not at all."""
+
+    if (ability is None) != (minimum_score is None):
+        raise ValueError("prerequisite_ability and prerequisite_minimum_score must be set together.")
 
 
 def _validate_min_level(value: int | None) -> int | None:
@@ -133,8 +155,14 @@ class FeatureCreate(FeatureBase):
 
     The parent FK is set directly for source-owned features; a standalone
     ``FEAT`` or ``OTHER`` feature needs no FK. Feat rows additionally carry
-    ``min_level`` / ``prerequisite_*``.
+    ``min_level`` / ``prerequisite_*``; those columns are rejected on every
+    other source type, the same rule ``PATCH`` applies.
     """
+
+    name: str = Field(min_length=1, max_length=_NAME_MAX_LENGTH)
+    description: str = Field("", max_length=_TEXT_MAX_LENGTH)
+    prerequisite_minimum_score: int | None = Field(None, ge=1, le=30)
+    prerequisite_description: str = Field("", max_length=_TEXT_MAX_LENGTH)
 
     @model_validator(mode="after")
     def validate_source_fk_consistency(self):
@@ -152,7 +180,7 @@ class FeatureResponse(FeatureBase):
     id: int
 
     choice_groups: list[ChoiceGroupResponse] = []
-    static_groups: list[StaticEffectGroup] = []
+    static_groups: list[EffectGroup] = []
 
     has_static_effects: bool = False
     has_choices: bool = False
@@ -188,9 +216,11 @@ class NestedFeatureCreate(BaseModel):
     then validates the merged payload through ``FeatureCreate``.
     """
 
-    name: str
-    description: str = ""
-    level: int | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=_NAME_MAX_LENGTH)
+    description: str = Field("", max_length=_TEXT_MAX_LENGTH)
+    level: int | None = Field(None, ge=_FEATURE_LEVEL_MIN, le=_FEATURE_LEVEL_MAX)
 
 
 class NestedFeatureResponse(BaseModel):
@@ -204,7 +234,7 @@ class NestedFeatureResponse(BaseModel):
     level: int | None = None
 
     choice_groups: list[ChoiceGroupResponse] = []
-    static_groups: list[StaticEffectGroup] = []
+    static_groups: list[EffectGroup] = []
 
     has_static_effects: bool = False
     has_choices: bool = False
@@ -225,6 +255,8 @@ class FeatureUpdate(FeatPrerequisiteFieldsUpdate):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=_NAME_MAX_LENGTH)
     level: int | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=_TEXT_MAX_LENGTH)
+    prerequisite_minimum_score: int | None = Field(None, ge=1, le=30)
+    prerequisite_description: str | None = Field(None, max_length=_TEXT_MAX_LENGTH)

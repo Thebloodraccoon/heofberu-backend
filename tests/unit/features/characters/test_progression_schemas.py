@@ -4,12 +4,19 @@ from pydantic import ValidationError
 import pytest
 
 from app.features.characters.progression.schemas import (
+    MAX_FEATURE_CHOICES,
+    MAX_HIT_POINTS_GAINED,
+    MAX_REBUILD_HP,
+    MAX_REBUILD_SKILLS,
     ASIChoice,
     ASIIncreaseItem,
     BackgroundChange,
     CharacterASIChoiceResponse,
+    CharacterRebuildRequest,
     FeatChoice,
     LevelUpRequest,
+    SubclassChange,
+    SubraceChange,
 )
 
 
@@ -135,3 +142,57 @@ class TestCharacterASIChoiceResponse:
 
         assert choice.increases == []
         assert choice.feat_id == 9
+
+
+@pytest.mark.unit
+class TestInputBounds:
+    def test_database_ids_above_int32_are_rejected(self):
+        with pytest.raises(ValidationError):
+            BackgroundChange(background_id=2**31)
+
+        with pytest.raises(ValidationError):
+            FeatChoice(feat_id=2**31)
+
+    def test_non_positive_ids_are_rejected(self):
+        with pytest.raises(ValidationError):
+            FeatChoice(feat_id=0)
+
+        with pytest.raises(ValidationError):
+            SubclassChange(subclass_id=-1)
+
+    def test_clearing_subclass_or_subrace_with_null_is_still_allowed(self):
+        assert SubclassChange(subclass_id=None).subclass_id is None
+        assert SubraceChange(subrace_id=None).subrace_id is None
+
+    def test_hit_points_gained_has_an_upper_bound(self):
+        assert LevelUpRequest(hit_points_gained=MAX_HIT_POINTS_GAINED).hit_points_gained == MAX_HIT_POINTS_GAINED
+        with pytest.raises(ValidationError):
+            LevelUpRequest(hit_points_gained=MAX_HIT_POINTS_GAINED + 1)
+
+    def test_feature_choices_list_is_bounded(self):
+        answer = {"feature_id": 1, "choice_group_id": 1, "choice_option_id": 1}
+
+        assert (
+            len(LevelUpRequest(feature_choices=[answer] * MAX_FEATURE_CHOICES).feature_choices) == MAX_FEATURE_CHOICES
+        )
+        with pytest.raises(ValidationError):
+            LevelUpRequest(feature_choices=[answer] * (MAX_FEATURE_CHOICES + 1))
+
+    def test_rebuild_lists_and_hp_are_bounded(self):
+        build = {
+            "class_id": 1,
+            "race_id": 1,
+            "strength": 10,
+            "dexterity": 10,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 10,
+            "charisma": 10,
+            "max_hp": 10,
+        }
+
+        assert CharacterRebuildRequest(**build).asi_choices == []
+        with pytest.raises(ValidationError):
+            CharacterRebuildRequest(**{**build, "max_hp": MAX_REBUILD_HP + 1})
+        with pytest.raises(ValidationError):
+            CharacterRebuildRequest(**{**build, "skill_ids": list(range(1, MAX_REBUILD_SKILLS + 2))})

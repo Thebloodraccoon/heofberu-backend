@@ -1,9 +1,10 @@
 """
 Shared pytest fixtures: test-stage env, async HTTP client, DB factories, and auth helpers.
 
-The module forces ``STAGE=test`` (and default ``TEST_*`` URLs matching the
-``docker-compose.dev.yml`` test services) before anything else imports ``app``,
-so ``app.settings`` always resolves to ``app.settings.test``.
+The module forces ``STAGE=test`` and per-process DB/Redis isolation
+(``tests/isolation.py``) before anything else imports ``app``, so
+``app.settings`` always resolves to ``app.settings.test`` bound to this
+process's own database and Redis key namespace.
 
 The HTTP client is an ``httpx.AsyncClient`` (via ``ASGITransport``) since the
 app now runs on the asyncio stack; the ``get_db`` dependency is overridden
@@ -14,18 +15,20 @@ live in ``tests/integration/conftest.py`` — they need the ``heof-test-db`` /
 ``heof-test-redis`` containers, so unit tests never pull them in.
 """
 
-import os
 import uuid
 
-os.environ["STAGE"] = "test"
-os.environ.setdefault("TEST_DATABASE_URL", "postgresql://heof_user:test_secret@localhost:5433/heof_test_db")
-os.environ.setdefault("TEST_REDIS_URL", "redis://localhost:6381/0")
+from tests.isolation import configure_environment  # noqa: E402  (must precede any ``app`` import)
+
+# Per-process isolation: STAGE=test, TEST_DATABASE_URL -> own DB name, CACHE_PREFIX -> own
+# Redis namespace (see tests/isolation.py). Runs in every xdist worker before ``app`` loads.
+ISOLATION = configure_environment()
 
 import httpx  # noqa: E402
+import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 
 from app.constants import CHARACTER_MAX_LEVEL, UserRole  # noqa: E402
-from app.core.security.password import get_password_hash  # noqa: E402
+from app.core.security.password import get_password_hash, pwd_context  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     Background,
@@ -46,6 +49,21 @@ from app.settings import settings  # noqa: E402
 
 assert settings.STAGE == "test", "Tests must run against the test stage (STAGE=test)."
 
+# bcrypt at the production cost (12) is ~0.5 s per hash/verify and dominated test time (every
+# user fixture + every login). Hashes embed their own cost, so verification stays correct;
+# 4 is bcrypt's minimum. Test process only — production code and settings are untouched.
+pwd_context.update(bcrypt__rounds=4)
+
+
+def pytest_collection_modifyitems(items):
+    """Mark tests by location so ``-m unit`` / ``-m integration`` work without per-file decorators."""
+    for item in items:
+        path = item.path.as_posix()
+        if "/tests/unit/" in path:
+            item.add_marker(pytest.mark.unit)
+        elif "/tests/integration/" in path:
+            item.add_marker(pytest.mark.integration)
+
 
 @pytest_asyncio.fixture
 async def client(db_session):
@@ -55,9 +73,11 @@ async def client(db_session):
         yield db_session
 
     app.dependency_overrides[settings.get_db] = _override_get_db
-    transport = httpx.ASGITransport(app=app)
+
+    # Unique client IP per process: the rate limiter keys Redis counters by client IP.
+    transport = httpx.ASGITransport(app=app, client=(ISOLATION.client_ip, 123))
     try:
-        async with httpx.AsyncClient(transport=transport, base_url="https://testserver/api") as test_client:
+        async with httpx.AsyncClient(transport=transport, base_url="https://testserver/api/v1") as test_client:
             yield test_client
     finally:
         app.dependency_overrides.pop(settings.get_db, None)
@@ -115,7 +135,7 @@ async def founder(create_user):
 
 @pytest_asyncio.fixture
 async def create_skill(db_session):
-    async def _create_skill(key=None, name="Perception", ability="WIS", description=""):
+    async def _create_skill(name="Perception", ability="WIS", description=""):
         skill = Skill(name=name, ability=ability, description=description)
         db_session.add(skill)
         await db_session.commit()
@@ -212,7 +232,9 @@ async def create_background(db_session):
         # straight into ``suggestion_ids`` without setting them up themselves.
         if with_suggestions:
             suggestions = [
-                BackgroundSuggestion(background_id=background.id, suggestion_type=suggestion_type, text=f"{suggestion_type} text")
+                BackgroundSuggestion(
+                    background_id=background.id, suggestion_type=suggestion_type, text=f"{suggestion_type} text"
+                )
                 for suggestion_type in ("PERSONALITY_TRAIT", "IDEAL", "BOND", "FLAW")
             ]
             db_session.add_all(suggestions)
@@ -401,3 +423,68 @@ async def gm_token(gm, login_as):
 @pytest_asyncio.fixture
 async def founder_token(founder, login_as):
     return await login_as(founder)
+
+
+@pytest_asyncio.fixture
+async def create_article(client, gm_token, founder_token):
+    """
+    Create an article through the real API (GM-only) — slug/path generation stays
+    server-side instead of being re-implemented here. ``status`` other than ``draft``
+    is reached through the review workflow (GM submit, founder publish/archive).
+    """
+
+    async def _create_article(
+        title="Khazad-dum",
+        article_type="location",
+        excerpt=None,
+        body_markdown="",
+        subtype=None,
+        parent_id=None,
+        visibility="public",
+        status=None,
+        tag_ids=None,
+    ):
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        payload = {"title": title, "article_type": article_type, "body_markdown": body_markdown}
+        if excerpt is not None:
+            payload["excerpt"] = excerpt
+        if subtype is not None:
+            # ``subtype`` is a name: reuse the article_type's dictionary entry or create it.
+            existing = await client.get("/articles/subtypes", params={"article_type": article_type})
+            match = [s for s in existing.json() if s["name"].lower() == subtype.lower()]
+            if not match:
+                created = await client.post(
+                    "/articles/subtypes", json={"article_type": article_type, "name": subtype}, headers=headers
+                )
+                assert created.status_code == 201, created.text
+                match = [created.json()]
+            payload["subtype_id"] = match[0]["id"]
+        if parent_id is not None:
+            payload["parent_id"] = parent_id
+        if visibility != "public":
+            payload["visibility"] = visibility
+
+        response = await client.post("/articles", json=payload, headers=headers)
+        assert response.status_code == 201, response.text
+        article = response.json()
+
+        founder_headers = {"Authorization": f"Bearer {founder_token}"}
+        actions = {
+            "in_review": [("submit", headers)],
+            "published": [("submit", headers), ("publish", founder_headers)],
+            "archived": [("archive", founder_headers)],
+        }.get(status, [])
+        for action, action_headers in actions:
+            params = {"version": article["version"]} if action == "publish" else None
+            moved = await client.post(f"/articles/{article['id']}/{action}", headers=action_headers, params=params)
+            assert moved.status_code == 200, moved.text
+            article = moved.json()
+
+        if tag_ids is not None:
+            tagged = await client.put(f"/articles/{article['id']}/tags", json={"tag_ids": tag_ids}, headers=headers)
+            assert tagged.status_code == 200, tagged.text
+            article = tagged.json()
+
+        return article
+
+    return _create_article

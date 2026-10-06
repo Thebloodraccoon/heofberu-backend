@@ -14,10 +14,10 @@ writes are centralized" rule).
 features/
 ├── router.py            # assembles /features (crud + effects)
 ├── dependencies.py      # FeatureCrudDep, FeatureEffectsDep
-├── cache.py             # FEATURE_CACHE_NAMESPACES + invalidate_feature_cache()
+├── cache.py             # namespace matrix + invalidate_feature_cache_after_commit()
 ├── exceptions.py        # FeatureNotFoundException (404), InvalidFeatureSourceException (400)
-├── crud/                # identity schemas, repository, FeatureCrudService, router
-└── effects/             # the effect engine: schemas, FeatureEffectsService, router
+├── crud/                # identity schemas, FeatureRepository (+ feature_summary_loads), FeatureCrudService, router
+└── effects/             # the effect engine: schemas, rendering, FeatureEffectsRepository/Service, router
 ```
 
 ## Endpoints
@@ -27,80 +27,99 @@ features/
 | GET | `/features` | open | Paginated `Page[FeatureGetAllResponse]` of **standalone OTHER** features only (id/name/source_type/FKs/level/`has_static_effects`/`has_choices`), ordered by name; `search` on name. Source-owned features are listed through their parent record. |
 | GET | `/features/{feature_id}` | open | Full `FeatureResponse` for any source, embedding the **whole effect tree** (`choice_groups` + `static_groups`, the discriminated union of fixed effects — see below). |
 | POST | `/features` | GM | Create a feature of **any** source type, including `FEAT` (feat rows carry `min_level`/`prerequisite_*`). Source FK + `level` rules enforced at the schema layer (422). |
-| PATCH | `/features/{feature_id}` | GM | Editable fields only: `name`, `level`, `description` (+ `min_level`/`prerequisite_*` for FEAT rows). `source_type` and its FK are **immutable** — ownership is permanent. Level-rule violations → 400 (`InvalidFeatureSourceException`). |
-| DELETE | `/features/{feature_id}` | GM | Cascades away `CharacterFeature` grants; re-reconciles the owning record's characters. |
-| GET/PUT | `/features/{feature_id}/effects` | open / GM | Read / **diff-update** the feature's fixed effects across all six tables by row id (send `[]` to clear a type); choice groups untouched. |
-| GET/PUT | `/features/{feature_id}/choice-groups` | open / GM | Read / **diff-update** the feature's choice-group tree by id (groups → options → effects); dropping an option/group a character has already picked clears that pick (reverts to pending) instead of failing. |
+| PATCH | `/features/{feature_id}` | GM | Editable fields only: `name`, `level`, `description` (+ `min_level`/`prerequisite_*` for FEAT rows). `source_type` and its FK are **immutable** — ownership is permanent. Rule violations (level outside 1-20, a cleared CLASS/SUBCLASS level, FEAT-only columns on a non-FEAT feature, half a prerequisite) -> 400 (`InvalidFeatureSourceException`). Characters are re-reconciled **only when `level` changes**. |
+| DELETE | `/features/{feature_id}` | GM | One transaction. A standalone FEAT/OTHER feature held by a character -> **409** (same guard as `DELETE /feats/{id}`). A source-owned feature cascades its grants away and re-reconciles the owning record's characters before the commit. |
+| GET | `/features/{feature_id}/effects` | open | Read the whole effect tree (`choice_groups` + `static_groups`). |
+| POST | `/features/{feature_id}/effects` | GM | **Add** fixed effects (`static_groups` body; every item is a new row, `id` -> 422). Returns the tree. |
+| PATCH / DELETE | `/features/{feature_id}/effects/{effect_type}/{effect_id}` | GM | Change fields of / remove **one** fixed effect (PATCH body = only the item fields to change). Returns the tree. |
+| GET | `/features/{feature_id}/choice-groups` | open | Read the choice-group tree. |
+| POST | `/features/{feature_id}/choice-groups` | GM | Create a group (optionally with options and their effects; no ids). |
+| PATCH / DELETE | `/features/{feature_id}/choice-groups/{group_id}` | GM | Change `pick_count`/`sort_order` / delete the group (characters' picks of it revert to pending). |
+| POST | `/features/{feature_id}/choice-groups/{group_id}/options` | GM | Add an option with its `effects` bundle (only the type the group's `choice_type` allows). |
+| PATCH / DELETE | `.../options/{option_id}` | GM | Change `sort_order` / delete the option (picks revert to pending). |
+| POST | `.../options/{option_id}/effects` | GM | Add effects to an option's bundle (`static_groups` body). |
+| PATCH / DELETE | `.../options/{option_id}/effects/{effect_type}/{effect_id}` | GM | Change / remove one effect of an option. All choice routes return the feature's choice groups. |
 
 ## The effect engine
 
 A feature's mechanical payload lives in `app/models/features/feature_engine_models.py`
-and is served as three things:
+(six typed effect tables, each row owned by a feature OR a choice option).
 
-- **Six fixed-effect lists on write** (`FeatureEffectsUpdate`): `ability_effects`,
-  `skill_effects`, `saving_throw_effects`, `armor_effects`, `weapon_effects`,
-  `spell_effects`. A fixed effect applies automatically to any character
-  granted the feature. `PUT /features/{feature_id}/effects` still takes this
-  flat six-list shape.
-- **Choice groups** ("pick N of M", `ChoiceGroupsUpdate`) — each group is
+**One API shape for an effect bundle, read and write alike: `list[EffectGroup]`.**
+`EffectGroup` (`features/effects/schemas.py`) is a discriminated union keyed by
+`effect_type` (`"ability"` / `"skill"` / `"saving_throw"` / `"armor"` / `"weapon"` /
+`"spell"`), each member carrying that type's `items`. Responses list only the
+**non-empty** types, built by the single helper `effect_groups(holder)`
+(`feature_engine_models.py`, used by `Feature.static_groups` and
+`FeatureChoiceOption.effects`) — there are never empty per-type lists in a response.
+
+- **Fixed effects**: `static_groups` on `FeatureResponse` / `NestedFeatureResponse` /
+  `FeatureEffectsResponse`, and the same `static_groups` on write
+  (`FeatureEffectsUpdate`, the body of `POST /features/{feature_id}/effects`): every item
+  becomes a new row, a repeated `effect_type` is a 422. Existing rows change only through the
+  per-effect PATCH / DELETE.
+  A fixed effect applies automatically to any character granted the feature.
+- **Choice groups** ("pick N of M", `ChoiceGroupPayload`) — each group is
   pinned to one `choice_type` (`SKILL`/`SPELL`/`ABILITY_SCORE`/
-  `SAVING_THROW`/`ARMOR`/`WEAPON`); every option in it may only populate the
-  one effect-list field that type allows, enforced on write. Groups are
-  independent of the fixed effects and are written separately.
-- **`static_groups: list[StaticEffectGroup]` on read** — the six flat lists
-  are no longer serialized separately on responses. Instead `Feature.static_groups`
-  (a model `@property`, `app/models/features/feature_model.py`) emits one entry
-  per **non-empty** fixed-effect relationship, each a discriminated union member
-  keyed by `effect_type` (`"ability"` / `"skill"` / `"saving_throw"` / `"armor"`
-  / `"weapon"` / `"spell"`) carrying that type's `items` list. `FeatureResponse`,
-  `NestedFeatureResponse` and `FeatureEffectsResponse` all expose
-  `static_groups` this way, plus `has_static_effects` / `has_choices`
+  `SAVING_THROW`/`ARMOR`/`WEAPON`); every option carries `effects: list[EffectGroup]`
+  (on read and write) and may only hold the one effect type its group's choice type
+  allows, enforced on write. Groups are independent of the fixed effects and are
+  written separately.
+- Write payloads (`ChoiceOptionPayload`, `FeatureEffectsUpdate`) still expose each
+  type's items under the per-type attribute names (`skill_effects`, ...) for the
+  validators and `FeatureEffectsService` — an internal detail, not part of the API.
+- Responses also carry `has_static_effects` / `has_choices`
   (denormalized `Feature` columns, maintained by every effect/choice-group
-  write — see `FeatureEffectsService._refresh_effect_flags`) and a rendered
-  `effects_summary` string (still a `Feature` `@property`, not a column).
+  write — see `FeatureEffectsRepository.refresh_effect_flags`) and a rendered
+  `effects_summary` HTML string (a `Feature` `@property`; every interpolated catalog name is HTML-escaped; amounts are signed `+1`/`-1`; option saving throws are in the genitive).
 - **`FeatureEffectsResponse`** aggregates `choice_groups` + `static_groups` and
   is what `GET /features/{feature_id}/effects` returns (`GET /features/{feature_id}`
   embeds the same shape inline via `FeatureResponse`).
 
-Payload-item rules (schema-enforced, 422):
-- `AbilityEffectItem`: `ability` + `amount`, plus optional `new_cap` — **20–30
-  range** (mirrors the legacy ASI validation). Fixed `ability_effects` must not
-  repeat an ability.
-- `SkillEffectItem`: a concrete `skill_id` and `grants_expertise`. An open
-  ("any skill", `skill_id` unset) option can no longer be authored on a
-  SKILL choice group (`ChoiceGroupPayload.validate_no_open_picks`) —
-  open picks aren't resolvable via the API yet. Legacy rows may still read
-  back with `skill_id=None`.
-- `SavingThrowEffectItem`: `ability`. `ArmorEffectItem`: `armor_type`.
-- `WeaponEffectItem`: **exactly one** of `weapon_category` / `item_id`.
-- `SpellEffectItem`: a concrete `spell_id`. Same open-pick restriction as
-  `SkillEffectItem` applies to SPELL choice groups.
-- A feature may have **at most one** choice group offering ability-score
-  effects (`feat_ability_score_effects` and every ASI answer path assumes this).
+Payload rules (schema-enforced, 422 — the schemas reject unknown keys):
+- `AbilityEffectItem`: `ability` + `amount` (-30..30), optional `new_cap` (**20-30**).
+- `SkillEffectItem`: a concrete `skill_id`; `grants_expertise`. `SavingThrowEffectItem`:
+  `ability`. `ArmorEffectItem`: `armor_type`. `WeaponEffectItem`: **exactly one** of
+  `weapon_category` / `item_id`. `SpellEffectItem`: a concrete `spell_id`.
+- A **fixed** skill/spell effect needs its `skill_id`/`spell_id`; an open ("any") option is
+  not authorable on a SKILL/SPELL choice group either (`validate_no_open_picks`). Legacy rows
+  may still read back with `None`.
+- No repeated row `id`, and no repeated effect (same ability / skill / armor type / item /
+  category / spell) inside one group's `items` — fixed effects and every option alike.
+- Bounds: ids 1..2^31-1, `pick_count` 1..50, `sort_order` 0..10 000, <= 50 effects per list,
+  <= 50 options per group, <= 20 groups. A feature may have **at most one** `ABILITY_SCORE`
+  choice group (`feat_ability_score_effects` assumes it). The `skill_id`/`item_id`/`spell_id` of
+  every effect must exist (checked up front, 422 listing the unknown ids).
+- Groups accept (and drop) a legacy `label`; every other unknown key is a 422.
+
+Feature identity rules (`FeatureCreate` and `PATCH` alike): `level` 1..20 for every source type
+(required for CLASS/SUBCLASS, not allowed for FEAT); `min_level`/`prerequisite_*` only on FEAT
+rows; `prerequisite_ability` and `prerequisite_minimum_score` (1..30) are set together;
+`name` <= 200 chars.
 
 ## FeatureCrudService
 
 `FeatureCrudService` extends `CachedService`; `cache_namespaces =
-FEATURE_CACHE_NAMESPACES = ("features",)`. Beyond the standard CRUD it owns:
+FEATURE_CACHE_NAMESPACES = ("features",)`. Every write is **one transaction**
+(`_atomic()`): the row change, the character reconciliation and — registered with
+`invalidate_after_commit` — the cache purge, which runs only after the COMMIT and is dropped on
+rollback. Beyond the standard CRUD it owns:
 
 - **`list_for_source(source_type, source_id)`** — uncached `NestedFeatureResponse`
   listing; the parent catalogs cache their own feature lists under dedicated
   namespaces instead. Raises `ValueError` for FEAT/OTHER (no source FK).
-- **`create_feature_for_source` / `create_features_for_source`** — nested
-  seeding used by the parent catalogs' create payloads; run inside the caller's
-  transaction with `commit=False` and re-validate the merged payload through
-  `FeatureCreate`.
-- **Character reconciliation** — every source-owned feature create/update/delete
-  re-reconciles auto-granted `character_features` in the same transaction via
-  `reconcile_characters_for_source` (the known one-way
-  `characters.progression.feature_sync` import — never commits, no cycle).
-- **`_purge_feature_cache`** — after each write, purges the shared `features`
-  namespace PLUS the owning catalog's list namespace
-  (`SOURCE_FEATURE_LIST_NAMESPACE`: class_features / subclass_features /
-  race_features / subrace_features / background_features) and its parent-read
-  namespace (`SOURCE_PARENT_READ_NAMESPACE`: classes / classes / races / races /
-  backgrounds). FEAT and OTHER features are standalone and purge only
-  `features`.
+- **Character reconciliation** — a source-owned feature create/delete and a `level` change
+  re-reconcile auto-granted `character_features` via `reconcile_characters_for_source` (the
+  known one-way `characters.progression.feature_sync` import — never commits, no cycle). Any
+  other edit only purges the cached payloads of the characters holding the feature.
+- **Cache matrix** (`cache.py::feature_namespaces`) — the shared `features` namespace PLUS the
+  owning catalog's list namespace (`class_features` / `subclass_features` / `race_features` /
+  `subrace_features` / `background_features`) and parent-read namespace (`classes` / `classes` /
+  `races` / `races` / `backgrounds` / `feats`). OTHER features purge only `features`.
+- **Query budget** — `create` makes no tree queries (a new feature's collections are marked
+  loaded-and-empty); `update` loads the tree once and serializes that same object; `delete` loads
+  only the bare row. `feature_summary_loads(base, with_names=...)` is the shared eager-load set the
+  parent catalogs chain onto; the effect endpoints use `with_names=False`.
 
 ## The FEAT source type
 
@@ -114,33 +133,27 @@ FEAT-scoped view over this service — but the writable surface is identical:
 engine (a feat's ASI alternatives are one `ABILITY_SCORE` choice group like
 any other feature choice — the feats catalog's response carries no separate
 ASI shape). FEAT/OTHER rows are never auto-granted to characters, so they
-need no reconciliation.
+need no reconciliation, and a held one can't be deleted.
 
 ## FeatureEffectsService
 
-`FeatureEffectsService` (in `effects/`, exposed via `FeatureEffectsDep`) owns
-the two write endpoints above. Both **diff by row id** against the existing
-rows (`_diff_owned_rows` / `_diff_choice_options`) instead of deleting
-everything and recreating it: an item with an existing id updates that row,
-an item with no id creates one, and an existing row whose id is missing from
-the payload is deleted — an id that doesn't belong to this feature is a 422.
-This matters because `CharacterFeatureChoice.choice_option_id` is `ondelete
-RESTRICT`: removing an option/group a character already picked would
-otherwise fail outright, so `set_choice_groups` deletes that character's
-now-stale `CharacterFeatureChoice` row(s) itself first — the pick reverts to
-pending rather than blocking the edit (the `IntegrityError` → 409
-`RecordInUseError` catch around the diff's flush/commit is a safety net for
-anything this cleanup missed, not the primary path). Executed inside
-the request transaction; after flushing the diffed rows they re-materialize
-every character currently granted the feature via
-`refresh_feature_effect_caches` → `reconcile_effect_rows_for_feature` (one-way
-characters import, `autoflush=False`-safe), commit, then invalidate the
-`features` cache. The response is built by reading `feature.static_groups`
-straight off the refreshed ORM instance (one dict per non-empty effect
-relationship) rather than `model_validate`-ing each of the six effect lists
-individually.
+`FeatureEffectsService` (in `effects/`, exposed via `FeatureEffectsDep`; a plain class over
+`FeatureEffectsRepository`, which holds every query and row write) owns the write endpoints above.
+Every write touches one row (or one new group/option with its bundle), takes a row lock on the
+feature and never diffs: PATCH merges the sent fields over the row's current values and validates
+the result as a whole item. Rules that depend on what the feature already has live in the service
+(a new/changed effect equal to an existing row of the same owner, <= 20 groups, one `ABILITY_SCORE`
+group) and are 422s; an order-only change (`sort_order`) skips the has-flag and character-cache
+refresh. `CharacterFeatureChoice.choice_option_id` is `ondelete RESTRICT`, so
+deleting an option/group deletes the stored picks of it first (the pick reverts to pending).
 
-The exception/error split to document: schema-level rule violations (wrong FK,
-duplicate ability, out-of-range `new_cap`, two ASI groups) surface as **422**
-from Pydantic validators; service-level level-rule violations on PATCH surface
-as **400** (`InvalidFeatureSourceException`).
+Each write is one `unit_of_work`: change -> flush -> `has_*` flags (one `UNION ALL` query) ->
+`refresh_feature_effect_caches` for the granted characters -> COMMIT -> cache purge.
+
+The `has_static_effects` / `has_choices` columns are the single source for the listings;
+`tests/integration/features/features/test_effects_validation.py` pins the invariant that they
+always match the effect tables.
+
+Error split: schema-level violations are **422** (Pydantic, plus
+`InvalidFeatureEffectDataError` for ids that don't resolve), level/feat-column violations on
+PATCH are **400** (`InvalidFeatureSourceException`), a held FEAT/OTHER delete is **409**.

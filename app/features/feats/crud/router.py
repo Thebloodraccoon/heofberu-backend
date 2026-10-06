@@ -1,10 +1,11 @@
-"""Feat endpoints: listing, CRUD, and ASI-choice management."""
+"""Feat endpoints: listing, get-by-id, create, update, delete."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.core.base.service import Page
+from app.core.pagination import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.feats.crud.schemas import (
     FeatCreate,
     FeatGetAllResponse,
@@ -12,7 +13,6 @@ from app.features.feats.crud.schemas import (
     FeatUpdate,
 )
 from app.features.feats.dependencies import FeatCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -26,6 +26,7 @@ async def get_feats(
     feat_service: FeatCrudDep,
     search: str | None = Query(
         None,
+        max_length=100,
         description="Case-insensitive substring match against the feat's name.",
     ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
@@ -85,6 +86,7 @@ async def create_feat(
                 "with_prerequisite": {
                     "summary": "Ability score prerequisite (e.g. Heavy Armor Master)",
                     "value": {
+                        "name": "Heavy Armor Master",
                         "prerequisite_ability": "STR",
                         "prerequisite_minimum_score": 13,
                         "description": (
@@ -131,8 +133,9 @@ async def create_feat(
     response_model=FeatResponse,
     summary="Update a feat's base fields",
     responses={
-        404: {"description": "No feat exists with the given ID."},
         409: {"description": "Another feat already uses the requested name."},
+        404: {"description": "No feat exists with the given ID."},
+        422: {"description": "The ability prerequisite would have only one of ability / minimum score."},
     },
 )
 async def update_feat(
@@ -165,8 +168,9 @@ async def update_feat(
     """
     Partially update a feat's base fields. **GM only.**
 
-    Only fields included in the request body are changed; use
-    `PUT /feats/{feat_id}/ability-score-increases` for ASI choices.
+    Only fields included in the request body are changed. ASI choices are
+    not part of this payload: set them at creation, or change them via
+    `/feats/{feat_id}/choice-groups/...` (see also `/feats/{feat_id}/effects`).
     """
 
     return await feat_service.update(feat_id, data)
@@ -178,7 +182,7 @@ async def update_feat(
     summary="Delete a feat",
     responses={
         404: {"description": "No feat exists with the given ID."},
-        409: {"description": "Feat is still in use by one or more characters or features."},
+        409: {"description": "Feat is still granted to one or more characters."},
     },
 )
 async def delete_feat(feat_id: int, feat_service: FeatCrudDep, _: FounderDep):

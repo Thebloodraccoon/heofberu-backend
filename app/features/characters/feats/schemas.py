@@ -1,9 +1,9 @@
 """Response schemas for a character's granted feats."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import CharacterFeatSource
-from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectsResponse
+from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectGroup
 
 
 class FeatBriefResponse(BaseModel):
@@ -25,7 +25,7 @@ class FeatBriefResponse(BaseModel):
 class CharacterFeatResponse(BaseModel):
     """
     Aggregates a character's feat grant with its feat brief, everything it
-    materialized on the character (``effects`` — a feat is a ``Feature`` too
+    applies to the character (``effects`` — a feat is a ``Feature`` too
     and may carry skill/save/armor/weapon/spell effects beyond its ASI), and
     the player's resolved picks (``choices``) — a picked ASI option is just
     one more entry there (``ability_effects``), same as any other feature's
@@ -39,5 +39,5 @@ class CharacterFeatResponse(BaseModel):
     feat_id: int
     source_type: CharacterFeatSource = CharacterFeatSource.GM
     feat: FeatBriefResponse | None = None
-    effects: GrantEffectsResponse = GrantEffectsResponse()
-    choices: list[ChosenOptionResponse] = []
+    effects: list[GrantEffectGroup] = Field(default_factory=list)
+    choices: list[ChosenOptionResponse] = Field(default_factory=list)

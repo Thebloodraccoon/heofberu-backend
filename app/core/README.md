@@ -15,18 +15,25 @@ and (inside `core`) sibling modules.
 ```
 app/core/
 ├── db.py                  # DatabaseDep — the async session dependency
+├── db_errors.py           # public SQLSTATE helpers: sqlstate(), is_unique_violation(), constraint_name()
 ├── exceptions.py          # AppError regime + data-layer exceptions + ErrorResponse
+├── types.py               # INT32_MAX and the shared bounded id types EntityId / EntityIdPath
 ├── base/                  # Repository / service base classes
 │   ├── repository.py      #   BaseRepository (model-generic CRUD)
-│   ├── service.py         #   BaseService, Page, atomic()
+│   ├── service.py         #   BaseService, Page, paginate()
+│   ├── transaction.py     #   atomic(), unit_of_work(), after_commit(), invalidate_after_commit()
 │   ├── cached_service.py  #   CachedService (transparently cached reads)
 │   └── nested_service.py  #   NestedCollectionService (cached FK-scoped listings)
 ├── cache/                 # Failsafe Redis caching
-│   ├── client.py          #   raw get/set/delete ops via settings.get_redis()
-│   ├── decorator.py       #   @use_cache
-│   ├── invalidation.py    #   invalidate(namespace) / flush_all()
+│   ├── client.py          #   raw get/set/delete ops, namespace key indexes, pending purges, epoch, circuit breaker
+│   ├── decorator.py       #   @use_cache, build_cache_key()
+│   ├── namespaces.py      #   CACHE_DEPENDENTS: which namespaces embed which entity (one dependency map)
+│   ├── invalidation.py    #   invalidate(namespace) / invalidate_many() / flush_all()
 │   └── serialization.py   #   encode()/decode() for Pydantic values
 ├── handlers/              # Exception handlers, registered on the FastAPI app
+├── background.py          # add_safe_task(): post-response work whose failures are only logged
+├── email/                 # SMTP password-reset mailer
+├── storage/               # Supabase image storage
 └── security/              # Password hashing + JWT create/verify/blacklist
 ```
 
@@ -47,10 +54,10 @@ JSON envelope by `handlers/`, so no feature ever raises or catches
 
 ### `db.py`
 
-`get_db` yields one `AsyncSession` per request; `DatabaseDep` is the typed
-alias every feature's `dependencies.py` builds on. The session factory
-(`SessionLocal`) lives in `app/settings`. This is also the dependency the
-HTTP test client overrides.
+`DatabaseDep` is the typed alias over `settings.get_db` (one `AsyncSession`
+per request) that every feature's `dependencies.py` builds on. The session
+factory (`SessionLocal`) and `get_db` live in `app/settings`; `settings.get_db`
+is the dependency the HTTP test client overrides.
 
 ### `exceptions.py`
 
@@ -60,10 +67,11 @@ One exception regime:
   declare a class-level `status_code` (plus optional `headers`/`details`)
   and pass a human-readable message to `super().__init__`
   (`GmAccessException`, `InvalidCredentialsException`, ...).
-- **Data-layer exceptions** — plain `Exception`s kept feature-agnostic:
-  `RecordNotFoundError`, `RecordAlreadyExistsError`,
-  `RecordIdsInvalidError`, `RecordInUseError`. Each has exactly one
-  handler in `handlers/data_layer.py`.
+- **Data-layer exceptions** — feature-agnostic `AppError` subclasses:
+  `RecordNotFoundError` (404), `RecordAlreadyExistsError` (409),
+  `RecordIdsInvalidError` (400), `RecordInUseError` (409). The single
+  `AppError` handler serves them; `ServiceUnavailableError` (503) covers an
+  unreachable backing service.
 - **`ErrorResponse`** — the standardized payload shape
   (`{error: {type, message, status_code, timestamp, details?, request_id?}}`)
   used by all handlers.
@@ -79,10 +87,14 @@ One exception regime:
   (pre-insert/update uniqueness checks → `RecordAlreadyExistsError`),
   `check_in_use_on_delete` (delete guard → `RecordInUseError`; requires an
   `is_in_use` override).
-- `commit_or_flush(commit=...)` — rollback-safe commit, or flush when the
-  caller owns the transaction inside `_atomic()`.
+- `flush()` — the only write path: flushes, and raises `RuntimeError` unless
+  the session is inside `atomic` (`require_atomic`), so a write the service
+  forgot to wrap fails loudly instead of being silently rolled back. Repositories
+  never commit; there is no `commit=` flag.
+- `get_all` / `get_brief` order by the requested column(s) with `id` as the
+  final tie-break, so OFFSET/LIMIT pages are deterministic.
 - batch association helpers: `replace_association` (M2M tables) and
-  `replace_child_rows` (child-row sets), both `commit=False`-aware.
+  `replace_child_rows` (child-row sets); both only flush.
 - `exists_referencing` / `get_many_by_ids` — FK-existence and id-IN
   lookups defined once for reuse.
 
@@ -94,13 +106,47 @@ The "fetch → validate → persist → serialize" orchestrator:
   paginated `get_all` (with a column-select fast path when a lightweight
   `get_all_schema` is declared and it has no relationship fields),
   `get_by_id`, `create`, partial `update` (`exclude_unset=True`),
-  `delete`.
-- Writes purge the service's `cache_namespaces` via `_invalidate_cache`.
+  `delete`; each write runs in its own `_atomic()` block.
+- Writes purge the service's `cache_namespaces` via `_invalidate_cache`
+  (deferred until after `COMMIT` inside `_atomic()` / `_unit_of_work()`).
 - `resolve_ids` validates FK id lists → `RecordIdsInvalidError` (→ 400).
-- `atomic(db)` / `BaseService._atomic()` wrap multistep writes in one
-  all-or-nothing transaction; every inner write passes `commit=False`.
-- `Page` is the generic `{items, total, page, size}` envelope;
-  `paginate()` converts 1-indexed page/size into skip/limit.
+- Pagination lives in `pagination.py`. Public convention: `page`/`size` query
+  params and the `Page` `{items, total, page, size}` envelope; `skip`/`limit`
+  are internal (repositories) and come from `paginate()` (clamped to
+  `1 <= size <= MAX_PAGE_SIZE`). Large listings (articles, characters, spells)
+  add opt-in keyset pagination: `pagination=cursor` (or a `cursor` token) returns
+  `CursorPage` `{items, next_cursor, size}` ordered by `(sort key, id)`; the cursor
+  is opaque url-safe base64 (`encode_cursor`/`decode_cursor`, max
+  `MAX_CURSOR_LENGTH`, bound to its sort; invalid -> `InvalidCursorError`, 422).
+  Repositories fetch `size + 1` rows with `keyset_condition(...)` passed as
+  `conditions=` and `cursor_page(...)` trims them and builds `next_cursor`.
+
+### `base/transaction.py`
+
+The one transaction-ownership mechanism: **the service owns the
+transaction**, repositories only write.
+
+- `atomic(db)` / `BaseService._atomic()` — one all-or-nothing transaction
+  (savepoint + commit); repository writes inside only flush. Re-entrant: a
+  nested block joins the outer one. Callbacks registered with `after_commit`
+  run after the `COMMIT` and are dropped on rollback.
+- `unit_of_work(db)` / `BaseService._unit_of_work()` — the same, yielding a
+  `UnitOfWork` with `await uow.invalidate("ns", keys=[...])` and
+  `await uow.after_commit(coro_fn)`.
+- `invalidate_after_commit(db, *namespaces, keys=())` — outside an atomic
+  block it purges immediately.
+- `TransactionMixin` — `_atomic()` / `_unit_of_work()` for any service that owns writes (`BaseService`,
+  `CharacterSubDomainService`, auth, article writer/proposals, image and nested-item services). Session is
+  `self.db`; override `_tx_db` when it lives elsewhere (`self.repository.db`). Feature code never imports
+  `atomic` directly.
+- `require_atomic(db)` / `in_atomic(db)` — the guard behind `BaseRepository.flush`.
+
+```python
+async with self._unit_of_work() as uow:
+    race = await self.repository.create(data)
+    await self.skills_repo.set_skills(race.id, skills)
+    await uow.invalidate("races", "characters")   # runs only after COMMIT
+```
 
 ### `base/cached_service.py`
 
@@ -126,48 +172,91 @@ Failsafe, transparent Redis caching. Any Redis failure degrades to a
 cache miss / no-op — it never raises into business code. Disabled
 globally with `CACHE_ENABLED=False`.
 
-- `client.py` — low-level operations (`cache_get`/`cache_set`,
-  pattern/prefix deletion). All connections come from
+- `client.py` — low-level operations (`cache_get`/`cache_set`/
+  `cache_delete_key`/`cache_delete_many`/`cache_epoch`). All connections come from
   `settings.get_redis()` (pooled singleton); keys are prefixed
-  `<CACHE_PREFIX>:<namespace>:...`. Only keys under the app prefix are
-  ever deleted — JWT blacklist entries are untouched.
+  `<CACHE_PREFIX>[:<CACHE_VERSION>]:<namespace>:...`. `cache_set` also
+  records the key in a per-namespace Redis SET (first segment and first two
+  segments of the key), so namespace invalidation is `SMEMBERS` +
+  `UNLINK` + `SREM` over exactly that namespace (members leave the index
+  only after their keys are unlinked) — no keyspace `SCAN` (only the admin
+  `flush_all` scans). An index is capped by `CACHE_INDEX_MAX_KEYS`; on
+  overflow its namespace is flushed. Indexes have NO TTL: with the
+  `volatile-lru` Redis policy only keys with a TTL are evicted, so an index
+  is never evicted before its data keys (do not switch to `allkeys-*`).
+  Guarantees around failures:
+  - A purge that cannot run (Redis error/timeout, open breaker) is kept in
+    an in-process bounded `_PendingPurges` and replayed before the next
+    cache operation of that process; while it is pending every get/set
+    degrades to a miss/no-op, so stale entries are never served or stored
+    after an outage. Purges ignore the circuit breaker. Residual risk: a
+    process that dies with a pending purge, or a different worker whose own
+    Redis calls kept working, can serve the stale entry until its TTL.
+  - Every purge bumps a global epoch counter (`<prefix>:__epoch`, no TTL).
+    `@use_cache` reads the epoch before running the function and stores
+    the result with `cache_set(..., epoch=...)`, which drops the value if a
+    purge ran meanwhile (cache-aside refill race).
+  - A circuit breaker skips Redis for 5 s after 3 consecutive failures. Auth
+    state (separate Redis, see `security/token.py`) is never touched, and
+    rate-limit keys are left alone by purges.
 - `decorator.py` — `@use_cache(ttl=..., namespace=..., key_builder=...,
   skip_if=..., schema=..., cache_none=...)`. Cache keys combine namespace,
-  function name, and a canonical rendering of the arguments (key-sorted
-  dicts, `None`s dropped). The deserialization schema comes from the
+  function name, and a canonical rendering of the arguments bound against
+  the signature (`get(5)` and `get(item_id=5)` share a key; key-sorted
+  dicts, `None`s dropped, long values such as search text replaced by a
+  digest). `build_cache_key(func, *args, namespace=..., **kwargs)` returns
+  the exact key for point invalidation. A cached payload that fails to
+  decode is a miss (key dropped). The deserialization schema comes from the
   return annotation at decoration time, falling back to per-call
   resolution from the instance when the annotation is missing/unbound
   (the generic cached base methods).
-- `invalidation.py` — `invalidate(namespace)` deletes every key under the
-  namespace (called by services after each write); `flush_all()` clears
-  everything under the app prefix.
+- `namespaces.py` — `CACHE_DEPENDENTS` (+ `dependents(entity)`): the single
+  declaration of which cached namespaces embed which entity's names/ids
+  (skills, items, spell names, classes, races, tags, ...). The per-feature
+  `cache.py` modules derive their purge sets from it;
+  `tests/unit/core/test_cache_namespace_graph.py` fails when a cached namespace
+  has no purge path or the map names a namespace nothing caches.
+- `invalidation.py` — `invalidate(namespace)` / `invalidate_many(...)` delete
+  every key under the namespace(s); `flush_all()` clears everything under
+  the app prefix.
 - `serialization.py` — `encode`/`decode` round-trip Pydantic models and
   `Page[...]` envelopes through `model_dump_json`/`model_validate_json`;
   bare `list[Model]` schemas go through `TypeAdapter`; scalars through
   plain JSON.
+
+### `background.py`
+
+`add_safe_task(background_tasks, func, *args, **kwargs)` schedules an async
+function to run after the response; any exception is logged and swallowed,
+so a failing side effect never becomes a client error. Used for password-reset
+emails (`AuthService.forgot_password`) and image deletes
+(`ImageStorageService.delete_image` when built with the request's
+`BackgroundTasks`, which `StorageServiceDep` does). Image uploads stay
+synchronous because the response returns the image URL. The tasks keep their
+own timeouts/retries (SMTP 15 s; storage 15 s x 3 attempts).
 
 ### `handlers/`
 
 Exception handlers registered on the app, in order (see
 `handlers/__init__.py:ALL_HANDLERS`):
 
-1. `app_error.py` — any `AppError` subclass → its own `status_code` and
-   message in the standardized envelope. Registered first so application
-   errors are matched here rather than by the generic HTTP handler.
-2. `http.py` — FastAPI `HTTPException` and Starlette `HTTPException`
-   (framework-level errors keep their semantics).
-3. `validation.py` — Pydantic `ValidationError` → 422 with per-field
-   details (`_to_json_safe` keeps non-serializable inputs from crashing
-   the error payload itself).
-4. `data_layer.py` — `RecordAlreadyExistsError` → 400,
-   `RecordNotFoundError` → 404, `RecordIdsInvalidError` → 400,
-   `RecordInUseError` → 409.
-5. `database.py` — `SQLAlchemyError` → 500, with `IntegrityError`
-   narrowed to 400 and a best-effort constraint-type message.
-6. `unhandled.py` — catch-all `Exception` → 500 (must stay last).
+1. `app_error.py` — any `AppError` subclass (including the `Record*`
+   data-layer errors) → its own `status_code` and message in the
+   standardized envelope. Registered first.
+2. `http.py` — Starlette `HTTPException` (FastAPI's subclasses it), headers
+   preserved (`Allow`, `WWW-Authenticate`).
+3. `validation.py` — FastAPI `RequestValidationError` and Pydantic
+   `ValidationError` → 422 envelope with `details.validation_errors`
+   (`field`/`message`/`type`). The submitted `input` is never returned or
+   logged.
+4. `database.py` — `SQLAlchemyError` → 500; `IntegrityError` → 400 with a
+   message chosen from the PostgreSQL SQLSTATE (23505/23503/23502/23514);
+   pool exhaustion → 503. SQL and parameters are never logged or returned.
+5. `unhandled.py` — catch-all `Exception` → 500 (must stay last).
 
-Each module exports a `HANDLERS` list of `(exception_class, handler)`
-pairs; `main` registers them in the order above.
+`_response.py` holds the single `build_error_response(request, ...)` builder
+every handler uses. Each module exports a `HANDLERS` list of
+`(exception_class, handler)` pairs; `main` registers them in the order above.
 
 ### `security/password.py`
 
@@ -181,18 +270,35 @@ JWT lifecycle: `create_access_token` / `create_refresh_token` mint tokens
 with a unique `jti` claim (what makes per-token revocation possible);
 `decode_token` verifies signature/expiry (raising `InvalidTokenException`);
 `verify_token` / `verify_refresh_token` additionally check the required
-`token_type` and return a `DecodedToken` (email, jti, remaining TTL).
+`token_type` and return a `DecodedToken` (`subject`, jti, remaining TTL,
+`issued_at_ms`). Tokens carry `iat` (s) and `iat_ms` claims; `blacklist_key(jti)`
+is the public Redis key helper.
 Revocation is separate from verification: `blacklist_token(jti, ttl)`
 writes a Redis key that lives exactly as long as the token would have,
-and callers that care check `is_token_blacklisted(jti)` explicitly.
-Auth *dependencies* (`TokenDep`, `CurrentUserDep`, ...) live in
-`app/features/users/security.py`, keeping `core` free of feature imports.
+and callers that care check `is_token_blacklisted(jti)` explicitly. Redis
+failures there fail closed with `ServiceUnavailableError` (503).
+
+**Auth state lives on its own Redis.** Blacklist entries, `auth_revoked_after:*`
+marks and single-use claims (refresh rotation, reset tokens) are read and
+written through `settings.get_auth_redis()`, built from `AUTH_REDIS_URL`.
+The cache Redis (`REDIS_URL`, `volatile-lru`) may evict any key with a TTL,
+which would silently un-revoke tokens; the auth Redis (`heof-auth-redis`
+in docker-compose) runs `noeviction` + `appendonly yes`. Out-of-memory there
+surfaces as a write error, hence a 503, never as a lost revocation.
+Staging/prod refuse to start unless `AUTH_REDIS_URL` is set and differs from
+`REDIS_URL`; in dev an empty value shares `REDIS_URL`, and the test stage
+always uses `TEST_REDIS_URL` for both (per-run key isolation is unchanged).
+Rate-limit counters stay on the cache Redis (they have an in-memory fallback).
+Auth *dependencies* (`TokenDep`, `CurrentUserDep`, role guards) and session
+rules (revocation, single-use claims) live in `app/features/auth`, keeping
+`core` free of feature imports and business rules.
 
 ## Conventions
 
 - Python 3.10+, full type hints; layer strictly endpoint → service →
   repository → model.
-- Multi-table writes go through `_atomic()` with `commit=False` inner
-  writes; single writes end with `commit_or_flush(commit=True)`.
+- Every write goes through `_atomic()` / `_unit_of_work()`; repositories only
+  flush (`flush()`), never commit. Cache purges inside a transaction go through
+  `invalidate_after_commit` / `uow.invalidate`.
 - Rich Google-style docstrings; ruff clean (line length 120, double
   quotes, no relative imports).

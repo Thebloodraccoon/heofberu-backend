@@ -1,14 +1,21 @@
-"""Validation helpers for feat-ASI operations on a character (GM grants and level-up)."""
+"""
+Validation helpers for feat-ASI operations on a character (GM grants and level-up).
 
-from app.constants import ABILITY_SCORE_CAP
+The ``ensure_*`` functions are pure (they take already computed ability
+``totals``); the ``async`` wrappers compute fresh totals for callers that have
+none to hand.
+"""
+
+from app.constants import ABILITY_SCORE_CAP, AbilityScore
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.feats.exceptions import (
+    AbilityScoreCapExceededException,
     FeatAsiChoiceRequiredException,
+    FeatMinLevelNotMetException,
     FeatPrerequisiteNotMetException,
     InvalidAbilityScoreIncreaseException,
 )
-from app.features.characters.progression.exceptions import AbilityScoreCapExceededException
 from app.features.feats.crud.repository import feat_ability_score_effects
 from app.models.character.character_model import Character
 from app.models.features.feature_model import Feature
@@ -32,10 +39,11 @@ def validate_asi_choice_required(feat: Feature, ability_score_increase_id: int |
     """
     Raise unless an ASI-offering feat is given an explicit choice.
 
-    Only ``GmPanelFeatService.update_feat`` enforces this (an already-granted
-    feat's ASI choice must always resolve to one of its options, never back
-    to unset). A fresh grant (``add_feat``) does NOT call this — it may leave
-    the choice group pending, like any other feature choice group.
+    Enforced by ``GmPanelFeatService.update_feat`` (an already-granted feat's
+    ASI choice must always resolve to one of its options, never back to
+    unset) and by a rebuild (which has no later step to answer the pick). A
+    fresh GM grant (``add_feat``) does NOT call this — it may leave the
+    choice group pending, like any other feature choice group.
     """
 
     increases = feat_ability_score_effects(feat)
@@ -43,48 +51,35 @@ def validate_asi_choice_required(feat: Feature, ability_score_increase_id: int |
         raise FeatAsiChoiceRequiredException(feat_id=feat.id, choices=len(increases))
 
 
-async def validate_ability_score_increase_cap(
-    feat: Feature, ability_score_increase_id: int, character: Character, stats_service: CharacterStatsService
-) -> None:
+def ensure_within_cap(totals: dict[str, int], ability: AbilityScore, amount: int) -> None:
+    """Raise ``AbilityScoreCapExceededException`` if ``amount`` on top of the effective total passes ``ABILITY_SCORE_CAP``."""
+
+    current_total = totals[TOTAL_FIELD_BY_ABILITY[ability]]
+    requested = current_total + amount
+    if requested > ABILITY_SCORE_CAP:
+        raise AbilityScoreCapExceededException(ability=ability.value, current_total=current_total, requested=requested)
+
+
+def ensure_feat_asi_within_cap(feat: Feature, ability_score_increase_id: int | None, totals: dict[str, int]) -> None:
     """
-    Raise ``AbilityScoreCapExceededException`` if the selected ASI choice
-    would push the character's effective score above ``ABILITY_SCORE_CAP``
-    (20). Player structured choices (ASI or feat) are always bounded by 20 —
-    only GM-panel adjustments or feature effects may go above. The check
-    validates against effective totals computed fresh, not the cache.
+    Raise ``AbilityScoreCapExceededException`` if the feat's selected ASI
+    option would push the effective score above ``ABILITY_SCORE_CAP`` (20).
+    Player structured choices (ASI or feat) are always bounded by 20 — only
+    GM-panel adjustments or feature effects may go above.
     """
 
     increase = next((e for e in feat_ability_score_effects(feat) if e.id == ability_score_increase_id), None)
-    if increase is None:
-        return
-
-    totals = await stats_service.compute(character)
-    total_field = TOTAL_FIELD_BY_ABILITY[increase.ability]
-    current_total = totals[total_field]
-    requested = current_total + increase.amount
-
-    if requested > ABILITY_SCORE_CAP:
-        raise AbilityScoreCapExceededException(
-            ability=increase.ability.value,
-            current_total=current_total,
-            requested=requested,
-        )
+    if increase is not None:
+        ensure_within_cap(totals, increase.ability, increase.amount)
 
 
-async def check_feat_prerequisite(character: Character, feat: Feature, stats_service: CharacterStatsService) -> None:
-    """
-    Raise ``FeatPrerequisiteNotMetException`` if the feat has an
-    ability-score prerequisite the character's current *effective* score
-    doesn't meet (computed fresh, not from the cache).
-    """
+def ensure_prerequisite_met(feat: Feature, totals: dict[str, int]) -> None:
+    """Raise ``FeatPrerequisiteNotMetException`` if the feat's ability-score prerequisite is unmet by ``totals``."""
 
     if feat.prerequisite_ability is None or feat.prerequisite_minimum_score is None:
         return
 
-    totals = await stats_service.compute(character)
-    field = TOTAL_FIELD_BY_ABILITY[feat.prerequisite_ability]
-    actual = totals[field]
-
+    actual = totals[TOTAL_FIELD_BY_ABILITY[feat.prerequisite_ability]]
     if actual < feat.prerequisite_minimum_score:
         raise FeatPrerequisiteNotMetException(
             feat_id=feat.id,
@@ -92,3 +87,19 @@ async def check_feat_prerequisite(character: Character, feat: Feature, stats_ser
             required_minimum=feat.prerequisite_minimum_score,
             actual=actual,
         )
+
+
+async def check_feat_prerequisite(character: Character, feat: Feature, stats_service: CharacterStatsService) -> None:
+    """:func:`ensure_prerequisite_met` against the character's *effective* score (computed fresh, not the cache)."""
+
+    if feat.prerequisite_ability is None or feat.prerequisite_minimum_score is None:
+        return
+
+    ensure_prerequisite_met(feat, await stats_service.compute(character))
+
+
+def ensure_feat_min_level(feat: Feature, level: int) -> None:
+    """Raise ``FeatMinLevelNotMetException`` if the feat has a ``min_level`` above the level it is taken at."""
+
+    if feat.min_level is not None and level < feat.min_level:
+        raise FeatMinLevelNotMetException(feat_id=feat.id, min_level=feat.min_level, level=level)

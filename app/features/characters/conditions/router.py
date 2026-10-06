@@ -1,17 +1,17 @@
-"""Character condition endpoints: manage active conditions on a character (query-style IDs)."""
+"""Character condition endpoints: manage active conditions on a character (resource URL ``/conditions/{condition}``)."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query, status
+from fastapi import APIRouter, Body, status
 
 from app.constants import ConditionType
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.conditions.schemas import (
     CharacterConditionAdd,
     CharacterConditionResponse,
     CharacterConditionUpdate,
 )
 from app.features.characters.dependencies import CharacterConditionServiceDep
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 
@@ -83,7 +83,7 @@ async def add_character_condition(
 
 
 @router.patch(
-    "/{character_id:int}/conditions",
+    "/{character_id:int}/conditions/{condition}",
     response_model=CharacterConditionResponse,
     summary="Change a condition's exhaustion level or source",
     responses={
@@ -94,7 +94,7 @@ async def add_character_condition(
 )
 async def update_character_condition(
     character_id: int,
-    condition: Annotated[ConditionType, Query()],
+    condition: ConditionType,
     data: Annotated[
         CharacterConditionUpdate,
         Body(
@@ -115,7 +115,7 @@ async def update_character_condition(
 ):
     """
     Change a condition's ``exhaustion_level`` or ``source``. The
-    condition itself is fixed by the query parameter — remove it and
+    condition itself is fixed by the URL — remove it and
     re-add if the effect changes.
     """
 
@@ -123,7 +123,7 @@ async def update_character_condition(
 
 
 @router.delete(
-    "/{character_id:int}/conditions",
+    "/{character_id:int}/conditions/{condition}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a condition from a character",
     responses={
@@ -133,7 +133,7 @@ async def update_character_condition(
 )
 async def remove_character_condition(
     character_id: int,
-    condition: Annotated[ConditionType, Query()],
+    condition: ConditionType,
     character_condition_service: CharacterConditionServiceDep,
     current_user: CurrentUserDep,
 ):

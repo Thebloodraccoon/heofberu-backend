@@ -5,6 +5,8 @@ caps, subclass and background setup — plus the edge cases along that path.
 
 import pytest
 
+from tests.helpers import set_effects
+
 
 async def level_up(client, character_id, token, payload=None):
     return await client.post(
@@ -180,8 +182,8 @@ class TestScoreBoundaries:
         character_class = await create_class(name="Fighter")
         character, token = await create_api_character(class_id=character_class.id, owner=player, strength=16)
 
-        await level_up(client, character["id"], token)  # 2
-        await level_up(client, character["id"], token)  # 3
+        await level_up(client, character["id"], token)
+        await level_up(client, character["id"], token)
         response = await level_up(
             client,
             character["id"],
@@ -190,7 +192,7 @@ class TestScoreBoundaries:
         )  # 4: STR effective 18
         assert response.status_code == 200
 
-        await level_up(client, character["id"], token)  # 5
+        await level_up(client, character["id"], token)
         response = await level_up(
             client,
             character["id"],
@@ -276,10 +278,11 @@ class TestLateSetupGrants:
         character_class = await create_class(name="Fighter")
         champion = await create_subclass(class_id=character_class.id, name="Champion")
         trait = await create_feature(name="Champion Trait", source_type="SUBCLASS", subclass_id=champion.id, level=None)
-        await client.put(
-            f"/features/{trait.id}/effects",
-            json={"ability_effects": [{"ability": "STR", "amount": 1}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
+        await set_effects(
+            client,
+            gm_token,
+            trait.id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "STR", "amount": 1}]}]},
         )
 
         character, token = await create_api_character(class_id=character_class.id, owner=player, strength=10)

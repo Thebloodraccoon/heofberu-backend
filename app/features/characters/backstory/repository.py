@@ -1,19 +1,20 @@
 """Character backstory repository: single-row get/upsert (uncached)."""
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.repository import BaseRepository
+from app.core.base.repository import SessionRepository
 from app.models.character.character_backstory_model import CharacterBackstory
 
 
-class CharacterBackstoryRepository(BaseRepository[CharacterBackstory]):
+class CharacterBackstoryRepository(SessionRepository):
     """Repository for a character's backstory (``character_backstories``, one row per character)."""
 
     def __init__(self, db: AsyncSession):
         """Create the backstory repository."""
 
-        super().__init__(CharacterBackstory, db)
+        super().__init__(db)
 
     async def get_for_character(self, character_id: int) -> CharacterBackstory | None:
         """Fetch a character's backstory row, if one exists."""
@@ -24,15 +25,14 @@ class CharacterBackstoryRepository(BaseRepository[CharacterBackstory]):
         return result.scalar_one_or_none()
 
     async def upsert_content(self, character_id: int, content: str) -> CharacterBackstory:
-        """Create the backstory row if missing, else replace its content, and commit."""
+        """Create the backstory row or replace its content in one ``INSERT ... ON CONFLICT DO UPDATE`` (flush only)."""
 
-        row = await self.get_for_character(character_id)
-        if row is None:
-            row = CharacterBackstory(character_id=character_id, content=content)
-            self.db.add(row)
-        else:
-            row.content = content
+        insert = pg_insert(CharacterBackstory).values(character_id=character_id, content=content)
+        statement = insert.on_conflict_do_update(
+            index_elements=[CharacterBackstory.character_id], set_={"content": insert.excluded.content}
+        ).returning(CharacterBackstory)
 
-        await self.commit_or_flush()
-        await self.db.refresh(row)
+        result = await self.db.execute(statement, execution_options={"populate_existing": True})
+        row = result.scalar_one()  # an upsert with RETURNING always yields the row
+        await self.flush()
         return row

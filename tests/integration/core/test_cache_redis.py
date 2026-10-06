@@ -2,8 +2,8 @@
 Integration tests for the Redis-backed cache against the real test Redis.
 
 Requires the ``heof-test-redis`` container (``docker-compose.dev.yml``).
-The ``redis_client`` fixture (from ``tests/integration/conftest.py``) flushes
-the database before and after every test. ``CACHE_ENABLED`` is flipped on
+The ``redis_client`` fixture (from ``tests/integration/conftest.py``) clears
+this process's key namespace before and after every test. ``CACHE_ENABLED`` is flipped on
 per-test because the test stage keeps it off by default.
 """
 
@@ -14,7 +14,8 @@ from app.core.cache import invalidate, use_cache
 from app.core.cache.client import cache_delete_prefix, cache_get, cache_set
 from app.settings import settings
 
-KEY = "cache:test:key"
+P = settings.CACHE_PREFIX  # per-process prefix (tests/isolation.py)
+KEY = f"{P}:test:key"
 
 
 @pytest.fixture
@@ -56,25 +57,25 @@ class TestCacheStore:
         assert await redis_client.ttl(KEY) == settings.CACHE_TTL_DEFAULT
 
     async def test_missing_key_is_none(self, redis_client, caching_on):
-        assert await cache_get("cache:missing:*") is None
+        assert await cache_get(f"{P}:missing:*") is None
 
     async def test_delete_prefix_removes_only_namespace(self, redis_client, caching_on):
-        await cache_set("cache:spells:get_all:1=1", "a")
-        await cache_set("cache:spells:get_by_id:1", "b")
-        await cache_set("cache:other:get:1=1", "c")
+        await cache_set(f"{P}:spells:get_all:1=1", "a")
+        await cache_set(f"{P}:spells:get_by_id:1", "b")
+        await cache_set(f"{P}:other:get:1=1", "c")
 
         await cache_delete_prefix("spells")
 
-        assert await cache_get("cache:spells:get_all:1=1") is None
-        assert await cache_get("cache:spells:get_by_id:1") is None
-        assert await cache_get("cache:other:get:1=1") == "c"
+        assert await cache_get(f"{P}:spells:get_all:1=1") is None
+        assert await cache_get(f"{P}:spells:get_by_id:1") is None
+        assert await cache_get(f"{P}:other:get:1=1") == "c"
 
     async def test_invalidate_shortcut(self, redis_client, caching_on):
-        await cache_set("cache:items:get_all:1=1", "a")
+        await cache_set(f"{P}:items:get_all:1=1", "a")
 
         await invalidate("items")
 
-        assert await cache_get("cache:items:get_all:1=1") is None
+        assert await cache_get(f"{P}:items:get_all:1=1") is None
 
     async def test_decorator_shares_cache_across_instances(self, redis_client, caching_on):
         first = Quotes()

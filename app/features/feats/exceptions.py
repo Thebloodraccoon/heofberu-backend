@@ -13,3 +13,14 @@ class FeatNotFoundException(AppError):
 
         self.feat_id = feat_id
         super().__init__(f"Feat with id {feat_id} not found.")
+
+
+class FeatPrerequisiteIncompleteError(AppError):
+    """Raised (422) when a feat's ability prerequisite would have only one of ability / minimum score."""
+
+    status_code = 422
+
+    def __init__(self):
+        """Build the 422 message."""
+
+        super().__init__("prerequisite_ability and prerequisite_minimum_score must be set together.")

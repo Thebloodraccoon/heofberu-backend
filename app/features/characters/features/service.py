@@ -25,14 +25,14 @@ class CharacterFeatureService(CharacterSubDomainService):
     async def get_features(self, character_id: int, current_user: UserResponse) -> list[CharacterFeatureResponse]:
         """
         List every feature recorded on a character (progression auto-grants
-        plus GM records), each with what it actually materialized on the
-        character (``effects``) and the player's resolved picks (``choices``).
+        plus GM records), each with what it gives the character
+        (``effects``) and the player's resolved picks (``choices``).
         """
 
         await self.get_character_for_user(character_id, current_user)
 
         grants = await self.feature_grant_repository.get_character_features(character_id)
-        effects_by_grant = await get_grant_effects_map(self.repository.db, [grant.id for grant in grants])
+        effects_by_grant = await get_grant_effects_map(self.repository.db, grants)
 
         return [
             CharacterFeatureResponse(

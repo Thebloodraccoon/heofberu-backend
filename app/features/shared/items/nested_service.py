@@ -5,8 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType
 from app.core.base.nested_service import NestedCollectionService
-from app.core.base.repository import _commit_or_rollback
 from app.core.base.service import BaseService
+from app.core.base.transaction import TransactionMixin
 from app.features.items.crud.repository import SOURCE_ITEM_FK_BY_SOURCE_TYPE, ItemRepository
 from app.features.shared.items.schemas import (
     ChoiceGroupEntry,
@@ -19,7 +19,7 @@ from app.models.items.item_source_choice_model import SourceItemChoiceGroup, Sou
 from app.models.items.item_source_model import SourceItem
 
 
-class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResponse]):
+class NestedSourceItemService(TransactionMixin, NestedCollectionService[SourceItem, SourceItemResponse]):
     """Per-source starting-equipment reads and writes behind the nested_items cache."""
 
     model = SourceItem
@@ -38,52 +38,26 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
 
         return SOURCE_ITEM_FK_BY_SOURCE_TYPE[source_type]
 
-    async def create_items_for_source(
-        self,
-        source_type: FeatureSourceType,
-        source_id: int,
-        entries: list[SourceItemEntry] | None,
-        *,
-        commit: bool = False,
-    ) -> None:
-        """Insert starting-equipment entries for ``source_id``; caller controls commit."""
-
-        if not entries:
-            return
-
-        await self._validate_item_ids(entries)
-        fk_name = self.fk_for(source_type)
-
-        for entry in entries:
-            self.db.add(
-                SourceItem(
-                    source_type=source_type,
-                    item_id=entry.item_id,
-                    quantity=entry.quantity,
-                    **{fk_name: source_id},
-                )
-            )
-
-        if commit:
-            await _commit_or_rollback(self.db)
-        else:
-            await self.db.flush()
-
     async def set_items_for_source(
         self,
         source_type: FeatureSourceType,
         source_id: int,
         entries: list[SourceItemEntry],
-        *,
-        commit: bool = True,
     ) -> None:
         """Fully replace starting-equipment for ``source_id``; validates item IDs first."""
 
         await self._validate_item_ids(entries)
         fk_name = self.fk_for(source_type)
 
-        await self.db.execute(delete(SourceItem).where(getattr(SourceItem, fk_name) == source_id))
+        async with self._atomic():
+            await self.db.execute(delete(SourceItem).where(getattr(SourceItem, fk_name) == source_id))
+            self._add_source_items(source_type, source_id, entries)
+            await self.db.flush()
 
+    def _add_source_items(self, source_type: FeatureSourceType, source_id: int, entries: list[SourceItemEntry]) -> None:
+        """Add one ``SourceItem`` row per entry for ``source_id`` (no flush)."""
+
+        fk_name = self.fk_for(source_type)
         for entry in entries:
             self.db.add(
                 SourceItem(
@@ -93,11 +67,6 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
                     **{fk_name: source_id},
                 )
             )
-
-        if commit:
-            await _commit_or_rollback(self.db)
-        else:
-            await self.db.flush()
 
     async def _validate_item_ids(self, entries: list[SourceItemEntry]) -> None:
         """Raise ``RecordIdsInvalidError`` if any entry references a nonexistent item."""
@@ -143,8 +112,6 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
         source_type: FeatureSourceType,
         source_id: int,
         groups: list[ChoiceGroupEntry],
-        *,
-        commit: bool = False,
     ) -> ChoiceGroupsResponse:
         """Fully replace the choice groups for ``source_id``."""
 
@@ -152,30 +119,30 @@ class NestedSourceItemService(NestedCollectionService[SourceItem, SourceItemResp
 
         await self._validate_choice_option_item_ids(groups)
 
-        await self.db.execute(delete(SourceItemChoiceGroup).where(getattr(SourceItemChoiceGroup, fk_name) == source_id))
-
-        for idx, group_entry in enumerate(groups):
-            group = SourceItemChoiceGroup(
-                source_type=source_type,
-                pick_count=group_entry.pick_count,
-                sort_order=group_entry.sort_order if group_entry.sort_order else idx,
-                **{fk_name: source_id},
+        async with self._atomic():
+            await self.db.execute(
+                delete(SourceItemChoiceGroup).where(getattr(SourceItemChoiceGroup, fk_name) == source_id)
             )
-            self.db.add(group)
-            await self.db.flush()
 
-            for opt_idx, opt_entry in enumerate(group_entry.options):
-                option = SourceItemChoiceOption(
-                    group_id=group.id,
-                    item_id=opt_entry.item_id,
-                    quantity=opt_entry.quantity,
-                    sort_order=opt_idx,
+            for idx, group_entry in enumerate(groups):
+                group = SourceItemChoiceGroup(
+                    source_type=source_type,
+                    pick_count=group_entry.pick_count,
+                    sort_order=group_entry.sort_order if group_entry.sort_order else idx,
+                    **{fk_name: source_id},
                 )
-                self.db.add(option)
+                self.db.add(group)
+                await self.db.flush()
 
-        if commit:
-            await _commit_or_rollback(self.db)
-        else:
+                for opt_idx, opt_entry in enumerate(group_entry.options):
+                    option = SourceItemChoiceOption(
+                        group_id=group.id,
+                        item_id=opt_entry.item_id,
+                        quantity=opt_entry.quantity,
+                        sort_order=opt_idx,
+                    )
+                    self.db.add(option)
+
             await self.db.flush()
 
         return await self.list_choice_groups_for_source(source_type, source_id)

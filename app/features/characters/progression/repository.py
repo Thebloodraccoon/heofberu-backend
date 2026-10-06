@@ -37,7 +37,6 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         feat_id: int | None = None,
         ability_score_increase_id: int | None = None,
         increases: list[dict] | None = None,
-        commit: bool = True,
     ) -> CharacterASIChoice:
         """
         Record one resolved ASI-level choice: ``class_level`` is the ASI
@@ -46,8 +45,8 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         ``CharacterASIChoiceIncrease`` children — the rows the calculator
         counts; ``feat_id``/``ability_score_increase_id`` describe FEAT
         choices, whose stat effect flows through the granted feature row.
-        New choices are always recorded with ``applied_to_base = False``:
-        the base columns are never touched, the log IS the counted source.
+        Always recorded with ``applied_to_base = False`` (the log IS the
+        counted source).
         """
 
         row = CharacterASIChoice(
@@ -63,11 +62,7 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
             row.increases.append(CharacterASIChoiceIncrease(ability=item["ability"], amount=item["amount"]))
 
         self.db.add(row)
-        if commit:
-            await self.commit_or_flush()
-            await self.db.refresh(row)
-        else:
-            await self.db.flush()
+        await self.flush()
 
         return row
 
@@ -84,26 +79,19 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         )
         return result.scalar_one_or_none()
 
-    async def remove_choice(self, choice: CharacterASIChoice) -> bool:
+    async def clear_character_choices(self, character_id: int) -> None:
         """
-        Delete a choice row with its increment children (cascade). Since
-        counted points live only in these rows, deletion reverts the stat
-        effect — the caller just refreshes the ability-score cache.
-        """
-
-        await self.db.delete(choice)
-        await self.commit_or_flush()
-        return True
-
-    async def clear_character_choices(self, character_id: int, *, commit: bool = True) -> None:
-        """
-        Delete every resolved ASI-level choice for a character (child
-        increases cascade at the DB level) — a point-rebuild replaces them
-        all with freshly resolved choices for the new build.
+        Delete the character's level-resolved ASI choices (child increases
+        cascade at the DB level) — a point-rebuild replaces them with freshly
+        resolved choices for the new build. GM adjustments and GM feat
+        grants (``class_level IS NULL``) are not part of that history and are
+        kept.
         """
 
-        await self.db.execute(delete(CharacterASIChoice).where(CharacterASIChoice.character_id == character_id))
-        if commit:
-            await self.commit_or_flush()
-        else:
-            await self.db.flush()
+        await self.db.execute(
+            delete(CharacterASIChoice).where(
+                CharacterASIChoice.character_id == character_id,
+                CharacterASIChoice.class_level.is_not(None),
+            )
+        )
+        await self.flush()

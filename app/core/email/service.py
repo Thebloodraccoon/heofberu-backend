@@ -2,18 +2,13 @@
 
 from email.message import EmailMessage
 import logging
+from urllib.parse import quote
 
 import aiosmtplib
 
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
-
-# Hardcoded frontend reset page for now. The backend appends the reset
-# token to this base and emails the resulting link; this keeps the backend
-# from depending on a runtime-supplied redirect while the frontend domain
-# is still being finalized.
-RESET_BASE_URL = "https://heofberu-frontend.vercel.app/reset-password"
 
 
 class EmailService:
@@ -27,9 +22,13 @@ class EmailService:
     """
 
     async def send_password_reset(self, to_email: str, reset_token: str) -> bool:
-        """Send the password-reset email for ``to_email``, linking to the reset page with ``reset_token``."""
+        """
+        Send the password-reset email for ``to_email``, linking to ``FRONTEND_RESET_URL`` with ``reset_token``.
 
-        reset_url = f"{RESET_BASE_URL}?token={reset_token}"
+        Returns whether the SMTP delivery succeeded (failures are logged, never raised).
+        """
+
+        reset_url = f"{settings.FRONTEND_RESET_URL}?token={quote(reset_token, safe='')}"
 
         message = EmailMessage()
         message["Subject"] = "Восстановление пароля — Heofberu"
@@ -44,11 +43,10 @@ class EmailService:
             "Если вы не запрашивали восстановление пароля, просто проигнорируйте это письмо.\n"
         )
 
-        await self._send(message, to_email=to_email)
-        return True
+        return await self._send(message, to_email=to_email)
 
-    async def _send(self, message: EmailMessage, *, to_email: str) -> None:
-        """Deliver ``message`` via SMTP (TLS), logging but never raising on failure."""
+    async def _send(self, message: EmailMessage, *, to_email: str) -> bool:
+        """Deliver ``message`` via SMTP (TLS); logs and returns ``False`` instead of raising on failure."""
 
         try:
             await aiosmtplib.send(
@@ -63,3 +61,6 @@ class EmailService:
             )
         except Exception:  # noqa: BLE001 - SMTP failures are logged, not surfaced
             logger.exception("Failed to send email to %s", to_email)
+            return False
+
+        return True

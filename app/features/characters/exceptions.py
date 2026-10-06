@@ -36,3 +36,15 @@ class BackgroundNotFoundException(AppError):
 
         self.background_id = background_id
         super().__init__(f"Background with id {background_id} not found.")
+
+
+class GmOnlyFieldException(AppError):
+    """Raised when a non-GM tries to change a field only the GM may raise."""
+
+    status_code = 403
+
+    def __init__(self, field: str):
+        """Initialize with the restricted field name."""
+
+        self.field = field
+        super().__init__(f"Only a GM can increase '{field}'.")

@@ -110,8 +110,7 @@ class TestCharacterConditions:
         )
 
         response = await client.patch(
-            f"/characters/{character.id}/conditions",
-            params={"condition": "EXHAUSTION"},
+            f"/characters/{character.id}/conditions/EXHAUSTION",
             json={"exhaustion_level": 4},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -131,8 +130,7 @@ class TestCharacterConditions:
         )
 
         response = await client.patch(
-            f"/characters/{character.id}/conditions",
-            params={"condition": "POISONED"},
+            f"/characters/{character.id}/conditions/POISONED",
             json={"exhaustion_level": 2},
             headers={"Authorization": f"Bearer {player_token}"},
         )
@@ -149,8 +147,7 @@ class TestCharacterConditions:
         )
 
         response = await client.delete(
-            f"/characters/{character.id}/conditions",
-            params={"condition": "POISONED"},
+            f"/characters/{character.id}/conditions/POISONED",
             headers={"Authorization": f"Bearer {player_token}"},
         )
 

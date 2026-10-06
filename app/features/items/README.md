@@ -5,30 +5,36 @@ Reference catalog for the `Item` entity — weapons, armor, and general equipmen
 ## Layout
 
 - `crud/` — the single capability: `repository.py` (`ItemRepository`), `service.py` (`ItemCrudService`), `schemas.py`, `router.py` (bare router).
-- `../items/cache.py` — cache namespaces + invalidation helper.
-- `../items/dependencies.py` — `ItemCrudDep` service dependency.
-- `../items/exceptions.py` — `ItemNotFoundException` (404).
-- `../items/router.py` — assembles the surface under `/items`.
+- `cache.py` — cache namespace tuples.
+- `dependencies.py` — `ItemCrudDep` service dependency.
+- `exceptions.py` — `ItemNotFoundException` (404), raised by the characters module.
+- `router.py` — assembles the surface under `/items`.
 
 ## Endpoints
 
 | Method | Path | Access | Notes |
 | ------ | ---- | ------ | ----- |
-| GET | `/items` | open | Paginated list (`Page[ItemGetAllResponse]`: id/name/type/rarity/cost only). Filters: repeatable `item_type`, repeatable `rarity`, `search` on name. |
+| GET | `/items` | open | Paginated list (`Page[ItemGetAllResponse]`: id/name/type/rarity/cost only), ordered by name. Filters: repeatable `item_type`, repeatable `rarity`, `search` on name (max 100 chars). |
 | GET | `/items/{item_id}` | open | Full `ItemResponse` including weapon/armor detail fields. |
-| POST | `/items` | GM | 409 on duplicate `name`. |
-| PATCH | `/items/{item_id}` | GM | Partial update; duplicate `name` → 409. |
+| POST | `/items` | GM | Duplicate `name` → 400. |
+| PATCH | `/items/{item_id}` | GM | Partial update; duplicate `name` → 409; explicit `null` for a required field → 422 (nullable weapon/armor/price fields can be cleared with `null`). |
 | DELETE | `/items/{item_id}` | Founder | Blocked with 409 while referenced anywhere (see below). |
+
+Duplicates answer **400** (`RecordAlreadyExistsError`, platform-wide), not 409. Input bounds follow the columns: `name` 1..200 (trimmed), `weight` `Numeric(6,2)`, `cost_gold` `Numeric(10,2)` (both >= 0), `weapon_properties` <= 300, small ranges for dice count / AC / strength requirement. The item type is not cross-checked against the weapon/armor fields (GM data entry stays free-form).
 
 ## Service composition
 
-Simple catalog: one capability. `ItemCrudService` extends `CachedService[...]` over `ItemRepository`:
+`ItemCrudService` extends `CachedService[...]` over `ItemRepository`; create goes through the inherited `create` (overridden only for the narrower cache purge).
 
-- Uniqueness on `name` before create/update (`unique_fields=["name"]`) → 409.
-- `create_item` is the only custom write (uniqueness check + explicit `invalidate_item_cache()`); reads and delete are inherited unchanged from `CachedService`.
-- Delete guard (`check_in_use_on_delete=True` → `ItemRepository.is_in_use`) blocks removal while any `character_items` row (inventory), `source_items` row (class/background starting equipment) or `source_item_choice_options` row (an item offered inside a starting-equipment choice group) references the item — all FKs are `ON DELETE RESTRICT`.
-- `SOURCE_ITEM_FK_BY_SOURCE_TYPE` at the repository maps CLASS/BACKGROUND source types to their `source_items` FK column; OTHER/feat-style sources have none.
+- Uniqueness on `name` (`unique_fields=["name"]`).
+- Delete guard (`ItemRepository.is_in_use`) blocks removal while any of these reference the item: `character_items` (inventory, RESTRICT), `character_proficiencies` (weapon proficiency by item, **cascading** FK, so it must be checked in code), `feature_weapon_proficiency_effects` (RESTRICT), `source_items` (class/background starting equipment) and `source_item_choice_options`. `delete` locks the item row first (`SELECT ... FOR UPDATE`) so a concurrent reference can't be cascaded away between the guard and the DELETE.
+- `SOURCE_ITEM_FK_BY_SOURCE_TYPE` at the repository maps CLASS/BACKGROUND source types to their `source_items` FK column.
 
 ## Cache
 
-`ITEM_CACHE_NAMESPACES = ("items", "nested_items", "classes", "backgrounds")`, purged by `invalidate_item_cache()` after every committed write: per-source starting-equipment listings are cached under `nested_items` and embed `ItemBriefResponse` rows joined from this table, and the class/background FullResponses embed item briefs too. The parent catalogs declare `"items"` in their own `cache_namespaces` for the reverse direction.
+`cache.py`: `ITEM_OWN_CACHE_NAMESPACES = ("items",)` and `ITEM_DEPENDENT_CACHE_NAMESPACES` (`nested_items`, classes, races, backgrounds, features, feats and every `*_features` list; derived from `CACHE_DEPENDENTS["items"]` in `app/core/cache/namespaces.py`). Per-source equipment listings (`nested_items`) and class/background details embed item briefs, and `effects_summary` renders weapon-proficiency item names, so:
+
+- **update** purges all of them (`ITEM_CACHE_NAMESPACES`, the service's `cache_namespaces`);
+- **create** and **delete** purge only `items` (a new item isn't referenced yet; an item can only be deleted once nothing references it).
+
+All purges run after the commit. The parent catalogs declare `"items"` in their own `cache_namespaces` for the reverse direction.

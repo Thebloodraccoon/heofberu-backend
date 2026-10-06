@@ -45,13 +45,17 @@ class FakeMaxLevelRepository:
     async def get_by_character_id(self, character_id):
         return self.row
 
-    async def create_for_character(self, character_id, max_level, *, commit=True):
+    async def create_for_character(self, character_id, max_level):
         self.create_calls.append((character_id, max_level))
         self.row = SimpleNamespace(character_id=character_id, max_level=max_level)
-        if commit:
-            await self.db.commit()
-            await self.db.refresh(self.row)
         return self.row
+
+
+@pytest.fixture(autouse=True)
+def stub_lock(monkeypatch):
+    lock = AsyncMock()
+    monkeypatch.setattr("app.features.characters.gm_panel.level.service.lock_character", lock)
+    return lock
 
 
 def make_service(character, *, row=None):
@@ -99,20 +103,46 @@ class TestSetMaxLevel:
 
         assert exc_info.value.character_level == 5
 
-    async def test_missing_row_is_backfilled_at_current_level_first(self):
+    async def test_missing_row_is_seeded_directly_at_the_new_value_in_the_services_single_commit(self):
         character = make_character(level=3)
         service = make_service(character, row=None)
 
-        await service.set_max_level(1, MaxLevelUpdate(max_level=7), SimpleNamespace())
+        result = await service.set_max_level(1, MaxLevelUpdate(max_level=7), SimpleNamespace())
 
-        assert service.max_level_repository.create_calls == [(1, 3)]
-        assert service.max_level_repository.row.max_level == 7
+        assert service.max_level_repository.create_calls == [(1, 7)]
+        assert result.max_level == 7
+        assert service.repository.db.commits == 1
 
-    async def test_backfilled_row_blocks_values_at_or_below_current_level(self):
+    async def test_missing_row_blocks_values_at_or_below_current_level(self):
         service = make_service(make_character(level=3), row=None)
 
         with pytest.raises(MaxLevelCanOnlyIncreaseException):
             await service.set_max_level(1, MaxLevelUpdate(max_level=3), SimpleNamespace())
+
+    async def test_rejected_write_seeds_nothing(self):
+        service = make_service(make_character(level=3), row=None)
+
+        with pytest.raises(MaxLevelCanOnlyIncreaseException):
+            await service.set_max_level(1, MaxLevelUpdate(max_level=3), SimpleNamespace())
+
+        assert service.max_level_repository.create_calls == []
+        assert service.repository.db.commits == 0
+        assert service.repository.db.rollbacks == 1
+
+    async def test_below_current_level_with_missing_row_seeds_nothing(self):
+        service = make_service(make_character(level=5), row=None)
+
+        with pytest.raises(MaxLevelBelowCharacterLevelException):
+            await service.set_max_level(1, MaxLevelUpdate(max_level=4), SimpleNamespace())
+
+        assert service.max_level_repository.create_calls == []
+
+    async def test_validation_runs_under_the_character_lock(self, stub_lock):
+        service = make_service(make_character(level=5), row=SimpleNamespace(character_id=1, max_level=5))
+
+        await service.set_max_level(1, MaxLevelUpdate(max_level=8), SimpleNamespace())
+
+        stub_lock.assert_awaited_once()
 
 
 @pytest.mark.unit

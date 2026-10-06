@@ -10,21 +10,23 @@ from app.core.base.repository import BaseRepository
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_model import Character
+from app.models.races.race_model import Race
 from app.models.races.subrace_association_models import SubraceAbilityBonus
 from app.models.races.subrace_model import Subrace
 
 
 class SubraceRepository(BaseRepository[Subrace]):
-    """Repository for ``Subrace`` rows with eager-loaded ability bonuses."""
+    """Repository for ``Subrace`` rows with eager-loaded ability bonuses, tags and features."""
 
     def __init__(self, db: AsyncSession):
-        """Initialize the repository with eager-loaded ability bonuses."""
+        """Initialize the repository with eager-loaded ability bonuses, tags and features."""
 
         super().__init__(
             Subrace,
             db,
             default_load_options=[
                 selectinload(Subrace.ability_bonuses),
+                selectinload(Subrace.tags),
                 *feature_summary_loads(selectinload(Subrace.features)),
             ],
             search_fields=["name"],
@@ -33,25 +35,37 @@ class SubraceRepository(BaseRepository[Subrace]):
         )
 
     async def _check_uniqueness(self, data: dict[str, Any], exclude_id: int | None = None) -> None:
-        """Raise ``RecordAlreadyExistsError`` if a sibling subrace with the same name already exists."""
+        """
+        Raise ``RecordAlreadyExistsError`` if a sibling subrace already has the name.
 
-        if not self._unique_fields:
+        Names are unique per race (``uq_subrace_race_id_name``). The race comes
+        from ``data`` on create, and from the row being updated (``exclude_id``)
+        on a rename, whose payload carries no ``race_id``.
+        """
+
+        name = data.get("name")
+        if name is None:
             return
 
-        for field in self._unique_fields:
-            if field in data and data[field] is not None:
-                value = data[field]
-                stmt = select(self.model.id).where(getattr(self.model, field) == value)
+        stmt = select(Subrace.id).where(Subrace.name == name)
 
-                race_id = data.get("race_id")
-                if race_id is not None:
-                    stmt = stmt.where(self.model.race_id == race_id)
+        race_id = data.get("race_id")
+        if race_id is not None:
+            stmt = stmt.where(Subrace.race_id == race_id)
+        elif exclude_id is not None:
+            own_race = select(Subrace.race_id).where(Subrace.id == exclude_id).scalar_subquery()
+            stmt = stmt.where(Subrace.race_id == own_race)
 
-                if exclude_id is not None:
-                    stmt = stmt.where(self.model.id != exclude_id)
+        if exclude_id is not None:
+            stmt = stmt.where(Subrace.id != exclude_id)
 
-                if await self.db.scalar(stmt) is not None:
-                    raise RecordAlreadyExistsError(model_name=self.model.__name__, field=field, value=value)
+        if await self.db.scalar(stmt) is not None:
+            raise RecordAlreadyExistsError(model_name=self.model.__name__, field="name", value=name)
+
+    async def race_exists(self, race_id: int) -> bool:
+        """Whether a race with ``race_id`` exists."""
+
+        return await self.db.scalar(select(Race.id).where(Race.id == race_id)) is not None
 
     async def is_in_use(self, subrace_id: int) -> bool:
         """Check whether any character references this subrace (blocks deletion)."""
@@ -65,7 +79,7 @@ class SubraceRepository(BaseRepository[Subrace]):
         Column-select on purpose: ``default_load_options`` eager-loads
         ``ability_bonuses`` plus the full feature effect tree
         (``feature_summary_loads``), which ``SubraceGetAllResponse`` never
-        uses — going through ``get_all`` here would pay for both on every
+        uses. Going through ``get_all`` here would pay for both on every
         row of every listing.
         """
 
@@ -79,7 +93,7 @@ class SubraceRepository(BaseRepository[Subrace]):
             limit=None,
         )
 
-    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict], *, commit: bool = True) -> None:
+    async def set_ability_bonuses(self, subrace_id: int, bonuses: list[dict]) -> None:
         """Replace all ability bonuses for a subrace with the given list."""
 
         await self.replace_child_rows(
@@ -87,5 +101,4 @@ class SubraceRepository(BaseRepository[Subrace]):
             Subrace(id=subrace_id),
             "subrace_id",
             bonuses,
-            commit=commit,
         )

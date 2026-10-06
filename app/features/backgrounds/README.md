@@ -2,9 +2,10 @@
 
 Reference catalog of character backgrounds. A background carries base fields
 (name, description, `starting_gold`), granted skills (`background_skills`
-M2M), a suggestion pool (`background_suggestions`, one row per suggested
-personality-card entry), starting equipment (`source_items` rows pointing at
-`items`), and its own BACKGROUND-source features.
+M2M), tags, a suggestion pool (`background_suggestions`, one row per suggested
+personality-card entry), starting equipment (`source_items` rows plus
+"pick N of M" choice groups pointing at `items`), and its own
+BACKGROUND-source features.
 
 ## Capabilities / Endpoints
 
@@ -15,69 +16,73 @@ not a query parameter:
 
 | Capability | Endpoints |
 | --- | --- |
-| `crud/` | `GET ""` (paginated listing), `GET /{background_id}` (full picture), `POST ""` (GM), `PATCH /{background_id}` (GM), `DELETE /{background_id}` (Founder) |
+| `crud/` | `GET ""` (paginated listing, id/name), `GET /{background_id}` (full picture), `POST ""` (GM), `PATCH /{background_id}` (GM), `DELETE /{background_id}` (Founder) |
 | `skills/` | `PUT /backgrounds/{background_id}/skills` — full-replace granted skills (GM) |
-| `items/` | `GET /backgrounds/{background_id}/items`, `PUT /backgrounds/{background_id}/items` — full-replace starting equipment (GM) |
-| `features/` | `GET /backgrounds/{background_id}/features` — cached per-background feature list (read-only; GM feature create/edit/delete is central: `POST /features`, `PATCH/DELETE /features/{id}`) |
-| `suggestions/` | `GET /backgrounds/{background_id}/suggestions`, `PUT /backgrounds/{background_id}/suggestions` — full-replace the personality-card suggestion pool (GM) |
+| `tags/` | `PUT /backgrounds/{background_id}/tags` — full-replace tags (GM) |
+| `items/` | `GET/PUT /backgrounds/{background_id}/items` — starting equipment; `GET/PUT /backgrounds/{background_id}/choice-groups` — "pick N of M" equipment alternatives (PUT is GM, full replace) |
+| `features/` | `GET /backgrounds/{background_id}/features` — cached per-background feature list (read-only; feature create/edit/delete is central: `POST /features`, `PATCH/DELETE /features/{id}`) |
+| `suggestions/` | `GET/POST /backgrounds/{background_id}/suggestions`, `PATCH/DELETE /backgrounds/{background_id}/suggestions/{suggestion_id}` — the personality-card suggestion pool (writes GM) |
 
 Deps live in `dependencies.py` (`BackgroundCrudDep`, `BackgroundFeaturesDep`,
-`BackgroundSkillsDep`, `BackgroundItemsDep`, `BackgroundSuggestionsDep`).
+`BackgroundSkillsDep`, `BackgroundItemsDep`, `BackgroundSuggestionsDep`,
+`BackgroundTagsDep`).
 
-## Service Composition & Create Seeding
+## Service Composition
 
-Each capability service extends `BaseService` and inherits the shared engine:
-
-- `crud/service.py:BackgroundCrudService` extends `CachedService` and composes
-  `BackgroundFeatureService` explicitly in `__init__` (no mixin MRO) — needed
-  by `get_by_id` to fold in `features`.
-- `features/service.py:BackgroundFeatureService` = read-only cached feature
-  LIST (`@use_cache()` under `background_features`), delegating to the
-  central `FeatureCrudService.list_for_source` (pinned to
-  `FeatureSourceType.BACKGROUND`).
-- `items/service.py:BackgroundItemsService` = `SourceItemManagerMixin`
-  delegating to the shared `NestedSourceItemService`. Background starting
-  equipment is **fixed** — there are no item choice groups for backgrounds
-  (the `choice-groups` mechanic exists for classes only).
-- `skills/service.py:BackgroundSkillsService` = `SkillsManagerMixin`
-  (+ `SkillLookupMixin` in its repository for skill-id resolution).
-- `suggestions/service.py:BackgroundSuggestionsService` = its own small
-  list/full-replace service over `BackgroundSuggestionsRepository`
-  (`background_suggestions`, delete+insert on write). No `sort_order` — the
-  pool is unordered by design, a player picks from the set or rolls one at
-  random rather than working off a numbered list.
-
-`create_background` writes base fields only. `granted_skills`, `suggestions`,
-`starting_items`, and `features` are all deliberately NOT part of create —
-each is attached afterwards through its own capability endpoint, same as
-every other catalog domain (race/class) in this codebase.
+- `crud/service.py:BackgroundCrudService` extends `CachedService`. Its
+  `get_by_id` is ONE eager-loaded read (skills, items, choice groups,
+  suggestions, tags and the BACKGROUND-source `features` with their effect
+  tree) serialized into `BackgroundResponse`, cached as a single unit.
+  `create_background` seeds one placeholder suggestion (`text="-"`) per
+  `BackgroundSuggestionType` in the same transaction; skills, tags, items and
+  features are attached afterwards through their own endpoints. `delete` reads
+  the bare row (no effect tree).
+- Every other capability service extends `capability.py:BackgroundCapabilityService`
+  (a thin `BaseService` binding the shared `BackgroundResponse`), so each
+  endpoint answers with the full background:
+  - `features/service.py:BackgroundFeatureService` — read-only cached list
+    (`background_features`), delegating to `FeatureCrudService.list_for_source`.
+  - `items/service.py:BackgroundItemsService` — `SourceItemManagerMixin` +
+    `ChoiceGroupManagerMixin` over the shared `NestedSourceItemService`.
+  - `skills/service.py:BackgroundSkillsService` — `SkillsManagerMixin`.
+  - `tags/service.py:BackgroundTagService` — `TagsManagerMixin`.
+  - `suggestions/service.py:BackgroundSuggestionsService` — per-suggestion CRUD.
+    Character creation needs exactly one suggestion per type, so the last
+    suggestion of a type can be neither deleted nor re-typed (409,
+    `LastSuggestionOfTypeError`); the background row is locked
+    (`SELECT ... FOR UPDATE`) so two concurrent requests can't both pass.
 
 ## Cache Invalidation
 
-`cache.py` owns the single invalidation point
-`invalidate_background_cache()`, purging `BACKGROUND_CACHE_NAMESPACES =
-("backgrounds", "background_features", "features", "nested_items")`. Every
-capability write calls it after commit; the crud service additionally
-declares it as `cache_namespaces` (blunt whole-namespace purge). The `features`
-entry covers the background's feature list, and `background_features` is
-additionally purged directly by the central `FeatureCrudService`'s
-`_purge_feature_cache` (via `SOURCE_FEATURE_LIST_NAMESPACE`) whenever any
-feature write touches a BACKGROUND-source feature — central writes never touch
-the catalog's own invalidator.
+`cache.py` owns the namespace tuples; every write purges after commit
+(`BaseService._invalidate_cache` inside `_atomic()` defers it; outside it the
+repository has already committed):
+
+- `BACKGROUND_CACHE_NAMESPACES = ("backgrounds",)` — base fields, skills, tags,
+  suggestions, create.
+- `BACKGROUND_ITEMS_CACHE_NAMESPACES` — adds `nested_items` (items and choice groups).
+- `BACKGROUND_DELETE_CACHE_NAMESPACES` — adds `background_features` and
+  `features` (the delete cascades to the background's features).
+
+Background features written through `/features` purge `background_features`
+and `backgrounds` themselves (`invalidate_feature_cache_after_commit`). Skill/item
+catalog edits purge `backgrounds` from their side.
 
 ## Notable Rules
 
-- `BackgroundResponse` doubles as both the create/update response and the
-  `GET /backgrounds/{id}` response: `get_by_id` folds the background's own
-  BACKGROUND-source `features` into it (cached as a single unit), while
-  `create`/`update` return it with `features` at its empty default — features
-  are attached afterwards through their own endpoint. The plain listing
-  response (`BackgroundGetAllResponse`) is light (id/name/granted_skills only).
-- Delete is blocked (409) only once one of the background's features has been
-  granted to a character (`is_in_use` check); characters merely referencing
-  the background get `background_id` set to NULL. Its `granted_skills`,
-  `starting_items`/`starting_choice_groups`, and `suggestions` rows cascade
-  away with it.
+- `BackgroundResponse` is the response of `GET /{id}`, `PATCH`, and every
+  capability `PUT`. All of them come from the same eager load, so `features`
+  is always populated and identical to `GET /{id}/features`.
+- Delete is blocked (409) once any of the background's features is granted to a
+  character (one `EXISTS` query, however many grants exist). The feature rows
+  are locked first, because `character_features.feature_id` cascades and a grant
+  slipping in between the guard and the DELETE would otherwise be wiped
+  silently. Characters merely referencing the background get `background_id`
+  set to NULL by the database (`passive_deletes` on `Background.characters`);
+  skills, tags, items, choice groups, suggestions and features cascade away.
+- Input bounds: `name` 1..100 (whitespace-trimmed), `starting_gold` 0..1e9, PATCH
+  rejects an explicit `null` for any field (422), `skill_ids` unique ints.
+  Duplicate names answer 400 (`RecordAlreadyExistsError`, platform-wide).
 - Character creation merges background-granted skills into the proficiency
-  set server-side (deduplicated with class/race picks); see
-  `characters/crud/service.py`.
+  set server-side (deduplicated with class/race picks) and reads the
+  background's choice groups like a class's; see `characters/crud/service.py`.

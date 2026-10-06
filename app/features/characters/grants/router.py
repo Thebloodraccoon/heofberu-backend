@@ -4,15 +4,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
-from app.core.base.repository import _commit_or_rollback
-from app.features.characters.access import get_character_for_user
-from app.features.characters.dependencies import CharacterServiceDep, FeatureGrantServiceDep
+from app.features.auth.dependencies import CurrentUserDep
+from app.features.characters.dependencies import FeatureGrantServiceDep
 from app.features.characters.grants.schemas import (
     AnsweredChoicesResponse,
     GrantChoicesUpdate,
     PendingChoiceGroupsResponse,
 )
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 
@@ -29,7 +27,6 @@ router = APIRouter()
 async def get_all_pending_choices(
     character_id: int,
     grant_service: FeatureGrantServiceDep,
-    character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
     """
@@ -40,8 +37,7 @@ async def get_all_pending_choices(
     grant's own ``/features/{id}/choices`` individually.
     """
 
-    await get_character_for_user(character_service.repository, character_id, current_user)
-    return await grant_service.get_all_pending_choices(character_id)
+    return await grant_service.get_all_pending_choices(character_id, current_user)
 
 
 @router.get(
@@ -57,17 +53,15 @@ async def get_pending_choice_groups(
     character_id: int,
     character_feature_id: int,
     grant_service: FeatureGrantServiceDep,
-    character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
     """
     Return the choice groups of a character's feature grant that still need
     the player's picks ("pick N of M"). Grants with no pending groups are
-    fully materialized and return an empty ``groups`` list.
+    fully resolved and return an empty ``groups`` list.
     """
 
-    await get_character_for_user(character_service.repository, character_id, current_user)
-    return await grant_service.get_pending_choice_groups(character_id, character_feature_id)
+    return await grant_service.get_pending_choice_groups(character_id, character_feature_id, current_user)
 
 
 @router.get(
@@ -82,7 +76,6 @@ async def get_pending_choice_groups(
 async def get_all_answered_choices(
     character_id: int,
     grant_service: FeatureGrantServiceDep,
-    character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
     """
@@ -93,8 +86,7 @@ async def get_all_answered_choices(
     pick yet are omitted.
     """
 
-    await get_character_for_user(character_service.repository, character_id, current_user)
-    return await grant_service.get_all_answered_choices(character_id)
+    return await grant_service.get_all_answered_choices(character_id, current_user)
 
 
 @router.get(
@@ -110,7 +102,6 @@ async def get_answered_choices(
     character_id: int,
     character_feature_id: int,
     grant_service: FeatureGrantServiceDep,
-    character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
 ):
     """
@@ -120,8 +111,7 @@ async def get_answered_choices(
     .../choices`` for what's still pending).
     """
 
-    await get_character_for_user(character_service.repository, character_id, current_user)
-    return await grant_service.get_answered_choices(character_id, character_feature_id)
+    return await grant_service.get_answered_choices(character_id, character_feature_id, current_user)
 
 
 @router.patch(
@@ -145,7 +135,6 @@ async def answer_choice_groups(
     character_id: int,
     character_feature_id: int,
     grant_service: FeatureGrantServiceDep,
-    character_service: CharacterServiceDep,
     current_user: CurrentUserDep,
     data: Annotated[
         GrantChoicesUpdate,
@@ -183,14 +172,11 @@ async def answer_choice_groups(
 ):
     """
     Answer (or re-answer) a granted feature's choice groups. Replaces the
-    answered groups' stored picks and re-materializes the grant's effect rows
-    — skill/saving-throw/armor/weapon proficiencies and granted spells — in
-    the same transaction. An option carrying an open ("any skill"/"any
+    answered groups' stored picks in one transaction; the grant's effects
+    (proficiencies, granted spells, ability bonuses) are computed from them
+    on read. An option carrying an open ("any skill"/"any
     spell") effect can't be picked yet — the request is rejected (422). The
     response lists any groups still pending.
     """
 
-    await get_character_for_user(character_service.repository, character_id, current_user)
-    response = await grant_service.answer_choices(character_id, character_feature_id, data)
-    await _commit_or_rollback(grant_service.db)
-    return response
+    return await grant_service.answer_choices(character_id, character_feature_id, data, current_user)

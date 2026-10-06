@@ -1,13 +1,21 @@
 """ORM model for active conditions/status effects on a character."""
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Text
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, ForeignKey, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.constants import ConditionType
 from app.models.enums import ConditionTypeType
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
 
 
-class CharacterCondition(settings.Base):  # type: ignore
+class CharacterCondition(Base):
     """
     An active condition/status effect currently affecting a character
     (e.g. Poisoned, Prone, Exhaustion level 2). `exhaustion_level` is only
@@ -17,11 +25,11 @@ class CharacterCondition(settings.Base):  # type: ignore
 
     __tablename__ = "character_conditions"
 
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
-    condition = Column(ConditionTypeType, primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    condition: Mapped[ConditionType] = mapped_column(ConditionTypeType, primary_key=True)
 
-    exhaustion_level = Column(Integer, nullable=True)
-    source = Column(Text, nullable=False, default="")  # e.g. "Poisoned by Giant Spider bite"
+    exhaustion_level: Mapped[int | None] = mapped_column()
+    source: Mapped[str] = mapped_column(Text, default="")
 
     __table_args__ = (
         CheckConstraint(
@@ -30,7 +38,7 @@ class CharacterCondition(settings.Base):  # type: ignore
         ),
     )
 
-    character = relationship("Character", back_populates="conditions")
+    character: Mapped[Character] = relationship(back_populates="conditions")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<CharacterCondition(character_id={self.character_id}, condition='{self.condition}')>"

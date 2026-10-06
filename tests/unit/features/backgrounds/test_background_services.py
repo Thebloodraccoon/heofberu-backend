@@ -1,12 +1,12 @@
 """Unit tests for the background crud / skills / features services and repositories."""
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.constants import AbilityScore, BackgroundSuggestionType
-from app.core.exceptions import RecordNotFoundError
+from app.core.base.transaction import atomic
+from app.core.exceptions import RecordInUseError, RecordNotFoundError
 from app.features.backgrounds.crud.repository import BackgroundRepository
 from app.features.backgrounds.crud.schemas import BackgroundCreate
 from app.features.backgrounds.crud.service import BackgroundCrudService
@@ -14,9 +14,12 @@ from app.features.backgrounds.features.service import BackgroundFeatureService
 from app.features.backgrounds.skills.repository import BackgroundSkillsRepository
 from app.features.backgrounds.skills.schemas import SkillsUpdate
 from app.features.backgrounds.skills.service import BackgroundSkillsService
-from app.models import Background, BackgroundSuggestion
+from app.features.backgrounds.suggestions.exceptions import LastSuggestionOfTypeError
+from app.features.backgrounds.suggestions.schemas import SuggestionUpdate
+from app.features.backgrounds.suggestions.service import BackgroundSuggestionsService
+from app.models import Background, BackgroundSuggestion, Feature
 from app.models.skill_model import Skill
-from tests.unit.fakes import FakeAsyncSession, FakeRepository, FakeResult
+from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
 
 def make_background(**overrides) -> Background:
@@ -52,8 +55,11 @@ class FakeBackgroundRepository(FakeRepository):
         self.skills = skills or {}
         self.set_skills_calls = []
         self.get_skills_calls = []
+        self.bare_calls = []
+        self.suggestion_calls = []
+        self.deleted_suggestions = []
 
-    async def create(self, payload, *, commit=True):
+    async def create(self, payload):
         row = Background(
             id=self._next_id,
             name=payload["name"],
@@ -66,39 +72,53 @@ class FakeBackgroundRepository(FakeRepository):
         self._next_id += 1
         self._rows[row.id] = row
         self.created.append(row)
-        if commit:
-            await self.db.commit()
         return row
 
-    async def set_skills(self, background_id: int, skills: list[Skill] | None, *, commit: bool = True) -> None:
-        self.set_skills_calls.append((background_id, skills, commit))
+    async def set_skills(self, background_id: int, skills: list[Skill] | None) -> None:
+        self.set_skills_calls.append((background_id, skills))
         background = self._rows.get(background_id)
         if background is not None:
             background.granted_skills = list(skills or [])
-        if commit:
-            await self.db.commit()
 
     async def get_skills_by_ids(self, skill_ids: list[int]) -> list[Skill]:
         self.get_skills_calls.append(skill_ids)
         return [self.skills[skill_id] for skill_id in skill_ids if skill_id in self.skills]
 
+    async def get_bare(self, background_id: int):
+        self.bare_calls.append(background_id)
+        return self._rows.get(background_id)
 
-class FakeBackgroundSkillsService:
-    """Stands in for BackgroundSkillsService inside BackgroundCrudService."""
+    async def set_suggestions(self, background, suggestions):
+        self.suggestion_calls.append((background, suggestions))
+        rows = [
+            BackgroundSuggestion(
+                id=index + 1, background_id=background.id, suggestion_type=entry.suggestion_type, text=entry.text
+            )
+            for index, entry in enumerate(suggestions)
+        ]
+        background.suggestions = rows
+        return rows
 
-    def __init__(self, db, resolved=None):
-        self.db = db
-        self.resolved = resolved
-        self.resolve_calls = []
-        self.set_calls = []
+    async def lock_background(self, background_id: int) -> bool:
+        return background_id in self._rows
 
-    async def resolve_skills(self, skill_ids):
-        self.resolve_calls.append(skill_ids)
-        return self.resolved
+    async def get_suggestion(self, background_id: int, suggestion_id: int):
+        background = self._rows.get(background_id)
+        if background is None:
+            return None
+        return next((row for row in background.suggestions if row.id == suggestion_id), None)
 
-    async def set_skills_for_background(self, background, skills, *, commit=True):
-        self.set_calls.append((background, skills, commit))
-        background.granted_skills = list(skills or [])
+    async def count_of_type(self, background_id: int, suggestion_type) -> int:
+        background = self._rows[background_id]
+        return sum(1 for row in background.suggestions if row.suggestion_type == suggestion_type)
+
+    async def update_suggestion(self, suggestion, data):
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(suggestion, field, value)
+        return suggestion
+
+    async def delete_suggestion(self, suggestion):
+        self.deleted_suggestions.append(suggestion)
 
 
 class FakeBackgroundFeaturesService:
@@ -108,7 +128,6 @@ class FakeBackgroundFeaturesService:
         self.db = db
         self.features = features or []
         self.list_calls = []
-        self.create_calls = []
         self.invalidate_calls = 0
 
     async def list_features(self, source_id):
@@ -119,46 +138,22 @@ class FakeBackgroundFeaturesService:
         self.list_calls.append(source_id)
         return self.features
 
-    async def create_feature_for_source(self, source_type, source_id, item, *, commit=False):
-        self.create_calls.append((source_type, source_id, item, commit))
-        return SimpleNamespace(id=1, name=item.name, description=item.description, level=item.level)
-
     async def invalidate(self):
         self.invalidate_calls += 1
 
 
-class FakeBackgroundSuggestionsService:
-    """Stands in for BackgroundSuggestionsService inside BackgroundCrudService."""
-
-    def __init__(self, db):
-        self.db = db
-        self.set_calls = []
-        self._next_suggestion_id = 1
-
-    async def set_suggestions_for_background(self, background, suggestions, *, commit=True):
-        self.set_calls.append((background, suggestions, commit))
-        rows = [
-            BackgroundSuggestion(
-                id=self._next_suggestion_id + i,
-                background_id=background.id,
-                suggestion_type=entry.suggestion_type,
-                text=entry.text,
-            )
-            for i, entry in enumerate(suggestions or [])
-        ]
-        self._next_suggestion_id += len(rows)
-        background.suggestions = rows
-
-
 @pytest.fixture(autouse=True)
-def no_redis_invalidate(monkeypatch):
-    """Stop generic cache invalidation from touching Redis."""
-    monkeypatch.setattr("app.core.base.service.invalidate", AsyncMock())
+def purged(monkeypatch):
+    """Record cache purges instead of touching Redis; yields the list of purged namespaces."""
 
+    calls: list[str] = []
 
-@pytest.fixture(autouse=True)
-def no_background_invalidate(monkeypatch):
-    monkeypatch.setattr("app.features.backgrounds.crud.service.invalidate_background_cache", AsyncMock())
+    async def record(namespace):
+        calls.append(namespace)
+
+    monkeypatch.setattr("app.core.base.service.invalidate", record)
+    monkeypatch.setattr("app.core.cache.invalidation.invalidate", record)
+    return calls
 
 
 @pytest.fixture(autouse=True)
@@ -166,13 +161,11 @@ def no_reconcile(monkeypatch):
     monkeypatch.setattr("app.features.characters.progression.feature_sync.reconcile_characters_for_source", AsyncMock())
 
 
-def make_crud_service(existing_by_id=None, resolved_skills=None, features=None):
+def make_crud_service(existing_by_id=None):
     db = FakeAsyncSession()
     service = BackgroundCrudService(db)
     service.repository = FakeBackgroundRepository(db, existing_by_id=existing_by_id)
-    service._skills = FakeBackgroundSkillsService(db, resolved=resolved_skills)
-    service._features = FakeBackgroundFeaturesService(db, features=features)
-    service._suggestions = FakeBackgroundSuggestionsService(db)
+    service._suggestions = service.repository
     return service, db
 
 
@@ -195,7 +188,7 @@ def make_feature_service(existing_by_id=None):
 @pytest.mark.asyncio
 class TestBackgroundCrudService:
     async def test_create_background_persists_base_fields_and_invalidates_cache(self):
-        service, db = make_crud_service(resolved_skills=None)
+        service, db = make_crud_service()
 
         result = await service.create_background(BackgroundCreate(name="Criminal"))
 
@@ -205,13 +198,12 @@ class TestBackgroundCrudService:
 
     async def test_create_background_seeds_four_placeholder_suggestions_in_same_transaction(self):
         """A fresh background gets one text="-" suggestion per type, flushed not committed separately."""
-        service, db = make_crud_service(resolved_skills=None)
+        service, db = make_crud_service()
 
         await service.create_background(BackgroundCreate(name="Criminal"))
 
-        background, suggestions, commit = service._suggestions.set_calls[0]
+        background, suggestions = service.repository.suggestion_calls[0]
         assert background.id == 1
-        assert commit is False
         assert {(entry.suggestion_type, entry.text) for entry in suggestions} == {
             (BackgroundSuggestionType.PERSONALITY_TRAIT, "-"),
             (BackgroundSuggestionType.IDEAL, "-"),
@@ -222,15 +214,14 @@ class TestBackgroundCrudService:
 
     async def test_create_background_does_not_touch_skill_or_feature_capabilities(self):
         """granted_skills/features are attached via their own endpoints, not at creation."""
-        service, _ = make_crud_service(resolved_skills=None)
+        service, _ = make_crud_service()
 
         await service.create_background(BackgroundCreate(name="Criminal"))
 
-        assert service._skills.set_calls == []
-        assert service._features.create_calls == []
+        assert service.repository.set_skills_calls == []
 
     async def test_create_background_propagates_persist_failure(self):
-        service, _ = make_crud_service(resolved_skills=None)
+        service, _ = make_crud_service()
 
         class Boom(Exception):
             pass
@@ -244,29 +235,28 @@ class TestBackgroundCrudService:
             await service.create_background(BackgroundCreate(name="Criminal"))
 
     async def test_get_by_id_returns_full_response_with_features(self):
-        service, db = make_crud_service(
-            existing_by_id={1: make_background()},
-            features=[SimpleNamespace(id=3, name="Steady", description="", level=None)],
+        feature = Feature(
+            id=3,
+            name="Steady",
+            description="",
+            source_type="BACKGROUND",
+            background_id=1,
+            has_static_effects=False,
+            has_choices=False,
         )
+        service, db = make_crud_service(existing_by_id={1: make_background(features=[feature])})
 
         result = await service.get_by_id(1)
 
         assert result.id == 1
         assert result.features[0].id == 3
         assert result.features[0].name == "Steady"
-        assert service._features.list_calls == [1]
         assert db.commits == 0
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestBackgroundSkillsService:
-    async def test_resolve_skills_returns_none_for_empty_input(self):
-        service, _ = make_skills_service()
-
-        assert await service.resolve_skills(None) is None
-        assert await service.resolve_skills([]) is None
-
     async def test_set_skills_replaces_granted_skills(self):
         background = make_background()
         skill = make_skill()
@@ -275,7 +265,7 @@ class TestBackgroundSkillsService:
         result = await service.set_skills(1, SkillsUpdate(skill_ids=[1]))
 
         assert result.granted_skills[0].id == 1
-        assert service.repository.set_skills_calls == [(background.id, [skill], True)]
+        assert service.repository.set_skills_calls == [(background.id, [skill])]
         assert db.commits == 1
 
     async def test_set_skills_raises_when_background_missing(self):
@@ -284,37 +274,43 @@ class TestBackgroundSkillsService:
         with pytest.raises(RecordNotFoundError):
             await service.set_skills(99, SkillsUpdate(skill_ids=[1]))
 
-    async def test_set_skills_for_background_delegates_without_commit(self):
-        background = make_background()
-        skill = make_skill()
-        service, db = make_skills_service()
-
-        await service.set_skills_for_background(background, [skill], commit=False)
-
-        assert service.repository.set_skills_calls == [(background.id, [skill], False)]
-        assert db.commits == 0
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestBackgroundRepository:
-    async def test_is_in_use_false_when_no_features(self):
-        session = FakeAsyncSession(execute_results=[FakeResult([])])
-        repository = BackgroundRepository(session)
-
-        assert await repository.is_in_use(1) is False
-
-    async def test_is_in_use_false_when_features_not_granted(self):
-        session = FakeAsyncSession(execute_results=[FakeResult([[1]]), FakeResult([])])
-        repository = BackgroundRepository(session)
-
-        assert await repository.is_in_use(1) is False
-
-    async def test_is_in_use_true_when_feature_granted(self):
-        session = FakeAsyncSession(execute_results=[FakeResult([[1]]), FakeResult([SimpleNamespace()])])
+    async def test_is_in_use_is_a_single_exists_query(self):
+        """One EXISTS scalar however many features/characters match (no MultipleResultsFound)."""
+        session = FakeAsyncSession(scalar_results=[True])
         repository = BackgroundRepository(session)
 
         assert await repository.is_in_use(1) is True
+        assert session.executes == []
+
+    async def test_is_in_use_false_when_nothing_granted(self):
+        session = FakeAsyncSession(scalar_results=[False])
+        repository = BackgroundRepository(session)
+
+        assert await repository.is_in_use(1) is False
+
+    async def test_delete_locks_features_before_checking_the_guard(self):
+        session = FakeAsyncSession(scalar_results=[True])
+        repository = BackgroundRepository(session)
+
+        with pytest.raises(RecordInUseError):
+            await repository.delete(make_background())
+
+        assert "FOR UPDATE" in str(session.executes[0])
+        assert session.deleted == []
+
+    async def test_delete_removes_the_row_when_unused(self):
+        session = FakeAsyncSession(scalar_results=[False])
+        repository = BackgroundRepository(session)
+        background = make_background()
+
+        async with atomic(session):
+            assert await repository.delete(background) is True
+        assert session.deleted == [background]
+        assert session.commits == 1
 
 
 @pytest.mark.unit
@@ -325,20 +321,21 @@ class TestBackgroundSkillsRepository:
         repository = BackgroundSkillsRepository(session)
         background = make_background()
 
-        await repository.set_skills(background.id, [make_skill()])
+        async with atomic(session):
+            await repository.set_skills(background.id, [make_skill()])
 
         assert len(session.executes) == 2
         assert session.commits == 1
 
-    async def test_set_skills_with_empty_list_and_no_commit_flushes(self):
+    async def test_set_skills_with_empty_list_flushes_inside_atomic(self):
         session = FakeAsyncSession()
         repository = BackgroundSkillsRepository(session)
         background = make_background()
 
-        await repository.set_skills(background.id, [], commit=False)
-
-        assert session.flushes == 1
-        assert session.commits == 0
+        async with atomic(session):
+            await repository.set_skills(background.id, [])
+            assert session.flushes == 1
+            assert session.commits == 0
 
 
 @pytest.mark.unit
@@ -356,3 +353,94 @@ class TestBackgroundFeatureService:
 
         with pytest.raises(RecordNotFoundError):
             await service.list_features(99)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBackgroundCachePurges:
+    async def test_create_purges_only_the_background_listing_after_commit(self, purged):
+        service, _ = make_crud_service()
+
+        await service.create_background(BackgroundCreate(name="Criminal"))
+
+        assert purged == ["backgrounds"]
+
+    async def test_delete_reads_the_bare_row_and_purges_dependent_namespaces(self, purged):
+        service, db = make_crud_service(existing_by_id={1: make_background()})
+
+        assert await service.delete(1) is True
+
+        assert service.repository.bare_calls == [1]
+        assert set(purged) == {"backgrounds", "background_features", "features", "nested_items"}
+
+    async def test_delete_missing_background_raises_not_found(self, purged):
+        service, _ = make_crud_service(existing_by_id={})
+
+        with pytest.raises(RecordNotFoundError):
+            await service.delete(99)
+
+        assert purged == []
+
+    async def test_skill_replacement_purges_only_backgrounds(self, purged):
+        service, _ = make_skills_service(existing_by_id={1: make_background()}, skills={1: make_skill()})
+
+        await service.set_skills(1, SkillsUpdate(skill_ids=[1]))
+
+        assert purged == ["backgrounds"]
+
+
+def make_suggestions_service(background):
+    db = FakeAsyncSession()
+    service = BackgroundSuggestionsService(db)
+    service.repository = FakeBackgroundRepository(db, existing_by_id={background.id: background})
+    return service
+
+
+def suggestion(id, suggestion_type, background_id=1):
+    return BackgroundSuggestion(id=id, background_id=background_id, suggestion_type=suggestion_type, text="x")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestLastSuggestionOfTypeGuard:
+    async def test_deleting_the_last_suggestion_of_a_type_is_refused(self, purged):
+        background = make_background(suggestions=[suggestion(1, BackgroundSuggestionType.BOND)])
+        service = make_suggestions_service(background)
+
+        with pytest.raises(LastSuggestionOfTypeError):
+            await service.delete_suggestion(1, 1)
+
+        assert service.repository.deleted_suggestions == []
+        assert purged == []
+
+    async def test_deleting_one_of_several_of_a_type_is_allowed(self, purged):
+        background = make_background(
+            suggestions=[suggestion(1, BackgroundSuggestionType.BOND), suggestion(2, BackgroundSuggestionType.BOND)]
+        )
+        service = make_suggestions_service(background)
+
+        await service.delete_suggestion(1, 1)
+
+        assert len(service.repository.deleted_suggestions) == 1
+        assert purged == ["backgrounds"]
+
+    async def test_retyping_the_last_suggestion_of_a_type_is_refused(self):
+        background = make_background(suggestions=[suggestion(1, BackgroundSuggestionType.BOND)])
+        service = make_suggestions_service(background)
+
+        with pytest.raises(LastSuggestionOfTypeError):
+            await service.update_suggestion(1, 1, SuggestionUpdate(suggestion_type=BackgroundSuggestionType.FLAW))
+
+    async def test_editing_the_text_of_the_last_suggestion_is_allowed(self):
+        background = make_background(suggestions=[suggestion(1, BackgroundSuggestionType.BOND)])
+        service = make_suggestions_service(background)
+
+        result = await service.update_suggestion(1, 1, SuggestionUpdate(text="new"))
+
+        assert result.text == "new"
+
+    async def test_missing_background_raises_not_found(self):
+        service = make_suggestions_service(make_background())
+
+        with pytest.raises(RecordNotFoundError):
+            await service.delete_suggestion(99, 1)

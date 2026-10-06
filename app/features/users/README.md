@@ -2,8 +2,8 @@
 
 ## Purpose
 
-User accounts and role management, plus the app-wide authentication
-dependencies. Roles come from `app.constants.UserRole`:
+User accounts and role management (profile, CRUD, role edits). Authentication
+and the shared current-user/role-guard dependencies live in `app/features/auth`. Roles come from `app.constants.UserRole`:
 `PLAYER` < `GM` < `FOUND_FATHER` (founder). A seeded default admin
 (`settings.ADMIN_LOGIN`) is protected from update/delete.
 
@@ -21,31 +21,13 @@ dependencies. Roles come from `app.constants.UserRole`:
 
 ## Structure
 
-- `router.py` — thin endpoints; all logic delegates to `UserService`.
-- `service.py` — `UserService` (extends `BaseService`): password hashing on
-  create, founder gate on every role assignment, default-admin protection,
-  self-deletion guard, lookup by email. `get_user_by_email` is
-  `@use_cache(ttl=60)`'d under the `users` namespace (it's `CurrentUserDep`'s
-  per-request hop); every write that can change its result (role/email/
-  username update, delete) calls `_invalidate_cache()` explicitly since
-  `update_user`/`update_profile`/`delete_user` bypass `BaseService`'s
-  generic create/update/delete.
-- `repository.py` — `UserRepository` (extends `BaseRepository`): search on
-  username/email, uniqueness on username/email, `get_by_email`,
-  `get_by_username`, `update_last_login`.
-- `dependencies.py` — `UserServiceDep` (built on `DatabaseDep`).
-- `schemas.py` — `ProfileFields` (shared validators), `UserCreate`,
-  `UserUpdate`, `UserProfileUpdate` (`extra="forbid"`, no `role`),
-  `UserResponse`.
-- `security.py` — the app-wide auth dependencies (kept here because resolving
-  the current user needs the users service, keeping `app/core` feature-free):
-  - `TokenDep` — raw bearer credentials (`HTTPBearer`, optional).
-  - `CurrentUserDep` — verifies signature/expiry, rejects blacklisted tokens,
-    resolves the user via `UserService.get_user_by_email`.
-  - `GmUserDep` — `CurrentUserDep` requiring `GM` or `FOUND_FATHER`.
-  - `FounderDep` — `CurrentUserDep` requiring `FOUND_FATHER`.
-- `exceptions.py` — `UserNotFoundException` (404), `InvalidPasswordException`
-  (400), `DefaultUserProtectedException` (403), `SelfDeletionException` (403).
+- `router.py` — thin endpoints; all logic delegates to `UserService`. Guards come from `app/features/auth/dependencies.py`.
+- `service.py` — `UserService` (extends `BaseService`): password hashing on create, founder gate on role assignment, only the founder edits non-player accounts, default-admin protection, self-deletion guard. `get_auth_user(user_id)` is the cached per-request lookup (TTL 5 min) behind `CurrentUserDep`; `user_cache_key`/`invalidate_user_cache` give point invalidation after every write (role change, profile edit, delete, login); deleting a user, or changing their `username`, also purges cached articles (`author`). Covered by `tests/integration/features/users/test_cache.py`, including a Redis outage during the purge. `resolve_subject_id` maps a token `sub` (id, or legacy email) to a user id.
+- `repository.py` — `UserRepository`: search, case-insensitive email lookup/uniqueness, `get_by_subject`, `update_last_login`.
+- `validators.py` — the single definition of user-field rules (`Email`, `Username`, `NewPassword`, `Bio`, `ContactField`, `normalize_email`).
+- `dependencies.py` — `UserServiceDep`.
+- `schemas.py` — `UserCreate`, `UserUpdate` (`extra="forbid"`), `UserProfileUpdate` (no `role`), `UserResponse`.
+- `exceptions.py` — `UserNotFoundException` (404), `InvalidPasswordException` (400), `DefaultUserProtectedException` (403), `SelfDeletionException` (403).
 
 ## Auth Model
 

@@ -2,25 +2,28 @@
 Generic service layer: fetch -> validate -> persist -> serialize orchestration.
 
 Provides :class:`BaseService` (a model-generic CRUD orchestrator sitting on
-top of :class:`BaseRepository`), the paginated :class:`Page` envelope, and
-the schema type variables services bind to.
+top of :class:`BaseRepository`), :class:`ServiceMixin` (typing base for service
+mixins) and the schema type variables services bind to.
 
 Async stack: every orchestration method is ``async`` (repository calls are
-awaited); ``_atomic`` wraps multistep writes in a savepoint transaction.
+awaited); ``_atomic`` / ``_unit_of_work`` wrap multistep writes in one
+transaction (see ``app.core.base.transaction``).
 """
 
-from collections.abc import AsyncGenerator, Callable
-from contextlib import asynccontextmanager
-from typing import Any, Generic
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Generic, cast
 
 from pydantic import BaseModel
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapper
 from typing_extensions import TypeVar
 
-from app.core.base.repository import BaseRepository, ModelType
+from app.core.base.repository import BaseRepository, ModelProtocol, ModelType
+from app.core.base.transaction import TransactionMixin, after_commit
 from app.core.cache.invalidation import invalidate
 from app.core.exceptions import RecordIdsInvalidError, RecordNotFoundError
+from app.core.pagination import Page, paginate
 
 CreateSchema = TypeVar("CreateSchema", bound=BaseModel)
 UpdateSchema = TypeVar("UpdateSchema", bound=BaseModel)
@@ -28,47 +31,29 @@ ResponseSchema = TypeVar("ResponseSchema", bound=BaseModel)
 GetAllSchema = TypeVar("GetAllSchema", bound=BaseModel, default=BaseModel)
 BeforeUpdateHook = Callable[[ModelType, dict], None]
 
-ItemSchema = TypeVar("ItemSchema", bound=BaseModel)
-ResolvedItem = TypeVar("ResolvedItem")
+ResolvedItem = TypeVar("ResolvedItem", bound=ModelProtocol)
 
 
-@asynccontextmanager
-async def atomic(db: AsyncSession) -> AsyncGenerator[None, None]:
+class ServiceMixin:
     """
-    Wrap a multistep write on ``db`` in a single all-or-nothing transaction.
+    Base for service mixins composed into a ``BaseService`` subclass (tags/skills/items/bonus managers, cache
+    routing).
 
-    Every repository write inside the ``async with`` block MUST pass
-    ``commit=False``. Commits once on success; rolls back and re-raises on
-    any exception. This is the single shared implementation — both
-    ``BaseService._atomic`` and character sub-domain services delegate here.
+    Declares, for type checkers only, the host-service members the mixins call; adds nothing at runtime. They are
+    typed ``Any`` so they stay compatible with every concrete ``BaseService`` parametrisation.
     """
 
-    try:
-        async with db.begin_nested():
-            yield
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
+    if TYPE_CHECKING:
+        repository: Any
+        cache_namespaces: tuple[str, ...]
+        _atomic: Any
+        _exists_or_404: Any
+        _get_response: Any
+        _invalidate_cache: Any
+        resolve_ids: Any
 
 
-class Page(BaseModel, Generic[ItemSchema]):
-    """Generic ``{items, total, page, size}`` envelope for a paginated listing."""
-
-    items: list[ItemSchema]
-    total: int
-    page: int
-    size: int
-
-
-def paginate(page: int, size: int) -> tuple[int, int]:
-    """Convert a 1-indexed ``(page, size)`` into the repository's 0-indexed ``(skip, limit)``."""
-
-    skip = (page - 1) * size
-    return skip, size
-
-
-class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):
+class BaseService(TransactionMixin, Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema, GetAllSchema]):
     """
     Generic "fetch → validate → persist → serialize" CRUD orchestration on
     top of a :class:`BaseRepository`.
@@ -84,10 +69,12 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     Caching: services that should be cached transparently declare
     ``cache_namespaces`` and decorate read methods with
-    ``app.crud.cache.use_cache``. Every write here
+    ``app.core.cache.use_cache``. Every write here
     (:meth:`create`/:meth:`update`/:meth:`delete`) purges those namespaces
     automatically via :meth:`_invalidate_cache`; subclasses with compound
-    write methods must call ``self._invalidate_cache()`` themselves.
+    write methods must call ``self._invalidate_cache()`` themselves. Inside
+    :meth:`_atomic` / :meth:`_unit_of_work` the purge is deferred until the
+    transaction has committed.
 
     Example::
 
@@ -106,11 +93,8 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     cache_namespaces: tuple[str, ...] = ()
 
-    # Optional default ordering for ``get_all`` listings: the NAME of the
-    # model column to order by (e.g. ``"name"`` for alphabetical catalog
-    # listings). Set to ``None`` to keep the default ``model.id`` order.
-    # Stored as a string (not a resolved column) so it never embeds a
-    # mapped ``InstrumentedAttribute`` as a class attribute.
+    # NAME of the model column ``get_all`` listings are ordered by (e.g. ``"name"``);
+    # ``None`` keeps ``model.id`` order. A string so no mapped attribute lives on the class.
     get_all_order_by: str | None = None
 
     def __init__(
@@ -129,9 +113,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         size: int = 100,
         filters: dict[str, Any] | None = None,
         search: str | None = None,
-    ) -> Page[ResponseSchema]:
+    ) -> Page[Any]:
         """
-        Return a page of records.
+        Return a page of records (``ResponseSchema`` items, or ``GetAllSchema`` ones when that is set).
 
         When ``get_all_schema`` is set (reference catalogs), this is a
         lightweight listing: rows are fetched through the column-select path
@@ -159,16 +143,16 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         total = await self.repository.count(filters=filters, search=search)
 
         if self.get_all_schema is None:
-            items = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
+            full_records = await self.repository.get_all(skip=skip, limit=limit, filters=filters, search=search)
             return Page(
-                items=[self.response_schema.model_validate(item) for item in items],
+                items=[self.response_schema.model_validate(item) for item in full_records],
                 total=total,
                 page=page,
                 size=size,
             )
 
         model = self.repository.model
-        mapper = inspect(model)
+        mapper = cast(Mapper[Any], inspect(model))
         non_column_fields = [name for name in self.get_all_schema.model_fields if name not in mapper.columns]
 
         order_by = getattr(model, self.get_all_order_by) if self.get_all_order_by else None
@@ -205,8 +189,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
     async def create(self, create_data: CreateSchema) -> ResponseSchema:
         """Persist a new record and return it serialized. No business-rule validation is done here."""
 
-        item = await self.repository.create(create_data.model_dump())
-        await self._invalidate_cache()
+        async with self._atomic():
+            item = await self.repository.create(create_data.model_dump())
+            await self._invalidate_cache()
         return self.response_schema.model_validate(item)
 
     async def update(
@@ -232,8 +217,9 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         if before_update:
             before_update(item, fields)
 
-        updated_item = await self.repository.update(item, fields)
-        await self._invalidate_cache()
+        async with self._atomic():
+            updated_item = await self.repository.update(item, fields)
+            await self._invalidate_cache()
         return self.response_schema.model_validate(updated_item)
 
     async def delete(self, item_id: int) -> bool:
@@ -246,13 +232,23 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
         needed here; see ``BaseRepository.delete``/``is_in_use``.
         """
         item = await self._get_or_404(item_id)
-        result = await self.repository.delete(item)
-        await self._invalidate_cache()
+        async with self._atomic():
+            result = await self.repository.delete(item)
+            await self._invalidate_cache()
         return result
 
     async def _invalidate_cache(self) -> None:
-        """Purge all cached entries for this service's namespaces after a write."""
+        """
+        Purge all cached entries for this service's namespaces after a write.
 
+        Call it inside :meth:`_atomic` / :meth:`_unit_of_work`: the purge runs only
+        after the transaction commits and is dropped on rollback.
+        """
+
+        if self.cache_namespaces:
+            await after_commit(self.repository.db, self._purge_namespaces)
+
+    async def _purge_namespaces(self) -> None:
         for namespace in self.cache_namespaces:
             await invalidate(namespace)
 
@@ -284,7 +280,7 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
     @staticmethod
     async def resolve_ids(
-        lookup_fn: Callable[[list[int]], list[ResolvedItem]], ids: list[int], model_name: str
+        lookup_fn: Callable[[list[int]], Awaitable[list[ResolvedItem]]], ids: list[int], model_name: str
     ) -> list[ResolvedItem]:
         """Resolve ``ids`` via ``lookup_fn``, raising ``RecordIdsInvalidError`` if any don't resolve."""
 
@@ -300,19 +296,6 @@ class BaseService(Generic[ModelType, CreateSchema, UpdateSchema, ResponseSchema,
 
         return founds
 
-    @asynccontextmanager
-    async def _atomic(self) -> AsyncGenerator[None, None]:
-        """
-        Wrap a multistep write in a single all-or-nothing transaction.
-
-        Every repository write inside the ``async with`` block MUST pass
-        ``commit=False``. Commits once on success; rolls back and
-        re-raises on any exception.
-
-        See also: ``BaseRepository._commit_or_rollback`` for the single-write
-        case — use that (indirectly, via ``commit=True``) when only one
-        repository call is involved; use ``_atomic()`` when more than one is.
-        """
-
-        async with atomic(self.repository.db):
-            yield
+    @property
+    def _tx_db(self) -> AsyncSession:
+        return self.repository.db

@@ -29,7 +29,7 @@ class TestSkillOpenRead:
         assert [item["name"] for item in search_response.json()["items"]] == ["Arcana"]
 
     async def test_get_skill_by_id(self, client, create_skill):
-        skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill = await create_skill(name="Perception", ability="WIS")
 
         response = await client.get(f"/skills/{skill.id}")
 

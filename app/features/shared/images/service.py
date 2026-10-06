@@ -1,26 +1,29 @@
 """Shared base for per-entity catalog image services (upload/replace/delete via Supabase Storage)."""
 
-import logging
 from collections.abc import Awaitable, Callable
+import logging
 
 from fastapi import UploadFile
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
+from app.core.base.transaction import TransactionMixin
 from app.core.exceptions import RecordNotFoundError
 from app.core.storage.service import ImageStorageService
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
-class EntityImageService:
+class EntityImageService(TransactionMixin):
     """
     Upload/remove one catalog entity's image.
 
     The image is stored in Supabase under ``{entity}/{entity_id}.{ext}`` and
     the public URL is persisted on the row's ``image_url`` column. The
     owning capability's cache is invalidated on every mutation — a failure
-    to invalidate is logged, never raised (the DB write already committed).
+    to invalidate is logged, never raised (the DB write is already committed or deferred to commit).
 
     Every per-entity image service (``ClassImageService``,
     ``RaceImageService``, ...) is a thin subclass that just supplies its own
@@ -44,10 +47,19 @@ class EntityImageService:
         self._model_name = model_name
         self._invalidate_cache_fn = invalidate_cache
 
-    async def upload(self, entity_id: int, image: UploadFile) -> str:
-        """Read ``image`` off the wire, upload it, and persist its public URL."""
+    @property
+    def _tx_db(self) -> AsyncSession:
+        return self._repository.db
 
-        content = await image.read()
+    async def upload(self, entity_id: int, image: UploadFile) -> str:
+        """
+        Read ``image`` off the wire, upload it, and persist its public URL.
+
+        At most ``IMAGE_UPLOAD_MAX_BYTES + 1`` bytes are read: anything larger is
+        rejected by the storage validation without buffering the whole upload.
+        """
+
+        content = await image.read(settings.IMAGE_UPLOAD_MAX_BYTES + 1)
         try:
             return await self.upload_image(entity_id, content, image.content_type or "")
         finally:
@@ -58,8 +70,9 @@ class EntityImageService:
 
         row = await self._get_or_404(entity_id)
         url = await self._storage.upload_image(self._entity, entity_id, content, content_type)
-        await self._repository.update(row, {"image_url": url})
-        await self._invalidate_cache(entity_id)
+        async with self._atomic():
+            await self._repository.update(row, {"image_url": url})
+            await self._invalidate_cache(entity_id)
         return url
 
     async def delete_image(self, entity_id: int) -> None:
@@ -67,8 +80,9 @@ class EntityImageService:
 
         row = await self._get_or_404(entity_id)
         await self._storage.delete_image(self._entity, entity_id)
-        await self._repository.update(row, {"image_url": None})
-        await self._invalidate_cache(entity_id)
+        async with self._atomic():
+            await self._repository.update(row, {"image_url": None})
+            await self._invalidate_cache(entity_id)
 
     async def _get_or_404(self, entity_id: int):
         """

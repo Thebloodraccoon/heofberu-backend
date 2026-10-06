@@ -145,33 +145,44 @@ class CharacterItemNotFoundException(AppError):
         super().__init__(f"Character {character_id} owns no item stack with id {character_item_id}.")
 
 
+class CharacterItemQuantityLimitException(AppError):
+    """Raised when merging an added quantity into a stack would exceed the per-stack limit."""
+
+    status_code = 400
+
+    def __init__(self, character_id: int, item_id: int, limit: int):
+        """Record the character, item and the per-stack limit."""
+
+        self.character_id = character_id
+        self.item_id = item_id
+        self.limit = limit
+        super().__init__(f"Character {character_id}'s stack of item {item_id} cannot exceed {limit}.")
+
+
 class CharacterGrantedSpellNotFoundException(AppError):
-    """Raised when the character has no free-form (GM-granted) spell row with the given id."""
+    """Raised when the GM never granted the given spell to the character directly."""
 
     status_code = 404
 
-    def __init__(self, character_id: int, granted_spell_id: int):
-        """Record the character and missing granted-spell ids."""
+    def __init__(self, character_id: int, spell_id: int):
+        """Record the character and spell ids."""
 
         self.character_id = character_id
-        self.granted_spell_id = granted_spell_id
-        super().__init__(f"Character {character_id} has no granted spell with id {granted_spell_id}.")
+        self.spell_id = spell_id
+        super().__init__(f"Character {character_id} has no GM-granted spell {spell_id}.")
 
 
-class GrantedSpellNotRemovableException(AppError):
-    """Raised when trying to remove a granted spell that came from a feature/feat grant, not a bare GM grant."""
+class GrantedSpellAlreadyGrantedException(AppError):
+    """Raised when the GM grants a spell they already granted to the character directly."""
 
     status_code = 409
 
-    def __init__(self, character_id: int, granted_spell_id: int):
-        """Record the character and offending granted-spell ids."""
+    def __init__(self, character_id: int, spell_id: int):
+        """Record the character and spell ids."""
 
         self.character_id = character_id
-        self.granted_spell_id = granted_spell_id
-        super().__init__(
-            f"Granted spell {granted_spell_id} on character {character_id} came from a feature/feat grant — "
-            "revoke that grant instead of removing the spell directly."
-        )
+        self.spell_id = spell_id
+        super().__init__(f"Character {character_id} was already granted spell {spell_id} by the GM.")
 
 
 class InvalidWeaponProficiencyTargetException(AppError):

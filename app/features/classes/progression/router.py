@@ -4,10 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query
 
+from app.features.auth.dependencies import GmUserDep
 from app.features.classes.crud.schemas import ClassResponse
 from app.features.classes.dependencies import ClassProgressionDep
 from app.features.classes.progression.schemas import ClassProgressionResponse, SpellSlotProgressionUpdate
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -17,13 +17,13 @@ router = APIRouter()
     response_model=ClassResponse,
     summary="Replace a class's spell slots at a given class level",
     responses={
-        400: {"description": "class_level is outside the valid 1-20 range."},
         404: {"description": "No class exists with the given ID."},
+        422: {"description": "class_level is outside the valid 1-20 range, or a slot entry is invalid."},
     },
 )
 async def set_class_spell_slots(
     class_id: int,
-    class_level: Annotated[int, Query()],
+    class_level: Annotated[int, Query(ge=1, le=20, description="Class level the slots apply to (1-20).")],
     data: Annotated[
         SpellSlotProgressionUpdate,
         Body(
@@ -68,7 +68,8 @@ async def set_class_spell_slots(
 async def get_class_progression(class_id: int, class_service: ClassProgressionDep):
     """
     Return the full 1-20 progression table for a class, with spell slots
-    and class/subclass features per level.
+    and class/subclass features per level (subclass features carry their
+    `subclass_id`). Cached under the `classes` namespace.
 
     Open endpoint.
     """

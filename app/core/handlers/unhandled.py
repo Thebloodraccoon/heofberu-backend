@@ -3,32 +3,29 @@
 import logging
 
 from fastapi import Request, status
-from fastapi.responses import JSONResponse
 
-from app.core.exceptions import ErrorResponse
+from app.core.handlers._response import build_error_response, get_request_id
 
 logger = logging.getLogger(__name__)
 
 
 async def global_exception_handler(request: Request, exc: Exception):
-    """Handle all unhandled exceptions."""
-    request_id = getattr(request.state, "request_id", None)
+    """Handle all unhandled exceptions with a generic 500 (details only in the log)."""
 
     logger.error(
-        f"Unhandled Exception: {type(exc).__name__} - {str(exc)} - Path: {request.url.path} - Request ID: {request_id}",
+        "Unhandled Exception: %s - %s - Path: %s - Request ID: %s",
+        type(exc).__name__,
+        exc,
+        request.url.path,
+        get_request_id(request),
         exc_info=True,
     )
 
-    error_response = ErrorResponse(
+    return build_error_response(
+        request,
         error_type="InternalServerError",
         message="Internal server error",
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        request_id=request_id,
-    )
-
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=error_response.to_dict(),
     )
 
 

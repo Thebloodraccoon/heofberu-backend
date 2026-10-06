@@ -1,40 +1,31 @@
-"""Background starting-equipment service: per-source list and full replacement."""
+"""Background starting-equipment service: flat items and "pick N of M" choice groups."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FeatureSourceType
-from app.core.base.service import BaseService
-from app.features.backgrounds.cache import BACKGROUND_CACHE_NAMESPACES
+from app.features.backgrounds.cache import BACKGROUND_ITEMS_CACHE_NAMESPACES
+from app.features.backgrounds.capability import BackgroundCapabilityService
 from app.features.backgrounds.crud.repository import BackgroundRepository
-from app.features.backgrounds.crud.schemas import BackgroundCreate, BackgroundResponse, BackgroundUpdate
-from app.features.shared.items.mixins import SourceItemManagerMixin
+from app.features.shared.items.mixins import ChoiceGroupManagerMixin, SourceItemManagerMixin
 from app.features.shared.items.nested_service import NestedSourceItemService
-from app.models import Background
 
 
-class BackgroundItemsService(
-    SourceItemManagerMixin,
-    BaseService[Background, BackgroundCreate, BackgroundUpdate, BackgroundResponse, None],
-):
+class BackgroundItemsService(ChoiceGroupManagerMixin, SourceItemManagerMixin, BackgroundCapabilityService):
     """
-    Background starting-equipment service: per-source list and full replacement.
+    Background starting equipment: flat items plus choice groups.
 
-    ``list_items``/``set_items`` come from :class:`SourceItemManagerMixin`;
-    generic CRUD machinery comes from :class:`BaseService`. Backgrounds grant
-    flat items with no choice-group mechanic (that exists for classes only).
+    ``list_items``/``set_items`` come from :class:`SourceItemManagerMixin`,
+    ``list_choice_groups``/``set_choice_groups`` from
+    :class:`ChoiceGroupManagerMixin`. Character creation resolves the
+    background's choice groups the same way it does a class's.
     """
-
-    repository: BackgroundRepository
 
     _source_item_source_type = FeatureSourceType.BACKGROUND
 
-    cache_namespaces = BACKGROUND_CACHE_NAMESPACES
+    cache_namespaces = BACKGROUND_ITEMS_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
         """Compose the nested source-item service."""
 
-        super().__init__(
-            repository=BackgroundRepository(db),
-            response_schema=BackgroundResponse,
-        )
+        super().__init__(BackgroundRepository(db))
         self._items = NestedSourceItemService(db)

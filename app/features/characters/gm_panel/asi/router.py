@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
+from app.features.auth.dependencies import CurrentUserDep, GmUserDep
 from app.features.characters.gm_panel.asi.schemas import GmAsiChoiceAdd, GmAsiChoiceResponse
 from app.features.characters.gm_panel.dependencies import GmPanelAsiDep
-from app.features.users.security import CurrentUserDep, GmUserDep
 
 router = APIRouter()
 
@@ -36,7 +36,7 @@ async def get_character_asi_adjustments(
     status_code=status.HTTP_201_CREATED,
     summary="Add a GM ASI adjustment (independent of level)",
     responses={
-        400: {"description": "The adjustment would push an effective score above the cap of 20."},
+        400: {"description": "The adjustment would push an effective score above the cap of 30."},
         403: {"description": "You are not a GM."},
         404: {"description": "No character exists with the given ID."},
         422: {"description": "Duplicate ability in `increases`."},
@@ -63,7 +63,7 @@ async def add_character_asi_adjustment(
     current_user: GmUserDep,
 ):
     """
-    Record a free-form ±ability change with no class level, up to the 20
+    Record a free-form ±ability change with no class level, up to the 30
     cap; effective totals refresh immediately. **GM only.**
     """
 

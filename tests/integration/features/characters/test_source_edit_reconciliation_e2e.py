@@ -7,6 +7,8 @@ their stat caches in the same transaction, with no character-side write.
 
 import pytest
 
+from tests.helpers import set_effects
+
 
 async def feature_ids(client, character_id, token):
     response = await client.get(
@@ -98,10 +100,11 @@ class TestSourceEditReconciliation:
         assert add_response.status_code == 201, add_response.text
         feature_id = add_response.json()["id"]
 
-        increases_response = await client.put(
-            f"/features/{feature_id}/effects",
-            json={"ability_effects": [{"ability": "INT", "amount": 2}]},
-            headers={"Authorization": f"Bearer {gm_token}"},
+        increases_response = await set_effects(
+            client,
+            gm_token,
+            feature_id,
+            {"static_groups": [{"effect_type": "ability", "items": [{"ability": "INT", "amount": 2}]}]},
         )
         assert increases_response.status_code == 200, increases_response.text
 

@@ -55,9 +55,7 @@ spell_school_enum = postgresql.ENUM(
 
 def upgrade() -> None:
     """Drop the school/level-max filter columns and their now-vacuous check constraint."""
-    op.drop_constraint(
-        "ck_feature_spell_grant_effect_specific_or_filter", "feature_spell_grant_effects", type_="check"
-    )
+    op.drop_constraint("ck_feature_spell_grant_effect_specific_or_filter", "feature_spell_grant_effects", type_="check")
     op.drop_column("feature_spell_grant_effects", "spell_school")
     op.drop_column("feature_spell_grant_effects", "spell_level_max")
 

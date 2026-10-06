@@ -26,12 +26,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.middleware.utils import get_client_ip
 from app.settings import settings
 
-# Cap on the in-memory fallback map: with eviction on every request this
-# bounds memory even under IP churn (spoofed X-Forwarded-For etc).
+# Cap on the in-memory fallback map (bounds memory under IP churn).
 _MAX_TRACKED_CLIENTS = 10_000
 
-# Shared bucket for requests that do not match any endpoint-specific rule.
 _DEFAULT_BUCKET = "default"
+
+DEFAULT_SKIP_PATHS = ["/api/v1/ping", "/api/v1/health"]
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -42,7 +42,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         app: The ASGI application.
         calls: Default per-IP budget within the window (unmatched routes).
         period: Fixed window length in seconds.
-        skip_paths: Paths exempt from rate limiting.
+        skip_paths: Exact request paths exempt from rate limiting (health probes; the API lives under ``/api/v1``).
         rules: Optional endpoint-specific rules (see
             ``MiddlewareConfig.get_route_rules`` for the shape). Each rule
             may set a different ``calls`` budget and counts against its own
@@ -63,12 +63,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.calls = calls
         self.period = period
-        self.skip_paths = skip_paths or ["/ping", "/health"]
+        self.skip_paths = skip_paths if skip_paths is not None else DEFAULT_SKIP_PATHS
         self.rules = rules or []
-        self.stage = stage or getattr(settings, "STAGE", "dev")
+        self.stage: str = stage or str(getattr(settings, "STAGE", "dev"))
 
-        # Fallback only — the primary counter lives in Redis.
-        self.clients: dict[str, deque[float]] = {}
+        # Fallback only; the primary counter lives in Redis. Keyed by (ip, bucket).
+        self.clients: dict[tuple[str, str], deque[float]] = {}
 
     def _resolve_rule(self, request: Request) -> tuple[int, str]:
         """
@@ -116,9 +116,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         count, allowed = await self._count_and_check(client_ip, bucket, calls, current_time)
 
         if not allowed:
-            # NOTE: return the response directly — an HTTPException raised
-            # here would be ABOVE the ExceptionMiddleware and surface as a
-            # 500 instead of a 429.
+            # Return the response directly: an exception raised here would sit above ExceptionMiddleware (500).
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
@@ -158,7 +156,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             count = await self._redis_incr(client_ip, bucket, current_time)
             return count, count <= calls
         except Exception:
-            return self._local_incr_and_check(client_ip, calls, current_time)
+            return self._local_incr_and_check(client_ip, bucket, calls, current_time)
 
     async def _redis_incr(self, client_ip: str, bucket: str, current_time: float) -> int:
         """
@@ -181,13 +179,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             results = await pipe.execute()
         return int(results[0])
 
-    def _local_incr_and_check(self, client_ip: str, calls: int, current_time: float) -> tuple[int, bool]:
-        """Bounded in-memory sliding window (per-worker fallback)."""
+    def _local_incr_and_check(self, client_ip: str, bucket: str, calls: int, current_time: float) -> tuple[int, bool]:
+        """Bounded in-memory sliding window per ``(ip, bucket)`` (per-worker fallback)."""
 
         if len(self.clients) > _MAX_TRACKED_CLIENTS:
             self._evict_stale(current_time)
 
-        history = self.clients.setdefault(client_ip, deque())
+        history = self.clients.setdefault((client_ip, bucket), deque())
         cutoff = current_time - self.period
         while history and history[0] < cutoff:
             history.popleft()
@@ -202,9 +200,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """Drop expired histories; if still oversized, drop oldest-inserted entries."""
 
         cutoff = current_time - self.period
-        stale = [ip for ip, history in self.clients.items() if not history or history[-1] < cutoff]
-        for ip in stale:
-            del self.clients[ip]
+        stale = [client for client, history in self.clients.items() if not history or history[-1] < cutoff]
+        for client in stale:
+            del self.clients[client]
 
         while len(self.clients) > _MAX_TRACKED_CLIENTS:
             self.clients.pop(next(iter(self.clients)))

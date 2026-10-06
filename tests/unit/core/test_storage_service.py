@@ -11,6 +11,8 @@ from app.core.exceptions import AppError
 from app.core.storage.service import (
     STORAGE_MAX_ATTEMPTS,
     ImageStorageService,
+    ImageStorageUnavailableError,
+    ImageUploadError,
     _ClientState,
     _object_path,
     _public_url,
@@ -25,10 +27,12 @@ def _reset_client_state():
     """Ensure no real client leaks between tests via the process-wide singleton."""
 
     _ClientState._client = None
+    _ClientState._http = None
     _ClientState._loop = None
     _ClientState._lock = None
     yield
     _ClientState._client = None
+    _ClientState._http = None
     _ClientState._loop = None
     _ClientState._lock = None
 
@@ -75,6 +79,35 @@ class TestUploadImage:
         with pytest.raises(AppError):
             await service.upload_image("races", 7, PNG_BYTES, "image/png")
 
+    async def test_provider_failure_is_a_502_without_provider_text(self, monkeypatch):
+        bucket = MagicMock()
+        bucket.upload = AsyncMock(side_effect=RuntimeError("https://project.supabase.co leaked detail"))
+        monkeypatch.setattr(_ClientState, "get", AsyncMock(return_value=_fake_client(bucket)))
+        monkeypatch.setattr("app.core.storage.service.STORAGE_MAX_ATTEMPTS", 1)
+
+        with pytest.raises(ImageStorageUnavailableError) as exc_info:
+            await ImageStorageService().upload_image("races", 7, PNG_BYTES, "image/png")
+
+        assert exc_info.value.status_code == 502
+        assert "supabase" not in exc_info.value.message
+        assert "leaked" not in exc_info.value.message
+
+    async def test_provider_4xx_is_a_400_and_not_retried(self, monkeypatch):
+        class ProviderRejected(Exception):
+            status = 413
+
+        bucket = MagicMock()
+        bucket.upload = AsyncMock(side_effect=ProviderRejected("too big"))
+        monkeypatch.setattr(_ClientState, "get", AsyncMock(return_value=_fake_client(bucket)))
+
+        with pytest.raises(ImageUploadError) as exc_info:
+            await ImageStorageService().upload_image("races", 7, PNG_BYTES, "image/png")
+
+        assert not isinstance(exc_info.value, ImageStorageUnavailableError)
+        assert exc_info.value.status_code == 400
+        assert "too big" not in exc_info.value.message
+        assert bucket.upload.await_count == 1
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -99,6 +132,33 @@ class TestDeleteImage:
 
         service = ImageStorageService()
         await service.delete_image("races", 7)  # must not raise
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDeleteImageInBackground:
+    async def test_delete_is_deferred_until_the_tasks_run(self, monkeypatch):
+        from fastapi import BackgroundTasks
+
+        bucket = MagicMock()
+        bucket.remove = AsyncMock(return_value=None)
+        monkeypatch.setattr(_ClientState, "get", AsyncMock(return_value=_fake_client(bucket)))
+        tasks = BackgroundTasks()
+
+        await ImageStorageService(tasks).delete_image("races", 7)
+
+        bucket.remove.assert_not_awaited()
+        await tasks()
+        bucket.remove.assert_awaited_once()
+
+    async def test_client_failure_in_background_is_logged_not_raised(self, monkeypatch):
+        from fastapi import BackgroundTasks
+
+        monkeypatch.setattr(_ClientState, "get", AsyncMock(side_effect=RuntimeError("no client")))
+        tasks = BackgroundTasks()
+
+        await ImageStorageService(tasks).delete_image("races", 7)
+        await tasks()
 
 
 @pytest.mark.unit
@@ -159,8 +219,9 @@ class TestClientState:
     async def test_get_builds_client_once_and_reuses_it(self, monkeypatch):
         built = []
 
-        async def _fake_create_async_client(url, key):
+        async def _fake_create_async_client(url, key, options=None):
             client = MagicMock()
+            client.options = options
             built.append(client)
             return client
 
@@ -171,3 +232,4 @@ class TestClientState:
 
         assert first is second
         assert len(built) == 1
+        assert first.options.httpx_client is _ClientState._http

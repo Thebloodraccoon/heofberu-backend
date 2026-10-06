@@ -1,4 +1,4 @@
-"""Assembled ``/classes/subclasses`` router (query-style parent ID)."""
+"""Assembled ``/subclasses`` router (the owning class is the ``class_id`` of a subclass)."""
 
 from fastapi import APIRouter
 

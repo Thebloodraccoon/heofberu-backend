@@ -1,6 +1,6 @@
 """Request schemas for GM management of a character's proficiency rows."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
 
@@ -8,7 +8,16 @@ from app.constants import AbilityScore, ArmorProficiency, WeaponProficiency
 class SkillProficiencyAdd(BaseModel):
     """Grant a character proficiency in a skill (free-form, no feature behind it)."""
 
+    skill_id: int = Field(gt=0)
+
+
+class SkillProficiencyResponse(BaseModel):
+    """A skill proficiency row as returned by the GM-panel skills endpoints."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     skill_id: int
+    is_expertise: bool
 
 
 class SkillExpertiseUpdate(BaseModel):
@@ -35,15 +44,13 @@ class WeaponProficiencyAdd(BaseModel):
     """Grant a character proficiency in a weapon category or a single item — exactly one of the two."""
 
     weapon_category: WeaponProficiency | None = None
-    item_id: int | None = None
+    item_id: int | None = Field(default=None, gt=0)
 
-    @field_validator("item_id")
-    @classmethod
-    def validate_exactly_one_target(cls, item_id: int | None, info):
+    @model_validator(mode="after")
+    def validate_exactly_one_target(self):
         """Reject a payload that sets both or neither of ``weapon_category``/``item_id``."""
 
-        weapon_category = info.data.get("weapon_category")
-        if (weapon_category is None) == (item_id is None):
+        if (self.weapon_category is None) == (self.item_id is None):
             raise ValueError("Provide exactly one of weapon_category or item_id.")
 
-        return item_id
+        return self

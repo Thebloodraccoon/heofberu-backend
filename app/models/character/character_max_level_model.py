@@ -1,11 +1,14 @@
 """ORM model for the GM-controlled maximum level a character may reach."""
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer
+from __future__ import annotations
 
-from app.settings import settings
+from sqlalchemy import CheckConstraint, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.settings.base import Base
 
 
-class CharacterMaxLevel(settings.Base):  # type: ignore
+class CharacterMaxLevel(Base):
     """
     The maximum level a character is allowed to reach (GM-set cap).
 
@@ -21,10 +24,10 @@ class CharacterMaxLevel(settings.Base):  # type: ignore
 
     __tablename__ = "character_max_levels"
 
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
-    max_level = Column(Integer, nullable=False, default=1)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    max_level: Mapped[int] = mapped_column(default=1)
 
     __table_args__ = (CheckConstraint("max_level >= 1 AND max_level <= 20", name="check_character_max_level_range"),)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<CharacterMaxLevel(character_id={self.character_id}, max_level={self.max_level})>"

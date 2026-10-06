@@ -25,7 +25,7 @@ class TestBackgroundCrud:
         assert response.status_code == 201
         assert response.json()["name"] == "Hermit"
 
-    async def test_create_duplicate_background_name_returns_400(self, client, gm_token, create_background):
+    async def test_create_duplicate_background_name_returns_409(self, client, gm_token, create_background):
         await create_background(name="Acolyte")
         response = await client.post(
             "/backgrounds",
@@ -33,11 +33,11 @@ class TestBackgroundCrud:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_set_granted_skills(self, client, gm_token, create_background, create_skill):
         background = await create_background(name="Sage")
-        skill = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        skill = await create_skill(name="Arcana", ability="INT")
 
         response = await client.put(
             f"/backgrounds/{background.id}/skills",
@@ -163,12 +163,14 @@ class TestBackgroundCrud:
         )
         assert add_response.status_code == 201
 
+        background_id = background.id
+
         response = await client.delete(
-            f"/backgrounds/{background.id}", headers={"Authorization": f"Bearer {founder_token}"}
+            f"/backgrounds/{background_id}", headers={"Authorization": f"Bearer {founder_token}"}
         )
 
         assert response.status_code == 409
-        assert (await client.get(f"/backgrounds/{background.id}")).status_code == 200
+        assert (await client.get(f"/backgrounds/{background_id}")).status_code == 200
 
     async def test_player_cannot_add_background_feature(self, client, player_token, create_background):
         background = await create_background(name="Acolyte")

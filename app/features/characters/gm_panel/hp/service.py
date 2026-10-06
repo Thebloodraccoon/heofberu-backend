@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
+from app.features.characters.gm_panel.hp.repository import GmHpRepository
 from app.features.characters.gm_panel.hp.schemas import MaxHpUpdate
 from app.features.characters.schemas import AbilityScoresResponse, CharacterResponse
 from app.features.users.schemas import UserResponse
@@ -14,13 +14,13 @@ from app.models.character.character_model import Character
 class GmPanelHpService(CharacterSubDomainService):
     """Set a character's maximum HP directly (GM-only — the only write path for ``max_hp``); ``current_hp`` is clamped down when it exceeds the new maximum."""
 
-    # Full CharacterResponse needs the eagerly loaded collections, not the light fetch.
-    _light_character_fetch = False
+    _light_character_fetch = False  # the full CharacterResponse needs the eagerly loaded collections
 
     def __init__(self, db: AsyncSession):
-        """Wire up the stats service."""
+        """Wire up the HP repository and the stats service."""
 
         super().__init__(db)
+        self.hp_repository = GmHpRepository(db)
         self.stats_service = CharacterStatsService(db)
 
     async def set_max_hp(self, character_id: int, data: MaxHpUpdate, current_user: UserResponse) -> CharacterResponse:
@@ -28,12 +28,9 @@ class GmPanelHpService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        fields: dict[str, int] = {"max_hp": data.max_hp}
-        if character.current_hp > data.max_hp:
-            fields["current_hp"] = data.max_hp
-
-        await self.repository.update(character, fields)
-        await invalidate_character_cache(character_id)
+        async with self._atomic():
+            await self.hp_repository.set_max_hp(character, data.max_hp)
+            await self._invalidate_character(character_id)
 
         return await self._character_response(character)
 

@@ -1,104 +1,36 @@
 """Request/response schemas for the auth endpoints."""
 
-import re
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
-from app.core.exceptions import InvalidEmailException
 from app.features.users.exceptions import InvalidPasswordException
+from app.features.users.validators import Email, NewPassword, Username
+
+# Login accepts any previously valid password but still bounds the work done per request.
+LOGIN_PASSWORD_MAX_LENGTH = 1024
+LoginPassword = Annotated[str, StringConstraints(max_length=LOGIN_PASSWORD_MAX_LENGTH)]
 
 
 class LoginRequest(BaseModel):
     """Login payload: email + password for an existing account."""
 
-    email: str
-    password: str
-
-    @field_validator("email")
-    def validate_email(cls, email):
-        """Reject emails not matching the standard address pattern."""
-
-        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
-            raise InvalidEmailException()
-        return email
-
-
-class LoginResponse(BaseModel):
-    """Response body for a successful login (access token only)."""
-
-    access_token: str
-
-
-class LogoutResponse(BaseModel):
-    """Response body for a successful logout."""
-
-    detail: str
-
-
-class RefreshResponse(BaseModel):
-    """Response body for a successful token refresh (access token only)."""
-
-    access_token: str
+    email: Email
+    password: LoginPassword
 
 
 class RegisterRequest(BaseModel):
     """Self-registration payload — always creates a ``PLAYER`` account."""
 
-    username: str
-    email: str
-    password: str
-
-    @field_validator("email")
-    def validate_email(cls, email):
-        """Reject emails not matching the standard address pattern."""
-
-        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
-            raise InvalidEmailException()
-        return email
-
-    @field_validator("username")
-    def validate_username(cls, username):
-        """Enforce username length and allowed character set."""
-
-        if len(username) < 3 or len(username) > 32:
-            raise ValueError("Username must be between 3 and 32 characters long")
-        if not re.match(r"^[A-Za-z0-9А-Яа-яЁёІіЇїЄєҐґ_-]+$", username):
-            raise ValueError("Username can only contain letters, numbers, underscores, and hyphens")
-        return username
-
-    @field_validator("password")
-    def validate_password(cls, password):
-        """Enforce a minimum password length of 8 characters."""
-
-        if len(password) < 8:
-            raise InvalidPasswordException("Password must be at least 8 characters long")
-        return password
-
-
-class RegisterResponse(BaseModel):
-    """Response for a successful self-registration — same shape as ``LoginResponse``."""
-
-    access_token: str
+    username: Username
+    email: Email
+    password: NewPassword
 
 
 class ForgotPasswordRequest(BaseModel):
     """Payload for requesting a password-reset email."""
 
-    email: str
-
-    @field_validator("email")
-    def validate_email(cls, email):
-        """Reject emails not matching the standard address pattern."""
-
-        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
-            raise InvalidEmailException()
-        return email
-
-
-class ForgotPasswordResponse(BaseModel):
-    """Neutral response, identical whether or not the account exists, to prevent email enumeration."""
-
-    detail: str
+    email: Email
 
 
 class ResetPasswordRequest(BaseModel):
@@ -108,18 +40,10 @@ class ResetPasswordRequest(BaseModel):
     """
 
     token: str
-    new_password: str
+    new_password: NewPassword
     confirm_password: str
 
     model_config = ConfigDict(extra="forbid")
-
-    @field_validator("new_password")
-    def validate_new_password(cls, password):
-        """Enforce a minimum password length of 8 characters."""
-
-        if len(password) < 8:
-            raise InvalidPasswordException("Password must be at least 8 characters long")
-        return password
 
     @model_validator(mode="after")
     def passwords_match(self):
@@ -128,6 +52,36 @@ class ResetPasswordRequest(BaseModel):
         if self.new_password != self.confirm_password:
             raise InvalidPasswordException("Passwords do not match")
         return self
+
+
+class AccessTokenResponse(BaseModel):
+    """Response body carrying a freshly issued access token (the refresh token travels in a cookie)."""
+
+    access_token: str
+
+
+class LoginResponse(AccessTokenResponse):
+    """Response body for a successful login."""
+
+
+class RegisterResponse(AccessTokenResponse):
+    """Response for a successful self-registration."""
+
+
+class RefreshResponse(AccessTokenResponse):
+    """Response body for a successful token refresh."""
+
+
+class LogoutResponse(BaseModel):
+    """Response body for a successful logout."""
+
+    detail: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Neutral response, identical whether or not the account exists, to prevent email enumeration."""
+
+    detail: str
 
 
 class ResetPasswordResponse(BaseModel):

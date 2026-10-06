@@ -4,9 +4,9 @@ from app.core.exceptions import AppError
 
 
 class AccountAlreadyExistsException(AppError):
-    """Raised (400) on a self-registration collision; kept generic to avoid leaking registered emails."""
+    """Raised (409) on a self-registration collision; kept generic to avoid leaking registered emails."""
 
-    status_code = 400
+    status_code = 409
 
     def __init__(self):
         """Set the duplicate-account message."""

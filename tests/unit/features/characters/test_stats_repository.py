@@ -3,11 +3,22 @@
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
-from app.constants import AbilityScore
+from app.constants import AbilityScore, DiceType
+from app.core.base.transaction import atomic
 from app.features.characters.ability_score.repository import CharacterStatsRepository
-from app.models.character.character_ability_score_model import CharacterAbilityScore
 from tests.unit.fakes import FakeAsyncSession, FakeResult
+
+
+class UpsertSession(FakeAsyncSession):
+    """FakeAsyncSession whose ``execute`` accepts execution options (ORM INSERT ... RETURNING)."""
+
+    def __init__(self, rows):
+        super().__init__(execute_results=[FakeResult(rows)])
+
+    async def execute(self, stmt, params=None, execution_options=None):
+        return await super().execute(stmt, params)
 
 
 def make_session(rows):
@@ -61,94 +72,6 @@ class TestCharacterStatsRepository:
         result = await repository.get_many_by_character_ids([1, 2])
 
         assert result == {1: row1, 2: row2}
-
-    async def test_get_race_bonuses_none_returns_empty(self):
-        repository = CharacterStatsRepository(make_session([]))
-
-        result = await repository.get_race_bonuses(None)
-
-        assert result == []
-
-    async def test_get_race_bonuses_returns_rows(self):
-        row = SimpleNamespace(race_id=5, ability=AbilityScore.DEX, bonus=2)
-        repository = CharacterStatsRepository(make_session([row]))
-
-        result = await repository.get_race_bonuses(5)
-
-        assert result == [row]
-
-    async def test_get_subrace_bonuses_none_returns_empty(self):
-        repository = CharacterStatsRepository(make_session([]))
-
-        result = await repository.get_subrace_bonuses(None)
-
-        assert result == []
-
-    async def test_get_subrace_bonuses_returns_rows(self):
-        row = SimpleNamespace(subrace_id=7, ability=AbilityScore.INT, bonus=1)
-        repository = CharacterStatsRepository(make_session([row]))
-
-        result = await repository.get_subrace_bonuses(7)
-
-        assert result == [row]
-
-    async def test_get_feature_increases_merges_fixed_and_option_rows(self):
-        """get_feature_increases returns both fixed (feature-owned) and option (choice-pick) effect rows."""
-        fixed_row = SimpleNamespace(id=10, ability=AbilityScore.STR, amount=2)
-        option_row = SimpleNamespace(id=20, ability=AbilityScore.DEX, amount=1)
-        # First execute returns fixed rows, second returns option rows
-        session = FakeAsyncSession(execute_results=[FakeResult([fixed_row]), FakeResult([option_row])])
-        repository = CharacterStatsRepository(session)
-
-        result = await repository.get_feature_increases(1)
-
-        assert len(result) == 2
-        assert result[0] is fixed_row
-        assert result[1] is option_row
-
-    async def test_get_feature_increases_empty_when_no_grants(self):
-        session = FakeAsyncSession(execute_results=[FakeResult([]), FakeResult([])])
-        repository = CharacterStatsRepository(session)
-
-        result = await repository.get_feature_increases(1)
-
-        assert result == []
-
-    async def test_get_asi_increases_returns_counted_rows(self):
-        row = SimpleNamespace(id=1, character_asi_choice_id=9, ability=AbilityScore.STR, amount=2)
-        repository = CharacterStatsRepository(make_session([row]))
-
-        result = await repository.get_asi_increases(1)
-
-        assert result == [row]
-
-    async def test_upsert_creates_new_row_when_missing(self):
-        session = FakeAsyncSession(execute_results=[FakeResult([])])
-        repository = CharacterStatsRepository(session)
-        totals = {"strength_total": 15, "dexterity_total": 12}
-
-        cache = await repository.upsert(1, totals)
-
-        assert isinstance(cache, CharacterAbilityScore)
-        assert cache.character_id == 1
-        assert cache.strength_total == 15
-        assert session.commits == 1
-        assert session.refreshed == [cache]
-        assert session.added == [cache]
-
-    async def test_upsert_updates_existing_row(self):
-        existing = make_cache_row()
-        session = FakeAsyncSession(execute_results=[FakeResult([existing])])
-        repository = CharacterStatsRepository(session)
-
-        cache = await repository.upsert(1, {"strength_total": 20, "charisma_total": 18})
-
-        assert cache is existing
-        assert cache.strength_total == 20
-        assert cache.charisma_total == 18
-        assert existing.dexterity_total == 10
-        assert session.commits == 1
-        assert session.added == []
 
     async def test_get_race_bonuses_many_empty_returns_empty(self):
         repository = CharacterStatsRepository(make_session([]))
@@ -208,9 +131,7 @@ class TestCharacterStatsRepository:
     async def test_get_feature_increases_many_merges_fixed_and_option_rows_per_character(self):
         fixed_row = SimpleNamespace(id=10, ability=AbilityScore.STR, amount=2)
         option_row = SimpleNamespace(id=20, ability=AbilityScore.DEX, amount=1)
-        session = FakeAsyncSession(
-            execute_results=[FakeResult([(fixed_row, 1)]), FakeResult([(option_row, 2)])]
-        )
+        session = FakeAsyncSession(execute_results=[FakeResult([(fixed_row, 1)]), FakeResult([(option_row, 2)])])
         repository = CharacterStatsRepository(session)
 
         result = await repository.get_feature_increases_many([1, 2])
@@ -232,49 +153,49 @@ class TestCharacterStatsRepository:
 
         assert result == {}
 
-    async def test_upsert_many_creates_and_updates_in_one_batch(self):
-        existing = make_cache_row(character_id=2)
-        session = FakeAsyncSession(execute_results=[FakeResult([existing])])
+    async def test_upsert_is_a_single_insert_on_conflict_do_update(self):
+        row = make_cache_row(strength_total=15)
+        session = UpsertSession([row])
         repository = CharacterStatsRepository(session)
-        totals = {1: {"strength_total": 15}, 2: {"strength_total": 20}}
 
-        result = await repository.upsert_many(totals, commit=False)
+        async with atomic(session):
+            cache = await repository.upsert(1, {"strength_total": 15, "dexterity_total": 12})
 
-        assert set(result) == {1, 2}
-        assert result[1].character_id == 1
-        assert result[1].strength_total == 15
-        assert result[2] is existing
-        assert result[2].strength_total == 20
-        assert session.commits == 0
-        assert session.flushes == 1
-        assert session.added == [result[1]]
+        assert cache is row
+        assert len(session.executes) == 1
+        sql = str(session.executes[0].compile(dialect=postgresql.dialect())).upper()
+        assert "ON CONFLICT (CHARACTER_ID) DO UPDATE" in sql
+        assert "UPDATED_AT" in sql
+        assert session.commits == 1
 
-    async def test_get_classes_empty_returns_empty(self):
-        repository = CharacterStatsRepository(make_session([]))
+    async def test_upsert_many_returns_rows_by_character_id_and_flushes_without_committing(self):
+        rows = [make_cache_row(character_id=1), make_cache_row(character_id=2)]
+        session = UpsertSession(rows)
+        repository = CharacterStatsRepository(session)
 
-        result = await repository.get_classes([])
+        async with atomic(session):
+            result = await repository.upsert_many({2: {"strength_total": 20}, 1: {"strength_total": 15}})
+            assert session.flushes == 1
 
-        assert result == {}
+        assert result == {1: rows[0], 2: rows[1]}
 
-    async def test_get_classes_groups_by_id(self):
-        row = SimpleNamespace(id=1, name="Fighter")
-        repository = CharacterStatsRepository(make_session([row]))
+    async def test_get_hit_dice_maps_class_ids_to_die_values(self):
+        session = FakeAsyncSession(execute_results=[FakeResult([(1, DiceType.D10), (2, DiceType.D6)])])
+        repository = CharacterStatsRepository(session)
 
-        result = await repository.get_classes([1])
+        assert await repository.get_hit_dice([1, 2]) == {1: "D10", 2: "D6"}
 
-        assert result == {1: row}
+    async def test_get_hit_dice_without_ids_skips_the_query(self):
+        session = FakeAsyncSession()
+        repository = CharacterStatsRepository(session)
 
-    async def test_get_races_empty_returns_empty(self):
-        repository = CharacterStatsRepository(make_session([]))
+        assert await repository.get_hit_dice([]) == {}
+        assert session.executes == []
 
-        result = await repository.get_races([])
+    async def test_get_names_map_ids_to_names(self):
+        session = FakeAsyncSession(execute_results=[FakeResult([(5, "Elf")]), FakeResult([(7, "High Elf")])])
+        repository = CharacterStatsRepository(session)
 
-        assert result == {}
-
-    async def test_get_races_groups_by_id(self):
-        row = SimpleNamespace(id=5, name="Elf")
-        repository = CharacterStatsRepository(make_session([row]))
-
-        result = await repository.get_races([5])
-
-        assert result == {5: row}
+        assert await repository.get_race_names([5]) == {5: "Elf"}
+        assert await repository.get_subrace_names([7]) == {7: "High Elf"}
+        assert await repository.get_race_names([]) == {}

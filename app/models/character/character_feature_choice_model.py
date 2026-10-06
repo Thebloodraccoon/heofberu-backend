@@ -1,12 +1,20 @@
 """ORM model for a character's resolved choices within a feature grant."""
 
-from sqlalchemy import Column, ForeignKey, Integer, UniqueConstraint
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
-from app.settings import settings
+from typing import TYPE_CHECKING
+
+from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_feature_model import CharacterFeature
+    from app.models.features.feature_engine_models import FeatureChoiceGroup, FeatureChoiceOption
 
 
-class CharacterFeatureChoice(settings.Base):  # type: ignore
+class CharacterFeatureChoice(Base):
     """
     One selected option inside a grant's choice group.
 
@@ -18,24 +26,14 @@ class CharacterFeatureChoice(settings.Base):  # type: ignore
 
     __tablename__ = "character_feature_choices"
 
-    id = Column(Integer, primary_key=True)
-    character_feature_id = Column(
-        Integer,
-        ForeignKey("character_features.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # No own index: the unique (character_feature_id, ...) already leads with this column.
+    character_feature_id: Mapped[int] = mapped_column(ForeignKey("character_features.id", ondelete="CASCADE"))
+    choice_group_id: Mapped[int] = mapped_column(
+        ForeignKey("feature_choice_groups.id", ondelete="RESTRICT"), index=True
     )
-    choice_group_id = Column(
-        Integer,
-        ForeignKey("feature_choice_groups.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-    choice_option_id = Column(
-        Integer,
-        ForeignKey("feature_choice_options.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+    choice_option_id: Mapped[int] = mapped_column(
+        ForeignKey("feature_choice_options.id", ondelete="RESTRICT"), index=True
     )
 
     __table_args__ = (
@@ -47,11 +45,11 @@ class CharacterFeatureChoice(settings.Base):  # type: ignore
         ),
     )
 
-    character_feature = relationship("CharacterFeature", back_populates="choices")
-    choice_group = relationship("FeatureChoiceGroup")
-    choice_option = relationship("FeatureChoiceOption")
+    character_feature: Mapped[CharacterFeature] = relationship(back_populates="choices")
+    choice_group: Mapped[FeatureChoiceGroup] = relationship()
+    choice_option: Mapped[FeatureChoiceOption] = relationship()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<CharacterFeatureChoice(character_feature_id={self.character_feature_id}, "
             f"group_id={self.choice_group_id}, option_id={self.choice_option_id})>"

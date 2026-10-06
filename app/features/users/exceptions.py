@@ -4,19 +4,14 @@ from app.core.exceptions import AppError
 
 
 class UserNotFoundException(AppError):
-    """Raised (404) when a user cannot be found by email/ID."""
+    """Raised (404) when a user cannot be found; the message never echoes the looked-up email."""
 
     status_code = 404
 
-    def __init__(self, email: str | None = None):
-        """Build the not-found message, optionally including the email."""
+    def __init__(self):
+        """Set the generic not-found message."""
 
-        detail = "404 User is not found"
-
-        if email:
-            detail = f"User with email {email} is not found."
-
-        super().__init__(detail)
+        super().__init__("User is not found")
 
 
 class InvalidPasswordException(AppError):

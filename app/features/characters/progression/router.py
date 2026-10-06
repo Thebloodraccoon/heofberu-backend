@@ -13,6 +13,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body
 
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterProgressionServiceDep, CharacterServiceDep
 from app.features.characters.progression.schemas import (
     BackgroundChange,
@@ -24,7 +25,6 @@ from app.features.characters.progression.schemas import (
     SubraceChange,
 )
 from app.features.characters.schemas import CharacterResponse
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
 
@@ -156,11 +156,13 @@ async def change_subrace(
             "description": (
                 "A chosen skill isn't available for the class or too many were chosen, "
                 "asi_choices doesn't exactly cover every ASI level already reached, or "
-                "max_hp is outside the range the new class/level allow."
+                "max_hp is outside the range the new class/level allow, or a chosen feat "
+                "needs a higher level or would push a score above the cap of 20."
             )
         },
         403: {"description": "You do not have access to this character."},
         404: {"description": "Character, class, subclass, race, subrace, or background not found."},
+        422: {"description": "A feat in asi_choices offers ASI options but no ability_score_increase_id was given."},
     },
 )
 async def rebuild_character(
@@ -205,8 +207,8 @@ async def rebuild_character(
     is re-resolved from ``asi_choices`` (required, one per level),
     ``max_hp`` is validated against the new class/level's range and set,
     spell slots are recomputed, and known spells are cleared. Level,
-    notes, personality, backstory, inventory, and GM-granted feats are
-    untouched.
+    notes, personality, backstory, inventory, GM ASI adjustments, and
+    GM-granted feats are untouched.
     """
 
     await progression_service.rebuild_character(character_id, data, current_user)
@@ -222,7 +224,9 @@ async def rebuild_character(
             "description": (
                 "The character is already at the maximum level, an ASI choice is "
                 "required but missing (or given on a non-ASI level), the hit-point gain "
-                "is out of range, or an ASI choice exceeds the ability-score cap."
+                "is out of range, an ASI choice or a chosen feat's ASI option exceeds the "
+                "ability-score cap of 20, the feat's prerequisite is unmet, or the feat needs a "
+                "higher character level (`min_level`)."
             )
         },
         403: {"description": "You do not have access to this character."},
@@ -261,11 +265,7 @@ async def level_up(
                 },
                 "feature-choice": {
                     "summary": "Level up resolving a newly unlocked feature's pick-N-of-M choice group",
-                    "value": {
-                        "feature_choices": [
-                            {"feature_id": 8, "choice_group_id": 21, "choice_option_id": 55}
-                        ]
-                    },
+                    "value": {"feature_choices": [{"feature_id": 8, "choice_group_id": 21, "choice_option_id": 55}]},
                 },
             }
         ),

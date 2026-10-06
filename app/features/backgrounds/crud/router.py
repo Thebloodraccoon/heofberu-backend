@@ -4,7 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.core.base.service import Page
+from app.core.pagination import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.backgrounds.crud.schemas import (
     BackgroundCreate,
     BackgroundGetAllResponse,
@@ -12,7 +13,6 @@ from app.features.backgrounds.crud.schemas import (
     BackgroundUpdate,
 )
 from app.features.backgrounds.dependencies import BackgroundCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -26,14 +26,15 @@ async def get_backgrounds(
     background_service: BackgroundCrudDep,
     search: str | None = Query(
         None,
+        max_length=100,
         description="Case-insensitive substring match against the background's name.",
     ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
 ):
     """
-    Return a paginated list of backgrounds with only `id`, `name`, and
-    `granted_skills`. `search` matches the name; response is `{items, total, page, size}`.
+    Return a paginated list of backgrounds with only `id` and `name`.
+    `search` matches the name; response is `{items, total, page, size}`.
     Open endpoint.
     """
 
@@ -93,8 +94,9 @@ async def create_background(
     """
     Create a new background. **GM only.**
 
-    Base fields only — `granted_skills`, `suggestions`, `features`, and
-    `starting_items` are all attached afterwards through their own endpoints.
+    Base fields only. Four placeholder suggestions (one per type) are seeded;
+    `granted_skills`, `tags`, `features`, `starting_items` and choice groups
+    are attached afterwards through their own endpoints.
     """
 
     return await background_service.create_background(data)
@@ -105,8 +107,8 @@ async def create_background(
     response_model=BackgroundResponse,
     summary="Update a background's base fields",
     responses={
-        404: {"description": "No background exists with the given ID."},
         409: {"description": "Another background already uses the requested name."},
+        404: {"description": "No background exists with the given ID."},
     },
 )
 async def update_background(
@@ -133,7 +135,7 @@ async def update_background(
 
     Only fields included in the request body are changed; use
     `PUT /backgrounds/{background_id}/skills` for granted skills and
-    `PUT /backgrounds/{background_id}/suggestions` for suggestions.
+    `/backgrounds/{background_id}/suggestions` for suggestions.
     """
 
     return await background_service.update(background_id, data)
@@ -145,6 +147,7 @@ async def update_background(
     summary="Delete a background",
     responses={
         404: {"description": "No background exists with the given ID."},
+        409: {"description": "A feature of the background is granted to a character."},
     },
 )
 async def delete_background(background_id: int, background_service: BackgroundCrudDep, _: FounderDep):

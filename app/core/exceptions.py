@@ -2,11 +2,12 @@
 Application exceptions and the standardized error response format.
 
 Defines the ``ErrorResponse`` payload shape and ONE exception regime:
-every application error is a plain :class:`AppError` subclass carrying its
+every application error (auth, feature rules and the feature-agnostic
+data-layer ``Record*`` errors) is an :class:`AppError` subclass carrying its
 own ``status_code``/``message`` — services never raise FastAPI's
 ``HTTPException``. A single generic handler in ``app/core/handlers``
 maps any ``AppError`` to the standardized JSON envelope; framework-level
-HTTP/Starlette exceptions keep their own handlers.
+HTTP/Starlette exceptions keep their own handler.
 """
 
 from datetime import datetime, timezone
@@ -25,8 +26,8 @@ class ErrorResponse(BaseModel):
     """
     Standardized error response format.
 
-    Serialized via ``model_dump()`` (or the legacy ``to_dict()`` alias)
-    and wrapped in ``JSONResponse`` by the exception handlers.
+    Serialized with :meth:`to_dict` (the ``{"error": {...}}`` envelope plus a
+    timestamp) and wrapped in ``JSONResponse`` by ``handlers._response``.
     """
 
     error_type: str
@@ -36,7 +37,7 @@ class ErrorResponse(BaseModel):
     request_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Legacy alias — returns the full ``{"error": {...}}`` envelope with timestamp."""
+        """Return the full ``{"error": {...}}`` envelope with a timestamp."""
         return {
             "error": {
                 "type": self.error_type,
@@ -105,6 +106,15 @@ class InvalidTokenException(AppError):
         self.headers = {"WWW-Authenticate": "Bearer"}
 
 
+class ServiceUnavailableError(AppError):
+    """Raised (503) when a backing service the request cannot proceed without is unreachable."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def __init__(self, message: str = "Service temporarily unavailable"):
+        super().__init__(message)
+
+
 class InvalidEmailException(AppError):
     """Raised (400) when a supplied email address fails validation."""
 
@@ -114,8 +124,10 @@ class InvalidEmailException(AppError):
         super().__init__(message)
 
 
-class RecordAlreadyExistsError(Exception):
-    """Data Layer Exception: A record with this unique field already exists."""
+class RecordAlreadyExistsError(AppError):
+    """Data Layer Exception (409): A record with this unique field already exists."""
+
+    status_code = status.HTTP_409_CONFLICT
 
     def __init__(self, model_name: str, field: str, value: Any):
         self.model_name = model_name
@@ -125,8 +137,10 @@ class RecordAlreadyExistsError(Exception):
         super().__init__(self.message)
 
 
-class RecordNotFoundError(Exception):
-    """Data Layer Exception: A record with the given ID does not exist."""
+class RecordNotFoundError(AppError):
+    """Data Layer Exception (404): A record with the given ID does not exist."""
+
+    status_code = status.HTTP_404_NOT_FOUND
 
     def __init__(self, model_name: str, model_id: str):
         self.model_name = model_name
@@ -135,8 +149,10 @@ class RecordNotFoundError(Exception):
         super().__init__(self.message)
 
 
-class RecordIdsInvalidError(Exception):
-    """Data Layer Exception: raised when one or more provided record IDs do not correspond to existing records."""
+class RecordIdsInvalidError(AppError):
+    """Data Layer Exception (400): one or more provided record IDs do not correspond to existing records."""
+
+    status_code = status.HTTP_400_BAD_REQUEST
 
     def __init__(self, model_name: str, ids: list[int]):
         self.model_name = model_name
@@ -145,17 +161,17 @@ class RecordIdsInvalidError(Exception):
         super().__init__(self.message)
 
 
-class RecordInUseError(Exception):
+class RecordInUseError(AppError):
     """
-    Raised when attempting to delete a record that is still referenced
+    Raised (409) when attempting to delete a record that is still referenced
     elsewhere (e.g. via an ON DELETE RESTRICT foreign key), and therefore
     cannot be removed.
 
-    Mirrors RecordNotFoundError / RecordIdsInvalidError: a plain,
-    feature-agnostic exception caught by a single handler in data_layer.py
-    and turned into a 409 response, instead of every feature defining its
-    own FooInUseException(HTTPException).
+    Mirrors RecordNotFoundError / RecordIdsInvalidError: a feature-agnostic
+    ``AppError`` instead of every feature defining its own in-use exception.
     """
+
+    status_code = status.HTTP_409_CONFLICT
 
     def __init__(self, model_name: str, model_id: int | str, reason: str | None = None):
         self.model_name = model_name

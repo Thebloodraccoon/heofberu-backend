@@ -1,51 +1,50 @@
 """ORM model for cached, precomputed effective ability scores."""
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer
-from sqlalchemy.orm import relationship
+from __future__ import annotations
 
-from app.settings import settings
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.settings._common import utcnow
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
 
 
-class CharacterAbilityScore(settings.Base):  # type: ignore
+class CharacterAbilityScore(Base):
     """
-    Cached, precomputed "effective" ability scores for a character —
-    base score (Character.strength etc.) plus every applicable bonus
-    (race.ability_bonuses, counters, granted-feature ASI effects).
+    Cached, precomputed "effective" ability scores for a character: the base
+    score (``Character.strength`` etc.) plus every applicable bonus (race,
+    subrace, counted ASI-log increases, granted-feature ASI effects).
 
-    This is a cache, not a source of truth: the base values on
-    ``Character`` remain authoritative. Rows here are recomputed and
-    persisted by ``CharacterStatsService.refresh`` whenever a
-    single character is fetched by ID, whenever a character is created,
-    whenever a feat is granted/updated/removed, and on character updates
-    that touch the base ability scores or ``race_id``. Listing endpoints
-    (``GET /characters/``) intentionally read this cache as-is, without
-    recomputing, to avoid N recalculations per page — see
-    ``CharacterService.get_characters``.
-
-    One row per character (character_id is both PK and FK), so a
-    missing row simply means "never computed yet" rather than an error;
-    callers should treat a missing row as "recalculate on next read".
+    A cache, not a source of truth: the base values on ``Character`` stay
+    authoritative. Rows are (re)computed and written only by
+    ``CharacterStatsService.refresh`` / ``refresh_many`` — on character
+    creation, level-up, ASI/feat/feature grants and GM edits that change a
+    source. Read paths (``GET /characters``, ``GET /characters/{id}``) serve
+    the row as it is and never recompute; ``GET /characters/{id}/stats``
+    always computes fresh. One row per character (``character_id`` is PK and
+    FK), so a missing row simply means "never computed yet".
     """
 
     __tablename__ = "character_ability_scores"
 
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
 
-    strength_total = Column(Integer, nullable=False, default=10)
-    dexterity_total = Column(Integer, nullable=False, default=10)
-    constitution_total = Column(Integer, nullable=False, default=10)
-    intelligence_total = Column(Integer, nullable=False, default=10)
-    wisdom_total = Column(Integer, nullable=False, default=10)
-    charisma_total = Column(Integer, nullable=False, default=10)
+    strength_total: Mapped[int] = mapped_column(default=10)
+    dexterity_total: Mapped[int] = mapped_column(default=10)
+    constitution_total: Mapped[int] = mapped_column(default=10)
+    intelligence_total: Mapped[int] = mapped_column(default=10)
+    wisdom_total: Mapped[int] = mapped_column(default=10)
+    charisma_total: Mapped[int] = mapped_column(default=10)
 
-    updated_at = Column(
-        DateTime,
-        default=utcnow,
-        onupdate=utcnow,
-    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
-    character = relationship("Character", back_populates="ability_score_cache")
+    character: Mapped[Character] = relationship(back_populates="ability_score_cache")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<CharacterAbilityScore(character_id={self.character_id})>"

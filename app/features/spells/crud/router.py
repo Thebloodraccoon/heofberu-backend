@@ -14,7 +14,8 @@ from app.constants import (
     SpellRangeType,
     SpellSchool,
 )
-from app.core.base.service import Page
+from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.spells.crud.schemas import (
     SpellCreate,
     SpellGetAllResponse,
@@ -22,15 +23,15 @@ from app.features.spells.crud.schemas import (
     SpellUpdate,
 )
 from app.features.spells.dependencies import SpellCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
 
 @router.get(
     "",
-    response_model=Page[SpellGetAllResponse],
+    response_model=Page[SpellGetAllResponse] | CursorPage[SpellGetAllResponse],
     summary="List spells",
+    responses={422: {"description": "Invalid `cursor`."}},
 )
 async def get_spells(
     spell_service: SpellCrudDep,
@@ -62,9 +63,13 @@ async def get_spells(
     ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
+    pagination: PaginationQuery = "page",
+    cursor: CursorQuery = None,
 ):
     """
-    Return a paginated list of lightweight spells, with filters and search.
+    Return lightweight spells ordered by name (then id), with filters and search.
+    Default response is `{items, total, page, size}`; with `pagination=cursor` (or a
+    `cursor`) it is the keyset envelope `{items, next_cursor, size}` (no `total`).
     Open endpoint.
     """
 
@@ -80,6 +85,9 @@ async def get_spells(
         "is_ritual": is_ritual,
         "is_concentration": is_concentration,
     }
+    if use_cursor(pagination, cursor):
+        return await spell_service.get_cursor_page(size=size, cursor=cursor, filters=filters, search=search)
+
     return await spell_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
@@ -106,7 +114,9 @@ async def get_spell(spell_id: int, spell_service: SpellCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a spell",
     responses={
-        400: {"description": "A spell with this name already exists, or an availability id is invalid."},
+        400: {"description": "An availability id is invalid."},
+        409: {"description": "A spell with this name already exists."},
+        422: {"description": "Invalid payload (bounds, dice/material consistency, unknown key)."},
     },
 )
 async def create_spell(
@@ -226,8 +236,9 @@ async def create_spell(
     response_model=SpellResponse,
     summary="Update a spell",
     responses={
-        400: {"description": "Another spell already uses the requested name."},
+        409: {"description": "Another spell already uses the requested name."},
         404: {"description": "No spell exists with the given ID."},
+        422: {"description": "Invalid payload (bounds, an explicit null for a required field, unknown key)."},
     },
 )
 async def update_spell(
@@ -257,8 +268,8 @@ async def update_spell(
     _: GmUserDep,
 ):
     """
-    Partially update a spell only with the provided fields (availabilty via the PUT endpoints).
-    **GM only.**
+    Partially update a spell only with the provided fields (availability via the PUT endpoints).
+    A rename also refreshes every cached payload that renders the spell's name. **GM only.**
     """
 
     return await spell_service.update(spell_id, data)
@@ -270,6 +281,7 @@ async def update_spell(
     summary="Delete a spell",
     responses={
         404: {"description": "No spell exists with the given ID."},
+        409: {"description": "A character knows or was granted the spell, or a feature effect grants it."},
     },
 )
 async def delete_spell(spell_id: int, spell_service: SpellCrudDep, _: FounderDep):

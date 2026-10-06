@@ -1,13 +1,9 @@
 """Test-stage settings: isolated DB and Redis from env, non-echo async engine."""
 
-from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import create_async_engine
-
 from app.settings._common import *  # noqa: F401, F403
 from app.settings._common import (
-    REDIS_URL,
-    as_async_database_url,
     make_async_session_factory,
+    make_engine,
     make_get_db,
     make_get_redis,
 )
@@ -16,27 +12,23 @@ from app.settings.config import AppSettings
 _settings = AppSettings()
 
 STAGE = "test"
-ALLOWED_HOSTS = ["*"]
 
-# Cache is off in tests by default so existing HTTP tests keep seeing
-# fresh rows; enable it per-test with ``settings.CACHE_ENABLED = True``
+# Off by default so HTTP tests see fresh rows; enable per test with ``settings.CACHE_ENABLED = True``
 # (the cache reads the flag at call time).
 CACHE_ENABLED = False
 
-# Test stage always targets the isolated TEST_* services, never the
-# plain DATABASE_URL/REDIS_URL (which point at dev/prod).
+# The test stage always targets the isolated TEST_* services, never DATABASE_URL/REDIS_URL.
 DATABASE_URL = _settings.TEST_DATABASE_URL
-REDIS_URL = _settings.TEST_REDIS_URL  # noqa: F811 -- deliberate override of the star-imported dev URL
+REDIS_URL = _settings.TEST_REDIS_URL  # noqa: F811
+AUTH_REDIS_URL = REDIS_URL  # noqa: F811
 
-engine = create_async_engine(
-    as_async_database_url(DATABASE_URL),
-    poolclass=pool.AsyncAdaptedQueuePool,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
-    echo=False,
-)
+engine = make_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_recycle=None)
 
 SessionLocal = make_async_session_factory(engine)
 get_db = make_get_db(SessionLocal)
-get_redis = make_get_redis(REDIS_URL)
+# Generous timeout: under ``nox -s test`` (coverage + several workers) a reply can take longer than the 0.5 s production
+# default, which showed up as random 503s from the auth session check.
+REDIS_TIMEOUT_SECONDS = 5.0
+
+get_redis = make_get_redis(REDIS_URL, timeout=REDIS_TIMEOUT_SECONDS)
+get_auth_redis = make_get_redis(AUTH_REDIS_URL, timeout=REDIS_TIMEOUT_SECONDS)

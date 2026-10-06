@@ -4,7 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.core.base.service import Page
+from app.core.pagination import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.classes.crud.schemas import (
     ClassCreate,
     ClassGetAllResponse,
@@ -12,7 +13,6 @@ from app.features.classes.crud.schemas import (
     ClassUpdate,
 )
 from app.features.classes.dependencies import ClassCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -33,7 +33,7 @@ async def get_classes(
 ):
     """
     Return a paginated list of classes with `id`, `name`, `hit_dice`,
-    and the `id`/`name` of each subclass, ordered by id.
+    and the `id`/`name` of each subclass, ordered by name.
 
     `search` is a case-insensitive partial match against the class name.
     `total` is the count across every page.
@@ -106,10 +106,11 @@ async def create_class(
     Create a new class. **GM only.**
 
     `spellcasting_ability` must be supplied explicitly (pass `null` for
-    a non-caster). Base fields only — `saving_throws`, `armor_proficiencies`,
-    `weapon_proficiencies`, `available_skills`, features, subclasses, spell
-    slots, and starting items are all attached afterwards through their own
-    endpoints (`PUT /classes/{class_id}/saving-throws`,
+    a non-caster). `image_url`, when given, must be an absolute http(s) URL
+    (the upload endpoint is the usual way to set the image). Base fields
+    only — saving throws, proficiencies, available skills, features,
+    subclasses, spell slots and starting items are attached afterwards
+    through their own endpoints (`PUT /classes/{class_id}/saving-throws`,
     `/armor-proficiencies`, `/weapon-proficiencies`, `/available-skills`,
     `POST /features`, `POST /subclasses`, etc).
     """
@@ -122,8 +123,8 @@ async def create_class(
     response_model=ClassResponse,
     summary="Update a class's fields",
     responses={
-        404: {"description": "No class exists with the given ID."},
         409: {"description": "Another class already uses the requested name."},
+        404: {"description": "No class exists with the given ID."},
     },
 )
 async def update_class(
@@ -152,8 +153,9 @@ async def update_class(
     """
     Partially update a class. **GM only.**
 
-    Only included fields change. `saving_throws`, when included, is fully
-    replaced (not merged). Available skills are untouched.
+    Only included fields change; only `spellcasting_ability` accepts an explicit
+    `null`. `saving_throws`, when included, is fully replaced (not merged).
+    Available skills are untouched.
     """
 
     return await class_service.update_class(class_id, data)

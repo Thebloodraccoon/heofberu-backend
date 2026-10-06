@@ -87,9 +87,7 @@ def get_character_proficiency_service(db: DatabaseDep) -> CharacterProficiencySe
     return CharacterProficiencyService(db)
 
 
-CharacterProficiencyServiceDep = Annotated[
-    CharacterProficiencyService, Depends(get_character_proficiency_service)
-]
+CharacterProficiencyServiceDep = Annotated[CharacterProficiencyService, Depends(get_character_proficiency_service)]
 
 
 def get_character_item_service(db: DatabaseDep) -> CharacterItemService:

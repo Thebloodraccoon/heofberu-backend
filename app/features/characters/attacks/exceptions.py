@@ -14,3 +14,16 @@ class AttackNotFoundException(AppError):
         self.character_id = character_id
         self.attack_id = attack_id
         super().__init__(f"Attack {attack_id} not found for character {character_id}.")
+
+
+class AttackLimitReachedException(AppError):
+    """Raised when a character already has the maximum number of attacks."""
+
+    status_code = 400
+
+    def __init__(self, character_id: int, limit: int):
+        """Initialize with the character id and the per-character limit."""
+
+        self.character_id = character_id
+        self.limit = limit
+        super().__init__(f"Character {character_id} already has the maximum of {limit} attacks.")

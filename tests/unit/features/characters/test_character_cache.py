@@ -1,49 +1,31 @@
 """
 Unit tests for character cache invalidation (app/features/characters/cache.py).
 
-Exercised against a fake Redis store (same pattern as
-tests/unit/core/test_cache_decorator.py) so the batched
-``invalidate_characters_cache`` path is verified against real key names,
-not just call counts on a mock.
+Exercised against ``FakeCacheRedis`` (same pattern as tests/unit/core): keys are
+written through ``cache_set`` so they land in the namespace index, and
+invalidation must remove exact keys without ever scanning the keyspace.
 """
 
 from contextlib import asynccontextmanager
-import fnmatch
 
 import pytest
 
+from app.core.base.transaction import atomic
 import app.core.cache.client as cache_client
-from app.features.characters.cache import invalidate_character_cache, invalidate_characters_cache
+from app.core.cache.client import cache_set
+from app.features.characters.cache import (
+    character_cache_key,
+    invalidate_character_cache,
+    invalidate_characters_cache,
+)
 from app.settings import settings
-
-
-class FakeRedis:
-    """Minimal in-memory stand-in for the async Redis surface the cache uses."""
-
-    def __init__(self):
-        self.data = {}
-        self.delete_calls = []
-
-    async def scan_iter(self, match=None, count=100):
-        keys = list(self.data)
-        if match is not None:
-            keys = [key for key in keys if fnmatch.fnmatchcase(key, match)]
-        for key in keys:
-            yield key
-
-    async def delete(self, *keys):
-        self.delete_calls.append(set(keys))
-        removed = 0
-        for key in keys:
-            if self.data.pop(key, None) is not None:
-                removed += 1
-        return removed
+from tests.unit.fakes import FakeAsyncSession, FakeCacheRedis
 
 
 @pytest.fixture
 def fake_redis(monkeypatch):
-    """Patch the Redis provider with a fresh ``FakeRedis`` and enable caching."""
-    store = FakeRedis()
+    """Patch the Redis provider with a fresh ``FakeCacheRedis`` and enable caching."""
+    store = FakeCacheRedis()
 
     @asynccontextmanager
     async def get_redis():
@@ -57,18 +39,22 @@ def fake_redis(monkeypatch):
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestInvalidateCharactersCache:
-    async def test_purges_every_key_for_every_given_character(self, fake_redis):
-        fake_redis.data = {
-            "cache:characters:1": "a",
-            "cache:characters:1:stats": "b",
-            "cache:characters:2": "c",
-            "cache:characters:3": "d",
-            "cache:something_else": "keep",
-        }
+    async def test_purges_the_response_key_of_every_given_character(self, fake_redis):
+        for character_id in (1, 2, 3):
+            await cache_set(character_cache_key(character_id), "x")
+        await cache_set("cache:something_else:1", "keep")
 
         await invalidate_characters_cache([1, 2])
 
-        assert fake_redis.data == {"cache:characters:3": "d", "cache:something_else": "keep"}
+        assert set(fake_redis.data) == {character_cache_key(3), "cache:something_else:1"}
+
+    async def test_never_scans_the_keyspace(self, fake_redis):
+        await cache_set(character_cache_key(1), "a")
+
+        await invalidate_characters_cache([1])
+        await invalidate_character_cache(1)
+
+        assert fake_redis.scans == 0
 
     async def test_uses_one_redis_connection_for_the_whole_batch(self, fake_redis, monkeypatch):
         opens = []
@@ -81,27 +67,26 @@ class TestInvalidateCharactersCache:
                 yield redis
 
         monkeypatch.setattr(cache_client, "_redis_provider", lambda: counting_get_redis)
-        fake_redis.data = {"cache:characters:1": "a", "cache:characters:2": "b"}
 
-        await invalidate_characters_cache([1, 2])
+        await invalidate_characters_cache([1, 2, 3])
 
         assert len(opens) == 1
 
     async def test_deduplicates_repeated_character_ids(self, fake_redis):
-        fake_redis.data = {"cache:characters:1": "a"}
+        await cache_set(character_cache_key(1), "a")
 
         await invalidate_characters_cache([1, 1, 1])
 
         assert fake_redis.data == {}
-        assert fake_redis.delete_calls == [{"cache:characters:1"}]
+        assert fake_redis.unlinked == [character_cache_key(1)]
 
     async def test_empty_list_is_a_noop(self, fake_redis):
-        fake_redis.data = {"cache:characters:1": "a"}
+        await cache_set(character_cache_key(1), "a")
 
         await invalidate_characters_cache([])
 
-        assert fake_redis.data == {"cache:characters:1": "a"}
-        assert fake_redis.delete_calls == []
+        assert character_cache_key(1) in fake_redis.data
+        assert fake_redis.unlinked == []
 
     async def test_redis_down_does_not_raise(self, fake_redis, monkeypatch):
         @asynccontextmanager
@@ -113,21 +98,57 @@ class TestInvalidateCharactersCache:
 
         await invalidate_characters_cache([1, 2, 3])
 
-    async def test_matches_single_character_helper_for_one_id(self, fake_redis):
-        """invalidate_characters_cache([id]) purges the same keys invalidate_character_cache(id) would."""
-        fake_redis.data = {
-            "cache:characters:1": "a",
-            "cache:characters:1:nested": "b",
-            "cache:characters:2": "c",
-        }
-
-        await invalidate_characters_cache([1])
-
-        assert fake_redis.data == {"cache:characters:2": "c"}
-
-    async def test_single_character_helper_still_works_standalone(self, fake_redis):
-        fake_redis.data = {"cache:characters:1": "a", "cache:characters:1:nested": "b"}
+    async def test_single_character_helper_removes_key_and_index_entry(self, fake_redis):
+        await cache_set(character_cache_key(1), "a")
+        await cache_set(character_cache_key(2), "b")
 
         await invalidate_character_cache(1)
+
+        assert set(fake_redis.data) == {character_cache_key(2)}
+        assert character_cache_key(1) not in set().union(*fake_redis.sets.values())
+
+    async def test_key_matches_the_flat_detail_key_format(self):
+        assert character_cache_key(7) == f"{settings.CACHE_PREFIX}:characters:7"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDeferredInvalidation:
+    async def test_purge_waits_for_the_commit_inside_an_atomic_block(self, fake_redis):
+        await cache_set(character_cache_key(1), "a")
+        db = FakeAsyncSession()
+
+        async with atomic(db):
+            await invalidate_character_cache(1, db=db)
+            assert character_cache_key(1) in fake_redis.data
+
+        assert fake_redis.data == {}
+
+    async def test_batch_purge_waits_for_the_commit_too(self, fake_redis):
+        await cache_set(character_cache_key(1), "a")
+        await cache_set(character_cache_key(2), "b")
+        db = FakeAsyncSession()
+
+        async with atomic(db):
+            await invalidate_characters_cache([1, 2], db=db)
+            assert len(fake_redis.data) == 2
+
+        assert fake_redis.data == {}
+
+    async def test_rollback_drops_the_purge(self, fake_redis):
+        await cache_set(character_cache_key(1), "a")
+        db = FakeAsyncSession()
+
+        with pytest.raises(RuntimeError):
+            async with atomic(db):
+                await invalidate_character_cache(1, db=db)
+                raise RuntimeError("boom")
+
+        assert character_cache_key(1) in fake_redis.data
+
+    async def test_outside_a_transaction_the_purge_is_immediate(self, fake_redis):
+        await cache_set(character_cache_key(1), "a")
+
+        await invalidate_character_cache(1, db=FakeAsyncSession())
 
         assert fake_redis.data == {}

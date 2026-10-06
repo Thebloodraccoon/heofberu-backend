@@ -11,12 +11,13 @@ from app.features.races.crud.service import RaceCrudService
 from app.features.races.features.service import RaceFeatureService
 from app.features.races.image.service import RaceImageService
 from app.features.races.skills.service import RaceSkillService
+from app.features.races.tags.service import RaceTagService
 
 
-def get_race_crud_service(db: DatabaseDep) -> RaceCrudService:
+def get_race_crud_service(db: DatabaseDep, storage: StorageServiceDep) -> RaceCrudService:
     """Get the race CRUD service instance."""
 
-    return RaceCrudService(db)
+    return RaceCrudService(db, storage)
 
 
 RaceCrudDep = Annotated[RaceCrudService, Depends(get_race_crud_service)]
@@ -56,3 +57,12 @@ def get_race_image_service(db: DatabaseDep, storage: StorageServiceDep) -> RaceI
 
 
 RaceImageDep = Annotated[RaceImageService, Depends(get_race_image_service)]
+
+
+def get_race_tag_service(db: DatabaseDep) -> RaceTagService:
+    """Get the race tags service instance."""
+
+    return RaceTagService(db)
+
+
+RaceTagsDep = Annotated[RaceTagService, Depends(get_race_tag_service)]

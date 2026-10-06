@@ -1,4 +1,4 @@
-"""Race granted-skill service: full replacement and id resolution."""
+"""Race granted-skill service: full replacement of a race's granted skills."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,14 +6,15 @@ from app.core.base.service import BaseService
 from app.features.races.cache import RACE_CACHE_NAMESPACES
 from app.features.races.crud.schemas import RaceCreate, RaceResponse, RaceUpdate
 from app.features.races.skills.repository import RaceSkillsRepository
+from app.features.shared.catalog.cache import CatalogCacheMixin
 from app.features.shared.skills.mixins import SkillsManagerMixin
 from app.models.races.race_model import Race
-from app.models.skill_model import Skill
 
 
 class RaceSkillService(
     SkillsManagerMixin,
-    BaseService[Race, RaceCreate, RaceUpdate, RaceResponse, None],
+    CatalogCacheMixin,
+    BaseService[Race, RaceCreate, RaceUpdate, RaceResponse],
 ):
     """Full replacement and id-resolution for a race's granted skills."""
 
@@ -28,13 +29,3 @@ class RaceSkillService(
             repository=RaceSkillsRepository(db),
             response_schema=RaceResponse,
         )
-
-    async def resolve_skills(self, skill_ids: list[int] | None) -> list[Skill] | None:
-        """Resolve ``skill_ids`` to ``Skill`` rows, or ``None`` when absent/empty."""
-
-        return await self._resolve_skills(skill_ids)
-
-    async def set_skills_for_race(self, race: Race, skills: list[Skill], *, commit: bool = True) -> None:
-        """Attach ``skills`` to an existing ``race`` row (used by ``create_race``)."""
-
-        await self.repository.set_skills(race.id, skills, commit=commit)

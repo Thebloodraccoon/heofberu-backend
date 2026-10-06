@@ -3,7 +3,7 @@
 from fastapi import APIRouter, status
 
 from app.core.cache import flush_all
-from app.features.users.security import FounderDep
+from app.features.auth.dependencies import FounderDep
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 

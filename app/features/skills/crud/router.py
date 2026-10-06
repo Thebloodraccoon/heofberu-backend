@@ -5,10 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import AbilityScore
-from app.core.base.service import Page
+from app.core.pagination import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.skills.crud.schemas import SkillCreate, SkillGetAllResponse, SkillResponse, SkillUpdate
 from app.features.skills.dependencies import SkillCrudDep
-from app.features.users.security import FounderDep, GmUserDep
 
 router = APIRouter()
 
@@ -22,7 +22,8 @@ async def get_skills(
     skill_service: SkillCrudDep,
     search: str | None = Query(
         None,
-        description="Case-insensitive substring match against the skill's name and key.",
+        max_length=100,
+        description="Case-insensitive substring match against the skill's name.",
     ),
     ability: list[AbilityScore] | None = Query(
         None,
@@ -62,7 +63,7 @@ async def get_skill(skill_id: int, skill_service: SkillCrudDep):
     status_code=status.HTTP_201_CREATED,
     summary="Create a skill",
     responses={
-        409: {"description": "A skill with this key already exists."},
+        409: {"description": "A skill with this name already exists."},
     },
 )
 async def create_skill(
@@ -73,7 +74,6 @@ async def create_skill(
                 "minimal": {
                     "summary": "Minimal — no description",
                     "value": {
-                        "key": "STEALTH",
                         "name": "Stealth",
                         "ability": "DEX",
                     },
@@ -81,7 +81,6 @@ async def create_skill(
                 "full": {
                     "summary": "Full — with description",
                     "value": {
-                        "key": "PERCEPTION",
                         "name": "Perception",
                         "ability": "WIS",
                         "description": (
@@ -106,8 +105,8 @@ async def create_skill(
     response_model=SkillResponse,
     summary="Update a skill",
     responses={
+        409: {"description": "Another skill already uses the requested name."},
         404: {"description": "No skill exists with the given ID."},
-        409: {"description": "Another skill already uses the requested key."},
     },
 )
 async def update_skill(

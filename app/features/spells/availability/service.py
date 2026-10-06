@@ -1,5 +1,6 @@
 """Spell availability service: full replacement of a spell's class/subclass/race/subrace availability."""
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.service import BaseService
@@ -9,16 +10,18 @@ from app.features.spells.availability.schemas import (
     SubclassAvailabilityUpdate,
     SubraceAvailabilityUpdate,
 )
-from app.features.spells.cache import invalidate_spell_cache
-from app.features.spells.crud.repository import SpellRepository
-from app.features.spells.crud.schemas import SpellCreate, SpellResponse, SpellUpdate
-from app.models import Class, Race, Spell, Subclass, Subrace
+from app.features.spells.cache import SPELL_CACHE_NAMESPACES
+from app.features.spells.crud.repository import AvailabilityDimension, SpellRepository, availability_dimension
+from app.features.spells.crud.schemas import SpellResponse
+from app.models import Spell
 
 
-class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, SpellResponse, None]):
+class SpellAvailabilityService(BaseService[Spell, BaseModel, BaseModel, SpellResponse]):
     """Full-replace writes for a spell's class/subclass/race/subrace availability."""
 
     repository: SpellRepository
+
+    cache_namespaces = SPELL_CACHE_NAMESPACES
 
     def __init__(self, db: AsyncSession):
         """Initialise with a spell repository and response schema."""
@@ -28,66 +31,36 @@ class SpellAvailabilityService(BaseService[Spell, SpellCreate, SpellUpdate, Spel
             response_schema=SpellResponse,
         )
 
-    async def set_classes(self, spell_id: int, data: ClassAvailabilityUpdate) -> SpellResponse:
-        """Fully replace the classes a spell is available to. Empty list = unrestricted."""
+    async def _replace(self, dimension: AvailabilityDimension, spell_id: int, ids: list[int]) -> SpellResponse:
+        """Replace one dimension of an existing spell in one transaction. Empty list = unrestricted."""
 
         await self._exists_or_404(spell_id)
-        classes = await self.resolve_ids(self.repository.get_classes_by_ids, data.class_ids, "Classes")
+        members = await self.resolve_ids(
+            lambda wanted: self.repository.get_dimension_members(dimension, wanted), ids, dimension.label
+        )
 
-        await self.repository.set_classes(spell_id, classes)
-        await invalidate_spell_cache()
+        async with self._atomic():
+            await self.repository.set_availability(spell_id, dimension, [member.id for member in members])
+            await self._invalidate_cache()
 
         return await self._get_response(spell_id)
+
+    async def set_classes(self, spell_id: int, data: ClassAvailabilityUpdate) -> SpellResponse:
+        """Fully replace the classes a spell is available to."""
+
+        return await self._replace(availability_dimension("available_classes"), spell_id, data.class_ids)
 
     async def set_subclasses(self, spell_id: int, data: SubclassAvailabilityUpdate) -> SpellResponse:
-        """Fully replace the subclasses a spell is available to. Empty list = unrestricted."""
+        """Fully replace the subclasses a spell is available to."""
 
-        await self._exists_or_404(spell_id)
-        subclasses = await self.resolve_ids(self.repository.get_subclasses_by_ids, data.subclass_ids, "Subclasses")
-
-        await self.repository.set_subclasses(spell_id, subclasses)
-        await invalidate_spell_cache()
-
-        return await self._get_response(spell_id)
+        return await self._replace(availability_dimension("available_subclasses"), spell_id, data.subclass_ids)
 
     async def set_races(self, spell_id: int, data: RaceAvailabilityUpdate) -> SpellResponse:
-        """Fully replace the races a spell is available to. Empty list = unrestricted."""
+        """Fully replace the races a spell is available to."""
 
-        await self._exists_or_404(spell_id)
-        races = await self.resolve_ids(self.repository.get_races_by_ids, data.race_ids, "Races")
-
-        await self.repository.set_races(spell_id, races)
-        await invalidate_spell_cache()
-
-        return await self._get_response(spell_id)
+        return await self._replace(availability_dimension("available_races"), spell_id, data.race_ids)
 
     async def set_subraces(self, spell_id: int, data: SubraceAvailabilityUpdate) -> SpellResponse:
-        """Fully replace the subraces a spell is available to. Empty list = unrestricted."""
+        """Fully replace the subraces a spell is available to."""
 
-        await self._exists_or_404(spell_id)
-        subraces = await self.resolve_ids(self.repository.get_subraces_by_ids, data.subrace_ids, "Subraces")
-
-        await self.repository.set_subraces(spell_id, subraces)
-        await invalidate_spell_cache()
-
-        return await self._get_response(spell_id)
-
-    async def set_classes_for_spell(self, spell: Spell, classes: list[Class], *, commit: bool = True) -> None:
-        """Replace a spell's classes on an existing row (used by ``create_spell``)."""
-
-        await self.repository.set_classes(spell.id, classes, commit=commit)
-
-    async def set_subclasses_for_spell(self, spell: Spell, subclasses: list[Subclass], *, commit: bool = True) -> None:
-        """Replace a spell's subclasses on an existing row (used by ``create_spell``)."""
-
-        await self.repository.set_subclasses(spell.id, subclasses, commit=commit)
-
-    async def set_races_for_spell(self, spell: Spell, races: list[Race], *, commit: bool = True) -> None:
-        """Replace a spell's races on an existing row (used by ``create_spell``)."""
-
-        await self.repository.set_races(spell.id, races, commit=commit)
-
-    async def set_subraces_for_spell(self, spell: Spell, subraces: list[Subrace], *, commit: bool = True) -> None:
-        """Replace a spell's subraces on an existing row (used by ``create_spell``)."""
-
-        await self.repository.set_subraces(spell.id, subraces, commit=commit)
+        return await self._replace(availability_dimension("available_subraces"), spell_id, data.subrace_ids)

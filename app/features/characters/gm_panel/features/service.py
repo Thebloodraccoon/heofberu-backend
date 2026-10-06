@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import FeatureSourceType, GrantSource
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.features.repository import CharacterFeatureRepository
 from app.features.characters.features.schemas import CharacterFeatureBriefResponse, CharacterFeatureResponse
 from app.features.characters.gm_panel.exceptions import (
@@ -14,21 +13,20 @@ from app.features.characters.gm_panel.exceptions import (
     FeatureIsAFeatException,
 )
 from app.features.characters.gm_panel.features.schemas import CharacterFeatureAdd
-from app.features.characters.grants.schemas import GrantEffectsResponse
 from app.features.characters.grants.service import FeatureGrantService
-from app.features.characters.progression.feature_sync import materialize_grant
+from app.features.characters.locking import lock_character
 from app.features.features.crud.repository import FeatureRepository
 from app.features.features.exceptions import FeatureNotFoundException
 from app.features.users.schemas import UserResponse
 from app.models.character.character_feature_model import CharacterFeature
+from app.models.character.character_model import Character
 
 
 class GmPanelFeatureService(CharacterSubDomainService):
     """
     Grant management for reference features (``character_features``);
-    adds/removals refresh the ability-score cache and materialize the
-    grant's other effects (skills, saves, armor/weapons, granted spells —
-    grants can carry any of them).
+    adds/removals refresh the ability-score cache. The grant's other
+    effects (skills, saves, armor/weapons, spells) are computed on read.
     """
 
     def __init__(self, db: AsyncSession):
@@ -54,21 +52,20 @@ class GmPanelFeatureService(CharacterSubDomainService):
         if feature.source_type == FeatureSourceType.FEAT:
             raise FeatureIsAFeatException(feature_id=data.feature_id)
 
-        existing = await self.feature_grant_repository.get_character_feature_by_feature_id(
-            character_id, data.feature_id
-        )
-        if existing:
-            raise CharacterFeatureAlreadyKnownException(character_id=character_id, feature_id=data.feature_id)
-
         async with self._atomic():
-            grant = await self.feature_grant_repository.add_character_feature(
-                character_id, data.feature_id, grant_source=GrantSource.GM, commit=False
+            await lock_character(self.repository.db, character_id)
+            existing = await self.feature_grant_repository.get_character_feature_by_feature_id(
+                character_id, data.feature_id
             )
-            await materialize_grant(self.repository.db, character, grant)
-            await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
+            if existing:
+                raise CharacterFeatureAlreadyKnownException(character_id=character_id, feature_id=data.feature_id)
 
-        await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
+            grant = await self.feature_grant_repository.add_character_feature(
+                character_id, data.feature_id, grant_source=GrantSource.GM
+            )
+            await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
+            await self._refresh_stats(character)
+
         return self._to_response(grant)
 
     async def remove_feature(self, character_id: int, character_feature_id: int, current_user: UserResponse) -> bool:
@@ -76,12 +73,19 @@ class GmPanelFeatureService(CharacterSubDomainService):
 
         character = await self.get_character_for_user(character_id, current_user)
 
-        grant = await self._get_feature_grant_or_404(character_id, character_feature_id)
-        result = await self.feature_grant_repository.remove_character_feature(grant)
+        async with self._atomic():
+            await lock_character(self.repository.db, character_id)
+            grant = await self._get_feature_grant_or_404(character_id, character_feature_id)
+            result = await self.feature_grant_repository.remove_character_feature(grant)
+            await self._refresh_stats(character)
+
+        return result
+
+    async def _refresh_stats(self, character: Character) -> None:
+        """Recompute the ability-score cache in the caller's transaction; purge the payload after its commit."""
 
         await self.stats_service.refresh(character)
-        await invalidate_character_cache(character_id)
-        return result
+        await self._invalidate_character(character.id)
 
     @staticmethod
     def _to_response(grant: CharacterFeature) -> CharacterFeatureResponse:
@@ -99,7 +103,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
             feature_id=grant.feature_id,
             grant_source=grant.grant_source,
             feature=CharacterFeatureBriefResponse.model_validate(grant.feature),
-            effects=GrantEffectsResponse(),
+            effects=[],
             choices=[],
         )
 

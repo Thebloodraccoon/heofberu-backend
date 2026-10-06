@@ -1,5 +1,7 @@
 """Repository for the item stacks owned by a character (``character_items``)."""
 
+from collections.abc import Iterable
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -67,6 +69,17 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         )
         return result.scalars().first()
 
+    async def get_stacks_by_item_ids(self, character_id: int, item_ids: Iterable[int]) -> list[CharacterItem]:
+        """The character's stacks of the given catalog items (``Item`` not loaded)."""
+
+        result = await self.db.execute(
+            select(CharacterItem).where(
+                CharacterItem.character_id == character_id,
+                CharacterItem.item_id.in_(list(item_ids)),
+            )
+        )
+        return list(result.scalars().all())
+
     async def add_character_item(
         self,
         character_id: int,
@@ -82,17 +95,17 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         )
 
         self.db.add(stack)
-        await self.commit_or_flush()
+        await self.flush()
 
         return await self._fetch_with_item(stack.id)
 
     async def update_character_item(self, stack: CharacterItem, fields: dict) -> CharacterItem:
-        """Apply a PATCH field dict onto an item stack and commit."""
+        """Apply a PATCH field dict onto an item stack (flush only)."""
 
         for field, value in fields.items():
             setattr(stack, field, value)
 
-        await self.commit_or_flush()
+        await self.flush()
 
         return await self._fetch_with_item(stack.id)
 
@@ -100,11 +113,11 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
         """Remove an item stack from a character."""
 
         await self.db.delete(stack)
-        await self.commit_or_flush()
+        await self.flush()
         return True
 
     async def _fetch_with_item(self, stack_id: int) -> CharacterItem:
-        """Re-fetch one stack with its item eager-loaded (post-commit)."""
+        """Re-fetch one stack with its item eager-loaded (after the flush)."""
 
         result = await self.db.execute(self._stack_with_item(select(CharacterItem).where(CharacterItem.id == stack_id)))
         return result.scalar_one()

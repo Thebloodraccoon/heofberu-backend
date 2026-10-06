@@ -1,16 +1,19 @@
-"""Subrace cache coordination: one invalidation point shared by the subdomain's capabilities."""
+"""Subrace cache namespaces: what each kind of write has to purge."""
 
-from app.core.cache import invalidate
+from app.core.cache import invalidate_many
+from app.core.cache.namespaces import dependents
 
-# ``subrace_features`` is the subrace's own feature listing; ``features``
-# is the central by-id feature cache.  Character payloads embed
-# ability-score totals derived from subrace bonuses, so subrace writes
-# must also purge cached character payloads.
-SUBRACE_CACHE_NAMESPACES = ("races", "subrace_features", "features", "characters")
+# Subrace reads share the race namespace: a race detail embeds its subraces.
+SUBRACE_CACHE_NAMESPACES = ("races",)
+
+# Subrace create/rename/delete: spell reads embed subrace names (``available_subraces``).
+SUBRACE_CRUD_CACHE_NAMESPACES = SUBRACE_CACHE_NAMESPACES + dependents("subraces")
+
+# Deleting a subrace cascades to its features and spell availability.
+SUBRACE_DELETE_NAMESPACES = ("races", "subrace_features", "features", *dependents("subraces"))
 
 
 async def invalidate_subrace_cache() -> None:
-    """Purge every cache namespace a subrace read can hit."""
+    """Purge the subrace read namespace (image changes)."""
 
-    for namespace in SUBRACE_CACHE_NAMESPACES:
-        await invalidate(namespace)
+    await invalidate_many(list(SUBRACE_CACHE_NAMESPACES))

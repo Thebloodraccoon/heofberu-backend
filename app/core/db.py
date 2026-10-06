@@ -1,10 +1,9 @@
 """
-Async DB session FastAPI dependency and its annotated alias.
+Annotated alias of the async DB session dependency.
 
-``get_db`` yields one session per request; it is the canonical dependency the
-HTTP test client overrides. ``DatabaseDep`` is the typed alias built on it,
-imported by every feature's ``dependencies.py``. The session factory itself
-(``SessionLocal``) stays stage-configured in ``app/settings``.
+``DatabaseDep`` wraps ``settings.get_db`` (one ``AsyncSession`` per request, built
+in ``app/settings``) and is imported by every feature's ``dependencies.py``.
+``settings.get_db`` is the dependency the HTTP test client overrides.
 """
 
 from typing import Annotated

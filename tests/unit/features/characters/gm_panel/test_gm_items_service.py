@@ -3,10 +3,14 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from pydantic import ValidationError
 import pytest
 
-from app.features.characters.gm_panel.exceptions import CharacterItemNotFoundException
-from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.gm_panel.exceptions import (
+    CharacterItemNotFoundException,
+    CharacterItemQuantityLimitException,
+)
+from app.features.characters.gm_panel.items.schemas import MAX_ITEM_QUANTITY, CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.gm_panel.items.service import GmPanelItemService
 from app.features.items.exceptions import ItemNotFoundException
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
@@ -40,7 +44,7 @@ class FakeCharacterItemRepository:
         )
         self._next_id += 1
         self.add_calls.append(stack)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(stack)
         return stack
 
@@ -48,19 +52,19 @@ class FakeCharacterItemRepository:
         for field, value in fields.items():
             setattr(stack, field, value)
         self.update_calls.append((stack, fields))
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(stack)
         return stack
 
     async def remove_character_item(self, stack):
         self.remove_calls.append(stack)
-        await self.db.commit()
+        await self.db.flush()
         return True
 
 
 @pytest.fixture(autouse=True)
 def no_cache_invalidate(monkeypatch):
-    monkeypatch.setattr("app.features.characters.gm_panel.items.service.invalidate_character_cache", AsyncMock())
+    monkeypatch.setattr("app.features.characters.cache.cache_delete_key", AsyncMock())
 
 
 def make_item(item_id=5) -> SimpleNamespace:
@@ -126,6 +130,36 @@ class TestAddItem:
         assert result.quantity == 3
         assert service.character_item_repository.add_calls == []
         assert service.character_item_repository.update_calls == [(stack, {"quantity": 3})]
+
+    async def test_merge_beyond_the_stack_limit_is_rejected(self):
+        stack = make_stack(stack_id=3, item_id=5, quantity=MAX_ITEM_QUANTITY)
+        service = make_service(item_exists=True, stacks={stack.id: stack})
+
+        with pytest.raises(CharacterItemQuantityLimitException) as exc_info:
+            await service.add_item(1, CharacterItemAdd(item_id=5, quantity=1), SimpleNamespace())
+
+        assert exc_info.value.status_code == 400
+        assert service.character_item_repository.update_calls == []
+        assert stack.quantity == MAX_ITEM_QUANTITY
+
+
+@pytest.mark.unit
+class TestQuantityBounds:
+    @pytest.mark.parametrize("quantity", [0, -1, MAX_ITEM_QUANTITY + 1])
+    def test_add_rejects_out_of_range_quantity(self, quantity):
+        with pytest.raises(ValidationError):
+            CharacterItemAdd(item_id=5, quantity=quantity)
+
+    def test_add_accepts_the_limit(self):
+        assert CharacterItemAdd(item_id=5, quantity=MAX_ITEM_QUANTITY).quantity == MAX_ITEM_QUANTITY
+
+    @pytest.mark.parametrize("quantity", [-1, MAX_ITEM_QUANTITY + 1])
+    def test_update_rejects_out_of_range_quantity(self, quantity):
+        with pytest.raises(ValidationError):
+            CharacterItemUpdate(quantity=quantity)
+
+    def test_update_allows_zero(self):
+        assert CharacterItemUpdate(quantity=0).quantity == 0
 
 
 @pytest.mark.unit

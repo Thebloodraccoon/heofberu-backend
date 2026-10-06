@@ -10,6 +10,7 @@ from app.features.backgrounds.features.service import BackgroundFeatureService
 from app.features.backgrounds.items.service import BackgroundItemsService
 from app.features.backgrounds.skills.service import BackgroundSkillsService
 from app.features.backgrounds.suggestions.service import BackgroundSuggestionsService
+from app.features.backgrounds.tags.service import BackgroundTagService
 
 
 def get_background_crud_service(db: DatabaseDep) -> BackgroundCrudService:
@@ -55,3 +56,12 @@ def get_background_suggestions_service(db: DatabaseDep) -> BackgroundSuggestions
 
 
 BackgroundSuggestionsDep = Annotated[BackgroundSuggestionsService, Depends(get_background_suggestions_service)]
+
+
+def get_background_tag_service(db: DatabaseDep) -> BackgroundTagService:
+    """Get the background tags service instance."""
+
+    return BackgroundTagService(db)
+
+
+BackgroundTagsDep = Annotated[BackgroundTagService, Depends(get_background_tag_service)]

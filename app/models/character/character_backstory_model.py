@@ -1,13 +1,20 @@
 """ORM model for a character's backstory (large free-text, stored uncached)."""
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Text
-from sqlalchemy.orm import relationship
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from sqlalchemy import CheckConstraint, ForeignKey, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants import BACKSTORY_MAX_LENGTH
-from app.settings import settings
+from app.settings.base import Base
+
+if TYPE_CHECKING:
+    from app.models.character.character_model import Character
 
 
-class CharacterBackstory(settings.Base):  # type: ignore
+class CharacterBackstory(Base):
     """
     A character's backstory, isolated in its own table.
 
@@ -21,8 +28,8 @@ class CharacterBackstory(settings.Base):  # type: ignore
 
     __tablename__ = "character_backstories"
 
-    character_id = Column(Integer, ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
-    content = Column(Text, nullable=False, default="")
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), primary_key=True)
+    content: Mapped[str] = mapped_column(Text, default="")
 
     __table_args__ = (
         CheckConstraint(
@@ -31,7 +38,7 @@ class CharacterBackstory(settings.Base):  # type: ignore
         ),
     )
 
-    character = relationship("Character", back_populates="backstory")
+    character: Mapped[Character] = relationship(back_populates="backstory")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<CharacterBackstory(character_id={self.character_id})>"

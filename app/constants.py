@@ -2,13 +2,7 @@
 Shared enums and helper constants used across the application.
 
 Contains the canonical domain enumerations (roles, dice, spell and item
-metadata, conditions, ...) together with backward-compatible string lists
-and helpers that build raw SQL check constraints.
-
-This is the Feature/Feat engine revision: ``FeatureSourceType`` regains the
-``FEAT`` value (it was always reserved in the Postgres ENUM), a new
-``GrantSource`` enum models where a character's feature grant came from, and
-the plain string lists are kept in sync.
+metadata, conditions, ...) together with shared string lists and numeric limits.
 """
 
 from enum import Enum
@@ -92,11 +86,17 @@ class SpellSchool(str, Enum):
 
 
 class SpellCastTime(str, Enum):
-    """Time required to cast a spell (action, bonus action, reaction, special)."""
+    """Time required to cast a spell (action, bonus action, reaction, rituals-length casts, special)."""
 
     ACTION = "ACTION"
     BONUS_ACTION = "BONUS_ACTION"
     REACTION = "REACTION"
+    ONE_MINUTE = "ONE_MINUTE"
+    TEN_MINUTES = "TEN_MINUTES"
+    ONE_HOUR = "ONE_HOUR"
+    EIGHT_HOURS = "EIGHT_HOURS"
+    TWELVE_HOURS = "TWELVE_HOURS"
+    TWENTY_FOUR_HOURS = "TWENTY_FOUR_HOURS"
     SPECIAL = "SPECIAL"
 
 
@@ -274,6 +274,17 @@ class ChoiceType(str, Enum):
     WEAPON = "WEAPON"
 
 
+# The one ``effect_type`` the options of a group of each ``ChoiceType`` may carry.
+EFFECT_TYPE_BY_CHOICE_TYPE: dict[ChoiceType, str] = {
+    ChoiceType.SKILL: "skill",
+    ChoiceType.SPELL: "spell",
+    ChoiceType.ABILITY_SCORE: "ability",
+    ChoiceType.SAVING_THROW: "saving_throw",
+    ChoiceType.ARMOR: "armor",
+    ChoiceType.WEAPON: "weapon",
+}
+
+
 class ProficiencySourceType(str, Enum):
     """
     How a ``character_proficiencies`` row came to exist — a second axis
@@ -320,15 +331,6 @@ class ProficiencyAction(str, Enum):
 
     GRANT = "GRANT"
     REVOKE = "REVOKE"
-
-
-class ProficiencyAuditAction(str, Enum):
-    """What a GM did to a character's proficiency row, for ``character_proficiency_audit_log``."""
-
-    ADD = "ADD"
-    REMOVE = "REMOVE"
-    EXPERTISE_GRANTED = "EXPERTISE_GRANTED"
-    EXPERTISE_REVOKED = "EXPERTISE_REVOKED"
 
 
 class ASILevelChoice(str, Enum):
@@ -380,24 +382,77 @@ class BackgroundSuggestionType(str, Enum):
     FLAW = "FLAW"
 
 
-# Kept as plain lists for backward compatibility with existing CheckConstraints
-# and any code still importing the raw string lists.
-USER_ROLES = [role.value for role in UserRole]
-RACE_SIZES = [size.value for size in RaceSize]
-ABILITY_SCORES = [score.value for score in AbilityScore]
-ATTACK_TYPES = [attack_type.value for attack_type in AttackType]
-SPELL_LEVELS = [level.value for level in SpellLevel]
-SPELL_SCHOOLS = [school.value for school in SpellSchool]
-SPELL_RANGE_TYPES = [range_type.value for range_type in SpellRangeType]
-DAMAGE_TYPES = [damage_type.value for damage_type in DamageType]
-HEALING_TARGETS = [target.value for target in HealingTarget]
-ITEM_TYPES = [item_type.value for item_type in ItemType]
-ITEM_RARITIES = [rarity.value for rarity in ItemRarity]
-FEATURE_SOURCE_TYPES = [source_type.value for source_type in FeatureSourceType]
-GRANT_SOURCES = [source.value for source in GrantSource]
-ASI_LEVEL_CHOICES = [choice.value for choice in ASILevelChoice]
-CHARACTER_FEAT_SOURCES = [source.value for source in CharacterFeatSource]
-CONDITION_TYPES = [condition_type.value for condition_type in ConditionType]
+class ArticleStatus(str, Enum):
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class ArticleVisibility(str, Enum):
+    """Who may read an article: everyone (once published) or only GMs (spoilers, prep notes)."""
+
+    PUBLIC = "public"
+    GM_ONLY = "gm_only"
+
+
+class ArticleProposalStatus(str, Enum):
+    """Review state of a proposed change to someone else's article (like a pull request)."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+def is_article_publicly_visible(status: "ArticleStatus | str", visibility: "ArticleVisibility | str") -> bool:
+    """
+    Canonical non-GM visibility predicate, in value form so it applies equally to an
+    ORM ``Article``, a cached ``ArticleResponse``, or raw SQL (see
+    ``app.features.articles.visibility.visibility_conditions`` for the row-filter equivalent).
+    """
+
+    return status == ArticleStatus.PUBLISHED and visibility == ArticleVisibility.PUBLIC
+
+
+ARTICLE_TYPES = (
+    "lore",
+    "region",
+    "location",
+    "faction",
+    "npc",
+    "event",
+    "artifact",
+    "deity",
+    "religion",
+    "creature",
+    "culture",
+    "language",
+    "document",
+    "condition",
+    "quest",
+    "session",
+)
+
+#: Postgres ARE for a GM-only block in ``body_markdown``: ``:::gm`` ... ``:::``. An unclosed
+#: block hides everything to the end of the text (fail closed). ``(?i)`` = case-insensitive
+#: (``:::GM`` too). Flat pattern: nested containers inside ``:::gm`` are rejected on write
+#: (``has_nested_gm_container``) and handled in ``app/features/articles/secrets.py``
+#: (``strip_gm_blocks``, ``gm_stripped_sql``). Used by generated columns and migrations.
+ARTICLE_GM_BLOCK_SQL_PATTERN = "(?i):::gm.*?(:::|$)"
+RELATION_TYPES = (
+    "LOCATED_IN",
+    "MEMBER_OF",
+    "RULES",
+    "PARENT_FACTION",
+    "ALLY_OF",
+    "ENEMY_OF",
+    "RELATIVE_OF",
+    "MENTIONS",
+    "SEE_ALSO",
+    "PARTICIPATED_IN",
+)
+
 
 # Class levels (5e standard) at which a character gains an Ability Score
 # Improvement and may instead choose a feat. Same for every class; keep as a
@@ -423,38 +478,3 @@ CHARACTER_MAX_LEVEL = 20
 # Word text. Enforced by both the backstory schema (422) and a DB check
 # constraint on ``character_backstories.content``.
 BACKSTORY_MAX_LENGTH = 12000
-
-# Minimum character level for a FEAT-source feature to be selectable. Mirror
-# of the old ``Feat.min_level`` (NULL = no level requirement).
-FEAT_MIN_LEVEL_MIN = 1
-FEAT_MIN_LEVEL_MAX = 20
-
-# ``new_cap`` validation range on a feature's ability-score effects.
-FEATURE_NEW_CAP_MIN = ABILITY_SCORE_CAP
-FEATURE_NEW_CAP_MAX = MAX_ABILITY_SCORE_CAP
-
-ON_DELETE_SET_NULL = "SET NULL"
-ON_DELETE_CASCADE = "CASCADE"
-ON_DELETE_RESTRICT = "RESTRICT"
-
-
-def create_enum_constraint(field_name: str, values: list, nullable: bool = True) -> str:
-    """Creates a line for CheckConstraint with ENUM values."""
-
-    values_str = ", ".join(repr(v) for v in values)
-
-    if nullable:
-        return f"{field_name} IS NULL OR {field_name} IN ({values_str})"
-    else:
-        return f"{field_name} IN ({values_str})"
-
-
-def create_range_constraint(field_name: str, min_val: int, max_val: int, nullable: bool = True) -> str:
-    """Creates a line for CheckConstraint with a numerical range."""
-
-    constraint = f"({field_name} >= {min_val} AND {field_name} <= {max_val})"
-
-    if nullable:
-        return f"{field_name} IS NULL OR {constraint}"
-    else:
-        return constraint

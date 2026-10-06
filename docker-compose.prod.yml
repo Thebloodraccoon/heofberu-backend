@@ -1,25 +1,28 @@
 services:
   heof-db:
     restart: always
-    ports: []                          
+    ports: !reset []
 
   heof-redis:
     restart: always
-    ports: []                          
+    ports: !reset []
+
+  heof-auth-redis:
+    restart: always
+    ports: !reset []
 
   heof-app:
     build:
       context: .
-      dockerfile: Dockerfile           # prod multi-stage образ
+      dockerfile: Dockerfile
     container_name: heof-app-prod
     restart: always
     env_file:
       - .env.prod
-    # volumes mount убран — код внутри образа
+    environment:
+      STAGE: prod
     deploy:
       resources:
         limits:
-          # 4 uvicorn workers + asyncpg/redis pools: 1 CPU / 512M starved the
-          # workers under concurrent load (bcrypt alone costs ~100-300ms CPU).
           cpus: "2.0"
           memory: 1G

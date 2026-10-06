@@ -1,22 +1,24 @@
 """
 Character spell endpoints: known spells with class-derived slot totals
-(query-style IDs; ``app.features.characters.router`` applies the
-``/characters`` prefix).
+(``app.features.characters.router`` applies the ``/characters`` prefix;
+removal targets the resource URL ``/characters/{id}/spells/{spell_id}``).
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query, status
+from fastapi import APIRouter, Body, Path, status
 
+from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.dependencies import CharacterSpellServiceDep
 from app.features.characters.spells.schemas import (
     CharacterSpellAdd,
     CharacterSpellResponse,
     CharacterSpellsResponse,
 )
-from app.features.users.security import CurrentUserDep
 
 router = APIRouter()
+
+SpellId = Annotated[int, Path(gt=0)]
 
 
 @router.get(
@@ -35,7 +37,8 @@ async def get_character_spells(
 ):
     """
     List the character's spellcasting picture in one payload: slot totals
-    per level plus the known spells.
+    per level, the known spells, the GM's direct grants (`gm_spells`) and
+    the spells feature/feat grants give (`feature_spells`).
 
     Slot ``total`` is always derived from the class/level progression and
     is not client-settable; a level's total doubles as the cap on known
@@ -90,7 +93,7 @@ async def add_character_spell(
 
 
 @router.delete(
-    "/{character_id:int}/spells",
+    "/{character_id:int}/spells/{spell_id:int}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a spell from a character's known spells",
     responses={
@@ -100,7 +103,7 @@ async def add_character_spell(
 )
 async def remove_character_spell(
     character_id: int,
-    spell_id: Annotated[int, Query(gt=0)],
+    spell_id: SpellId,
     spell_service: CharacterSpellServiceDep,
     current_user: CurrentUserDep,
 ):

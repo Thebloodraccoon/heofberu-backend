@@ -24,7 +24,7 @@ from app.middleware.utils import get_client_ip
 from app.settings import settings
 
 AUTH_RULES = [
-    {"path": "/api/auth/login", "method": "POST", "bucket": "auth-login", "prod": 3, "staging": 3, "dev": 5},
+    {"path": "/api/v1/auth/login", "method": "POST", "bucket": "auth-login", "prod": 3, "staging": 3, "dev": 5},
 ]
 
 
@@ -78,7 +78,7 @@ def make_redis(monkeypatch, store):
     monkeypatch.setattr(settings, "get_redis", lambda: get_redis())
 
 
-def make_request(path="/api/things", method="GET", headers=None, query=None, client_host="10.0.0.1"):
+def make_request(path="/api/v1/things", method="GET", headers=None, query=None, client_host="10.0.0.1"):
     request = SimpleNamespace()
     request.method = method
     request.url = SimpleNamespace(path=path)
@@ -134,11 +134,22 @@ class TestDispatchSkipPaths:
         make_redis(monkeypatch, store)
         middleware = make_middleware(monkeypatch=monkeypatch)
 
-        for path in ("/ping", "/health"):
+        for path in ("/api/v1/ping", "/api/v1/health"):
             _, seen = await run_dispatch(middleware, make_request(path=path))
             assert len(seen) == 1
 
         assert store.pipelines == []
+
+    async def test_legacy_unprefixed_paths_are_not_skipped(self, monkeypatch):
+        """The API lives under ``/api/v1``; ``/ping`` would be an ordinary (counted) path."""
+
+        store = FakeRedis()
+        make_redis(monkeypatch, store)
+        middleware = make_middleware(monkeypatch=monkeypatch)
+
+        await run_dispatch(middleware, make_request(path="/ping"))
+
+        assert len(store.pipelines) == 1
 
 
 @pytest.mark.unit
@@ -197,7 +208,7 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/auth/login", method="POST"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/auth/login", method="POST"))
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["X-RateLimit-Limit"] == "3"
@@ -210,7 +221,7 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/spells"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/spells"))
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["X-RateLimit-Limit"] == "60"
@@ -223,8 +234,8 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        # GET to /api/auth/login does NOT match the POST login rule.
-        await run_dispatch(middleware, make_request(path="/api/auth/login", method="GET"))
+        # GET to /api/v1/auth/login does NOT match the POST login rule.
+        await run_dispatch(middleware, make_request(path="/api/v1/auth/login", method="GET"))
 
         assert store.pipelines[0].commands[0] == ("incr", f"rate_limit:10.0.0.1:{_DEFAULT_BUCKET}:16")
 
@@ -235,7 +246,7 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=AUTH_RULES, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/auth/login", method="POST"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/auth/login", method="POST"))
 
         assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
         assert response.headers["X-RateLimit-Limit"] == "3"
@@ -248,13 +259,13 @@ class TestRouteRules:
             calls=60, period=60, now=1000.0, monkeypatch=monkeypatch, rules=rules, stage="prod"
         )
 
-        response, _ = await run_dispatch(middleware, make_request(path="/api/races/3/image", method="PUT"))
+        response, _ = await run_dispatch(middleware, make_request(path="/api/v1/races/3/image", method="PUT"))
 
         assert response.headers["X-RateLimit-Limit"] == "5"
         assert store.pipelines[0].commands[0] == ("incr", "rate_limit:10.0.0.1:image:16")
 
     async def test_search_rule_only_when_search_param_present(self, monkeypatch):
-        rules = [{"path": "/api/spells", "method": "GET", "search": True, "bucket": "search", "prod": 20, "dev": 60}]
+        rules = [{"path": "/api/v1/spells", "method": "GET", "search": True, "bucket": "search", "prod": 20, "dev": 60}]
         store = FakeRedis(incr_result=1)
         make_redis(monkeypatch, store)
         middleware = make_middleware(
@@ -262,11 +273,11 @@ class TestRouteRules:
         )
 
         # No ?search= -> default budget/bucket.
-        await run_dispatch(middleware, make_request(path="/api/spells", method="GET"))
+        await run_dispatch(middleware, make_request(path="/api/v1/spells", method="GET"))
         assert store.pipelines[0].commands[0] == ("incr", f"rate_limit:10.0.0.1:{_DEFAULT_BUCKET}:16")
 
         # With ?search= -> rule applies.
-        await run_dispatch(middleware, make_request(path="/api/spells", method="GET", query={"search": "fire"}))
+        await run_dispatch(middleware, make_request(path="/api/v1/spells", method="GET", query={"search": "fire"}))
         assert store.pipelines[1].commands[0] == ("incr", "rate_limit:10.0.0.1:search:16")
 
 
@@ -333,7 +344,7 @@ class TestRedisFailureFallback:
 
         assert count == 1
         assert allowed is True
-        assert middleware.clients["1.2.3.4"] == deque([1000.0])
+        assert middleware.clients[("1.2.3.4", "default")] == deque([1000.0])
 
     async def test_dispatch_survives_broken_redis(self, monkeypatch):
         @asynccontextmanager
@@ -355,36 +366,36 @@ class TestLocalIncrAndCheck:
     def test_evicts_timestamps_older_than_window(self, monkeypatch):
         monkeypatch.setattr(rate_limit_module, "time", FrozenTime(1000.0))
         middleware = make_middleware(calls=5, period=60)
-        middleware.clients["1.2.3.4"] = deque([900.0, 930.0])
+        middleware.clients[("1.2.3.4", "default")] = deque([900.0, 930.0])
 
-        count, allowed = middleware._local_incr_and_check("1.2.3.4", 5, 1000.0)
+        count, allowed = middleware._local_incr_and_check("1.2.3.4", "default", 5, 1000.0)
 
         assert count == 1
         assert allowed is True
-        assert middleware.clients["1.2.3.4"] == deque([1000.0])
+        assert middleware.clients[("1.2.3.4", "default")] == deque([1000.0])
 
     def test_blocks_at_limit_boundary(self):
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=2, period=60)
 
-        assert middleware._local_incr_and_check("ip", 2, 10.0) == (1, True)
-        assert middleware._local_incr_and_check("ip", 2, 11.0) == (2, True)
-        assert middleware._local_incr_and_check("ip", 2, 12.0) == (2, False)
+        assert middleware._local_incr_and_check("ip", "default", 2, 10.0) == (1, True)
+        assert middleware._local_incr_and_check("ip", "default", 2, 11.0) == (2, True)
+        assert middleware._local_incr_and_check("ip", "default", 2, 12.0) == (2, False)
 
     def test_rule_budget_uses_its_own_limit(self):
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=5, period=60)
 
-        assert middleware._local_incr_and_check("ip", 1, 10.0) == (1, True)
-        assert middleware._local_incr_and_check("ip", 1, 11.0) == (1, False)
+        assert middleware._local_incr_and_check("ip", "default", 1, 10.0) == (1, True)
+        assert middleware._local_incr_and_check("ip", "default", 1, 11.0) == (1, False)
 
     def test_blocked_requests_do_not_append_timestamps(self):
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=1, period=60)
 
-        assert middleware._local_incr_and_check("ip", 1, 10.0) == (1, True)
+        assert middleware._local_incr_and_check("ip", "default", 1, 10.0) == (1, True)
         for tick in (11.0, 30.0, 59.9):
-            _, allowed = middleware._local_incr_and_check("ip", 1, tick)
+            _, allowed = middleware._local_incr_and_check("ip", "default", 1, tick)
             assert allowed is False
 
-        assert list(middleware.clients["ip"]) == [10.0]
+        assert list(middleware.clients[("ip", "default")]) == [10.0]
 
     def test_blocked_empty_history_entry_keeps_entry(self):
         """
@@ -393,53 +404,62 @@ class TestLocalIncrAndCheck:
         """
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=0, period=60)
 
-        count, allowed = middleware._local_incr_and_check("ip", 0, 10.0)
+        count, allowed = middleware._local_incr_and_check("ip", "default", 0, 10.0)
 
         assert count == 0
         assert allowed is False
-        assert "ip" in middleware.clients
-        assert list(middleware.clients["ip"]) == []
+        assert ("ip", "default") in middleware.clients
+        assert list(middleware.clients[("ip", "default")]) == []
+
+    def test_buckets_do_not_share_history(self):
+        """Login attempts must not consume the general API budget (and vice versa) in the fallback."""
+
+        middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=60, period=60)
+
+        assert middleware._local_incr_and_check("ip", "auth-login", 1, 10.0) == (1, True)
+        assert middleware._local_incr_and_check("ip", "auth-login", 1, 11.0) == (1, False)
+        assert middleware._local_incr_and_check("ip", "default", 60, 12.0) == (1, True)
 
     def test_new_ip_gets_fresh_history(self):
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=3, period=60)
 
-        count, allowed = middleware._local_incr_and_check("new-ip", 3, 500.0)
+        count, allowed = middleware._local_incr_and_check("new-ip", "default", 3, 500.0)
 
         assert (count, allowed) == (1, True)
-        assert middleware.clients["new-ip"] == deque([500.0])
+        assert middleware.clients[("new-ip", "default")] == deque([500.0])
 
 
 @pytest.mark.unit
 class TestEvictStale:
     def test_drops_stale_ips_but_keeps_active_ones(self):
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=5, period=60)
-        middleware.clients["stale-empty"] = deque()
-        middleware.clients["stale-old"] = deque([900.0])
-        middleware.clients["active"] = deque([970.0])
+        middleware.clients[("stale-empty", "default")] = deque()
+        middleware.clients[("stale-old", "default")] = deque([900.0])
+        middleware.clients[("active", "default")] = deque([970.0])
 
         middleware._evict_stale(current_time=1000.0)
 
-        assert list(middleware.clients) == ["active"]
+        assert list(middleware.clients) == [("active", "default")]
 
     def test_when_still_oversized_drops_oldest_inserted_entries(self):
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=5, period=60)
         for i in range(_MAX_TRACKED_CLIENTS + 50):
-            middleware.clients[f"10.0.0.{i}"] = deque([1000.0])
+            middleware.clients[(f"10.0.0.{i}", "default")] = deque([1000.0])
 
         middleware._evict_stale(current_time=1000.0)
 
         assert len(middleware.clients) == _MAX_TRACKED_CLIENTS
-        assert "10.0.0.0" not in middleware.clients
-        assert "10.0.0.49" not in middleware.clients
-        assert "10.0.0.50" in middleware.clients
+        assert ("10.0.0.0", "default") not in middleware.clients
+        assert ("10.0.0.49", "default") not in middleware.clients
+        assert ("10.0.0.50", "default") in middleware.clients
 
     def test_nothing_to_evict_keeps_everything(self):
         middleware = RateLimitMiddleware(app=SimpleNamespace(), calls=5, period=60)
-        middleware.clients["active"] = deque([999.0])
+        middleware.clients[("active", "default")] = deque([999.0])
 
         middleware._evict_stale(current_time=1000.0)
 
-        assert list(middleware.clients) == ["active"]
+        assert list(middleware.clients) == [("active", "default")]
 
 
 @pytest.mark.unit

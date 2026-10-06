@@ -1,10 +1,32 @@
 """Request/response schemas for the item endpoints."""
 
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.constants import DamageType, DiceType, ItemRarity, ItemType
+
+# Input bounds follow the column sizes (``Numeric(6, 2)`` weight, ``Numeric(10, 2)`` cost, ``String(200)`` name,
+# ``String(300)`` properties); responses stay unconstrained so legacy rows always serialize.
+ItemName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+Weight = Annotated[Decimal, Field(ge=0, max_digits=6, decimal_places=2)]
+CostGold = Annotated[Decimal, Field(ge=0, max_digits=10, decimal_places=2)]
+DiceCount = Annotated[int, Field(ge=1, le=100)]
+ArmorClass = Annotated[int, Field(ge=0, le=100)]
+MaxDexBonus = Annotated[int, Field(ge=0, le=20)]
+StrengthRequirement = Annotated[int, Field(ge=0, le=30)]
+WeaponProperties = Annotated[str, StringConstraints(max_length=300)]
+
+_NOT_NULL_FIELDS = (
+    "name",
+    "item_type",
+    "rarity",
+    "requires_attunement",
+    "armor_class_dex_bonus",
+    "stealth_disadvantage",
+    "description",
+)
 
 
 class ItemBase(BaseModel):
@@ -37,26 +59,50 @@ class ItemBase(BaseModel):
 class ItemCreate(ItemBase):
     """Payload for creating an item (GM only)."""
 
+    name: ItemName
+    weight: Weight | None = None
+    cost_gold: CostGold | None = None
+    damage_dice_count: DiceCount | None = None
+    weapon_properties: WeaponProperties | None = None
+    armor_class_base: ArmorClass | None = None
+    armor_class_max_dex_bonus: MaxDexBonus | None = None
+    strength_requirement: StrengthRequirement | None = None
+
 
 class ItemUpdate(BaseModel):
-    """All fields optional — only provided fields are updated (PATCH semantics)."""
+    """
+    All fields optional — only provided fields are updated (PATCH semantics).
 
-    name: str | None = None
+    An explicit ``null`` is rejected for the NOT NULL columns; the nullable
+    weapon/armor/price fields can be cleared with ``null``.
+    """
+
+    name: ItemName | None = None
     item_type: ItemType | None = None
     rarity: ItemRarity | None = None
     requires_attunement: bool | None = None
-    weight: Decimal | None = None
-    cost_gold: Decimal | None = None
-    damage_dice_count: int | None = None
+    weight: Weight | None = None
+    cost_gold: CostGold | None = None
+    damage_dice_count: DiceCount | None = None
     damage_dice_type: DiceType | None = None
     damage_type: DamageType | None = None
-    weapon_properties: str | None = None
-    armor_class_base: int | None = None
+    weapon_properties: WeaponProperties | None = None
+    armor_class_base: ArmorClass | None = None
     armor_class_dex_bonus: bool | None = None
-    armor_class_max_dex_bonus: int | None = None
-    strength_requirement: int | None = None
+    armor_class_max_dex_bonus: MaxDexBonus | None = None
+    strength_requirement: StrengthRequirement | None = None
     stealth_disadvantage: bool | None = None
     description: str | None = None
+
+    @field_validator(*_NOT_NULL_FIELDS)
+    @classmethod
+    def reject_explicit_null(cls, value):
+        """These fields map to NOT NULL columns: omit them to leave them unchanged."""
+
+        if value is None:
+            raise ValueError("This field cannot be null; omit it to leave it unchanged.")
+
+        return value
 
 
 class ItemResponse(ItemBase):

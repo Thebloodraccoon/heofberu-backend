@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
 from app.features.characters.base import CharacterSubDomainService
-from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.conditions.exceptions import (
     CharacterConditionAlreadyExistsException,
     CharacterConditionNotFoundException,
@@ -22,9 +21,10 @@ from app.models.character.character_condition_model import CharacterCondition
 
 class CharacterConditionService(CharacterSubDomainService):
     """
-    Manage the conditions a character is currently under. Uses the
-    inherited base for access control only; ``exhaustion_level`` follows
-    5e rules (required and 1-6 for EXHAUSTION, rejected otherwise).
+    Manage the conditions a character is currently under. Conditions are not
+    part of the cached ``CharacterResponse``, so writes purge no cache.
+    ``exhaustion_level`` follows 5e rules (required and 1-6 for EXHAUSTION,
+    rejected otherwise).
     """
 
     def __init__(self, db: AsyncSession):
@@ -36,7 +36,7 @@ class CharacterConditionService(CharacterSubDomainService):
     async def get_conditions(self, character_id: int, current_user: UserResponse) -> list[CharacterConditionResponse]:
         """List every condition a character is currently under."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         rows = await self.condition_repository.get_character_conditions(character_id)
         return [CharacterConditionResponse.model_validate(row) for row in rows]
@@ -46,19 +46,18 @@ class CharacterConditionService(CharacterSubDomainService):
     ) -> CharacterConditionResponse:
         """Record an active condition on a character."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
-        existing = await self.condition_repository.get_character_condition(character_id, data.condition)
-        if existing:
+        async with self._atomic():
+            row = await self.condition_repository.add_character_condition(
+                character_id,
+                data.condition,
+                data.exhaustion_level,
+                data.source,
+            )
+        if row is None:
             raise CharacterConditionAlreadyExistsException(character_id=character_id, condition=data.condition)
 
-        row = await self.condition_repository.add_character_condition(
-            character_id,
-            data.condition,
-            data.exhaustion_level,
-            data.source,
-        )
-        await invalidate_character_cache(character_id)
         return CharacterConditionResponse.model_validate(row)
 
     async def update_condition(
@@ -70,7 +69,7 @@ class CharacterConditionService(CharacterSubDomainService):
     ) -> CharacterConditionResponse:
         """Change a condition's exhaustion_level or source."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         row = await self._get_condition_or_404(character_id, condition)
 
@@ -78,19 +77,18 @@ class CharacterConditionService(CharacterSubDomainService):
         merged_level = update_data.get("exhaustion_level", row.exhaustion_level)
         self._validate_exhaustion_level(condition, merged_level)
 
-        updated_row = await self.condition_repository.update_character_condition(row, update_data)
-        await invalidate_character_cache(character_id)
+        async with self._atomic():
+            updated_row = await self.condition_repository.update_character_condition(row, update_data)
         return CharacterConditionResponse.model_validate(updated_row)
 
     async def remove_condition(self, character_id: int, condition: ConditionType, current_user: UserResponse) -> bool:
         """Remove an active condition from a character."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         row = await self._get_condition_or_404(character_id, condition)
-        result = await self.condition_repository.remove_character_condition(row)
-        await invalidate_character_cache(character_id)
-        return result
+        async with self._atomic():
+            return await self.condition_repository.remove_character_condition(row)
 
     async def _get_condition_or_404(self, character_id: int, condition: ConditionType) -> CharacterCondition:
         """Fetch a condition scoped to the character, or raise ``CharacterConditionNotFoundException``."""

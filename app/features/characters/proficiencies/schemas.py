@@ -34,8 +34,8 @@ class SkillProficiencyView(BaseModel):
     A resolved skill proficiency with every source that grants it.
 
     Multiple sources are legitimate (e.g. class AND a feat both granting
-    the same skill) — this is not deduplicated to one; ``is_expertise`` is
-    the OR across all of them (any source wanting expertise turns it on).
+    the same skill) — this is not deduplicated to one. ``is_expertise`` is the
+    OR across all sources unless the GM set it explicitly, which then decides alone.
     """
 
     skill_id: int

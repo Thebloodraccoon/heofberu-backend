@@ -39,8 +39,8 @@ class TestCreationSkillChoices:
         create_skill,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
-        skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
-        skill_b = await create_skill(key="ACROBATICS", name="Acrobatics", ability="DEX")
+        skill_a = await create_skill(name="Athletics", ability="STR")
+        skill_b = await create_skill(name="Acrobatics", ability="DEX")
         await set_available_skills(db_session, character_class, skill_a, skill_b)
 
         response = await client.post(
@@ -69,9 +69,9 @@ class TestCreationSkillChoices:
     ):
         """A player may pick fewer than ``skill_choice_count``; only the chosen ones are granted."""
         character_class = await create_class(name="Ranger", skill_choice_count=3)
-        skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
-        skill_b = await create_skill(key="ARCANA", name="Arcana", ability="INT")
-        skill_c = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill_a = await create_skill(name="Athletics", ability="STR")
+        skill_b = await create_skill(name="Arcana", ability="INT")
+        skill_c = await create_skill(name="Stealth", ability="DEX")
         await set_available_skills(db_session, character_class, skill_a, skill_b, skill_c)
 
         response = await client.post(
@@ -99,8 +99,8 @@ class TestCreationSkillChoices:
         create_skill,
     ):
         character_class = await create_class(name="Fighter")
-        available = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
-        other = await create_skill(key="ARCANA", name="Arcana", ability="INT")
+        available = await create_skill(name="Athletics", ability="STR")
+        other = await create_skill(name="Arcana", ability="INT")
         await set_available_skills(db_session, character_class, available)
 
         response = await client.post(
@@ -140,9 +140,9 @@ class TestCreationSkillChoices:
         create_skill,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
-        skill_a = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
-        skill_b = await create_skill(key="ACROBATICS", name="Acrobatics", ability="DEX")
-        skill_c = await create_skill(key="STEALTH", name="Stealth", ability="DEX")
+        skill_a = await create_skill(name="Athletics", ability="STR")
+        skill_b = await create_skill(name="Acrobatics", ability="DEX")
+        skill_c = await create_skill(name="Stealth", ability="DEX")
         await set_available_skills(db_session, character_class, skill_a, skill_b, skill_c)
 
         response = await client.post(
@@ -159,7 +159,7 @@ class TestCreationSkillChoices:
 
     async def test_duplicate_skill_ids_return_422(self, client, player, player_token, create_class, create_skill):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
-        skill = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
+        skill = await create_skill(name="Athletics", ability="STR")
 
         response = await client.post(
             "/characters",
@@ -189,8 +189,8 @@ class TestCreationBackgroundSkills:
         create_background,
     ):
         character_class = await create_class(name="Fighter", skill_choice_count=2)
-        chosen = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
-        granted = await create_skill(key="RELIGION", name="Religion", ability="INT")
+        chosen = await create_skill(name="Athletics", ability="STR")
+        granted = await create_skill(name="Religion", ability="INT")
         await set_available_skills(db_session, character_class, chosen)
         background = await create_background(name="Acolyte")
         put_response = await client.put(
@@ -228,7 +228,7 @@ class TestCreationBackgroundSkills:
         create_background,
     ):
         character_class = await create_class(name="Fighter")
-        skill = await create_skill(key="RELIGION", name="Religion", ability="INT")
+        skill = await create_skill(name="Religion", ability="INT")
         background = await create_background(name="Acolyte")
         put_response = await client.put(
             f"/backgrounds/{background.id}/skills",
@@ -452,7 +452,7 @@ class TestCreationRaceSkills:
         create_race,
     ):
         character_class = await create_class(name="Fighter")
-        skill = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        skill = await create_skill(name="Perception", ability="WIS")
         race = await create_race(name="Elf")
         put_response = await client.put(
             f"/races/{race.id}/skills",
@@ -490,9 +490,9 @@ class TestCreationRaceSkills:
     ):
         """Skills granted by several sources (choice + race) produce a single row."""
         character_class = await create_class(name="Fighter", skill_choice_count=2)
-        chosen = await create_skill(key="ATHLETICS", name="Athletics", ability="STR")
-        granted = await create_skill(key="RELIGION", name="Religion", ability="INT")
-        racial = await create_skill(key="PERCEPTION", name="Perception", ability="WIS")
+        chosen = await create_skill(name="Athletics", ability="STR")
+        granted = await create_skill(name="Religion", ability="INT")
+        racial = await create_skill(name="Perception", ability="WIS")
         await set_available_skills(db_session, character_class, chosen)
 
         background = await create_background(name="Acolyte")

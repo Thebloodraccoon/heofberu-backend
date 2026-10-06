@@ -118,8 +118,7 @@ spell_school_enum = postgresql.ENUM(
 
 # The "exactly one of the two parents" invariant shared by every effect table.
 _PARENT_INVARIANT = (
-    "(feature_id IS NOT NULL AND choice_option_id IS NULL) "
-    "OR (feature_id IS NULL AND choice_option_id IS NOT NULL)"
+    "(feature_id IS NOT NULL AND choice_option_id IS NULL) OR (feature_id IS NULL AND choice_option_id IS NOT NULL)"
 )
 
 
@@ -133,12 +132,8 @@ def upgrade() -> None:
     op.add_column("features", sa.Column("min_level", sa.Integer(), nullable=True))
     op.add_column("features", sa.Column("prerequisite_ability", ability_score_enum, nullable=True))
     op.add_column("features", sa.Column("prerequisite_minimum_score", sa.Integer(), nullable=True))
-    op.add_column(
-        "features", sa.Column("prerequisite_description", sa.Text(), nullable=False, server_default="")
-    )
-    op.add_column(
-        "features", sa.Column("is_repeatable", sa.Boolean(), nullable=False, server_default=sa.false())
-    )
+    op.add_column("features", sa.Column("prerequisite_description", sa.Text(), nullable=False, server_default=""))
+    op.add_column("features", sa.Column("is_repeatable", sa.Boolean(), nullable=False, server_default=sa.false()))
 
     op.create_table(
         "feature_choice_groups",
@@ -151,9 +146,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.CheckConstraint("pick_count >= 1", name="check_feature_choice_group_pick_count_positive"),
     )
-    op.create_index(
-        op.f("ix_feature_choice_groups_feature_id"), "feature_choice_groups", ["feature_id"], unique=False
-    )
+    op.create_index(op.f("ix_feature_choice_groups_feature_id"), "feature_choice_groups", ["feature_id"], unique=False)
 
     op.create_table(
         "feature_choice_options",
@@ -164,9 +157,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["group_id"], ["feature_choice_groups.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_feature_choice_options_group_id"), "feature_choice_options", ["group_id"], unique=False
-    )
+    op.create_index(op.f("ix_feature_choice_options_group_id"), "feature_choice_options", ["group_id"], unique=False)
 
     op.create_table(
         "feature_ability_score_effects",
@@ -400,9 +391,7 @@ def upgrade() -> None:
         ),
     )
     for col in ("character_feature_id", "choice_group_id", "choice_option_id"):
-        op.create_index(
-            op.f(f"ix_character_feature_choices_{col}"), "character_feature_choices", [col], unique=False
-        )
+        op.create_index(op.f(f"ix_character_feature_choices_{col}"), "character_feature_choices", [col], unique=False)
 
     op.create_table(
         "character_saving_throw_proficiencies",
@@ -475,9 +464,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     for col in ("character_id", "spell_id", "source_character_feature_id"):
-        op.create_index(
-            op.f(f"ix_character_granted_spells_{col}"), "character_granted_spells", [col], unique=False
-        )
+        op.create_index(op.f(f"ix_character_granted_spells_{col}"), "character_granted_spells", [col], unique=False)
 
     # ==================================================================
     # 3. Feat catalog migration + character grant backfill

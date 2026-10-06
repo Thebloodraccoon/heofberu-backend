@@ -6,9 +6,9 @@ from app.constants import BACKSTORY_MAX_LENGTH
 
 
 class CharacterBackstoryUpdate(BaseModel):
-    """Set or replace a backstory; ``content`` is capped at ``BACKSTORY_MAX_LENGTH`` by schema and DB constraint."""
+    """Set or replace a backstory; ``content`` is required (send ``""`` to clear) and capped at ``BACKSTORY_MAX_LENGTH`` by schema and DB constraint."""
 
-    content: str = Field(default="", max_length=BACKSTORY_MAX_LENGTH)
+    content: str = Field(max_length=BACKSTORY_MAX_LENGTH)
 
 
 class CharacterBackstoryResponse(BaseModel):

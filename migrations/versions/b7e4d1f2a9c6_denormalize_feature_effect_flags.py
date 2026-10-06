@@ -55,8 +55,7 @@ def upgrade() -> None:
     )
 
     static_effects_exists = " OR ".join(
-        f"EXISTS (SELECT 1 FROM {table} WHERE {table}.feature_id = features.id)"
-        for table in _STATIC_EFFECT_TABLES
+        f"EXISTS (SELECT 1 FROM {table} WHERE {table}.feature_id = features.id)" for table in _STATIC_EFFECT_TABLES
     )
     op.execute(f"UPDATE features SET has_static_effects = TRUE WHERE {static_effects_exists}")
     op.execute(

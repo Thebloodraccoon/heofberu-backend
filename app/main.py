@@ -20,23 +20,14 @@ from app.middleware import (
     ObservabilityMiddleware,
     RateLimitMiddleware,
     RequestBodyLimitMiddleware,
+    SecurityHeadersMiddleware,
 )
 from app.middleware.error_handler import setup_error_handlers
 from app.router import api_router
 from app.settings import settings
 
-# No handler was ever attached to the root logger, so every ``app.*``
-# ``logging.getLogger(__name__).info(...)`` call (middleware, cache
-# decorator, etc.) was silently dropped — Python's fallback ``lastResort``
-# handler only prints WARNING+. SQLAlchemy's own logs were visible only
-# because ``echo=True`` makes it attach its own private handler directly to
-# the ``sqlalchemy.engine.Engine`` logger when it finds the root has none;
-# uvicorn's request logs work because uvicorn configures its own loggers.
-# This makes every ``app.*`` logger actually emit.
-logging.basicConfig(
-    level=logging.INFO if settings.STAGE != "prod" else logging.WARNING,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-)
+# Without a root handler Python only prints WARNING+ from ``app.*`` loggers.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +41,16 @@ async def lifespan(app: FastAPI):
     separate deploy step (`alembic upgrade head`) before the app starts.
     The app never creates or alters tables itself.
     """
+
     logger.info("Starting up Heofberu Backend API...")
     yield
     logger.info("Shutting down Heofberu Backend API...")
+
+    for provider in (settings.get_redis, settings.get_auth_redis):
+        close_redis = getattr(provider, "close", None)
+        if close_redis is not None:
+            await close_redis()
+
     await settings.engine.dispose()
 
 
@@ -64,7 +62,10 @@ def setup_middleware(app: FastAPI) -> None:
     CORSMiddleware must be added *last* to wrap every other middleware —
     including ``RequestBodyLimitMiddleware`` — and guarantee that error
     responses (e.g. 413) carry the proper ``Access-Control-*`` headers.
+    ``SecurityHeadersMiddleware`` sits right below it so every response,
+    errors included, carries the security headers.
     """
+
     if MiddlewareConfig.should_enable_middleware("body_limit"):
         body_limit_config = MiddlewareConfig.get_body_limit_config()
         app.add_middleware(RequestBodyLimitMiddleware, **body_limit_config)
@@ -85,6 +86,9 @@ def setup_middleware(app: FastAPI) -> None:
         observability_config = MiddlewareConfig.get_observability_config()
         app.add_middleware(ObservabilityMiddleware, **observability_config)
 
+    if MiddlewareConfig.should_enable_middleware("security_headers"):
+        app.add_middleware(SecurityHeadersMiddleware, **MiddlewareConfig.get_security_headers_config())
+
     cors_config = MiddlewareConfig.get_cors_config()
     app.add_middleware(CORSMiddleware, **cors_config)
 
@@ -104,13 +108,28 @@ setup_middleware(app)
 setup_error_handlers(app)
 app.include_router(api_router)
 
+
+def uvicorn_options() -> dict:
+    """
+    Keyword arguments for ``uvicorn.run``.
+
+    ``forwarded_allow_ips`` (``FORWARDED_ALLOW_IPS``) lists the reverse proxies whose
+    ``X-Forwarded-For`` uvicorn trusts; the rate limiter reads ``request.client.host``
+    and so only sees real client IPs when the proxy is listed there.
+    """
+
+    is_dev = settings.STAGE == "dev"
+    return {
+        "host": settings.HOST,
+        "port": 8000,
+        "reload": is_dev,
+        "workers": 1 if is_dev else settings.WEB_CONCURRENCY,
+        "access_log": settings.STAGE != "prod",
+        "log_level": "info" if settings.STAGE != "prod" else "warning",
+        "proxy_headers": True,
+        "forwarded_allow_ips": settings.FORWARDED_ALLOW_IPS,
+    }
+
+
 if __name__ == "__main__":
-    uvicorn.run(
-        "app.main:app",
-        host=settings.HOST,
-        port=8000,
-        reload=settings.STAGE == "dev",
-        workers=1 if settings.STAGE == "dev" else 4,
-        access_log=settings.STAGE != "prod",
-        log_level="info" if settings.STAGE != "prod" else "warning",
-    )
+    uvicorn.run("app.main:app", **uvicorn_options())

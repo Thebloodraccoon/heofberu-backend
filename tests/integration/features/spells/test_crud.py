@@ -35,11 +35,26 @@ class TestSpellCrud:
         assert response.json()["name"] == "Magic Missile"
         assert response.json()["level"] == "LEVEL_1"
 
-    async def test_create_duplicate_spell_name_returns_400(self, client, gm_token, create_spell):
+    async def test_gm_can_create_spell_with_long_cast_time(self, client, gm_token):
+        payload = {**SPELL_PAYLOAD, "name": "Identify", "cast_time": "ONE_MINUTE", "duration": "INSTANTANEOUS"}
+
+        response = await client.post("/spells", json=payload, headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert response.status_code == 201
+        assert response.json()["cast_time"] == "ONE_MINUTE"
+
+    async def test_unknown_cast_time_rejected(self, client, gm_token):
+        payload = {**SPELL_PAYLOAD, "name": "Wish", "cast_time": "ONE_FORTNIGHT"}
+
+        response = await client.post("/spells", json=payload, headers={"Authorization": f"Bearer {gm_token}"})
+
+        assert response.status_code == 422
+
+    async def test_create_duplicate_spell_name_returns_409(self, client, gm_token, create_spell):
         await create_spell(name="Magic Missile")
         response = await client.post("/spells", json=SPELL_PAYLOAD, headers={"Authorization": f"Bearer {gm_token}"})
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_gm_can_update_spell(self, client, gm_token, create_spell):
         spell = await create_spell(name="Old Spell Name")
@@ -194,7 +209,9 @@ class TestSpellCrud:
         db_session.add(CharacterSpell(character_id=character.id, spell_id=spell.id))
         await db_session.commit()
 
-        response = await client.delete(f"/spells/{spell.id}", headers={"Authorization": f"Bearer {founder_token}"})
+        spell_id = spell.id
+
+        response = await client.delete(f"/spells/{spell_id}", headers={"Authorization": f"Bearer {founder_token}"})
 
         assert response.status_code == 409
-        assert (await client.get(f"/spells/{spell.id}")).status_code == 200
+        assert (await client.get(f"/spells/{spell_id}")).status_code == 200

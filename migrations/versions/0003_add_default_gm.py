@@ -73,7 +73,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove default GM user and revert role constraint."""
 
-    op.execute("DELETE FROM users WHERE email = :email", {"email": os.getenv("ADMIN_LOGIN", "")})
+    op.execute(
+        sa.text("DELETE FROM users WHERE lower(email) = lower(:email)").bindparams(email=os.getenv("ADMIN_LOGIN", ""))
+    )
 
     op.drop_constraint("check_user_role", "users", type_="check")
     op.create_check_constraint(

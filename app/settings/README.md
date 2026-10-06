@@ -22,6 +22,13 @@ pooled Redis client accessor.
   always targets the isolated `TEST_*` URLs and disables the cache by
   default.
 
+## `settings.get_auth_redis()`
+
+Same pooled-singleton semantics, but built from `AUTH_REDIS_URL`: a separate
+`noeviction` Redis for token blacklist, revocation marks and claims. Empty
+in dev = reuse `REDIS_URL`; staging/prod validation requires a distinct URL;
+the test stage uses `TEST_REDIS_URL`. `app.main`'s lifespan closes both clients.
+
 ## `settings.get_redis()` semantics
 
 Redis access is pooled: `get_redis()` is an async context manager yielding

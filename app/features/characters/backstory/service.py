@@ -27,7 +27,7 @@ class CharacterBackstoryService(CharacterSubDomainService):
     async def get_backstory(self, character_id: int, current_user: UserResponse) -> CharacterBackstoryResponse:
         """Return the character's backstory (empty string if none recorded). GM/owner readable."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
         row = await self.backstory_repository.get_for_character(character_id)
         if row is None:
@@ -40,7 +40,8 @@ class CharacterBackstoryService(CharacterSubDomainService):
     ) -> CharacterBackstoryResponse:
         """Replace the character's backstory (upsert). GM/owner writable."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.ensure_character_access(character_id, current_user)
 
-        row = await self.backstory_repository.upsert_content(character_id, data.content)
+        async with self._atomic():
+            row = await self.backstory_repository.upsert_content(character_id, data.content)
         return CharacterBackstoryResponse.model_validate(row)

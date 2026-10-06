@@ -1,6 +1,6 @@
 """Attack repository: character-scoped attack CRUD."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
@@ -28,3 +28,9 @@ class CharacterAttackRepository(BaseRepository[Attack]):
             select(Attack).where(Attack.id == attack_id, Attack.character_id == character_id)
         )
         return result.scalar_one_or_none()
+
+    async def count_for_character(self, character_id: int) -> int:
+        """Number of attacks a character owns."""
+
+        stmt = select(func.count()).select_from(Attack).where(Attack.character_id == character_id)
+        return await self.db.scalar(stmt) or 0

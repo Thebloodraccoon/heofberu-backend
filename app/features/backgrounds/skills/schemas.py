@@ -1,27 +1,24 @@
 """Request/response schemas for the background granted-skill endpoints."""
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
-def _validate_unique_skill_ids(skill_ids: list[int]) -> list[int]:
-    """Reject lists containing duplicate skill IDs."""
-
-    if len(skill_ids) != len(set(skill_ids)):
-        raise ValueError("Duplicate skill IDs are not allowed.")
-
-    return skill_ids
+from app.core.types import EntityId
 
 
 class SkillsUpdate(BaseModel):
     """Full replacement list of skill IDs granted by a background."""
 
-    skill_ids: list[int]
+    skill_ids: list[EntityId] = Field(max_length=200)
 
     @field_validator("skill_ids")
-    def validate_unique_skill_ids(cls, skill_ids):
+    @classmethod
+    def validate_unique_skill_ids(cls, skill_ids: list[int]) -> list[int]:
         """Reject lists containing duplicate skill IDs."""
 
-        return _validate_unique_skill_ids(skill_ids)
+        if len(skill_ids) != len(set(skill_ids)):
+            raise ValueError("Duplicate skill IDs are not allowed.")
+
+        return skill_ids
 
 
 class SkillResponse(BaseModel):

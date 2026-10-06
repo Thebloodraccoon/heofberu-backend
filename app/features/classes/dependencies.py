@@ -6,15 +6,13 @@ from fastapi import Depends
 
 from app.core.db import DatabaseDep
 from app.core.storage.dependencies import StorageServiceDep
-from app.features.classes.armor.service import ClassArmorService
 from app.features.classes.crud.service import ClassCrudService
 from app.features.classes.features.service import ClassFeatureService
 from app.features.classes.image.service import ClassImageService
 from app.features.classes.items.service import ClassItemsService
+from app.features.classes.proficiencies.service import ClassProficiencyService
 from app.features.classes.progression.service import ClassProgressionService
 from app.features.classes.skills.service import ClassSkillService
-from app.features.classes.throws.service import ClassThrowsService
-from app.features.classes.weapons.service import ClassWeaponService
 
 
 def get_class_crud_service(db: DatabaseDep) -> ClassCrudService:
@@ -53,31 +51,13 @@ def get_class_item_service(db: DatabaseDep) -> ClassItemsService:
 ClassItemsDep = Annotated[ClassItemsService, Depends(get_class_item_service)]
 
 
-def get_class_armor_service(db: DatabaseDep) -> ClassArmorService:
-    """Get the class armor-proficiencies service instance."""
+def get_class_proficiency_service(db: DatabaseDep) -> ClassProficiencyService:
+    """Get the class proficiency (saving throws / armor / weapons) service instance."""
 
-    return ClassArmorService(db)
-
-
-ClassArmorDep = Annotated[ClassArmorService, Depends(get_class_armor_service)]
+    return ClassProficiencyService(db)
 
 
-def get_class_weapon_service(db: DatabaseDep) -> ClassWeaponService:
-    """Get the class weapon-proficiencies service instance."""
-
-    return ClassWeaponService(db)
-
-
-ClassWeaponsDep = Annotated[ClassWeaponService, Depends(get_class_weapon_service)]
-
-
-def get_class_throws_service(db: DatabaseDep) -> ClassThrowsService:
-    """Get the class saving-throws service instance."""
-
-    return ClassThrowsService(db)
-
-
-ClassThrowsDep = Annotated[ClassThrowsService, Depends(get_class_throws_service)]
+ClassProficienciesDep = Annotated[ClassProficiencyService, Depends(get_class_proficiency_service)]
 
 
 def get_class_progression_service(db: DatabaseDep) -> ClassProgressionService:

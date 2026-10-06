@@ -1,6 +1,6 @@
 """Background repository: base CRUD plus the delete-in-use guard."""
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,6 +26,7 @@ class BackgroundRepository(BaseRepository[Background]):
                 .selectinload(SourceItemChoiceGroup.options)
                 .selectinload(SourceItemChoiceOption.item),
                 selectinload(Background.suggestions),
+                selectinload(Background.tags),
                 *feature_summary_loads(selectinload(Background.features)),
             ],
             search_fields=["name"],
@@ -33,16 +34,29 @@ class BackgroundRepository(BaseRepository[Background]):
             check_in_use_on_delete=True,
         )
 
+    async def get_bare(self, background_id: int) -> Background | None:
+        """Fetch the background row alone, without the eager-loaded aggregate (enough for deletes)."""
+
+        return await self.db.get(Background, background_id)
+
     async def is_in_use(self, background_id: int) -> bool:
+        """Whether any feature of the background is granted to a character, which blocks deletion."""
+
+        granted = exists().where(
+            CharacterFeature.feature_id == Feature.id,
+            Feature.background_id == background_id,
+        )
+        return bool(await self.db.scalar(select(granted)))
+
+    async def delete(self, db_obj: Background) -> bool:
         """
-        Check whether any of the background's features is currently granted
-        to a character (``character_features``), which blocks deletion.
+        Delete the background unless one of its features is granted to a character.
+
+        ``character_features.feature_id`` cascades, so a grant slipping in
+        between the guard and the DELETE would be wiped silently. Locking the
+        background's feature rows first makes a concurrent grant (which takes
+        a key-share lock on the feature) wait for this transaction.
         """
 
-        result = await self.db.execute(select(Feature.id).where(Feature.background_id == background_id))
-        feature_ids = [row[0] for row in result.all()]
-        if not feature_ids:
-            return False
-
-        result = await self.db.execute(select(CharacterFeature).where(CharacterFeature.feature_id.in_(feature_ids)))
-        return result.scalar_one_or_none() is not None
+        await self.db.execute(select(Feature.id).where(Feature.background_id == db_obj.id).with_for_update())
+        return await super().delete(db_obj)

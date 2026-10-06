@@ -79,34 +79,6 @@ class LevelUpChoiceNotAllowedException(AppError):
         )
 
 
-class InvalidASIException(AppError):
-    """Raised when an ASI choice is structurally invalid (bad total or duplicates)."""
-
-    status_code = 400
-
-    def __init__(self, detail: str):
-        """Initialize with the failure detail."""
-
-        super().__init__(detail)
-
-
-class AbilityScoreCapExceededException(AppError):
-    """Raised when an ASI would push an ability score above the 20 cap."""
-
-    status_code = 400
-
-    def __init__(self, ability: str, current_total: int, requested: int):
-        """Initialize with the ability and its current/requested totals."""
-
-        self.ability = ability
-        self.current_total = current_total
-        self.requested = requested
-        super().__init__(
-            f"Cannot increase {ability} to {requested}: the effective score is already {current_total} "
-            "and cannot exceed the cap of 20."
-        )
-
-
 class InvalidHitPointGainException(AppError):
     """Raised when an explicit HP gain at level-up is outside the class's allowed range."""
 

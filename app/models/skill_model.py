@@ -1,12 +1,16 @@
 """ORM model for the reference table of skills."""
 
-from sqlalchemy import Column, Integer, String, Text
+from __future__ import annotations
 
+from sqlalchemy import String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.constants import AbilityScore
 from app.models.enums import AbilityScoreType
-from app.settings import settings
+from app.settings.base import Base
 
 
-class Skill(settings.Base):  # type: ignore
+class Skill(Base):
     """
     Reference table of skills (e.g. Perception, Stealth), shared across
     races, classes and characters.
@@ -14,11 +18,11 @@ class Skill(settings.Base):  # type: ignore
 
     __tablename__ = "skills"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
-    name = Column(String(100), nullable=False, unique=True, index=True)  # e.g. "Perception"
-    ability = Column(AbilityScoreType, nullable=False)  # governing ability score
-    description = Column(Text, nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)  # e.g. "Perception"
+    ability: Mapped[AbilityScore] = mapped_column(AbilityScoreType)  # governing ability score
+    description: Mapped[str] = mapped_column(Text, default="")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Skill(id={self.id}, name='{self.name}')>"

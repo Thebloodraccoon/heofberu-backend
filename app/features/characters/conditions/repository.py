@@ -1,20 +1,21 @@
 """Character condition repository: active-condition row CRUD."""
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ConditionType
-from app.core.base.repository import BaseRepository
+from app.core.base.repository import SessionRepository
 from app.models.character.character_condition_model import CharacterCondition
 
 
-class CharacterConditionRepository(BaseRepository[CharacterCondition]):
+class CharacterConditionRepository(SessionRepository):
     """Repository for the conditions a character is currently under (``character_conditions``)."""
 
     def __init__(self, db: AsyncSession):
         """Create the condition repository."""
 
-        super().__init__(CharacterCondition, db)
+        super().__init__(db)
 
     async def get_character_conditions(self, character_id: int) -> list[CharacterCondition]:
         """Get every active condition on a character."""
@@ -41,19 +42,21 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
         condition: ConditionType,
         exhaustion_level: int | None,
         source: str,
-    ) -> CharacterCondition:
-        """Record an active condition on a character."""
+    ) -> CharacterCondition | None:
+        """
+        Record an active condition; returns ``None`` when the character is
+        already under it (atomic ``ON CONFLICT DO NOTHING``, so concurrent
+        adds cannot hit the primary key).
+        """
 
-        row = CharacterCondition(
-            character_id=character_id,
-            condition=condition,
-            exhaustion_level=exhaustion_level,
-            source=source,
+        statement = (
+            pg_insert(CharacterCondition)
+            .values(character_id=character_id, condition=condition, exhaustion_level=exhaustion_level, source=source)
+            .on_conflict_do_nothing(index_elements=["character_id", "condition"])
+            .returning(CharacterCondition)
         )
-        self.db.add(row)
-        await self.commit_or_flush()
-        await self.db.refresh(row)
-
+        row = await self.db.scalar(statement)
+        await self.flush()
         return row
 
     async def update_character_condition(
@@ -67,7 +70,7 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
             if hasattr(row, field):
                 setattr(row, field, value)
 
-        await self.commit_or_flush()
+        await self.flush()
         await self.db.refresh(row)
         return row
 
@@ -75,5 +78,5 @@ class CharacterConditionRepository(BaseRepository[CharacterCondition]):
         """Remove an active condition from a character."""
 
         await self.db.delete(row)
-        await self.commit_or_flush()
+        await self.flush()
         return True

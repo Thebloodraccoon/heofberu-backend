@@ -5,7 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Query, status
 
 from app.constants import FeatureSourceType
-from app.core.base.service import Page
+from app.core.pagination import Page
+from app.features.auth.dependencies import GmUserDep
 from app.features.features.crud.schemas import (
     FeatureCreate,
     FeatureGetAllResponse,
@@ -13,7 +14,6 @@ from app.features.features.crud.schemas import (
     FeatureUpdate,
 )
 from app.features.features.dependencies import FeatureCrudDep
-from app.features.users.security import GmUserDep
 
 router = APIRouter()
 
@@ -117,8 +117,9 @@ async def create_feature(
     responses={
         400: {
             "description": (
-                "The patch would leave a CLASS/SUBCLASS feature without its "
-                "mandatory 'level' (or with a level outside 1-20)."
+                "The patch would leave a CLASS/SUBCLASS feature without its mandatory 'level', give any "
+                "feature a level outside 1-20, or set FEAT-only columns (min_level, prerequisite_*) on a "
+                "non-FEAT feature."
             )
         },
         404: {"description": "No feature exists with the given ID."},
@@ -148,6 +149,7 @@ async def update_feature(
 
     Only provided fields are changed; `source_type` and its FK are immutable.
     A CLASS/SUBCLASS feature's `level` may be changed but never cleared.
+    The owning record's characters are re-reconciled only when `level` changes.
     """
 
     return await feature_service.update_feature(feature_id, data)
@@ -159,13 +161,17 @@ async def update_feature(
     summary="Delete a feature",
     responses={
         404: {"description": "No feature exists with the given ID."},
+        409: {"description": "A FEAT/OTHER feature is still granted to one or more characters."},
     },
 )
 async def delete_feature(feature_id: int, feature_service: FeatureCrudDep, _: GmUserDep):
     """
-    Delete a feature of any source type. **GM only.**
+    Delete a feature of any source type in one transaction. **GM only.**
 
-    Also removes any `CharacterFeature` rows referencing it (cascade).
+    A standalone FEAT/OTHER feature can't be deleted while a character holds
+    it (409, same rule as `DELETE /feats/{id}`). Deleting a source-owned
+    feature cascades its `CharacterFeature` grants away and refreshes the
+    owning record's characters.
     """
 
     await feature_service.delete(feature_id)
