@@ -7,15 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=ghcr.io/astral-sh/uv:0.10.11 /uv /usr/local/bin/uv
+
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
+
 WORKDIR /install
 
-RUN pip install --no-cache-dir "poetry==2.1.3" "poetry-plugin-export==1.9.0"
+COPY pyproject.toml uv.lock* ./
 
-COPY pyproject.toml poetry.lock* ./
-
-RUN poetry export --without-hashes --format=requirements.txt --output=requirements.txt
-
-RUN pip install --no-cache-dir --prefix=/install/deps -r requirements.txt
+RUN uv sync --no-dev --no-install-project
 
 FROM python:3.10-slim
 
@@ -26,19 +28,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# REQUIRE_EXPLICIT_STAGE: refuse to start without STAGE instead of silently running as "dev".
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PATH=/usr/local/bin:$PATH \
+    PATH=/opt/venv/bin:/usr/local/bin:$PATH \
     REQUIRE_EXPLICIT_STAGE=true
 
 WORKDIR /app
 
 RUN useradd --create-home --shell /bin/bash --uid 1000 app
 
-# Only the installed dependencies are copied — no Poetry, no compilers, no build tools.
-COPY --from=builder /install/deps /usr/local
+COPY --from=builder /opt/venv /opt/venv
 
 COPY --chown=app:app . .
 USER app
@@ -48,7 +48,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 EXPOSE 8000
 
-# Set RUN_MIGRATIONS=false on every replica but one (or run `alembic upgrade head` as a separate job)
-# to avoid concurrent migration runs. `exec` makes the app PID 1 so it receives SIGTERM.
 ENTRYPOINT ["sh", "-c"]
 CMD ["if [ \"${RUN_MIGRATIONS:-true}\" != \"false\" ]; then alembic upgrade head; fi && exec python -m app.main"]

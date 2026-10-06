@@ -32,29 +32,29 @@ def split_workers(session):
 def install_session(session):
     """Install all dependencies once."""
     setup_test_env(session)
-    session.run("poetry", "install", external=True)
+    session.run("uv", "sync", external=True)
 
 
 @nox.session(name="ruff")
 def ruff_session(session):
     """Lint and format code with autofix."""
     setup_test_env(session)
-    session.run("poetry", "run", "ruff", "check", "--fix", "app/", "tests/", external=True)
-    session.run("poetry", "run", "ruff", "format", "app/", "tests/", "migrations/versions", external=True)
+    session.run("uv", "run", "ruff", "check", "--fix", "app/", "tests/", external=True)
+    session.run("uv", "run", "ruff", "format", "app/", "tests/", "migrations/versions", external=True)
 
 
 @nox.session(name="security")
 def security_session(session):
     """Security checks with bandit."""
     setup_test_env(session)
-    session.run("poetry", "run", "bandit", "-c", "pyproject.toml", "-r", "app/", external=True)
+    session.run("uv", "run", "bandit", "-c", "pyproject.toml", "-r", "app/", external=True)
 
 
 @nox.session(name="mypy")
 def mypy_session(session):
     """Type checking with mypy."""
     setup_test_env(session)
-    session.run("poetry", "run", "mypy", "app/", external=True)
+    session.run("uv", "run", "mypy", "app/", external=True)
 
 
 @nox.session(name="test")
@@ -63,7 +63,7 @@ def test_session(session):
     setup_test_env(session)
     workers, rest = split_workers(session)
     session.run(
-        "poetry", "run", "pytest",
+        "uv", "run", "pytest",
         "--cache-clear",
         *workers,
         "--cov=app/",
@@ -80,7 +80,7 @@ def unit_session(session):
     """Fast loop: unit tests only (no Postgres/Redis), no coverage."""
     setup_test_env(session)
     workers, rest = split_workers(session)
-    session.run("poetry", "run", "pytest", *workers, "tests/unit", *rest, external=True)
+    session.run("uv", "run", "pytest", *workers, "tests/unit", *rest, external=True)
 
 
 @nox.session(name="test-fast")
@@ -88,7 +88,7 @@ def test_fast_session(session):
     """Fast loop: all tests without coverage (coverage with greenlet tracing adds ~50-75% wall time)."""
     setup_test_env(session)
     workers, rest = split_workers(session)
-    session.run("poetry", "run", "pytest", *workers, *(rest or ["tests/"]), external=True)
+    session.run("uv", "run", "pytest", *workers, *(rest or ["tests/"]), external=True)
 
 
 @nox.session(name="all")
@@ -96,15 +96,15 @@ def all_session(session):
     """Run all checks for CD/Ci."""
     setup_test_env(session)
     # Install dependencies once
-    session.run("poetry", "install", external=True)
+    session.run("uv", "sync", external=True)
 
     workers, rest = split_workers(session)
-    session.run("poetry", "run", "ruff", "check", "app/", "tests/", external=True)
-    session.run("poetry", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
-    session.run("poetry", "run", "mypy", "app/", external=True)
-    session.run("poetry", "run", "bandit", "-c", "pyproject.toml", "-r", "app/", external=True)
+    session.run("uv", "run", "ruff", "check", "app/", "tests/", external=True)
+    session.run("uv", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
+    session.run("uv", "run", "mypy", "app/", external=True)
+    session.run("uv", "run", "bandit", "-c", "pyproject.toml", "-r", "app/", external=True)
     session.run(
-        "poetry", "run", "pytest",
+        "uv", "run", "pytest",
         "--cache-clear",
         *workers,
         "--cov=app/",
@@ -121,21 +121,21 @@ def all_session(session):
 def ruff_check_session(session):
     """Ruff check without autofix for pre-commit."""
     setup_test_env(session)
-    session.run("poetry", "run", "ruff", "check", "app/", "tests/", external=True)
+    session.run("uv", "run", "ruff", "check", "app/", "tests/", external=True)
 
 
 @nox.session(name="ruff-format-check")
 def ruff_format_check_session(session):
     """Ruff format check without autofix for pre-commit."""
     setup_test_env(session)
-    session.run("poetry", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
+    session.run("uv", "run", "ruff", "format", "--check", "app/", "tests/", "migrations/versions", external=True)
 
 
 @nox.session(name="quick")
 def quick_session(session):
     """Quick checks without tests."""
     setup_test_env(session)
-    session.run("poetry", "install", "--only=dev", external=True)
-    session.run("poetry", "run", "ruff", "check", "--fix", "app/", "tests/", external=True)
-    session.run("poetry", "run", "ruff", "format", "app/", "tests/", "migrations/versions", external=True)
-    session.run("poetry", "run", "mypy", "app/", external=True)
+    session.run("uv", "sync", "--only-dev", external=True)
+    session.run("uv", "run", "ruff", "check", "--fix", "app/", "tests/", external=True)
+    session.run("uv", "run", "ruff", "format", "app/", "tests/", "migrations/versions", external=True)
+    session.run("uv", "run", "mypy", "app/", external=True)
