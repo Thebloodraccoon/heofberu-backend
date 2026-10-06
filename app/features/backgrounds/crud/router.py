@@ -1,0 +1,163 @@
+"""Background endpoints: listing, get-by-id, create, update, delete."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
+
+from app.core.pagination import Page
+from app.features.auth.dependencies import FounderDep, GmUserDep
+from app.features.backgrounds.crud.schemas import (
+    BackgroundCreate,
+    BackgroundGetAllResponse,
+    BackgroundResponse,
+    BackgroundUpdate,
+)
+from app.features.backgrounds.dependencies import BackgroundCrudDep
+
+router = APIRouter()
+
+
+@router.get(
+    "",
+    response_model=Page[BackgroundGetAllResponse],
+    summary="List backgrounds",
+)
+async def get_backgrounds(
+    background_service: BackgroundCrudDep,
+    search: str | None = Query(
+        None,
+        max_length=100,
+        description="Case-insensitive substring match against the background's name.",
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+):
+    """
+    Return a paginated list of backgrounds with only `id` and `name`.
+    `search` matches the name; response is `{items, total, page, size}`.
+    Open endpoint.
+    """
+
+    return await background_service.get_all(page=page, size=size, search=search)
+
+
+@router.get(
+    "/{background_id:int}",
+    response_model=BackgroundResponse,
+    summary="Get a background by ID",
+    responses={
+        404: {"description": "Background with id not found."},
+    },
+)
+async def get_background(background_id: int, background_service: BackgroundCrudDep):
+    """
+    Return a single background by ID, with everything about it: base fields,
+    granted skills, starting items, and its own BACKGROUND-source `features`.
+    Open endpoint.
+    """
+
+    return await background_service.get_by_id(background_id)
+
+
+@router.post(
+    "",
+    response_model=BackgroundResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a background",
+    responses={
+        409: {"description": "A background with this name already exists."},
+    },
+)
+async def create_background(
+    data: Annotated[
+        BackgroundCreate,
+        Body(
+            openapi_examples={
+                "minimal": {
+                    "summary": "Minimal — name only",
+                    "value": {"name": "Acolyte"},
+                },
+                "with_description": {
+                    "summary": "With description and starting gold",
+                    "value": {
+                        "name": "Acolyte",
+                        "description": "You have spent your life in the service of a temple.",
+                        "starting_gold": 15,
+                    },
+                },
+            },
+        ),
+    ],
+    background_service: BackgroundCrudDep,
+    _: GmUserDep,
+):
+    """
+    Create a new background. **GM only.**
+
+    Base fields only. Four placeholder suggestions (one per type) are seeded;
+    `granted_skills`, `tags`, `features`, `starting_items` and choice groups
+    are attached afterwards through their own endpoints.
+    """
+
+    return await background_service.create_background(data)
+
+
+@router.patch(
+    "/{background_id:int}",
+    response_model=BackgroundResponse,
+    summary="Update a background's base fields",
+    responses={
+        409: {"description": "Another background already uses the requested name."},
+        404: {"description": "No background exists with the given ID."},
+    },
+)
+async def update_background(
+    background_id: int,
+    data: Annotated[
+        BackgroundUpdate,
+        Body(
+            openapi_examples={
+                "rename": {
+                    "summary": "Rename the background and edit its description",
+                    "value": {
+                        "name": "Acolyte of the Dawn",
+                        "description": "You have spent your life in the service of a temple of the Dawnfather.",
+                    },
+                },
+            }
+        ),
+    ],
+    background_service: BackgroundCrudDep,
+    _: GmUserDep,
+):
+    """
+    Partially update a background's base fields. **GM only.**
+
+    Only fields included in the request body are changed; use
+    `PUT /backgrounds/{background_id}/skills` for granted skills and
+    `/backgrounds/{background_id}/suggestions` for suggestions.
+    """
+
+    return await background_service.update(background_id, data)
+
+
+@router.delete(
+    "/{background_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a background",
+    responses={
+        404: {"description": "No background exists with the given ID."},
+        409: {"description": "A feature of the background is granted to a character."},
+    },
+)
+async def delete_background(background_id: int, background_service: BackgroundCrudDep, _: FounderDep):
+    """
+    Delete a background. **Founder only.**
+
+    Also removes its links to granted skills and its features (cascade);
+    characters keep a detached `background_id` (set NULL), and deletion is
+    only blocked once one of its features is granted to a character.
+    """
+
+    await background_service.delete(background_id)
+    return None

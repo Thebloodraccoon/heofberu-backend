@@ -1,0 +1,51 @@
+"""Subrace image endpoints: upload and delete a subrace's catalog image."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, File, UploadFile, status
+
+from app.core.types import EntityIdPath
+from app.features.auth.dependencies import GmUserDep
+from app.features.subraces.dependencies import SubraceImageDep
+
+router = APIRouter()
+
+
+@router.put(
+    "/{subrace_id:int}/image",
+    response_model=dict[str, str],
+    summary="Upload a subrace's image",
+    responses={
+        400: {"description": "Invalid or oversized image, or the upload failed."},
+        404: {"description": "No subrace exists with the given ID."},
+    },
+)
+async def upload_subrace_image(
+    subrace_id: EntityIdPath,
+    image_service: SubraceImageDep,
+    _: GmUserDep,
+    image: Annotated[UploadFile, File(description="Image file (JPEG, PNG, WebP or GIF, max 5 MB).")],
+):
+    """
+    Upload (or replace) the subrace's catalog image and return its public URL.
+    **GM only.**
+    """
+
+    return {"image_url": await image_service.upload(subrace_id, image)}
+
+
+@router.delete(
+    "/{subrace_id:int}/image",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a subrace's image",
+    responses={404: {"description": "No subrace exists with the given ID."}},
+)
+async def delete_subrace_image(
+    subrace_id: EntityIdPath,
+    image_service: SubraceImageDep,
+    _: GmUserDep,
+):
+    """Remove the subrace's image from storage and clear its ``image_url``. **GM only.**"""
+
+    await image_service.delete_image(subrace_id)
+    return None

@@ -1,0 +1,34 @@
+"""Repository for the character max-level table (``character_max_levels``)."""
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.base.repository import SessionRepository
+from app.models.character.character_max_level_model import CharacterMaxLevel
+
+
+class CharacterMaxLevelRepository(SessionRepository):
+    """CRUD for ``character_max_levels`` (one row per character)."""
+
+    def __init__(self, db: AsyncSession):
+        """Create the max-level repository."""
+
+        super().__init__(db)
+
+    async def get_by_character_id(self, character_id: int) -> CharacterMaxLevel | None:
+        """Fetch the character's max-level row, or ``None`` if it has none."""
+
+        result = await self.db.execute(select(CharacterMaxLevel).where(CharacterMaxLevel.character_id == character_id))
+        return result.scalar_one_or_none()
+
+    async def create_for_character(self, character_id: int, max_level: int) -> CharacterMaxLevel:
+        """
+        Seed a max-level row for a character (flush only; the caller's atomic block commits).
+        """
+
+        row = CharacterMaxLevel(character_id=character_id, max_level=max_level)
+
+        self.db.add(row)
+        await self.flush()
+
+        return row

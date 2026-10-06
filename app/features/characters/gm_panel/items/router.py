@@ -1,0 +1,110 @@
+"""GM-panel inventory endpoints (writes, GM-only; query-style IDs); reads are served by character CRUD."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Query, status
+
+from app.features.auth.dependencies import GmUserDep
+from app.features.characters.gm_panel.dependencies import GmPanelItemsDep
+from app.features.characters.gm_panel.items.schemas import CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.items.schemas import CharacterItemResponse
+
+router = APIRouter()
+
+
+@router.post(
+    "/items",
+    response_model=CharacterItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add an item stack to a character",
+    responses={
+        403: {"description": "You are not a GM."},
+        404: {"description": "No character or item exists with the given ID."},
+    },
+)
+async def add_character_item(
+    character_id: int,
+    data: Annotated[
+        CharacterItemAdd,
+        Body(
+            openapi_examples={
+                "weapon": {
+                    "summary": "Add a longsword",
+                    "value": {"item_id": 4, "quantity": 1},
+                },
+                "consumable-stack": {
+                    "summary": "Add a stack of ten healing potions",
+                    "value": {"item_id": 17, "quantity": 10},
+                },
+            }
+        ),
+    ],
+    item_service: GmPanelItemsDep,
+    current_user: GmUserDep,
+):
+    """
+    Add an item to a character's inventory. If the character already has a
+    stack of this item, the quantity is merged into it; otherwise a new
+    stack is created. **GM only.**
+    """
+
+    return await item_service.add_item(character_id, data, current_user)
+
+
+@router.patch(
+    "/items",
+    response_model=CharacterItemResponse,
+    summary="Update an item stack",
+    responses={
+        403: {"description": "You are not a GM."},
+        404: {
+            "description": "No character exists with the given ID, or no item stack exists with the given `item_id`."
+        },
+    },
+)
+async def update_character_item(
+    character_id: int,
+    item_id: Annotated[int, Query(gt=0)],
+    data: Annotated[
+        CharacterItemUpdate,
+        Body(
+            openapi_examples={
+                "quantity": {
+                    "summary": "Spend five arrows from the stack",
+                    "value": {"quantity": 15},
+                },
+            }
+        ),
+    ],
+    item_service: GmPanelItemsDep,
+    current_user: GmUserDep,
+):
+    """
+    Change an item stack's quantity; the referenced item is immutable.
+    **GM only.**
+    """
+
+    return await item_service.update_item(character_id, item_id, data, current_user)
+
+
+@router.delete(
+    "/items",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove an item stack from a character",
+    responses={
+        403: {"description": "You are not a GM."},
+        404: {
+            "description": "No character exists with the given ID, or no item stack exists with the given `item_id`."
+        },
+    },
+)
+async def remove_character_item(
+    character_id: int,
+    item_id: Annotated[int, Query(gt=0)],
+    item_service: GmPanelItemsDep,
+    current_user: GmUserDep,
+):
+    """Remove one item stack from a character's inventory. **GM only.**"""
+
+    await item_service.remove_item(character_id, item_id, current_user)
+    return None
