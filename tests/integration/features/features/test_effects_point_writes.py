@@ -463,7 +463,10 @@ class TestChoiceGroups:
 @pytest.mark.asyncio
 class TestChoiceOptions:
     async def group(self, client, gm_token, feature_id, choice_type="SKILL"):
-        return (await add_group(client, gm_token, feature_id, {"choice_type": choice_type})).json()[0]["id"]
+        """The id of a freshly added group — the POST answers with the feature's whole group list."""
+
+        created = await add_group(client, gm_token, feature_id, {"choice_type": choice_type})
+        return max(group["id"] for group in created.json())
 
     async def test_adds_an_option_with_its_bundle(self, client, gm_token, create_feature, create_skill):
         feature = await create_feature(name="Skilled")

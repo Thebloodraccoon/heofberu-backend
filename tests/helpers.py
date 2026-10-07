@@ -15,8 +15,10 @@ async def set_effects(client, token, feature_id, payload, *, base="/features"):
     """
     Make ``payload["static_groups"]`` the fixed effects of each type it names (setup shorthand).
 
-    Built from the point endpoints: POST the new groups, then DELETE the rows the feature had of those
-    types. Returns the first failing response (nothing is deleted then), otherwise
+    Built from the point endpoints: DELETE the rows the feature had of those types, then POST the new
+    groups. The DELETE comes first because adding is per-type duplicate-checked (one ability effect per
+    ability, one skill effect per skill...), so a replacement would collide with the row it replaces.
+    Returns the failing response of a rejected POST (the stale rows are gone by then), otherwise
     ``GET {base}/{feature_id}/effects`` (200, ``{feature_id, choice_groups, static_groups}``).
     """
 
@@ -34,13 +36,13 @@ async def set_effects(client, token, feature_id, payload, *, base="/features"):
         for item in group["items"]
     ]
 
-    added = await client.post(url, json={"static_groups": groups}, headers=_auth(token))
-    if added.status_code != 201:
-        return added
-
     for effect_type, effect_id in stale:
         removed = await client.delete(f"{url}/{effect_type}/{effect_id}", headers=_auth(token))
         assert removed.status_code == 200, removed.text
+
+    added = await client.post(url, json={"static_groups": groups}, headers=_auth(token))
+    if added.status_code != 201:
+        return added
 
     return await client.get(url)
 
