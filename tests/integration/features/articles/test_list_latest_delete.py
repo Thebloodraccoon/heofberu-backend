@@ -193,6 +193,21 @@ class TestArticleCursorPagination:
 
         assert ids == [item["id"] for item in offset]
 
+    async def test_cursor_page_ignores_page_offset(self, client, create_article):
+        for title in ("Delta", "Alpha", "Charlie", "Bravo", "Echo"):
+            await create_article(title=title, status="published")
+        first_page = (await client.get("/articles", params={"pagination": "cursor", "size": 2, "page": 2})).json()
+        assert [item["title"] for item in first_page["items"]] == ["Alpha", "Bravo"]
+
+        first = (await client.get("/articles", params={"pagination": "cursor", "size": 2})).json()
+        assert [item["title"] for item in first["items"]] == ["Alpha", "Bravo"]
+
+        params = {"pagination": "cursor", "size": 2, "page": 2, "cursor": first["next_cursor"]}
+        body = (await client.get("/articles", params=params)).json()
+
+        assert [item["title"] for item in body["items"]] == ["Charlie", "Delta"]
+        assert body["next_cursor"] is not None
+
     async def test_cursor_keeps_visibility_rules(self, client, create_article):
         await create_article(title="Public", status="published")
         await create_article(title="Draft")

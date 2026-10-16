@@ -57,7 +57,7 @@ class GmPanelFeatService(CharacterSubDomainService):
         group pending, to be answered later like any other choice group.
         """
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         feat = await self.feat_repository.get_by_id(data.feat_id)
         if not feat:
@@ -102,7 +102,7 @@ class GmPanelFeatService(CharacterSubDomainService):
     ) -> CharacterFeatResponse:
         """Change the ASI choice for an already-granted feat."""
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         async with self._atomic():
             await lock_character(self.repository.db, character_id)
@@ -123,7 +123,7 @@ class GmPanelFeatService(CharacterSubDomainService):
     async def remove_feat(self, character_id: int, character_feat_id: int, current_user: UserResponse) -> bool:
         """Revoke a feat from a character."""
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         async with self._atomic():
             await lock_character(self.repository.db, character_id)

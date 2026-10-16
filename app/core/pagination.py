@@ -21,7 +21,8 @@ from typing import Annotated, Any, Generic, Literal
 
 from fastapi import Query
 from pydantic import BaseModel
-from sqlalchemy import and_, or_
+from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from typing_extensions import TypeVar
 
@@ -80,6 +81,25 @@ def paginate(page: int, size: int) -> tuple[int, int]:
     page = max(page, 1)
     size = min(max(size, 1), MAX_PAGE_SIZE)
     return (page - 1) * size, size
+
+
+async def fetch_page(db: AsyncSession, stmt: Select, *, skip: int, limit: int) -> tuple[list[Any], int]:
+    """
+    One page of ``stmt``'s rows and the total in a single round trip, for an offset :class:`Page`.
+
+    ``count() OVER()`` is appended as a ``total`` column (rows keep ``stmt``'s entities/columns, plus ``total``),
+    so a bare count runs only for a page past the end, where there is no row to read the total from. ``stmt``
+    carries its own ``ORDER BY``; ``skip``/``limit`` come from :func:`paginate`.
+    """
+
+    result = await db.execute(stmt.add_columns(func.count().over().label("total")).offset(skip).limit(limit))
+    rows = list(result.all())
+    if rows:
+        return rows, rows[0].total
+    if not skip:
+        return rows, 0
+
+    return rows, (await db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))) or 0
 
 
 class InvalidCursorError(AppError):

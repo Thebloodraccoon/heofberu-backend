@@ -22,8 +22,8 @@ from app.features.articles.crud.schemas import ArticleCreate, ArticleResponse, A
 from app.features.articles.crud.writer import ArticleWriter
 from app.features.articles.images.service import storage_entity
 from app.features.articles.revisions.repository import ArticleRevisionRepository
-from app.features.articles.secrets import strip_gm_blocks
 from app.features.articles.tree.repository import ArticleTreeRepository
+from app.features.shared.secrets import strip_gm_blocks
 from app.models.articles.article_model import Article
 
 #: ``get_by_id`` cache lifetime: actively-edited lore shouldn't stay stale a full day (the platform default).

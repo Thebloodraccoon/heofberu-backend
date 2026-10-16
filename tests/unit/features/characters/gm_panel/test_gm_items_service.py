@@ -86,7 +86,7 @@ def make_stack(stack_id=3, item_id=5, **overrides) -> SimpleNamespace:
 def make_service(*, item_exists=True, stacks=None):
     db = FakeAsyncSession()
     service = GmPanelItemService(db)
-    service.get_character_for_user = AsyncMock(return_value=SimpleNamespace(id=1))
+    service.get_character_for_user = service.get_character_for_gm = AsyncMock(return_value=SimpleNamespace(id=1))
     service.item_repository = FakeRepository(db, existing_by_id={5: SimpleNamespace()} if item_exists else {})
     service.character_item_repository = FakeCharacterItemRepository(db, stacks_by_id=stacks or {})
     return service

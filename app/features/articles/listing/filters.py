@@ -1,6 +1,7 @@
 """``ArticleFilters``: the listing/search filter set, carried unchanged from the router to the repository."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 from app.constants import ArticleStatus
 
@@ -16,6 +17,10 @@ class ArticleFilters:
 
     Every filter is ANDed with visibility: a non-GM filtering by author or status still only gets published,
     public articles. ``has_pending_proposals`` is GM-only and is dropped for other readers on construction.
+
+    ``scope`` splits the article types: ``knowledge`` (the default, ``GET /articles`` and ``/search``) never
+    returns ``CAMPAIGN_ARTICLE_TYPES`` (quests, sessions), not even for an explicit ``article_type`` filter;
+    ``campaign`` (GM-only ``/articles/campaign-materials``) returns only them.
     """
 
     include_hidden: bool
@@ -26,6 +31,7 @@ class ArticleFilters:
     match_all_tags: bool = False
     author_id: int | None = None
     has_pending_proposals: bool | None = None
+    scope: Literal["knowledge", "campaign"] = "knowledge"
 
     def __post_init__(self) -> None:
         """Ignore the GM-only ``has_pending_proposals`` for readers who can't see proposals."""

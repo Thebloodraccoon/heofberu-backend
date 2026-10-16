@@ -45,7 +45,7 @@ def feature_entry(*, expertise=False):
 def make_service(*, rows=(), features=(), skill_exists=True, item_exists=True):
     db = FakeAsyncSession()
     service = GmPanelProficiencyService(db)
-    service.get_character_for_user = AsyncMock(return_value=SimpleNamespace(id=1))
+    service.get_character_for_user = service.get_character_for_gm = AsyncMock(return_value=SimpleNamespace(id=1))
     service.skill_repository = SimpleNamespace(exists_by_id=AsyncMock(return_value=skill_exists))
     service.item_repository = SimpleNamespace(exists_by_id=AsyncMock(return_value=item_exists))
     service.proficiency_repository.get_rows = AsyncMock(return_value=list(rows))

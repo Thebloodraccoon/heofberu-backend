@@ -2,7 +2,8 @@
 
 The cross-catalog building blocks that the capability-oriented catalogs
 (backgrounds, races, classes, subclasses/subraces) compose instead of re-implementing.
-Five subpackages (`catalog`, `images`, `items`, `skills`, `tags`), each holding ONLY the pieces other catalogs build on:
+Five subpackages (`catalog`, `images`, `items`, `skills`, `tags`), each holding ONLY the pieces other catalogs build on,
+plus two cross-domain text helpers (`secrets.py`, `slug.py`):
 
 | Path | Contents |
 | --- | --- |
@@ -13,6 +14,8 @@ Five subpackages (`catalog`, `images`, `items`, `skills`, `tags`), each holding 
 | `items/mixins.py` | `SourceItemManagerMixin` — starting-equipment `list_items` / `set_items` for a source record |
 | `items/nested_service.py` | `NestedSourceItemService` — per-source starting-equipment writes; reads cached under `nested_items`; owns the `source_items` row logic directly |
 | `items/schemas.py` | Shared starting-equipment schemas: `SourceItemEntry`, `SourceItemsUpdate`, `SourceItemResponse`, `ItemBriefResponse` |
+| `secrets.py` | `:::gm` blocks: `strip_gm_blocks` (nesting-aware), `has_nested_gm_container` (write guard), `gm_stripped_sql` + `NESTED_GM_BLOCK_SQL_PATTERN` (SQL twin) — articles, campaigns, public campaigns, the public character card |
+| `slug.py` | `slugify(title, fallback=...)` with RU/UK transliteration, `SLUG_MAX_LENGTH`, `FALLBACK_SLUG` — articles and public campaigns |
 | `skills/mixins.py` | `SkillsManagerMixin` (granted/available-skill full replace in one transaction via `_set_skills_method`) and `SkillLookupMixin` (repository skill-id lookup). No skill schemas/services live here — those belong to the `skills` catalog |
 
 > The former `features/` subpackage was ELIMINATED in the feature-centralization

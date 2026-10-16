@@ -6,12 +6,14 @@ from app.features.admin.router import router as admin_router
 from app.features.articles.router import router as article_router
 from app.features.auth.router import router as auth_router
 from app.features.backgrounds.router import router as background_router
+from app.features.campaigns.router import router as campaign_router
 from app.features.characters.router import router as character_router
 from app.features.classes.router import router as class_router
 from app.features.feats.router import router as feat_router
 from app.features.features.router import router as feature_router
 from app.features.items.router import router as item_router
 from app.features.ping.router import router as ping_router
+from app.features.public_campaigns.router import router as public_campaign_router
 from app.features.races.router import router as race_router
 from app.features.skills.router import router as skill_router
 from app.features.spells.router import router as spell_router
@@ -40,6 +42,8 @@ _feature_routers = (
     feature_router,
     item_router,
     character_router,
+    public_campaign_router,
+    campaign_router,
 )
 
 for _router in _feature_routers:

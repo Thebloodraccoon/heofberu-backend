@@ -1,9 +1,15 @@
-"""Character repository: base CRUD plus owner scoping, row locking and HP updates."""
+"""Character repository: base CRUD plus owner/campaign scoping, row locking and HP updates."""
 
-from sqlalchemy import select
+from collections.abc import Sequence
+from typing import Any
+
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.repository import BaseRepository
+from app.constants import CampaignCharacterStatus
+from app.models.campaigns.campaign_character_model import CampaignCharacter
+from app.models.campaigns.campaign_model import Campaign
 from app.models.character.character_model import Character
 
 
@@ -28,6 +34,43 @@ class CharacterRepository(BaseRepository[Character]):
         """Return the character's ``owner_id``, or ``None`` when it does not exist."""
 
         return await self.db.scalar(select(Character.owner_id).where(Character.id == character_id))
+
+    async def is_managed_by(self, character_id: int, gm_id: int) -> bool:
+        """Whether the character is ``ACTIVE`` in a campaign owned by ``gm_id`` (the campaign GM's sheet access)."""
+
+        return bool(
+            await self.db.scalar(
+                select(
+                    exists().where(
+                        CampaignCharacter.character_id == character_id,
+                        CampaignCharacter.status == CampaignCharacterStatus.ACTIVE,
+                        CampaignCharacter.campaign_id == Campaign.id,
+                        Campaign.owner_id == gm_id,
+                    )
+                )
+            )
+        )
+
+    @staticmethod
+    def managed_by_condition(gm_id: int) -> Any:
+        """WHERE clause: characters ``ACTIVE`` in one of ``gm_id``'s campaigns (``scope=all`` for a GM)."""
+
+        return Character.id.in_(
+            select(CampaignCharacter.character_id)
+            .join(Campaign, Campaign.id == CampaignCharacter.campaign_id)
+            .where(Campaign.owner_id == gm_id, CampaignCharacter.status == CampaignCharacterStatus.ACTIVE)
+        )
+
+    async def count_where(
+        self, *, filters: dict[str, Any] | None = None, search: str | None = None, conditions: Sequence[Any] = ()
+    ) -> int:
+        """``count`` plus extra WHERE clauses (the base ``count`` takes only ``filters``/``search``)."""
+
+        stmt = select(func.count()).select_from(Character)
+        stmt = self._apply_filters(stmt, filters)
+        stmt = self._apply_search(stmt, search)
+
+        return (await self.db.scalar(stmt.where(*conditions))) or 0
 
     async def get_by_id_light(self, model_id: int) -> Character | None:
         """

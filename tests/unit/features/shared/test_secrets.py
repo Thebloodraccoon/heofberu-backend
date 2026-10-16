@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.features.articles.secrets import has_nested_gm_container, strip_gm_blocks
+from app.features.shared.secrets import has_nested_gm_container, strip_gm_blocks
 
 
 class TestStripGmBlocks:

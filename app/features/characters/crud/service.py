@@ -9,14 +9,18 @@ from app.core.exceptions import GmAccessException
 from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, keyset_condition, paginate
 from app.features.characters.ability_score.calculator import BASE_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
-from app.features.characters.access import check_character_access, is_gm
+from app.features.characters.access import can_manage_character, check_character_access, is_founder, is_gm
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import CHARACTER_CACHE_TTL, character_cache_key
 from app.features.characters.crud.creation import CharacterCreationService
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.rules import resolve_hp_update, validate_hp_update
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
-from app.features.characters.exceptions import CharacterNotFoundException, GmOnlyFieldException
+from app.features.characters.exceptions import (
+    CharacterAccessDeniedException,
+    CharacterNotFoundException,
+    GmOnlyFieldException,
+)
 from app.features.characters.schemas import (
     AbilityScoresResponse,
     AbilityStatsView,
@@ -68,14 +72,18 @@ class CharacterService(CharacterSubDomainService):
         One listing for every audience, ordered by ``(name, id)``.
 
         ``scope="mine"`` is the caller's own characters (any role, GMs included);
-        ``scope="all"`` is every user's and GM-only (403 otherwise). With
-        ``use_cursor`` the result is a keyset ``CursorPage``, else an offset ``Page``.
+        ``scope="all"`` is GM-only (403 otherwise): every user's for the founder, and
+        for a GM the characters active in their own campaigns. With ``use_cursor``
+        the result is a keyset ``CursorPage``, else an offset ``Page``.
         """
 
+        scope_conditions: list[Any] = []
         if scope == "all":
             if not is_gm(current_user):
                 raise GmAccessException()
             owner_id = None
+            if not is_founder(current_user):
+                scope_conditions.append(self.repository.managed_by_condition(current_user.id))
         else:
             owner_id = current_user.id
 
@@ -87,7 +95,7 @@ class CharacterService(CharacterSubDomainService):
         filters = criteria or None
 
         if use_cursor:
-            conditions = []
+            conditions = list(scope_conditions)
             if cursor is not None:
                 conditions.append(keyset_condition(Character.name, Character.id, decode_cursor(cursor, "name")))
             characters = await self.repository.get_all(
@@ -98,9 +106,14 @@ class CharacterService(CharacterSubDomainService):
 
         skip, limit = paginate(page, size)
         characters = await self.repository.get_all(
-            filters=filters, search=search, order_by=Character.name, skip=skip, limit=limit
+            filters=filters,
+            search=search,
+            order_by=Character.name,
+            skip=skip,
+            limit=limit,
+            conditions=scope_conditions,
         )
-        total = await self.repository.count(filters=filters, search=search)
+        total = await self.repository.count_where(filters=filters, search=search, conditions=scope_conditions)
         return Page(items=await self._serialize_many(characters), total=total, page=page, size=size)
 
     async def _serialize_many(self, characters: list[Character]) -> list[CharacterResponse]:
@@ -176,14 +189,17 @@ class CharacterService(CharacterSubDomainService):
         """
         Partially update a character, enforcing GM/owner access. Only fields
         present in ``CharacterUpdate`` are changeable; ``current_hp`` is
-        clamped to ``max_hp`` and ``inspiration`` can only be raised by a GM.
+        clamped to ``max_hp`` and ``inspiration`` can only be raised by the
+        character's campaign GM (or the founder).
         """
 
         fields = update_data.model_dump(exclude_unset=True)
 
         async with self._atomic():
             character = await self._get_locked_for_user(character_id, current_user)
-            if fields.get("inspiration", 0) > character.inspiration and not is_gm(current_user):
+            if fields.get("inspiration", 0) > character.inspiration and not await can_manage_character(
+                self.repository, character_id, current_user
+            ):
                 raise GmOnlyFieldException("inspiration")
             if "current_hp" in fields:
                 fields["current_hp"] = min(fields["current_hp"], character.max_hp)
@@ -193,9 +209,11 @@ class CharacterService(CharacterSubDomainService):
         return await self._response_for(updated_character)
 
     async def delete_character(self, character_id: int, current_user: UserResponse) -> bool:
-        """Delete a character, enforcing GM/owner access."""
+        """Delete a character: only its owner or the founder (a campaign GM manages the sheet, never deletes it)."""
 
         character = await self.get_character_for_user(character_id, current_user)
+        if character.owner_id != current_user.id and not is_founder(current_user):
+            raise CharacterAccessDeniedException()
         async with self._atomic():
             deleted = await self.repository.delete(character)
             await self._invalidate_character(character_id)
@@ -244,13 +262,13 @@ class CharacterService(CharacterSubDomainService):
         await self.creation.apply_spell_slot_progression(character)
 
     async def _get_locked_for_user(self, character_id: int, current_user: UserResponse) -> Character:
-        """Fetch the character row ``FOR UPDATE`` and enforce GM/owner access."""
+        """Fetch the character row ``FOR UPDATE`` and enforce owner/campaign-GM access."""
 
         character = await self.repository.get_for_update(character_id)
         if character is None:
             raise CharacterNotFoundException(character_id=character_id)
 
-        check_character_access(character, current_user)
+        await check_character_access(self.repository, character, current_user)
         return character
 
     async def _response_for(self, character: Character) -> CharacterResponse:

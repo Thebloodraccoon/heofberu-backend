@@ -33,6 +33,8 @@ from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     Background,
     BackgroundSuggestion,
+    Campaign,
+    CampaignCharacter,
     Character,
     CharacterMaxLevel,
     Class,
@@ -359,7 +361,33 @@ async def create_spell(db_session):
 
 
 @pytest_asyncio.fixture
-async def create_character(db_session):
+async def enroll_in_gm_campaign(db_session, gm):
+    """
+    Put a character ``ACTIVE`` into a campaign run by the default ``gm`` user (one campaign per test, made lazily).
+
+    Since campaigns, the GM role alone gives no access to a player's sheet: only the GM of the campaign the
+    character is active in (or the founder) gets it. The character fixtures call this, so the many tests acting on a
+    player's character with ``gm_token`` keep working. Pass ``in_gm_campaign=False`` for a free character.
+    """
+
+    campaign_id = None
+
+    async def _enroll(character_id, owner_id):
+        nonlocal campaign_id
+        if campaign_id is None:
+            campaign = Campaign(owner_id=gm.id, title="GM test table")
+            db_session.add(campaign)
+            await db_session.commit()
+            campaign_id = campaign.id
+
+        db_session.add(CampaignCharacter(campaign_id=campaign_id, character_id=character_id, user_id=owner_id))
+        await db_session.commit()
+
+    return _enroll
+
+
+@pytest_asyncio.fixture
+async def create_character(db_session, enroll_in_gm_campaign):
     async def _create_character(
         owner_id,
         class_id,
@@ -368,6 +396,7 @@ async def create_character(db_session):
         race_id=None,
         background_id=None,
         subclass_id=None,
+        in_gm_campaign=True,
         **kwargs,
     ):
         character = Character(
@@ -389,6 +418,9 @@ async def create_character(db_session):
         # GM panel endpoint or by writing the row directly.
         db_session.add(CharacterMaxLevel(character_id=character.id, max_level=CHARACTER_MAX_LEVEL))
         await db_session.commit()
+
+        if in_gm_campaign:
+            await enroll_in_gm_campaign(character.id, owner_id)
 
         return character
 

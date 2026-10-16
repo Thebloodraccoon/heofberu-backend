@@ -17,7 +17,7 @@ from app.features.articles.relations.schemas import (
     ArticleRelationResponse,
     ArticleRelationUpdate,
 )
-from app.features.articles.secrets import strip_gm_blocks
+from app.features.shared.secrets import strip_gm_blocks
 from app.models.articles.article_model import Article
 from app.models.articles.article_relation_model import ArticleRelation
 

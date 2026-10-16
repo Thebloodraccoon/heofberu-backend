@@ -1,4 +1,4 @@
-"""Slug generation for articles: transliterate a title to a URL-safe ASCII slug."""
+"""Slug generation (articles, public campaigns): transliterate a title to a URL-safe ASCII slug."""
 
 import re
 
@@ -16,14 +16,14 @@ FALLBACK_SLUG = "article"
 _NON_SLUG = re.compile(r"[^a-z0-9]+")
 
 
-def slugify(title: str) -> str:
+def slugify(title: str, fallback: str = FALLBACK_SLUG) -> str:
     """
     Turn ``title`` into a lowercase ASCII slug (``"Кхазад-дум"`` -> ``"khazad-dum"``).
 
-    Returns ``FALLBACK_SLUG`` when nothing usable remains (e.g. a title of only symbols).
+    Returns ``fallback`` when nothing usable remains (e.g. a title of only symbols).
     """
 
     transliterated = "".join(_CYRILLIC_TO_LATIN.get(char, char) for char in title.lower())
     slug = _NON_SLUG.sub("-", transliterated).strip("-")[:SLUG_MAX_LENGTH].strip("-")
 
-    return slug or FALLBACK_SLUG
+    return slug or fallback

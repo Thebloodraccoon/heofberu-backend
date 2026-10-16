@@ -35,7 +35,7 @@ class GmPanelSpellService(CharacterSubDomainService):
     ) -> CharacterSpellResponse:
         """Grant any spell to a character directly. **GM only** (enforced by the route)."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
 
         spell = await self.granted_spell_repository.get_spell(data.spell_id)
         if spell is None:
@@ -59,7 +59,7 @@ class GmPanelSpellService(CharacterSubDomainService):
         with its grant.
         """
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
 
         row = await self.granted_spell_repository.get_granted_spell(character_id, spell_id)
         if row is None:

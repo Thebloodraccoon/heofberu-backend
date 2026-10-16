@@ -74,7 +74,7 @@ async def get_characters(
     response_model=CharacterResponse,
     summary="Get a character by ID",
     responses={
-        403: {"description": "Caller is not the owner and is not a GM."},
+        403: {"description": "Caller is not the owner, the character's campaign GM or the founder."},
         404: {"description": "Character with id not found."},
     },
 )
@@ -84,7 +84,7 @@ async def get_character(character_id: int, character_service: CharacterServiceDe
     ``character_ability_scores`` cache as-is; hit dice come from the class
     on every read.
 
-    GM can view any character. Players can only view their own.
+    Readable by the owner, the GM of the campaign the character is active in, and the founder.
     """
 
     return await character_service.get_character(character_id, current_user)
@@ -185,7 +185,10 @@ async def create_character(
     response_model=CharacterResponse,
     summary="Update a character",
     responses={
-        403: {"description": "Caller is not the owner and is not a GM, or a player tried to raise `inspiration`."},
+        403: {
+            "description": "Caller is not the owner, the character's campaign GM or the founder, "
+            "or a player tried to raise `inspiration`."
+        },
         404: {"description": "Character with id not found."},
         422: {"description": "A field is out of bounds or an explicit `null` was sent for a non-nullable field."},
     },
@@ -217,10 +220,10 @@ async def update_character(
     """
     Partially update a character: only included fields change (`null` is
     rejected). `class_id`, `race_id`, `background_id` and `level` are not
-    editable here; `current_hp` is clamped to `max_hp`, and only a GM can
-    raise `inspiration` (a player may spend it down).
+    editable here; `current_hp` is clamped to `max_hp`, and only the campaign
+    GM (or the founder) can raise `inspiration` (a player may spend it down).
 
-    GM can update any character; players can only update their own.
+    Editable by the owner, the GM of the campaign the character is active in, and the founder.
     """
 
     return await character_service.update_character(character_id, data, current_user)
@@ -231,7 +234,7 @@ async def update_character(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a character",
     responses={
-        403: {"description": "Caller is not the owner and is not a GM."},
+        403: {"description": "Caller is neither the owner nor the founder."},
         404: {"description": "Character with id not found."},
     },
 )
@@ -239,7 +242,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
     """
     Delete a character.
 
-    GM can delete any character. Players can only delete their own.
+    Only the owner or the founder; a campaign GM manages the sheet but never deletes it.
     """
 
     await character_service.delete_character(character_id, current_user)
@@ -252,7 +255,7 @@ async def delete_character(character_id: int, character_service: CharacterServic
     summary="Apply damage/healing or set HP directly",
     responses={
         400: {"description": "Both `delta` and an absolute HP value were provided, or neither was."},
-        403: {"description": "Caller is not the owner and is not a GM."},
+        403: {"description": "Caller is not the owner, the character's campaign GM or the founder."},
         404: {"description": "Character with id not found."},
     },
 )
@@ -292,7 +295,7 @@ async def update_character_hp(
     summary="Take a short or long rest",
     responses={
         422: {"description": "`type` is not one of `short` or `long` (rejected by the schema's Literal type)."},
-        403: {"description": "Caller is not the owner and is not a GM."},
+        403: {"description": "Caller is not the owner, the character's campaign GM or the founder."},
         404: {"description": "Character with id not found."},
     },
 )

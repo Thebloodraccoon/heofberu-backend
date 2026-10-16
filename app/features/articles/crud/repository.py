@@ -18,8 +18,8 @@ from sqlalchemy.sql.expression import Executable
 from app.core.exceptions import RecordAlreadyExistsError
 from app.features.articles.base import ArticleScopedRepository
 from app.features.articles.revisions.hashing import revision_hash
-from app.features.articles.slug import slugify
 from app.features.articles.visibility import visibility_conditions
+from app.features.shared.slug import slugify
 from app.models.articles.article_image_model import ArticleImage
 from app.models.articles.article_model import Article
 from app.models.articles.article_revision_model import ArticleRevision

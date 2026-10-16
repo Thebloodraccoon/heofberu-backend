@@ -16,6 +16,7 @@ from app.features.characters.items.service import CharacterItemService
 from app.features.characters.proficiencies.service import CharacterProficiencyService
 from app.features.characters.progression.service import CharacterProgressionService
 from app.features.characters.spells.service import CharacterSpellService
+from app.features.characters.visibility.service import CharacterVisibilityService
 
 
 def get_character_service(db: DatabaseDep) -> CharacterService:
@@ -115,3 +116,12 @@ def get_character_feature_service(db: DatabaseDep) -> CharacterFeatureService:
 
 
 CharacterFeatureServiceDep = Annotated[CharacterFeatureService, Depends(get_character_feature_service)]
+
+
+def get_character_visibility_service(db: DatabaseDep) -> CharacterVisibilityService:
+    """Get the public-visibility service (owner switch + public card)."""
+
+    return CharacterVisibilityService(db)
+
+
+CharacterVisibilityServiceDep = Annotated[CharacterVisibilityService, Depends(get_character_visibility_service)]

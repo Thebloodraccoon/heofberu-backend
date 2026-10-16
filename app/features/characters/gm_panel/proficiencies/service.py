@@ -66,7 +66,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     async def add_skill(self, character_id: int, skill_id: int, current_user: UserResponse) -> SkillProficiencyResponse:
         """Grant a character proficiency in a skill."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         if not await self.skill_repository.exists_by_id(skill_id):
             raise RecordNotFoundError("Skill", str(skill_id))
 
@@ -82,7 +82,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     async def remove_skill(self, character_id: int, skill_id: int, current_user: UserResponse) -> None:
         """Revoke a character's proficiency in a skill."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         await self._revoke(
             character_id,
             current_user,
@@ -100,7 +100,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
         source (class, feature) gives.
         """
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
 
         not_found = SkillProficiencyNotFoundException(character_id=character_id, skill_id=skill_id)
         resolved = await self._write(
@@ -122,7 +122,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     ) -> CharacterSavingThrowProficiencyResponse:
         """Grant a character proficiency in a saving throw."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         await self._grant(
             character_id,
             current_user,
@@ -135,7 +135,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     async def remove_saving_throw(self, character_id: int, ability: AbilityScore, current_user: UserResponse) -> None:
         """Revoke a character's proficiency in a saving throw."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         await self._revoke(
             character_id,
             current_user,
@@ -149,7 +149,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     ) -> CharacterArmorProficiencyResponse:
         """Grant a character proficiency in an armor category."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         await self._grant(
             character_id,
             current_user,
@@ -162,7 +162,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     async def remove_armor(self, character_id: int, armor_type: ArmorProficiency, current_user: UserResponse) -> None:
         """Revoke a character's proficiency in an armor category."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         await self._revoke(
             character_id,
             current_user,
@@ -181,7 +181,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
     ) -> CharacterWeaponProficiencyResponse:
         """Grant a character proficiency in a weapon category or a single item."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         if item_id is not None and not await self.item_repository.exists_by_id(item_id):
             raise ItemNotFoundException(item_id=item_id)
 
@@ -208,7 +208,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
         if (weapon_category is None) == (item_id is None):
             raise InvalidWeaponProficiencyTargetException()
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
         await self._revoke(
             character_id,
             current_user,

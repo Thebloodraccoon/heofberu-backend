@@ -15,7 +15,7 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
 | `router.py` | Aggregates the six child routers under `/characters`, one `include_router` per child, tags declared here once. |
 | `schemas.py` | Shared domain schemas: `CharacterCreate`/`CharacterUpdate`/`CharacterResponse`, the `PatchModel` base (explicit `null` in a PATCH is a 422 except for fields listed in `nullable_fields`) and the input bounds (`NAME_MAX_LENGTH`, `MONEY_MAX`, `HP_LIMIT`, ...). Bounds live on the input schemas only — `CharacterResponse` stays unconstrained so older stored rows still serialize. Sub-packages import from here — never the reverse. |
 | `exceptions.py` | Domain-wide `AppError`s: `CharacterNotFoundException`, `CharacterAccessDeniedException`, `GmOnlyFieldException`, `BackgroundNotFoundException`. |
-| `access.py` | Access-control helpers: `is_gm` (GM or founder), `get_character_or_404`, `check_character_access`, the combined `get_character_for_user` (GM or owner, else 403/404) and `ensure_character_access` (same decision from a single `owner_id` lookup, for sub-resources that never read the character). |
+| `access.py` | Access-control helpers: `is_gm` (GM or founder), `get_character_or_404`, `check_character_access`, `can_manage_character`, the combined `get_character_for_user` (owner, campaign GM via `CharacterRepository.is_managed_by`, or founder, else 403/404; the global GM role alone grants nothing) and `ensure_character_access` (same decision from a single `owner_id` lookup, for sub-resources that never read the character). |
 | `base.py` | `CharacterSubDomainService` — shared base for sub-domain services: owns the single `CharacterRepository`, the access checks (`get_character_for_user`, `ensure_character_access`) and the transaction helpers (`_atomic()`, `_invalidate_character()`). `_light_character_fetch = True` only means "no `populate_existing`" (an instance already in the session is returned as it is); services that need a freshly re-read row override it to `False`. |
 | `dependencies.py` | All `Character*Dep` service aliases (`CharacterServiceDep`, `CharacterSpellServiceDep`, ...). |
 | `cache.py` | Exact-key invalidation of the cached character response: `character_cache_key`, `invalidate_character_cache(id, db=None)`, `invalidate_characters_cache(ids, db=None)`, `CHARACTER_CACHE_TTL` (300 s). Pass the writing session as `db` to defer the purge until the surrounding `atomic()` block commits (dropped on rollback); there is no namespace/prefix purge and no keyspace scan. |
@@ -55,6 +55,14 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   is deliberately excluded from the cached `CharacterResponse` and is never
   cached — reads hit the DB directly through the owner/GM access check. It is
   also not part of `CharacterCreate`/`CharacterUpdate`.
+- `visibility/` — how much of a character is public: owner-only
+  `PATCH /characters/{id}/public-visibility` (`hidden` by default / `concept` /
+  `full`; it is a `CharacterResponse` field, so the write purges the cached
+  sheet) and the open `GET /characters/{id}/public` card (`concept`: name,
+  class, race, level, owner's username; `full` adds personality, backstory,
+  totals, inventory and spells, with `:::gm` stripped; `hidden` is a 404). The
+  card is read live, never cached. `public_campaigns/showcase` reuses its
+  `concept_columns` / `PublicCharacterConcept`.
 - `spells/` — known spells + slot totals (class-derived only, no
   spend/restore endpoints); a spell is removed with
   `DELETE /characters/{id}/spells/{spell_id}`.

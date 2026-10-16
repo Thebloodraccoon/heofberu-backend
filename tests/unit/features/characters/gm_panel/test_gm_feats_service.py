@@ -174,7 +174,7 @@ def no_feature_sync(monkeypatch):
 def make_service(character, *, feat=None, grants_by_id=None, grants_by_feat=None, stats=None):
     db = FakeAsyncSession()
     service = GmPanelFeatService(db)
-    service.get_character_for_user = AsyncMock(return_value=character)
+    service.get_character_for_user = service.get_character_for_gm = AsyncMock(return_value=character)
     service.feat_repository = SimpleNamespace(get_by_id=AsyncMock(return_value=feat))
     service.feat_grant_repository = FakeFeatGrantRepository(by_id=grants_by_id, by_feat=grants_by_feat)
     service.asi_repository = FakeASIChoiceRepository()
@@ -200,7 +200,7 @@ class TestAddFeat:
         assert audit["choice_type"] == ASILevelChoice.FEAT
         assert audit["feat_id"] == 2
         assert service.stats_service.refresh_calls == [character]
-        service.get_character_for_user.assert_awaited_once()
+        service.get_character_for_gm.assert_awaited_once()
         no_feature_sync.assert_awaited_once_with(service.repository.db, character)
         no_cache_invalidate.assert_awaited_once_with(character_cache_key(character.id))
         assert service.repository.db.commits == 1

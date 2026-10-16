@@ -27,6 +27,7 @@ class TestFullCharacterLifecycle:
         create_background,
         create_item,
         create_spell,
+        enroll_in_gm_campaign,
     ):
         register_response = await client.post(
             "/auth/register",
@@ -138,6 +139,8 @@ class TestFullCharacterLifecycle:
         assert create_response.status_code == 201, create_response.text
         character = create_response.json()
         character_id = character["id"]
+        # The GM reaches a player's sheet only as the GM of the campaign the character is active in.
+        await enroll_in_gm_campaign(character_id, character["owner_id"])
 
         # POST /characters seeds the GM-set level-up cap at the starting
         # level; raise it so this scenario can level up to 8 freely.
