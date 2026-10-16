@@ -17,6 +17,7 @@ import pytest
 from app.constants import (
     AbilityScore,
     ArmorProficiency,
+    CharacterPublicVisibility,
     DiceType,
     FeatureSourceType,
     ProficiencySourceType,
@@ -160,6 +161,8 @@ def make_owned_character(owner_id=7, character_id=5, **overrides):
         "intelligence": 10,
         "wisdom": 10,
         "charisma": 10,
+        # Column defaults apply only on INSERT; a bare ORM instance would carry None.
+        "public_visibility": CharacterPublicVisibility.HIDDEN,
     }
     fields.update(overrides)
     return Character(**fields)

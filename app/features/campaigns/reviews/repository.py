@@ -46,23 +46,28 @@ class CampaignReviewsRepository(CampaignAccessMixin, SessionRepository):
 
     async def upsert_session_review(
         self, session_id: int, author_id: int, body: str, visible_to_table: bool, now: datetime
-    ) -> None:
-        """Create the author's session review or replace it in one ``INSERT ... ON CONFLICT DO UPDATE`` (flush only)."""
+    ) -> int | None:
+        """
+        Create the author's session review or replace it in one ``INSERT ... ON CONFLICT DO UPDATE`` (flush only).
+        A founder-hidden review is left untouched: ``None`` then.
+        """
 
         insert = pg_insert(SessionReview).values(
             session_id=session_id, author_id=author_id, body=body, visible_to_table=visible_to_table
         )
-        await self.db.execute(
-            insert.on_conflict_do_update(
-                constraint="uq_session_reviews_author",
-                set_={
-                    "body": insert.excluded.body,
-                    "visible_to_table": insert.excluded.visible_to_table,
-                    "edited_at": now,
-                },
-            )
-        )
+        statement = insert.on_conflict_do_update(
+            constraint="uq_session_reviews_author",
+            set_={
+                "body": insert.excluded.body,
+                "visible_to_table": insert.excluded.visible_to_table,
+                "edited_at": now,
+            },
+            where=SessionReview.hidden_at.is_(None),
+        ).returning(SessionReview.id)
+
+        review_id = (await self.db.execute(statement)).scalar_one_or_none()
         await self.flush()
+        return review_id
 
     async def get_campaign_review_by_id(self, review_id: int) -> CampaignReview | None:
         """A campaign review by id (moderation)."""
@@ -104,15 +109,25 @@ class CampaignReviewsRepository(CampaignAccessMixin, SessionRepository):
             .execution_options(populate_existing=True)
         )
 
+    async def get_session_review_by_id(self, review_id: int) -> SessionReview | None:
+        """A session review by id (moderation)."""
+
+        return await self.db.scalar(
+            select(SessionReview).where(SessionReview.id == review_id).execution_options(populate_existing=True)
+        )
+
     async def list_session_reviews(
-        self, session_id: int, *, viewer_id: int | None, skip: int, limit: int
+        self, session_id: int, *, viewer_id: int | None, include_hidden: bool, skip: int, limit: int
     ) -> tuple[list[SessionReview], int]:
         """
         One page of the session's reviews, oldest first. ``viewer_id=None``: all of them (the GM); otherwise the
-        viewer's own plus the ones their authors opened to the table.
+        viewer's own plus the ones their authors opened to the table. Hidden ones only with ``include_hidden``
+        (founder).
         """
 
         stmt = select(SessionReview).where(SessionReview.session_id == session_id)
+        if not include_hidden:
+            stmt = stmt.where(SessionReview.hidden_at.is_(None))
         if viewer_id is not None:
             stmt = stmt.where(or_(SessionReview.author_id == viewer_id, SessionReview.visible_to_table.is_(True)))
 

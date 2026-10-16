@@ -4,7 +4,7 @@ Player reviews.
 * Campaign review: one per player, public (inside the campaign and on its linked public campaign). The GM can't
   remove it; the founder can hide it.
 * Session review: one per player and session, written once the chronicle is published. The GM always reads it;
-  the rest of the table only when its author turns ``visible_to_table`` on.
+  the rest of the table only when its author turns ``visible_to_table`` on. The founder can hide it too.
 
 Only players write reviews (a character in the campaign that isn't ``REMOVED``); the campaign's own GM never does,
 even with a character in the table. Writes are single upserts, so a double-submitted first review can't 409.
@@ -65,8 +65,8 @@ class CampaignReviewsService(CampaignScopedService):
             CampaignReviewHiddenException: the founder hid this review; it can be deleted, not edited (409).
         """
 
-        await self._reviewer(campaign_id, current_user)
         async with self._atomic():
+            await self._reviewer(campaign_id, current_user, lock=True)
             written = await self.repository.upsert_campaign_review(
                 campaign_id, current_user.id, data.body, self.clock()
             )
@@ -79,8 +79,8 @@ class CampaignReviewsService(CampaignScopedService):
     async def delete_campaign_review(self, campaign_id: int, current_user: UserResponse) -> None:
         """Delete the caller's own review of the campaign (404 if there is none)."""
 
-        await self._reader(campaign_id, current_user)
         async with self._atomic():
+            await self._reader(campaign_id, current_user, lock=True)
             review = await self.repository.get_campaign_review(campaign_id, current_user.id)
             if review is None:
                 raise CampaignReviewNotFoundException()
@@ -90,13 +90,7 @@ class CampaignReviewsService(CampaignScopedService):
     async def set_campaign_review_hidden(self, review_id: int, hidden: bool) -> CampaignReviewResponse:
         """Hide or unhide a campaign review (the router guards this with ``FounderDep``)."""
 
-        async with self._atomic():
-            review = await self.repository.get_campaign_review_by_id(review_id)
-            if review is None:
-                raise CampaignReviewNotFoundException(review_id)
-            review.hidden_at = self.clock() if hidden else None
-            await self.repository.flush()
-
+        await self._set_hidden(self.repository.get_campaign_review_by_id, review_id, hidden)
         return CampaignReviewResponse.model_validate(await self.repository.get_campaign_review_by_id(review_id))
 
     # --- session reviews --------------------------------------------------------------------------------------
@@ -110,7 +104,11 @@ class CampaignReviewsService(CampaignScopedService):
         await self._ensure_session(campaign_id, session_id)
         skip, limit = paginate(page, size)
         reviews, total = await self.repository.list_session_reviews(
-            session_id, viewer_id=None if ctx.is_gm else current_user.id, skip=skip, limit=limit
+            session_id,
+            viewer_id=None if ctx.is_gm else current_user.id,
+            include_hidden=ctx.is_founder,
+            skip=skip,
+            limit=limit,
         )
         items = [SessionReviewResponse.model_validate(review) for review in reviews]
         return Page(items=items, total=total, page=page, size=size)
@@ -123,14 +121,17 @@ class CampaignReviewsService(CampaignScopedService):
 
         Raises:
             CampaignSessionNotPublishedException: the chronicle isn't published yet (409).
+            CampaignReviewHiddenException: the founder hid this review; it can be deleted, not edited (409).
         """
 
-        await self._reviewer(campaign_id, current_user)
-        await self._ensure_session(campaign_id, session_id, require_published=True)
         async with self._atomic():
-            await self.repository.upsert_session_review(
+            await self._reviewer(campaign_id, current_user, lock=True)
+            await self._ensure_session(campaign_id, session_id, require_published=True)
+            written = await self.repository.upsert_session_review(
                 session_id, current_user.id, data.body, data.visible_to_table, self.clock()
             )
+            if written is None:
+                raise CampaignReviewHiddenException(campaign_id)
 
         review = await self.repository.get_session_review(session_id, current_user.id)
         return SessionReviewResponse.model_validate(review)
@@ -138,13 +139,29 @@ class CampaignReviewsService(CampaignScopedService):
     async def delete_session_review(self, campaign_id: int, session_id: int, current_user: UserResponse) -> None:
         """Delete the caller's own review of the session."""
 
-        await self._reader(campaign_id, current_user)
-        await self._ensure_session(campaign_id, session_id)
         async with self._atomic():
+            await self._reader(campaign_id, current_user, lock=True)
+            await self._ensure_session(campaign_id, session_id)
             review = await self.repository.get_session_review(session_id, current_user.id)
             if review is None:
                 raise CampaignReviewNotFoundException()
             await self.repository.db.delete(review)
+            await self.repository.flush()
+
+    async def set_session_review_hidden(self, review_id: int, hidden: bool) -> SessionReviewResponse:
+        """Hide or unhide a session review (the router guards this with ``FounderDep``)."""
+
+        await self._set_hidden(self.repository.get_session_review_by_id, review_id, hidden)
+        return SessionReviewResponse.model_validate(await self.repository.get_session_review_by_id(review_id))
+
+    async def _set_hidden(self, get_review, review_id: int, hidden: bool) -> None:
+        """Set or clear ``hidden_at`` on the review ``get_review(review_id)`` loads (404 if there is none)."""
+
+        async with self._atomic():
+            review = await get_review(review_id)
+            if review is None:
+                raise CampaignReviewNotFoundException(review_id)
+            review.hidden_at = self.clock() if hidden else None
             await self.repository.flush()
 
     async def _ensure_session(self, campaign_id: int, session_id: int, *, require_published: bool = False) -> None:

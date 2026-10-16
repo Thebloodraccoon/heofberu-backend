@@ -1,4 +1,7 @@
-"""Review endpoints: campaign and session reviews (``router``) and the founder's moderation (``moderation_router``)."""
+"""
+Review endpoints: campaign and session reviews (``router``) and the founder's moderation of campaign reviews
+(``moderation_router``) and of session reviews (``session_moderation_router``).
+"""
 
 from fastapi import APIRouter, Query, status
 
@@ -14,6 +17,7 @@ from app.features.campaigns.reviews.schemas import (
 
 router = APIRouter()
 moderation_router = APIRouter()
+session_moderation_router = APIRouter()
 
 _NOT_FOUND = {404: {"description": "No such campaign/session/review, or you may not see it."}}
 _PLAYER_ONLY = {**_NOT_FOUND, 403: {"description": "Only players of the campaign write reviews."}}
@@ -143,3 +147,27 @@ async def unhide_campaign_review(review_id: int, service: CampaignReviewsDep, _:
     """Show a hidden review again. **Founder only.**"""
 
     return await service.set_campaign_review_hidden(review_id, False)
+
+
+@session_moderation_router.post(
+    "/{review_id:int}/hide",
+    response_model=SessionReviewResponse,
+    summary="Hide a session review",
+    responses={404: {"description": "No such review."}},
+)
+async def hide_session_review(review_id: int, service: CampaignReviewsDep, _: FounderDep):
+    """Hide a session review from the GM and the table. **Founder only.**"""
+
+    return await service.set_session_review_hidden(review_id, True)
+
+
+@session_moderation_router.post(
+    "/{review_id:int}/unhide",
+    response_model=SessionReviewResponse,
+    summary="Unhide a session review",
+    responses={404: {"description": "No such review."}},
+)
+async def unhide_session_review(review_id: int, service: CampaignReviewsDep, _: FounderDep):
+    """Show a hidden session review again. **Founder only.**"""
+
+    return await service.set_session_review_hidden(review_id, False)

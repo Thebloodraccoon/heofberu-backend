@@ -46,7 +46,7 @@ class SessionReview(Base):
     A player's review of one session: one per player and session.
 
     The GM (and the founder) always see it; the rest of the table only when the author turns
-    ``visible_to_table`` on.
+    ``visible_to_table`` on. The founder can hide it (``hidden_at``), which drops it from every listing.
     """
 
     __tablename__ = "session_reviews"
@@ -59,6 +59,7 @@ class SessionReview(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (UniqueConstraint("session_id", "author_id", name="uq_session_reviews_author"),)
 

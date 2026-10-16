@@ -44,8 +44,8 @@ class CampaignNotesService(CampaignScopedService):
     ) -> CampaignNoteResponse:
         """Add a note."""
 
-        await self._gm(campaign_id, current_user)
         async with self._atomic():
+            await self._gm(campaign_id, current_user, lock=True)
             note = await self.repository.create({**data.model_dump(), "campaign_id": campaign_id})
             note_id = note.id
 
@@ -56,8 +56,8 @@ class CampaignNotesService(CampaignScopedService):
     ) -> CampaignNoteResponse:
         """Change a note."""
 
-        await self._gm(campaign_id, current_user)
         async with self._atomic():
+            await self._gm(campaign_id, current_user, lock=True)
             note = await self._get_or_404(campaign_id, note_id)
             await self.repository.update(note, data.model_dump(exclude_unset=True))
 
@@ -66,8 +66,8 @@ class CampaignNotesService(CampaignScopedService):
     async def delete(self, campaign_id: int, note_id: int, current_user: UserResponse) -> None:
         """Delete a note."""
 
-        await self._gm(campaign_id, current_user)
         async with self._atomic():
+            await self._gm(campaign_id, current_user, lock=True)
             await self.repository.delete(await self._get_or_404(campaign_id, note_id))
 
     async def _get_or_404(self, campaign_id: int, note_id: int) -> CampaignNote:

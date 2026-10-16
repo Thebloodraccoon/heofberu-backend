@@ -128,11 +128,11 @@ class CampaignSessionsService(CampaignScopedService):
     ) -> CampaignSessionResponse:
         """Add a session (GM); a duplicate ``number`` is a 409 from the unique constraint."""
 
-        ctx = await self._gm(campaign_id, current_user)
         fields = data.model_dump()
         async with self._atomic():
+            # The lock also keeps two auto-numbered creates from taking one number.
+            ctx = await self._gm(campaign_id, current_user, lock=True)
             if fields["number"] is None:
-                await self.repository.lock_campaign(campaign_id)  # two auto-numbered creates can't take one number
                 fields["number"] = await self.repository.next_number(campaign_id)
             session = await self.repository.create({**fields, "campaign_id": campaign_id})
             session_id = session.id
@@ -144,8 +144,8 @@ class CampaignSessionsService(CampaignScopedService):
     ) -> CampaignSessionResponse:
         """Partial update (GM). Editing a published chronicle keeps it published."""
 
-        ctx = await self._gm(campaign_id, current_user)
         async with self._atomic():
+            ctx = await self._gm(campaign_id, current_user, lock=True)
             session = await self._get_or_404(ctx, session_id)
             await self.repository.update(session, data.model_dump(exclude_unset=True))
 
@@ -161,14 +161,14 @@ class CampaignSessionsService(CampaignScopedService):
             RecordIdsInvalidError: an id isn't a participation of this campaign (400).
         """
 
-        ctx = await self._gm(campaign_id, current_user)
         participation_ids = list(dict.fromkeys(data.participation_ids))
-        known = await self.repository.participation_ids_in_campaign(campaign_id, participation_ids)
-        missing = sorted(set(participation_ids) - known)
-        if missing:
-            raise RecordIdsInvalidError("Campaign characters", missing)
-
         async with self._atomic():
+            ctx = await self._gm(campaign_id, current_user, lock=True)
+            known = await self.repository.participation_ids_in_campaign(campaign_id, participation_ids)
+            missing = sorted(set(participation_ids) - known)
+            if missing:
+                raise RecordIdsInvalidError("Campaign characters", missing)
+
             await self.repository.set_attendance(await self._get_or_404(ctx, session_id), participation_ids)
 
         return await self._response(await self._get_or_404(ctx, session_id), ctx)
@@ -178,8 +178,8 @@ class CampaignSessionsService(CampaignScopedService):
     ) -> CampaignSessionResponse:
         """Publish (players read the chronicle from now on) or unpublish it (GM). Re-publishing keeps the first date."""
 
-        ctx = await self._gm(campaign_id, current_user)
         async with self._atomic():
+            ctx = await self._gm(campaign_id, current_user, lock=True)
             session = await self._get_or_404(ctx, session_id)
             if published and session.published_at is None:
                 await self.repository.update(session, {"published_at": self.clock()})
@@ -191,8 +191,8 @@ class CampaignSessionsService(CampaignScopedService):
     async def delete(self, campaign_id: int, session_id: int, current_user: UserResponse) -> None:
         """Delete a session with its attendance and reviews (GM)."""
 
-        ctx = await self._gm(campaign_id, current_user)
         async with self._atomic():
+            ctx = await self._gm(campaign_id, current_user, lock=True)
             await self.repository.delete(await self._get_or_404(ctx, session_id))
 
     async def _get_or_404(self, ctx: CampaignContext, session_id: int) -> CampaignSession:

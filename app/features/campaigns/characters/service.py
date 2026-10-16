@@ -116,10 +116,9 @@ class CampaignCharactersService(CampaignScopedService):
             CharacterNotFreeException: the character is active in a campaign, this one included (409).
         """
 
-        await self._gm(campaign_id, current_user)
         async with self._atomic():
             # The lock keeps a concurrent close/archive from releasing characters before this row exists.
-            await self.repository.lock_campaign(campaign_id)
+            await self._gm(campaign_id, current_user, lock=True)
             state = await self.repository.campaign_state(campaign_id)
             if state.status in CAMPAIGN_CLOSED_STATUSES or state.archived_at is not None:
                 raise CampaignClosedException(campaign_id)
@@ -142,8 +141,8 @@ class CampaignCharactersService(CampaignScopedService):
         one to ``removed``. Back to ``active`` is a new participation (``POST``), so the history stays intact.
         """
 
-        await self._gm(campaign_id, current_user)
         async with self._atomic():
+            await self._gm(campaign_id, current_user, lock=True)
             participation = await self.repository.get_participation(campaign_id, participation_id)
             if participation is None:
                 raise CampaignCharacterNotFoundException(campaign_id, participation_id)

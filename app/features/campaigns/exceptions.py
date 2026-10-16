@@ -134,7 +134,7 @@ class CampaignOwnReviewException(AppError):
 
 
 class CampaignReviewHiddenException(AppError):
-    """Raised (409) when the author edits a campaign review the founder has hidden (deleting it is still allowed)."""
+    """Raised (409) when the author edits a campaign or session review the founder has hidden (delete still works)."""
 
     status_code = 409
 
@@ -142,7 +142,7 @@ class CampaignReviewHiddenException(AppError):
         """Initialize with the campaign id."""
 
         self.campaign_id = campaign_id
-        super().__init__(f"Your review of campaign {campaign_id} was hidden by moderation and can't be edited.")
+        super().__init__(f"Your review in campaign {campaign_id} was hidden by moderation and can't be edited.")
 
 
 class CampaignListFilterException(AppError):

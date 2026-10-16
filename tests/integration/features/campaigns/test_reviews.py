@@ -163,3 +163,71 @@ class TestSessionReviews:
         assert sorted(review["body"] for review in as_gm.json()["items"]) == ["for all", "private"]
         assert [review["body"] for review in as_second.json()["items"]] == ["for all"]
         assert sorted(review["body"] for review in as_first.json()["items"]) == ["for all", "private"]
+
+    async def test_founder_hides_a_session_review_from_the_gm_and_the_table(
+        self, client, gm_token, player_token, second_player, founder_token, table, published_session
+    ):
+        campaign, _ = table
+        url = f"/campaigns/{campaign['id']}/sessions/{published_session}"
+        written = await client.put(
+            url + "/review", json={"body": "spam", "visible_to_table": True}, headers=auth(player_token)
+        )
+
+        hidden = await client.post(f"/session-reviews/{written.json()['id']}/hide", headers=auth(founder_token))
+        as_gm = await client.get(url + "/reviews", headers=auth(gm_token))
+        as_table = await client.get(url + "/reviews", headers=auth(second_player[1]))
+        as_founder = await client.get(url + "/reviews", headers=auth(founder_token))
+
+        assert hidden.status_code == 200
+        assert hidden.json()["hidden_at"] is not None
+        assert as_gm.json()["items"] == []
+        assert as_table.json()["items"] == []
+        assert [review["body"] for review in as_founder.json()["items"]] == ["spam"]
+
+    async def test_unhide_shows_the_session_review_again(
+        self, client, gm_token, player_token, founder_token, table, published_session
+    ):
+        campaign, _ = table
+        url = f"/campaigns/{campaign['id']}/sessions/{published_session}"
+        written = await client.put(url + "/review", json={"body": "fine"}, headers=auth(player_token))
+        review_id = written.json()["id"]
+        await client.post(f"/session-reviews/{review_id}/hide", headers=auth(founder_token))
+
+        unhidden = await client.post(f"/session-reviews/{review_id}/unhide", headers=auth(founder_token))
+        as_gm = await client.get(url + "/reviews", headers=auth(gm_token))
+
+        assert unhidden.json()["hidden_at"] is None
+        assert [review["body"] for review in as_gm.json()["items"]] == ["fine"]
+
+    async def test_a_hidden_session_review_can_be_deleted_but_not_edited(
+        self, client, player_token, founder_token, table, published_session
+    ):
+        campaign, _ = table
+        url = f"/campaigns/{campaign['id']}/sessions/{published_session}/review"
+        written = await client.put(url, json={"body": "spam"}, headers=auth(player_token))
+        await client.post(f"/session-reviews/{written.json()['id']}/hide", headers=auth(founder_token))
+
+        edited = await client.put(url, json={"body": "spam, reworded"}, headers=auth(player_token))
+        deleted = await client.delete(url, headers=auth(player_token))
+
+        assert edited.status_code == 409
+        assert deleted.status_code == 204
+
+    async def test_only_the_founder_moderates_session_reviews(
+        self, client, gm_token, player_token, table, published_session
+    ):
+        campaign, _ = table
+        written = await client.put(
+            f"/campaigns/{campaign['id']}/sessions/{published_session}/review",
+            json={"body": "fine"},
+            headers=auth(player_token),
+        )
+
+        response = await client.post(f"/session-reviews/{written.json()['id']}/hide", headers=auth(gm_token))
+
+        assert response.status_code == 403
+
+    async def test_hiding_a_missing_session_review_is_404(self, client, founder_token):
+        response = await client.post("/session-reviews/999999/hide", headers=auth(founder_token))
+
+        assert response.status_code == 404

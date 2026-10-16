@@ -41,9 +41,10 @@ class CampaignAccessMixin(RepositoryMixin):
 
     async def lock_campaign(self, campaign_id: int) -> None:
         """
-        ``SELECT ... FOR UPDATE`` on the campaign row, inside the caller's transaction. Serializes the writes that
-        read campaign state and then act on it: adding a character vs. closing/archiving (which releases active
-        characters), and auto-numbering sessions.
+        ``SELECT ... FOR UPDATE`` on the campaign row, inside the caller's transaction. Every campaign write takes
+        it (``CampaignScopedService._context(lock=True)``), so writes of one campaign are serialized: the caller's
+        standing can't change mid-write, adding a character can't race closing/archiving (which releases active
+        characters), and auto-numbered sessions can't share a number.
         """
 
         await self.db.execute(select(Campaign.id).where(Campaign.id == campaign_id).with_for_update())
@@ -53,6 +54,8 @@ class CampaignScopedService(TransactionMixin):
     """
     Base of every campaign capability service: resolves the caller's ``CampaignContext`` (404 when the campaign
     doesn't exist) and owns the transaction helpers. Capabilities then call ``ctx.ensure_*`` for their rule.
+
+    Writes resolve the context inside their ``_atomic()`` block with ``lock=True``; reads resolve it without a lock.
     """
 
     repository: Any
@@ -69,31 +72,38 @@ class CampaignScopedService(TransactionMixin):
     def _tx_db(self) -> AsyncSession:
         return self.repository.db
 
-    async def _context(self, campaign_id: int, user: UserResponse) -> CampaignContext:
-        """The caller's standing in the campaign (not yet checked against any rule)."""
+    async def _context(self, campaign_id: int, user: UserResponse, *, lock: bool = False) -> CampaignContext:
+        """
+        The caller's standing in the campaign (not yet checked against any rule).
 
+        ``lock`` (writes, inside ``_atomic()``): take ``lock_campaign`` first, so the standing can't change between
+        this check and the write (a concurrent ``removed``, close or archive waits for the same row lock).
+        """
+
+        if lock:
+            await self.repository.lock_campaign(campaign_id)
         row = await self.repository.access_row(campaign_id, user.id)
         if row is None:
             raise CampaignNotFoundException(campaign_id)
 
         return CampaignContext.of(user, campaign_id, row.owner_id, bool(row.is_player))
 
-    async def _reader(self, campaign_id: int, user: UserResponse) -> CampaignContext:
+    async def _reader(self, campaign_id: int, user: UserResponse, *, lock: bool = False) -> CampaignContext:
         """Context of a caller who may read the campaign (GM, founder or player), else 404."""
 
-        return (await self._context(campaign_id, user)).ensure_can_read()
+        return (await self._context(campaign_id, user, lock=lock)).ensure_can_read()
 
-    async def _gm(self, campaign_id: int, user: UserResponse) -> CampaignContext:
+    async def _gm(self, campaign_id: int, user: UserResponse, *, lock: bool = False) -> CampaignContext:
         """Context of the campaign's GM or the founder, else 404/403."""
 
-        return (await self._context(campaign_id, user)).ensure_gm()
+        return (await self._context(campaign_id, user, lock=lock)).ensure_gm()
 
-    async def _player(self, campaign_id: int, user: UserResponse) -> CampaignContext:
+    async def _player(self, campaign_id: int, user: UserResponse, *, lock: bool = False) -> CampaignContext:
         """Context of a player of the campaign, else 404/403."""
 
-        return (await self._context(campaign_id, user)).ensure_player()
+        return (await self._context(campaign_id, user, lock=lock)).ensure_player()
 
-    async def _reviewer(self, campaign_id: int, user: UserResponse) -> CampaignContext:
+    async def _reviewer(self, campaign_id: int, user: UserResponse, *, lock: bool = False) -> CampaignContext:
         """Context of a player who may review the campaign (not its own GM), else 404/403."""
 
-        return (await self._context(campaign_id, user)).ensure_reviewer()
+        return (await self._context(campaign_id, user, lock=lock)).ensure_reviewer()

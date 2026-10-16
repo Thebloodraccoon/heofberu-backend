@@ -35,7 +35,7 @@ class CampaignReviewResponse(BaseModel):
 
 
 class SessionReviewResponse(BaseModel):
-    """A session review."""
+    """A session review. ``hidden_at`` is set only in the founder's view (others never get hidden reviews)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,3 +46,4 @@ class SessionReviewResponse(BaseModel):
     visible_to_table: bool
     created_at: datetime
     edited_at: datetime | None = None
+    hidden_at: datetime | None = None

@@ -111,13 +111,11 @@ class CampaignCrudService(CampaignScopedService):
     async def update(self, campaign_id: int, data: CampaignUpdate, current_user: UserResponse) -> CampaignResponse:
         """Partial update (GM). Closing the campaign (finished/abandoned) releases its active characters."""
 
-        await self._gm(campaign_id, current_user)
         fields = data.model_dump(exclude_unset=True)
-        if fields.get("public_campaign_id") is not None:
-            await self._preset_or_400(fields["public_campaign_id"], current_user)
-
         async with self._atomic():
-            await self.repository.lock_campaign(campaign_id)
+            await self._gm(campaign_id, current_user, lock=True)
+            if fields.get("public_campaign_id") is not None:
+                await self._preset_or_400(fields["public_campaign_id"], current_user)
             campaign = await self.repository.get_by_id(campaign_id)
             await self.repository.update(campaign, fields)
             if fields.get("status") in CAMPAIGN_CLOSED_STATUSES:
@@ -128,9 +126,8 @@ class CampaignCrudService(CampaignScopedService):
     async def archive(self, campaign_id: int, current_user: UserResponse) -> CampaignResponse:
         """Archive (GM): hidden from "my campaigns" by default, still readable, characters released."""
 
-        await self._gm(campaign_id, current_user)
         async with self._atomic():
-            await self.repository.lock_campaign(campaign_id)
+            await self._gm(campaign_id, current_user, lock=True)
             campaign = await self.repository.get_by_id(campaign_id)
             if campaign.archived_at is None:
                 now = self.clock()
@@ -142,8 +139,8 @@ class CampaignCrudService(CampaignScopedService):
     async def restore(self, campaign_id: int, current_user: UserResponse) -> CampaignResponse:
         """Take the campaign out of the archive (GM). Released characters stay released: re-add them."""
 
-        await self._gm(campaign_id, current_user)
         async with self._atomic():
+            await self._gm(campaign_id, current_user, lock=True)
             campaign = await self.repository.get_by_id(campaign_id)
             await self.repository.update(campaign, {"archived_at": None})
 
