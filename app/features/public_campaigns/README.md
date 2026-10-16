@@ -24,7 +24,7 @@ public_campaigns/
 | Method | Path | Access | Capability |
 | ------ | ---- | ------ | ---------- |
 | GET | `/public-campaigns?q=&tag_id=&author_id=&status=` | open | crud — catalog; `status` only for GMs |
-| GET | `/public-campaigns/{id}` · `/by-slug/{slug}` | open | crud — guests: published only, no `:::gm`, `articles: null` |
+| GET | `/public-campaigns/{id}` · `/by-slug/{slug}` | open | crud — guests: published only, no `:::gm`; no article links (see `/articles`) |
 | POST | `/public-campaigns` | GM | crud — a draft authored by the caller |
 | PATCH | `/public-campaigns/{id}` | author / founder | crud — the slug never changes on rename |
 | POST | `/public-campaigns/{id}/publish` · `/unpublish` · `/archive` | author / founder | crud |
@@ -37,7 +37,7 @@ public_campaigns/
 
 - **Visibility.** Everyone sees `PUBLISHED` presets; a draft or an archived one exists only for its author and
   the founder (`can_see_preset`; other GMs get 404 and don't find it in the catalog). Any GM reads the full text of
-  what they can see and the article links (`is_gm_reader`); `:::gm` blocks in the description and pitch are
+  what they can see (`is_gm_reader`) and the article links via `GET /{id}/articles`; `:::gm` blocks in the description and pitch are
   stripped for everyone else.
 - **Linking is open by design.** Any GM may start a game campaign from any published preset; its players' reviews
   and showcased characters then appear on the preset's page — that is the showcase.

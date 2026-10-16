@@ -58,8 +58,8 @@ async def list_public_campaigns(
 )
 async def get_public_campaign(public_campaign_id: int, service: PublicCampaignCrudDep, user: OptionalUserDep):
     """
-    One public campaign. Players and guests get the description without `:::gm` blocks and `articles: null`;
-    GMs also get the article links. Open endpoint.
+    One public campaign. Players and guests get the description without `:::gm` blocks. Article links are
+    not included: GMs read them from `GET /public-campaigns/{id}/articles`. Open endpoint.
     """
 
     return await service.get(public_campaign_id, user)

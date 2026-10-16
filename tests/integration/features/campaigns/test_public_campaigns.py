@@ -42,11 +42,12 @@ class TestPublicCampaignVisibility:
 
         guest = (await client.get(f"/public-campaigns/by-slug/{preset['slug']}")).json()
         gm = (await client.get(f"/public-campaigns/{preset['id']}", headers=auth(gm_token))).json()
+        links = (await client.get(f"/public-campaigns/{preset['id']}/articles", headers=auth(gm_token))).json()
 
         assert "lures ships" not in guest["description_markdown"]
-        assert guest["articles"] is None
+        assert "articles" not in guest and "articles" not in gm
         assert "lures ships" in gm["description_markdown"]
-        assert [link["title"] for link in gm["articles"]] == ["The Keeper"]
+        assert [link["title"] for link in links] == ["The Keeper"]
 
     async def test_only_the_author_or_founder_edits(
         self, client, other_gm_token, founder_token, make_public_campaign

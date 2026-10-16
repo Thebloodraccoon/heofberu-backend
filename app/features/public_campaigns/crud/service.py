@@ -2,7 +2,7 @@
 Public campaigns (presets/announcements): GMs write them, everyone reads the published ones.
 
 The author publishes their own (no review step); the founder moderates afterwards (archive). Players and guests see
-only ``PUBLISHED`` presets, with ``:::gm`` blocks stripped and without the article links (those are for GMs).
+only ``PUBLISHED`` presets, with ``:::gm`` blocks stripped; article links are only under ``/{id}/articles`` (GM).
 """
 
 from typing import Literal
@@ -19,7 +19,6 @@ from app.features.public_campaigns.exceptions import (
     PublicCampaignStatusTransitionException,
 )
 from app.features.public_campaigns.schemas import (
-    PublicCampaignArticleLink,
     PublicCampaignCreate,
     PublicCampaignListItem,
     PublicCampaignResponse,
@@ -174,19 +173,11 @@ class PublicCampaignCrudService(PublicCampaignScopedService):
         item = self._list_item(
             public_campaign, await self.repository.campaign_count(public_campaign_id), is_gm=is_gm
         )
-        articles = None
-        if is_gm:
-            articles = [
-                PublicCampaignArticleLink.model_validate(dict(row._mapping))
-                for row in await self.repository.list_article_links(public_campaign_id)
-            ]
-
         description = public_campaign.description_markdown
         return PublicCampaignResponse(
             **item.model_dump(),
             description_markdown=(description if is_gm else strip_gm_blocks(description)) or "",
             created_at=public_campaign.created_at,
-            articles=articles,
         )
 
     @staticmethod

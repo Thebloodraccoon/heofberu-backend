@@ -78,13 +78,12 @@ class PublicCampaignArticleLink(BaseModel):
 
 class PublicCampaignResponse(PublicCampaignListItem):
     """
-    One public campaign. Non-GMs get ``description_markdown`` without ``:::gm`` blocks and no ``articles``
-    (``null``): the article links are for GMs.
+    One public campaign. Non-GMs get ``description_markdown`` without ``:::gm`` blocks; the article links are
+    not here, GMs read them from ``GET /public-campaigns/{id}/articles``.
     """
 
     description_markdown: str
     created_at: datetime
-    articles: list[PublicCampaignArticleLink] | None = None
 
 
 class PublicCampaignArticleEntry(BaseModel):
