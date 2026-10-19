@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 
 from app.core.pagination import Page
 from app.features.auth.dependencies import OptionalUserDep
-from app.features.characters.visibility.schemas import PublicCharacterConcept
+from app.features.characters.visibility.schemas import PublicCharacterSummary
 from app.features.public_campaigns.dependencies import PublicCampaignShowcaseDep
 from app.features.public_campaigns.schemas import PublicCampaignReview
 
@@ -15,7 +15,7 @@ _NOT_FOUND = {404: {"description": "No such public campaign (or it isn't publish
 
 @router.get(
     "/{public_campaign_id:int}/characters",
-    response_model=Page[PublicCharacterConcept],
+    response_model=Page[PublicCharacterSummary],
     summary="Characters that played a public campaign",
     responses=_NOT_FOUND,
 )
@@ -27,8 +27,8 @@ async def list_showcase_characters(
     size: int = Query(20, ge=1, le=100, description="Page size"),
 ):
     """
-    Archetypes from every game campaign made from this preset, if their owners show them publicly. Concept cards;
-    `public_visibility: full` ones have a full card at `GET /characters/{id}/public`. Open endpoint.
+    Archetypes from every game campaign made from this preset, if their owners show them publicly. Summary rows;
+    the full card of each is at `GET /characters/{id}/public`. Open endpoint.
     """
 
     return await service.list_characters(public_campaign_id, user, page=page, size=size)

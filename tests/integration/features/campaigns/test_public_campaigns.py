@@ -143,7 +143,7 @@ class TestShowcase:
         hidden = await client.get(url)
         await client.patch(
             f"/characters/{free_character.id}/public-visibility",
-            json={"public_visibility": "concept"},
+            json={"public_visibility": "full"},
             headers=auth(player_token),
         )
         shown = await client.get(url)

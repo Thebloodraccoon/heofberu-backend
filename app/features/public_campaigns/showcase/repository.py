@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.constants import CampaignCharacterStatus, CharacterPublicVisibility
 from app.core.pagination import fetch_page
-from app.features.characters.visibility.repository import concept_columns, with_concept_joins
+from app.features.characters.visibility.repository import summary_columns, with_summary_joins
 from app.features.public_campaigns.base import PublicCampaignScopedRepository
 from app.models.campaigns.campaign_character_model import CampaignCharacter
 from app.models.campaigns.campaign_model import Campaign
@@ -42,7 +42,7 @@ class PublicCampaignShowcaseRepository(PublicCampaignScopedRepository):
             Character.id.in_(played_here),
             Character.public_visibility != CharacterPublicVisibility.HIDDEN,
         ]
-        stmt = with_concept_joins(select(*concept_columns()).select_from(Character))
+        stmt = with_summary_joins(select(*summary_columns()).select_from(Character))
         return await fetch_page(
             self.db, stmt.where(*conditions).order_by(Character.name, Character.id), skip=skip, limit=limit
         )

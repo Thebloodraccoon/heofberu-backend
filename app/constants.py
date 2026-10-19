@@ -533,13 +533,12 @@ class CharacterPublicVisibility(str, Enum):
     """
     How much of a character its owner shows publicly (public card, public campaign showcase).
 
-    Only the owner changes it. ``CONCEPT``: name, race/class, level. ``FULL``: plus personality, backstory
-    (``:::gm`` blocks stripped), ability scores, inventory and spells. Campaign data (chronicle, notes,
-    reviews) is never part of it.
+    Only the owner changes it. ``HIDDEN``: nowhere public. ``FULL``: name, level, race/class/background ids,
+    personality, backstory (``:::gm`` blocks stripped), base and total ability scores, skill and saving-throw
+    proficiencies. Inventory, spells and campaign data (chronicle, notes, reviews) are never part of it.
     """
 
     HIDDEN = "hidden"
-    CONCEPT = "concept"
     FULL = "full"
 
 

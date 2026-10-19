@@ -47,7 +47,7 @@ public_campaigns/
   (not a correlated count per row); the single preset reads its own count.
 - **Slugs** come from `shared/slug.py` (`slugify(title, fallback="campaign")`, `-2`, `-3`, ... on collision); a
   concurrent duplicate is a 409 from the unique index.
-- **Showcase edge.** `showcase/` reads `characters/visibility` (`concept_columns`, `PublicCharacterConcept`) so the
+- **Showcase edge.** `showcase/` reads `characters/visibility` (`summary_columns`, `PublicCharacterSummary`) so the
   showcase row and the public character card can't drift; it shows no campaign names or campaign data.
 - **No cache.** The catalog's `campaign_count`, the showcase and the reviews change with game-campaign writes in
   another feature, so they are read live. If caching is ever added, those writes (and character visibility changes)

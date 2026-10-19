@@ -56,13 +56,16 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   cached — reads hit the DB directly through the owner/GM access check. It is
   also not part of `CharacterCreate`/`CharacterUpdate`.
 - `visibility/` — how much of a character is public: owner-only
-  `PATCH /characters/{id}/public-visibility` (`hidden` by default / `concept` /
-  `full`; it is a `CharacterResponse` field, so the write purges the cached
-  sheet) and the open `GET /characters/{id}/public` card (`concept`: name,
-  class, race, level, owner's username; `full` adds personality, backstory,
-  totals, inventory and spells, with `:::gm` stripped; `hidden` is a 404). The
+  `PATCH /characters/{id}/public-visibility` (`hidden` by default / `full`;
+  it is a `CharacterResponse` field, so the write purges the cached
+  sheet) and the open `GET /characters/{id}/public` card of a `full`
+  character (name, class/subclass, race/subrace and background ids (no
+  names — the client looks them up), level, owner's username, personality, backstory, base and total ability
+  scores, skill and saving-throw proficiencies (resolved via
+  `proficiencies.service.resolve_character_proficiencies`; armor/weapon ones
+  never), with `:::gm` stripped; never inventory or spells; `hidden` is a 404). The
   card is read live, never cached. `public_campaigns/showcase` reuses its
-  `concept_columns` / `PublicCharacterConcept`.
+  `summary_columns` / `PublicCharacterSummary`.
 - `spells/` — known spells + slot totals (class-derived only, no
   spend/restore endpoints); a spell is removed with
   `DELETE /characters/{id}/spells/{spell_id}`.

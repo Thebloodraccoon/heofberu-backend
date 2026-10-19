@@ -3,7 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pagination import Page, paginate
-from app.features.characters.visibility.schemas import PublicCharacterConcept
+from app.features.characters.visibility.schemas import PublicCharacterSummary
 from app.features.public_campaigns.base import PublicCampaignScopedService
 from app.features.public_campaigns.schemas import PublicCampaignReview
 from app.features.public_campaigns.showcase.repository import PublicCampaignShowcaseRepository
@@ -25,14 +25,14 @@ class PublicCampaignShowcaseService(PublicCampaignScopedService):
 
     async def list_characters(
         self, public_campaign_id: int, user: UserResponse | None, *, page: int, size: int
-    ) -> Page[PublicCharacterConcept]:
-        """Concept cards of the characters that played it (full cards: ``GET /characters/{id}/public``)."""
+    ) -> Page[PublicCharacterSummary]:
+        """Summary rows of the characters that played it (full cards: ``GET /characters/{id}/public``)."""
 
         await self._visible_state(public_campaign_id, user)
         skip, limit = paginate(page, size)
         rows, total = await self.repository.list_characters(public_campaign_id, skip=skip, limit=limit)
         items = [
-            PublicCharacterConcept.model_validate({key: value for key, value in row._mapping.items() if key != "total"})
+            PublicCharacterSummary.model_validate({key: value for key, value in row._mapping.items() if key != "total"})
             for row in rows
         ]
         return Page(items=items, total=total, page=page, size=size)

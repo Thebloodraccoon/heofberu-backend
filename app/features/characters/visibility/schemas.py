@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from app.constants import CharacterPublicVisibility
+from app.constants import AbilityScore, CharacterPublicVisibility
 
 
 class CharacterVisibilityUpdate(BaseModel):
@@ -21,7 +21,7 @@ class CharacterVisibilityResponse(BaseModel):
 
 
 class PublicAbilityScores(BaseModel):
-    """Ability totals (bonuses included) as shown on a ``FULL`` card."""
+    """Six ability values on a ``FULL`` card: the base scores, or the totals with every bonus included."""
 
     strength: int
     dexterity: int
@@ -31,35 +31,36 @@ class PublicAbilityScores(BaseModel):
     charisma: int
 
 
-class PublicItem(BaseModel):
-    """One inventory stack on a ``FULL`` card."""
+class PublicSkillProficiency(BaseModel):
+    """One skill the character is proficient in, on a ``FULL`` card."""
 
-    name: str
-    quantity: int
+    skill_id: int
+    is_expertise: bool
 
 
-class PublicCharacterConcept(BaseModel):
+class PublicCharacterSummary(BaseModel):
     """
-    What ``CONCEPT`` shows: who the character is, never how it plays.
-
-    Also the row of the public campaign showcase (``GET /public-campaigns/{id}/characters``), whatever the level.
+    Who a public character is: the row of the public campaign showcase (``GET /public-campaigns/{id}/characters``)
+    and the head of the public card.
     """
 
     id: int
     name: str
     level: int
-    class_name: str
-    subclass_name: str | None = None
-    race_name: str | None = None
-    subrace_name: str | None = None
+    class_id: int
+    subclass_id: int | None = None
+    race_id: int | None = None
+    subrace_id: int | None = None
+    background_id: int | None = None
     owner_username: str
     public_visibility: CharacterPublicVisibility
 
 
-class PublicCharacterCard(PublicCharacterConcept):
+class PublicCharacterCard(PublicCharacterSummary):
     """
-    ``GET /characters/{id}/public``: the concept, plus for ``FULL`` the personality, backstory (``:::gm`` blocks
-    stripped), ability totals, inventory and spells. Campaign data (chronicle, notes, reviews) is never here.
+    ``GET /characters/{id}/public`` of a ``FULL`` character: the summary, plus the personality, backstory (``:::gm``
+    blocks stripped), base and total ability scores, skill and saving-throw proficiencies (never armor/weapon ones).
+    Inventory, spells and campaign data (chronicle, notes, reviews) are never here.
     """
 
     personality_traits: str | None = None
@@ -67,6 +68,7 @@ class PublicCharacterCard(PublicCharacterConcept):
     bonds: str | None = None
     flaws: str | None = None
     backstory: str | None = None
+    base_ability_scores: PublicAbilityScores | None = None
     ability_scores: PublicAbilityScores | None = None
-    items: list[PublicItem] | None = None
-    spells: list[str] | None = None
+    skill_proficiencies: list[PublicSkillProficiency] | None = None
+    saving_throw_proficiencies: list[AbilityScore] | None = None

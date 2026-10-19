@@ -29,9 +29,10 @@ async def set_public_visibility(
     current_user: CurrentUserDep,
 ):
     """
-    `hidden` (default): nowhere public. `concept`: name, race/class, level. `full`: plus personality, backstory
-    (write secrets for your GM inside `:::gm` ... `:::` blocks — they are never shown), ability totals, inventory
-    and spells. Applies at once everywhere, including public campaign showcases. **Owner only.**
+    `hidden` (default): nowhere public. `full`: name, level, race/subrace, class/subclass and background ids,
+    personality, backstory (write secrets for your GM inside `:::gm` ... `:::` blocks — they are never shown), base
+    and total ability scores, skill and saving-throw proficiencies. Inventory and spells are never shown.
+    Applies at once everywhere, including public campaign showcases. **Owner only.**
     """
 
     return await service.set_visibility(character_id, data, current_user)

@@ -2,29 +2,31 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import CharacterPublicVisibility
+from app.constants import CharacterPublicVisibility, ProficiencyType
 from app.core.base.transaction import TransactionMixin
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.exceptions import CharacterAccessDeniedException, CharacterNotFoundException
+from app.features.characters.proficiencies.service import resolve_character_proficiencies
 from app.features.characters.visibility.repository import CharacterVisibilityRepository
 from app.features.characters.visibility.schemas import (
     CharacterVisibilityResponse,
     CharacterVisibilityUpdate,
     PublicAbilityScores,
     PublicCharacterCard,
-    PublicItem,
+    PublicSkillProficiency,
 )
 from app.features.shared.secrets import strip_gm_blocks
 from app.features.users.schemas import UserResponse
 
-_CONCEPT_FIELDS = (
+_SUMMARY_FIELDS = (
     "id",
     "name",
     "level",
-    "class_name",
-    "subclass_name",
-    "race_name",
-    "subrace_name",
+    "class_id",
+    "subclass_id",
+    "race_id",
+    "subrace_id",
+    "background_id",
     "owner_username",
     "public_visibility",
 )
@@ -66,21 +68,26 @@ class CharacterVisibilityService(TransactionMixin):
         return CharacterVisibilityResponse(id=character_id, public_visibility=data.public_visibility)
 
     async def get_public_card(self, character_id: int) -> PublicCharacterCard:
-        """The card at the character's visibility level (404 when it doesn't exist or is ``HIDDEN``)."""
+        """The full public card (404 when the character doesn't exist or is ``HIDDEN``)."""
 
         row = await self.repository.get_card_row(character_id)
         if row is None or row.public_visibility == CharacterPublicVisibility.HIDDEN:
             raise CharacterNotFoundException(character_id=character_id)
 
-        card = PublicCharacterCard(**{field: getattr(row, field) for field in _CONCEPT_FIELDS})
-        if row.public_visibility != CharacterPublicVisibility.FULL:
-            return card
-
+        card = PublicCharacterCard(**{field: getattr(row, field) for field in _SUMMARY_FIELDS})
         card.personality_traits = strip_gm_blocks(row.personality_traits)
         card.ideals = strip_gm_blocks(row.ideals)
         card.bonds = strip_gm_blocks(row.bonds)
         card.flaws = strip_gm_blocks(row.flaws)
         card.backstory = strip_gm_blocks(row.backstory) or ""
+        card.base_ability_scores = PublicAbilityScores(
+            strength=row.strength,
+            dexterity=row.dexterity,
+            constitution=row.constitution,
+            intelligence=row.intelligence,
+            wisdom=row.wisdom,
+            charisma=row.charisma,
+        )
         if row.strength_total is not None:
             card.ability_scores = PublicAbilityScores(
                 strength=row.strength_total,
@@ -90,7 +97,17 @@ class CharacterVisibilityService(TransactionMixin):
                 wisdom=row.wisdom_total,
                 charisma=row.charisma_total,
             )
-        items = await self.repository.list_items(character_id)
-        card.items = [PublicItem(name=name, quantity=quantity) for name, quantity in items]
-        card.spells = await self.repository.list_spell_names(character_id)
+
+        # Armor and weapon proficiencies stay off the card.
+        card.skill_proficiencies = []
+        card.saving_throw_proficiencies = []
+        for proficiency in await resolve_character_proficiencies(self.repository.db, character_id):
+            proficiency_type, *discriminator = proficiency.key
+            if proficiency_type == ProficiencyType.SKILL:
+                card.skill_proficiencies.append(
+                    PublicSkillProficiency(skill_id=discriminator[0], is_expertise=proficiency.is_expertise)
+                )
+            elif proficiency_type == ProficiencyType.SAVING_THROW:
+                card.saving_throw_proficiencies.append(discriminator[0])
+        card.skill_proficiencies.sort(key=lambda skill: skill.skill_id)
         return card
