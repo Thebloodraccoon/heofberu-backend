@@ -11,7 +11,7 @@ public showcase: the characters whose owners allowed it and the players' reviews
 public_campaigns/
 ├── router.py            # assembles /public-campaigns (one include_router per capability)
 ├── dependencies.py      # PublicCampaign{Crud,Articles,Showcase}Dep
-├── base.py              # can_see_unpublished (any GM), edit rights (author / founder), PublicCampaignScoped*
+├── base.py              # is_gm_reader, can_see_preset, can_edit_preset (author / founder), PublicCampaignScoped*
 ├── schemas.py           # Pitch, list item / response / article-link schemas, MAX_LINKS
 ├── exceptions.py        # not found, bad status move, ...
 ├── crud/                # catalog, by id / slug, create, PATCH, publish / unpublish / archive
@@ -29,7 +29,7 @@ public_campaigns/
 | PATCH | `/public-campaigns/{id}` | author / founder | crud — the slug never changes on rename |
 | POST | `/public-campaigns/{id}/publish` · `/unpublish` · `/archive` | author / founder | crud |
 | GET | `/public-campaigns/{id}/articles` | GM | articles |
-| PUT | `/public-campaigns/{id}/articles` | author / founder | articles — full replace, at most `MAX_LINKS` |
+| PUT | `/public-campaigns/{id}/articles` | GM | articles — full replace, at most `MAX_LINKS` |
 | GET | `/public-campaigns/{id}/characters` | open | showcase — participation not `removed`, visibility not `hidden` |
 | GET | `/public-campaigns/{id}/reviews` | open | showcase — reviews of linked campaigns, minus founder-hidden ones |
 
@@ -39,6 +39,9 @@ public_campaigns/
   the founder (`can_see_preset`; other GMs get 404 and don't find it in the catalog). Any GM reads the full text of
   what they can see (`is_gm_reader`) and the article links via `GET /{id}/articles`; `:::gm` blocks in the description and pitch are
   stripped for everyone else.
+- **Edit rights are split.** The preset itself (PATCH, publish/unpublish/archive) is its author's or the founder's
+  (`_editable_state`); its article links are shared work — any GM who sees the preset replaces them
+  (`_visible_state`, so another GM's draft is still a 404).
 - **Linking is open by design.** Any GM may start a game campaign from any published preset; its players' reviews
   and showcased characters then appear on the preset's page — that is the showcase.
 - **Copy, then link.** `POST /campaigns` with `public_campaign_id` copies title/description into the game campaign;

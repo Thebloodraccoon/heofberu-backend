@@ -61,6 +61,21 @@ class TestPublicCampaignVisibility:
         assert other.status_code == 403
         assert founder.json()["status"] == "archived"
 
+    async def test_any_gm_edits_the_article_links_of_a_preset_they_see(
+        self, client, other_gm_token, player_token, make_public_campaign, create_article
+    ):
+        article = await create_article(title="The Keeper", article_type="npc", status="published")
+        preset = await make_public_campaign()
+        draft = await make_public_campaign(publish=False)
+        body = {"articles": [{"article_id": article["id"]}]}
+
+        other = await client.put(f"/public-campaigns/{preset['id']}/articles", json=body, headers=auth(other_gm_token))
+        hidden = await client.put(f"/public-campaigns/{draft['id']}/articles", json=body, headers=auth(other_gm_token))
+        player = await client.put(f"/public-campaigns/{preset['id']}/articles", json=body, headers=auth(player_token))
+
+        assert [link["title"] for link in other.json()] == ["The Keeper"]
+        assert (hidden.status_code, player.status_code) == (404, 403)
+
     async def test_slug_is_unique_and_kept_on_rename(self, client, gm_token, make_public_campaign):
         first = await make_public_campaign(title="Маяк")
         second = await make_public_campaign(title="Маяк")

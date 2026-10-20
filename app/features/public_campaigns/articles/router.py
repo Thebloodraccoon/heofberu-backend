@@ -1,4 +1,4 @@
-"""Public campaign article link endpoints (GM-only reads, author/founder writes)."""
+"""Public campaign article link endpoints (GM-only reads and writes)."""
 
 from fastapi import APIRouter
 
@@ -27,13 +27,13 @@ async def list_public_campaign_articles(public_campaign_id: int, service: Public
     summary="Replace a public campaign's articles",
     responses={
         400: {"description": "Unknown article ids."},
-        403: {"description": "Only the author (or the founder) can change it."},
-        404: {"description": "No such public campaign."},
+        403: {"description": "The caller is not a GM."},
+        404: {"description": "No such public campaign (or a draft the caller can't see)."},
     },
 )
 async def set_public_campaign_articles(
     public_campaign_id: int, data: PublicCampaignArticlesUpdate, service: PublicCampaignArticlesDep, user: GmUserDep
 ):
-    """Replace all article links (`position` defaults to the list order; `[]` clears them). **Author or founder.**"""
+    """Replace all article links (`position` defaults to the list order; `[]` clears them). **GM only.**"""
 
     return await service.set_links(public_campaign_id, data, user)

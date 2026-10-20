@@ -32,9 +32,12 @@ class PublicCampaignArticlesService(PublicCampaignScopedService):
     async def set_links(
         self, public_campaign_id: int, data: PublicCampaignArticlesUpdate, user: UserResponse
     ) -> list[PublicCampaignArticleLink]:
-        """Replace all links (author/founder). Duplicates keep their first entry; unknown article ids are a 400."""
+        """
+        Replace all links. Any GM who sees the preset may (the router allows GMs only), not just its author: the
+        knowledge base is shared work. Duplicates keep their first entry; unknown article ids are a 400.
+        """
 
-        await self._editable_state(public_campaign_id, user)
+        await self._visible_state(public_campaign_id, user)
         entries, seen = [], set()
         for index, entry in enumerate(data.articles):
             if entry.article_id in seen:
