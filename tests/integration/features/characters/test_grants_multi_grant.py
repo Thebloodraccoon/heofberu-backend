@@ -62,7 +62,7 @@ class TestMultiGrantDedup:
                 feature.id,
                 {
                     "static_groups": [
-                        {"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}
+                        {"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY"}]}
                     ]
                 },
             )
@@ -122,7 +122,11 @@ class TestMultiGrantExpertiseIndependence:
             client,
             gm_token,
             class_feature.id,
-            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
+            {
+                "static_groups": [
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY_AND_EXPERTISE"}]}
+                ]
+            },
         )
         assert class_fx.status_code == 200, class_fx.text
 
@@ -130,7 +134,7 @@ class TestMultiGrantExpertiseIndependence:
             client,
             gm_token,
             race_feature.id,
-            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}]},
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY"}]}]},
         )
         assert race_fx.status_code == 200, race_fx.text
 
@@ -183,7 +187,7 @@ class TestMultiGrantSyncPreservesSiblingRows:
             client,
             gm_token,
             race_feature.id,
-            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": False}]}]},
+            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY"}]}]},
         )
         assert race_fx.status_code == 200, race_fx.text
 
@@ -194,7 +198,11 @@ class TestMultiGrantSyncPreservesSiblingRows:
             client,
             gm_token,
             class_feature.id,
-            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
+            {
+                "static_groups": [
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY_AND_EXPERTISE"}]}
+                ]
+            },
         )
         assert class_fx.status_code == 200, class_fx.text
 

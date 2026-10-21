@@ -175,25 +175,31 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         return list(result.scalars().unique().all())
 
     async def replace_choices(
-        self, grant_id: int, option_ids_by_group: dict[int, list[int]]
+        self, grant_id: int, picks_by_group: dict[int, list[tuple[int, int | None, int | None]]]
     ) -> list[CharacterFeatureChoice]:
         """
-        Replace the grant's stored picks of every group in ``option_ids_by_group``
-        (flush only); return the new pick rows.
+        Replace the grant's stored picks of every group in ``picks_by_group``
+        (``(option_id, picked_skill_id, picked_spell_id)`` triples; flush only); return the new pick rows.
         """
 
         await self.db.execute(
             delete(CharacterFeatureChoice).where(
                 CharacterFeatureChoice.character_feature_id == grant_id,
-                CharacterFeatureChoice.choice_group_id.in_(list(option_ids_by_group)),
+                CharacterFeatureChoice.choice_group_id.in_(list(picks_by_group)),
             )
         )
         await self.db.flush()
 
         new_choices = [
-            CharacterFeatureChoice(character_feature_id=grant_id, choice_group_id=group_id, choice_option_id=option_id)
-            for group_id, option_ids in option_ids_by_group.items()
-            for option_id in option_ids
+            CharacterFeatureChoice(
+                character_feature_id=grant_id,
+                choice_group_id=group_id,
+                choice_option_id=option_id,
+                picked_skill_id=picked_skill_id,
+                picked_spell_id=picked_spell_id,
+            )
+            for group_id, picks in picks_by_group.items()
+            for option_id, picked_skill_id, picked_spell_id in picks
         ]
         self.db.add_all(new_choices)
         await self.db.flush()

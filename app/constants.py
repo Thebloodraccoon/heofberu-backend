@@ -274,6 +274,24 @@ class ChoiceType(str, Enum):
     WEAPON = "WEAPON"
 
 
+class SkillEffectMode(str, Enum):
+    """
+    What a skill effect (``feature_skill_proficiency_effects.mode``) gives.
+
+    - ``PROFICIENCY`` — proficiency only.
+    - ``PROFICIENCY_AND_EXPERTISE`` — proficiency plus expertise.
+    - ``EXPERTISE`` — expertise only: needs the proficiency from another
+      source (Rogue/Bard Expertise); without it the effect gives nothing.
+    - ``UPGRADE`` — proficiency, or expertise when another source already
+      gives the proficiency.
+    """
+
+    PROFICIENCY = "PROFICIENCY"
+    PROFICIENCY_AND_EXPERTISE = "PROFICIENCY_AND_EXPERTISE"
+    EXPERTISE = "EXPERTISE"
+    UPGRADE = "UPGRADE"
+
+
 # The one ``effect_type`` the options of a group of each ``ChoiceType`` may carry.
 EFFECT_TYPE_BY_CHOICE_TYPE: dict[ChoiceType, str] = {
     ChoiceType.SKILL: "skill",

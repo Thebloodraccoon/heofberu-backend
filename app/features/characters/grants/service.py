@@ -1,26 +1,40 @@
 """Character grant service: pending-choice surface and choice answering for the effect engine."""
 
 from collections.abc import Iterable
+from typing import NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import ABILITY_SCORE_CAP, ChoiceType
+from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.features.repository import CharacterFeatureRepository
 from app.features.characters.grants.effects import (
+    GrantEffects,
     build_chosen_options,
+    grant_effects,
+    load_character_grant_effects_by_grant,
     load_feature_effect_trees,
     pending_groups,
+    stored_picks,
 )
 from app.features.characters.grants.exceptions import (
+    AbilityPickCapExceededError,
     ChoiceCountMismatchError,
     ChoiceGroupNotFoundError,
     ChoiceOptionAlreadyPickedError,
     ChoiceOptionNotFoundError,
     GrantChoiceRequiredException,
     GrantNotFoundError,
-    SkillResolutionsError,
-    SpellResolutionsError,
+    SkillPickNotAllowedError,
+    SkillPickRequiredError,
+    SpellPickNotAllowedError,
+    SpellPickRequiredError,
+    UnexpectedSkillPickError,
+    UnexpectedSpellPickError,
+    UnknownSkillPickError,
+    UnknownSpellPickError,
 )
 from app.features.characters.grants.schemas import (
     AnsweredChoicesResponse,
@@ -29,7 +43,27 @@ from app.features.characters.grants.schemas import (
     PendingChoiceGroup,
     PendingChoiceGroupsResponse,
     PendingChoiceOption,
+    PendingChoicesCountResponse,
+    SpellPickCandidate,
 )
+from app.features.characters.grants.repository import GrantRulesRepository
+from app.features.characters.grants.skill_rules import (
+    SkillBaseline,
+    SkillSources,
+    apply_option,
+    build_skill_sources,
+    option_refusal,
+)
+from app.features.characters.grants.spell_rules import (
+    SpellFacts,
+    SpellOwnership,
+    SpellSources,
+    allowed_spells,
+    build_spell_sources,
+    open_spell_effect,
+    spell_refusal,
+)
+from app.features.characters.proficiencies.repository import CharacterProficiencyRepository
 from app.features.users.schemas import UserResponse
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
@@ -50,10 +84,80 @@ def _option_has_open_spell(option: FeatureChoiceOption) -> bool:
     return any(effect.spell_id is None for effect in option.spell_effects)
 
 
+class OptionPick(NamedTuple):
+    """One validated pick: the option and, for an open skill/spell option, the skill/spell named for it."""
+
+    option: FeatureChoiceOption
+    skill_id: int | None = None
+    spell_id: int | None = None
+
+
+def _skill_availability(
+    option: FeatureChoiceOption, baseline: SkillBaseline | None, all_skill_ids: list[int]
+) -> tuple[list[int] | None, bool]:
+    """``(allowed_skill_ids, available)`` of a pending option (no baseline = not a SKILL group: no limits)."""
+
+    if baseline is None:
+        return None, True
+
+    if _option_has_open_skill(option):
+        allowed = [skill_id for skill_id in all_skill_ids if option_refusal(option, skill_id, baseline) is None]
+        return allowed, bool(allowed)
+
+    return None, option_refusal(option, None, baseline) is None
+
+
+def _spell_availability(
+    option: FeatureChoiceOption, candidates: list[SpellFacts] | None, ownership: SpellOwnership | None
+) -> tuple[list[SpellPickCandidate] | None, bool]:
+    """``(allowed_spells, available)`` of a pending option (only an open spell option is limited)."""
+
+    if candidates is None or ownership is None or not _option_has_open_spell(option):
+        return None, True
+
+    allowed = [
+        SpellPickCandidate.model_validate(spell, from_attributes=True)
+        for spell in allowed_spells(option, candidates, ownership)
+    ]
+    return allowed, bool(allowed)
+
+
 def _to_pending_response(
-    grant: CharacterFeature, feature: Feature, pending: list[FeatureChoiceGroup]
+    grant: CharacterFeature,
+    feature: Feature,
+    pending: list[FeatureChoiceGroup],
+    baseline: SkillBaseline | None = None,
+    all_skill_ids: list[int] | None = None,
+    spell_candidates: list[SpellFacts] | None = None,
+    spell_ownership: SpellOwnership | None = None,
 ) -> PendingChoiceGroupsResponse:
-    """Serialise the still-pending groups of a grant."""
+    """
+    Serialise the still-pending groups of a grant. With a ``baseline`` the options of its SKILL groups carry
+    ``allowed_skill_ids``/``available``; with spell candidates + ownership its open spell options carry
+    ``allowed_spells``/``available`` (see :meth:`FeatureGrantService._pending_response`).
+    """
+
+    def option_response(group: FeatureChoiceGroup, option: FeatureChoiceOption) -> PendingChoiceOption:
+        if group.choice_type == ChoiceType.SPELL:
+            allowed_skill_ids = None
+            spells, available = _spell_availability(option, spell_candidates, spell_ownership)
+        else:
+            group_baseline = baseline if group.choice_type == ChoiceType.SKILL else None
+            allowed_skill_ids, available = _skill_availability(option, group_baseline, all_skill_ids or [])
+            spells = None
+        # ORM effect rows are validated into the response items by attribute
+        return PendingChoiceOption.model_validate(
+            {
+                "id": option.id,
+                "needs_skill": _option_has_open_skill(option),
+                "needs_spell": _option_has_open_spell(option),
+                "allowed_skill_ids": allowed_skill_ids,
+                "allowed_spells": spells,
+                "available": available,
+                "effects": effect_groups(option),
+            },
+            from_attributes=True,
+        )
 
     return PendingChoiceGroupsResponse(
         character_feature_id=grant.id,
@@ -64,23 +168,28 @@ def _to_pending_response(
                 id=group.id,
                 pick_count=group.pick_count,
                 choice_type=group.choice_type,
-                options=[
-                    # ORM effect rows are validated into the response items by attribute
-                    PendingChoiceOption.model_validate(
-                        {
-                            "id": option.id,
-                            "needs_skill": _option_has_open_skill(option),
-                            "needs_spell": _option_has_open_spell(option),
-                            "effects": effect_groups(option),
-                        },
-                        from_attributes=True,
-                    )
-                    for option in group.options
-                ],
+                options=[option_response(group, option) for option in group.options],
             )
             for group in pending
         ],
     )
+
+
+def _has_skill_group(groups: list[FeatureChoiceGroup]) -> bool:
+    return any(group.choice_type == ChoiceType.SKILL for group in groups)
+
+
+def _has_open_spell_option(groups: list[FeatureChoiceGroup]) -> bool:
+    return any(_option_has_open_spell(option) for group in groups for option in group.options)
+
+
+def _own_effects(
+    feature: Feature, stored: list[CharacterFeatureChoice], excluded_group_ids: set[int]
+) -> GrantEffects:
+    """The grant's effects from its fixed rows and its stored picks outside ``excluded_group_ids``."""
+
+    kept = (choice for choice in stored if choice.choice_group_id not in excluded_group_ids)
+    return grant_effects(feature, stored_picks(kept))
 
 
 def _to_answered_response(grant: CharacterFeature) -> AnsweredChoicesResponse:
@@ -96,19 +205,19 @@ def _to_answered_response(grant: CharacterFeature) -> AnsweredChoicesResponse:
 
 def _validate_answers(
     grant_id: int, feature: Feature, answers: Iterable[ChoiceAnswerItem]
-) -> dict[int, list[FeatureChoiceOption]]:
+) -> dict[int, list[OptionPick]]:
     """
     Check ``answers`` against the feature's groups/options and return the
-    picked options per group. Raises on a wrong group, an unknown or foreign
-    option, a duplicate pick, a wrong pick count, or an option carrying an
-    open ("any skill"/"any spell") effect — the system doesn't yet support
-    resolving those end to end, so existing catalog data carrying one is
-    simply unpickable.
+    picks per group. Raises on a wrong group, an unknown or foreign option,
+    a duplicate pick (the same option — for an open option, with the same
+    skill/spell), a wrong pick count, or a ``skill_id``/``spell_id`` missing
+    on an open ("any skill/spell") option or set on any other. Whether the
+    skills/spells exist and fit the character is checked by the service.
     """
 
     groups = {group.id: group for group in feature.choice_groups}
     options = {option.id: option for group in feature.choice_groups for option in group.options}
-    answered: dict[int, list[FeatureChoiceOption]] = {}
+    answered: dict[int, list[OptionPick]] = {}
 
     for item in answers:
         group = groups.get(item.choice_group_id)
@@ -119,17 +228,24 @@ def _validate_answers(
         if option is None or option.group_id != group.id:
             raise ChoiceOptionNotFoundError(group_id=group.id, option_id=item.choice_option_id)
 
-        picked = answered.setdefault(group.id, [])
-        if any(other.id == option.id for other in picked):
-            raise ChoiceOptionAlreadyPickedError(group_id=group.id, option_id=option.id)
-
         if _option_has_open_skill(option):
-            raise SkillResolutionsError(option_id=option.id)
+            if item.skill_id is None:
+                raise SkillPickRequiredError(option_id=option.id)
+        elif item.skill_id is not None:
+            raise UnexpectedSkillPickError(option_id=option.id)
 
         if _option_has_open_spell(option):
-            raise SpellResolutionsError(option_id=option.id)
+            if item.spell_id is None:
+                raise SpellPickRequiredError(option_id=option.id)
+        elif item.spell_id is not None:
+            raise UnexpectedSpellPickError(option_id=option.id)
 
-        picked.append(option)
+        pick = OptionPick(option, item.skill_id, item.spell_id)
+        picked = answered.setdefault(group.id, [])
+        if any(other.option.id == option.id and other[1:] == pick[1:] for other in picked):
+            raise ChoiceOptionAlreadyPickedError(group_id=group.id, option_id=option.id)
+
+        picked.append(pick)
 
     for group_id, picked in answered.items():
         if len(picked) != groups[group_id].pick_count:
@@ -163,7 +279,14 @@ class FeatureGrantService(CharacterSubDomainService):
         super().__init__(db)
         self.db = db
         self.grant_repository = CharacterFeatureRepository(db)
+        self.rules_repository = GrantRulesRepository(db)
+        self.proficiency_repository = CharacterProficiencyRepository(db)
         self.stats_service = CharacterStatsService(db)
+
+    def _context(self, character_id: int, *, flush_first: bool = False) -> "_RulesContext":
+        """A fresh :class:`_RulesContext` for one request (``flush_first`` on write paths)."""
+
+        return _RulesContext(self, character_id, flush_first=flush_first)
 
     async def _load_grant(
         self, character_id: int, grant_id: int, *, for_update: bool = False, with_answers: bool = False
@@ -188,7 +311,8 @@ class FeatureGrantService(CharacterSubDomainService):
         if only_with_choices:
             feature_ids = await self.grant_repository.filter_features_with_choices(feature_ids)
 
-        return await load_feature_effect_trees(self.db, feature_ids)
+        # the choices surface shows an open spell option's filter with its class names
+        return await load_feature_effect_trees(self.db, feature_ids, with_spell_filters=True)
 
     async def _load_stored_choices(self, grant_ids: Iterable[int]) -> dict[int, list[CharacterFeatureChoice]]:
         """Stored picks of the given grants, grouped by grant id."""
@@ -212,7 +336,40 @@ class FeatureGrantService(CharacterSubDomainService):
             raise GrantNotFoundError(character_id=character_id, grant_id=grant_id)
 
         stored = (await self._load_stored_choices([grant.id]))[grant.id]
-        return _to_pending_response(grant, feature, pending_groups(feature, stored))
+        return await self._pending_response(grant, feature, stored)
+
+    async def _pending_response(
+        self,
+        grant: CharacterFeature,
+        feature: Feature,
+        stored: list[CharacterFeatureChoice],
+        context: "_RulesContext | None" = None,
+    ) -> PendingChoiceGroupsResponse:
+        """
+        The grant's pending groups; SKILL groups are judged against the grant's baseline and open spell
+        options against the spells the character has, both without the grant's picks in the pending groups.
+        ``context`` shares the character's sources across several grants (and the checks of a write).
+        """
+
+        pending = pending_groups(feature, stored)
+        has_skills, has_open_spells = _has_skill_group(pending), _has_open_spell_option(pending)
+        if not (has_skills or has_open_spells):
+            return _to_pending_response(grant, feature, pending)
+
+        context = context or self._context(grant.character_id)
+        own = _own_effects(feature, stored, {group.id for group in pending})
+
+        baseline, all_skill_ids = None, None
+        if has_skills:
+            baseline = (await context.skill_sources()).baseline(grant.id, feature, own)
+            all_skill_ids = await context.all_skill_ids()
+
+        candidates, ownership = None, None
+        if has_open_spells:
+            candidates = await context.spell_candidates()
+            ownership = (await context.spell_sources()).ownership(grant.id, own.spells)
+
+        return _to_pending_response(grant, feature, pending, baseline, all_skill_ids, candidates, ownership)
 
     async def get_all_pending_choices(
         self, character_id: int, current_user: UserResponse
@@ -233,8 +390,11 @@ class FeatureGrantService(CharacterSubDomainService):
         if not grants:
             return []
 
-        features = await load_feature_effect_trees(self.db, {grant.feature_id for grant in grants})
+        features = await load_feature_effect_trees(
+            self.db, {grant.feature_id for grant in grants}, with_spell_filters=True
+        )
         stored_by_grant = await self._load_stored_choices(grant.id for grant in grants)
+        context = self._context(character_id)
 
         responses = []
         for grant in grants:
@@ -242,11 +402,33 @@ class FeatureGrantService(CharacterSubDomainService):
             if feature is None:
                 continue
 
-            pending = pending_groups(feature, stored_by_grant[grant.id])
-            if pending:
-                responses.append(_to_pending_response(grant, feature, pending))
+            stored = stored_by_grant[grant.id]
+            if pending_groups(feature, stored):
+                responses.append(await self._pending_response(grant, feature, stored, context))
 
         return responses
+
+    async def count_pending_choices(self, character_id: int, current_user: UserResponse) -> PendingChoicesCountResponse:
+        """
+        How many grants still have unanswered choice groups — the light badge read: no skill/spell sources,
+        no candidate lists, just the trees' groups against the stored picks.
+        """
+
+        await self.ensure_character_access(character_id, current_user)
+
+        grants = await self.grant_repository.get_grants_with_choices(character_id)
+        if not grants:
+            return PendingChoicesCountResponse(count=0)
+
+        features = await load_feature_effect_trees(self.db, {grant.feature_id for grant in grants})
+        stored_by_grant = await self._load_stored_choices(grant.id for grant in grants)
+        count = sum(
+            1
+            for grant in grants
+            if (feature := features.get(grant.feature_id)) is not None
+            and pending_groups(feature, stored_by_grant[grant.id])
+        )
+        return PendingChoicesCountResponse(count=count)
 
     async def get_answered_choices(
         self, character_id: int, grant_id: int, current_user: UserResponse
@@ -283,20 +465,101 @@ class FeatureGrantService(CharacterSubDomainService):
         feature: Feature,
         stored: list[CharacterFeatureChoice],
         answers: list[ChoiceAnswerItem],
+        context: "_RulesContext | None" = None,
     ) -> list[CharacterFeatureChoice]:
         """
         Validate ``answers`` and replace each answered group's stored picks
         (flush only). Returns the grant's picks after the replacement.
+        ``context`` (a write context, ``flush_first``) may be shared with the
+        response built right after; without one a fresh one is made, so picks
+        written for an earlier grant of the same transaction count.
+
+        Skill picks are judged against the character's other sources (see
+        ``grants.skill_rules``): named skills must exist, and each picked
+        SKILL option must fit — in the feature's group order, every accepted
+        pick counting for the next. Spells named for open spell options are
+        judged the same way by ``grants.spell_rules``.
         """
 
         answered = _validate_answers(grant.id, feature, answers)
         if not answered:
             return stored
 
+        context = context or self._context(grant.character_id, flush_first=True)
+        await self._check_skill_picks(grant, feature, stored, answered, context)
+        await self._check_spell_picks(grant, feature, stored, answered, context)
+
         new_choices = await self.grant_repository.replace_choices(
-            grant.id, {group_id: [option.id for option in options] for group_id, options in answered.items()}
+            grant.id,
+            {
+                group_id: [(pick.option.id, pick.skill_id, pick.spell_id) for pick in picks]
+                for group_id, picks in answered.items()
+            },
         )
         return [choice for choice in stored if choice.choice_group_id not in answered] + new_choices
+
+    async def _check_skill_picks(
+        self,
+        grant: CharacterFeature,
+        feature: Feature,
+        stored: list[CharacterFeatureChoice],
+        answered: dict[int, list[OptionPick]],
+        context: "_RulesContext",
+    ) -> None:
+        """Raise when a named skill doesn't exist or a picked SKILL option doesn't fit the character."""
+
+        named = {pick.skill_id for picks in answered.values() for pick in picks if pick.skill_id is not None}
+        missing = await self.rules_repository.missing_skill_ids(named)
+        if missing:
+            raise UnknownSkillPickError(skill_ids=missing)
+
+        skill_groups = [
+            group for group in feature.choice_groups if group.id in answered and group.choice_type == ChoiceType.SKILL
+        ]
+        if not skill_groups:
+            return
+
+        sources = await context.skill_sources()
+        baseline = sources.baseline(grant.id, feature, _own_effects(feature, stored, set(answered)))
+        for group in skill_groups:
+            for pick in answered[group.id]:
+                refusal = option_refusal(pick.option, pick.skill_id, baseline)
+                if refusal is not None:
+                    refused_skill_id, reason = refusal
+                    raise SkillPickNotAllowedError(option_id=pick.option.id, skill_id=refused_skill_id, reason=reason)
+                apply_option(pick.option, pick.skill_id, baseline)
+
+    async def _check_spell_picks(
+        self,
+        grant: CharacterFeature,
+        feature: Feature,
+        stored: list[CharacterFeatureChoice],
+        answered: dict[int, list[OptionPick]],
+        context: "_RulesContext",
+    ) -> None:
+        """Raise when a named spell doesn't exist or doesn't fit its open option (filter, already owned)."""
+
+        named = {pick.spell_id for picks in answered.values() for pick in picks if pick.spell_id is not None}
+        if not named:
+            return
+
+        facts = await self.rules_repository.spell_facts(named)
+        missing = sorted(named - set(facts))
+        if missing:
+            raise UnknownSpellPickError(spell_ids=missing)
+
+        sources = await context.spell_sources()
+        ownership = sources.ownership(grant.id, _own_effects(feature, stored, set(answered)).spells)
+        for group in feature.choice_groups:
+            for pick in answered.get(group.id, []):
+                effect = open_spell_effect(pick.option)
+                if effect is None or pick.spell_id is None:
+                    continue
+
+                reason = spell_refusal(effect, facts[pick.spell_id], ownership)
+                if reason is not None:
+                    raise SpellPickNotAllowedError(option_id=pick.option.id, spell_id=pick.spell_id, reason=reason)
+                ownership.owned.add(pick.spell_id)
 
     async def resolve_grants_choices(
         self,
@@ -311,16 +574,13 @@ class FeatureGrantService(CharacterSubDomainService):
         stored picks in one batch each; grants of features without choice
         groups are skipped without loading.
 
-        With ``enforce=True`` raises ``GrantChoiceRequiredException`` if a
-        group is still unresolved afterward — level-up's newly-unlocked
-        features and an ASI-level feat pick both require this: the client
-        submits everything in one request, so a still-pending group means the
-        request itself was incomplete and the whole write aborts (matches a
-        missing ASI ``choice`` being rejected rather than defaulted).
+        With ``enforce=True`` (the strict default) raises
+        ``GrantChoiceRequiredException`` if a group is still unresolved
+        afterward, aborting the caller's whole write.
 
-        With ``enforce=False`` (GM-panel grants) given answers are still
-        applied, but a still-pending group is left pending — a GM grant may
-        land first and get its choice picked later via ``PATCH
+        With ``enforce=False`` (level-up, GM-panel grants) given answers are
+        still applied, but a still-pending group is left pending — the grant
+        lands first and gets its choice picked later via ``PATCH
         /features/{id}/choices``; ``get_all_pending_choices`` is the surface
         a client polls to know a grant still needs one.
 
@@ -371,10 +631,13 @@ class FeatureGrantService(CharacterSubDomainService):
 
         Validates the request against the feature's groups/options and
         replaces each answered group's stored picks in one transaction owned
-        here (grant row locked against a concurrent re-answer). The picks'
-        effects show up on the next read; only the ability-score cache is
-        refreshed in the transaction and the character's Redis payload is
-        purged after the commit.
+        here (grant row locked against a concurrent re-answer). An
+        ability-score pick may not take the score above 20 (the player's
+        structured choices are capped there — a feat's ASI pick included,
+        since a level-up only takes the feat). The picks' effects show up on
+        the next read; only the ability-score cache is refreshed in the
+        transaction and the character's Redis payload is purged after the
+        commit.
         """
 
         character = await self.get_character_for_user(character_id, current_user)
@@ -386,9 +649,93 @@ class FeatureGrantService(CharacterSubDomainService):
                 raise GrantNotFoundError(character_id=character_id, grant_id=grant_id)
 
             stored = (await self._load_stored_choices([grant.id]))[grant.id]
-            stored = await self._store_answers(grant, feature, stored, data.answers)
+            # one context for the checks and the response: both judge the grant without its own picks,
+            # and no other grant changes in this request
+            context = self._context(character_id, flush_first=True)
+            stored = await self._store_answers(grant, feature, stored, data.answers, context)
 
-            await self.stats_service.refresh(character)
+            totals = await self.stats_service.compute(character)
+            _ensure_picks_within_cap(feature, data.answers, totals)
+            await self.stats_service.store(character, totals)
             await self._invalidate_character(character_id)
 
-            return _to_pending_response(grant, feature, pending_groups(feature, stored))
+            return await self._pending_response(grant, feature, stored, context)
+
+
+def _ensure_picks_within_cap(feature: Feature, answers: list[ChoiceAnswerItem], totals: dict[str, int]) -> None:
+    """
+    Raise ``AbilityPickCapExceededError`` when a picked ability-score option raises a score that ends up
+    above ``ABILITY_SCORE_CAP`` (or the option's own ``new_cap``) — ``totals`` already include the picks.
+    """
+
+    picked = {item.choice_option_id for item in answers}
+    for group in feature.choice_groups:
+        if group.choice_type != ChoiceType.ABILITY_SCORE:
+            continue
+        for option in group.options:
+            if option.id not in picked:
+                continue
+            for effect in option.ability_effects:
+                total = totals[TOTAL_FIELD_BY_ABILITY[effect.ability]]
+                cap = max(ABILITY_SCORE_CAP, effect.new_cap or 0)
+                if effect.amount > 0 and total > cap:
+                    raise AbilityPickCapExceededError(
+                        ability=effect.ability.value,
+                        current_total=total - effect.amount,
+                        requested=total,
+                        cap=cap,
+                    )
+
+
+class _RulesContext:
+    """
+    What the pick rules judge against, loaded lazily and once per request: every grant's computed effects
+    (shared by the skill and the spell sources), the stored proficiency rows, every skill id and every catalog
+    spell. ``flush_first`` (write paths) flushes before the first load, so picks written earlier in the
+    transaction count; a read never flushes.
+    """
+
+    def __init__(self, service: FeatureGrantService, character_id: int, *, flush_first: bool = False):
+        self.service = service
+        self.character_id = character_id
+        self.flush_first = flush_first
+        self._grants: dict[int, tuple[Feature, GrantEffects]] | None = None
+        self._skill_sources: SkillSources | None = None
+        self._all_skill_ids: list[int] | None = None
+        self._spell_sources: SpellSources | None = None
+        self._spell_candidates: list[SpellFacts] | None = None
+
+    async def _grant_effects(self) -> dict[int, tuple[Feature, GrantEffects]]:
+        if self._grants is None:
+            if self.flush_first:
+                await self.service.db.flush()
+            self._grants = await load_character_grant_effects_by_grant(self.service.db, self.character_id)
+        return self._grants
+
+    async def skill_sources(self) -> SkillSources:
+        if self._skill_sources is None:
+            grants = await self._grant_effects()
+            rows = await self.service.proficiency_repository.get_all(self.character_id)
+            self._skill_sources = build_skill_sources(rows, grants)
+        return self._skill_sources
+
+    async def all_skill_ids(self) -> list[int]:
+        if self._all_skill_ids is None:
+            self._all_skill_ids = await self.service.rules_repository.all_skill_ids()
+        return self._all_skill_ids
+
+    async def spell_sources(self) -> SpellSources:
+        if self._spell_sources is None:
+            grants = await self._grant_effects()
+            repository = self.service.rules_repository
+            self._spell_sources = build_spell_sources(
+                await repository.castable_spell_levels(self.character_id),
+                await repository.row_spell_ids(self.character_id),
+                grants,
+            )
+        return self._spell_sources
+
+    async def spell_candidates(self) -> list[SpellFacts]:
+        if self._spell_candidates is None:
+            self._spell_candidates = list((await self.service.rules_repository.spell_facts()).values())
+        return self._spell_candidates

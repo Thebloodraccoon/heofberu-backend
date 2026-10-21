@@ -6,7 +6,14 @@ from unittest.mock import AsyncMock
 from pydantic import ValidationError
 import pytest
 
-from app.constants import AbilityScore, ProficiencyAction, ProficiencySourceType, ProficiencyType, WeaponProficiency
+from app.constants import (
+    AbilityScore,
+    ProficiencyAction,
+    ProficiencySourceType,
+    ProficiencyType,
+    SkillEffectMode,
+    WeaponProficiency,
+)
 from app.core.exceptions import RecordNotFoundError
 from app.features.characters.cache import character_cache_key
 from app.features.characters.gm_panel.exceptions import (
@@ -16,7 +23,7 @@ from app.features.characters.gm_panel.exceptions import (
 )
 from app.features.characters.gm_panel.proficiencies.schemas import SkillExpertiseUpdate, WeaponProficiencyAdd
 from app.features.characters.gm_panel.proficiencies.service import GmPanelProficiencyService
-from app.features.characters.grants.effects import GrantEffects
+from app.features.characters.grants.effects import GrantEffects, SkillClaim
 from app.features.characters.proficiencies.resolver import feature_entries
 from app.features.items.exceptions import ItemNotFoundException
 from app.models.character.character_proficiency_model import CharacterProficiency
@@ -39,7 +46,9 @@ def make_row(source_type, *, action=ProficiencyAction.GRANT, is_expertise=None, 
 
 def feature_entry(*, expertise=False):
     feature = SimpleNamespace(id=7, name="Nimble", source_type="CLASS")
-    return feature_entries(feature, GrantEffects(skills={1: expertise}))
+    claim = SkillClaim()
+    claim.add(SkillEffectMode.PROFICIENCY_AND_EXPERTISE if expertise else SkillEffectMode.PROFICIENCY)
+    return feature_entries(feature, GrantEffects(skills={1: claim}))
 
 
 def make_service(*, rows=(), features=(), skill_exists=True, item_exists=True):

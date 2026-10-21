@@ -37,6 +37,7 @@ _STATIC_EFFECT_MODELS = (
 _NAME_RELATIONSHIP_BY_EFFECT_ATTR = {
     "skill_effects": FeatureSkillProficiencyEffect.skill,
     "weapon_effects": FeatureWeaponProficiencyEffect.item,
+    "armor_effects": FeatureArmorProficiencyEffect.item,
     "spell_effects": FeatureSpellGrantEffect.spell,
 }
 
@@ -72,7 +73,12 @@ def feature_summary_loads(base=None, *, with_names: bool = True) -> list:
 
     def with_name(loader, effect_attr):
         name_relationship = _NAME_RELATIONSHIP_BY_EFFECT_ATTR.get(effect_attr)
-        return loader.selectinload(name_relationship) if with_names and name_relationship is not None else loader
+        if not with_names or name_relationship is None:
+            return loader
+        if effect_attr == "spell_effects":
+            # an open spell effect's filter names its classes (``summary`` / the HTML summary)
+            loader.selectinload(FeatureSpellGrantEffect.filter_classes)
+        return loader.selectinload(name_relationship)
 
     loads = [with_name(load(getattr(Feature, attr)), attr) for attr in EFFECT_ATTRS]
 

@@ -88,19 +88,50 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   level-up/set_background/rebuild is serialized), the ability-score cache is
   refreshed in the same transaction and Redis is purged after COMMIT; routers
   never commit. A feat on an ASI level (level-up and rebuild) needs
-  `Feature.min_level <= class_level`, the chosen ASI option must stay within
-  the cap of 20 and the prerequisite is checked against the effective scores;
-  a rebuild feat that offers ASI options without `ability_score_increase_id`
-  is a 422, and its other choice groups stay pending (`GET /grants/pending`).
-  Input bounds: ids <= 2147483647, `feature_choices`/`answers` <= 50,
+  `Feature.min_level <= class_level` and its prerequisite is checked against
+  the effective scores. **Choices have one home**: level-up and rebuild only
+  *take* the feat (and grant the level's features); every choice group —
+  the feat's ASI pick included — stays pending and is answered via
+  `GET /grants/pending` + `PATCH .../choices` (where the cap of 20 on
+  ability-score picks is checked). A rebuild that takes the same feat again
+  keeps its grant and picks (`remove_feats_by_source(keep_feat_ids=...)`).
+  The ASI log (`character_asi_choices`) names the feat only.
+  Input bounds: ids <= 2147483647, `answers` <= 50,
   `hit_points_gained` <= 50, rebuild `max_hp` <= 1000, `skill_ids` <= 30.
 - `grants/` — answering a feature's choice groups. Authorization lives in
   `FeatureGrantService` (its methods take `current_user`); `PATCH .../choices`
   is one service transaction with the cache purge after COMMIT;
-  `resolve_grants_choices` is the level-up batch (trees loaded in one query,
-  features without `has_choices` skipped). Grant/pick queries live in
+  `resolve_grants_choices` applies answers a GM-panel grant carries (trees
+  loaded in one query, features without `has_choices` skipped;
+  `enforce=False`: groups left unanswered stay pending). A player's
+  ability-score pick may not take a score above 20 (or the option's
+  `new_cap`; `AbilityScoreCapExceededException`). Grant/pick queries live in
   `CharacterFeatureRepository` (`features/repository.py`: `get_grant`,
   `get_choices`, `replace_choices`, ...) — the service holds no SQL.
+  An open ("any skill") option is answered with `skill_id` (stored as
+  `picked_skill_id`; one open option may fill a `pick_count=N` group with N
+  different skills). Skill picks are judged against the character's other
+  sources in `grants/skill_rules.py` (no proficiency it already has,
+  `EXPERTISE` only on a proficient skill, no second expertise; 422
+  `SkillPickNotAllowedError`), and pending SKILL options carry
+  `allowed_skill_ids` / `available`. On read nothing is enforced: an
+  `EXPERTISE` effect whose proficiency was lost later just gives nothing
+  (`proficiencies/resolver.py`).
+  An open ("any spell") option is answered with `spell_id` (stored as
+  `picked_spell_id`; the spell shows up in `feature_spells`, outside the
+  slot cap). `grants/spell_rules.py` checks it against the option's filter
+  (class lists, level range, castable by the character's slots, schools,
+  ritual) and refuses a spell the character already has (known, GM-granted
+  or from any grant; 422 `SpellPickNotAllowedError`); pending open spell
+  options carry `allowed_spells` (id/name/level/school/is_ritual, by level
+  then name) / `available`. Their `summary` (the filter as phrases, class
+  names included) comes from the backend — the one place that text is built.
+  `GET /grants/pending/count` → `{count}` is the light read for a badge.
+  Queries live in `grants/repository.py` (`GrantRulesRepository`); the rule
+  modules are pure, and a per-request `_RulesContext` loads every grant's
+  effects once for the skill checks, the spell checks and the response.
+  Concrete-item proficiency effects must point at the right item type
+  (weapon → WEAPON, armor → ARMOR/SHIELD; 422 otherwise).
 - `gm_panel/` — GM-only panel under `/characters/gm-panel`: feat grants
   (with mandatory ASI choice when offered), feature grants, inventory
   (items), free-form ±ASI adjustments, max-HP edit, the per-character

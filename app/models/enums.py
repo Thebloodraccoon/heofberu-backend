@@ -36,6 +36,7 @@ from app.constants import (
     ProficiencyType,
     PublicCampaignStatus,
     RaceSize,
+    SkillEffectMode,
     SpellCastTime,
     SpellDuration,
     SpellLevel,
@@ -81,6 +82,8 @@ ProficiencySourceTypeType = SAEnum(ProficiencySourceType, name="proficiency_sour
 ProficiencyActionType = SAEnum(ProficiencyAction, name="proficiency_action", create_type=False)
 BackgroundSuggestionTypeType = SAEnum(BackgroundSuggestionType, name="background_suggestion_type", create_type=False)
 ChoiceTypeType = SAEnum(ChoiceType, name="choice_type", create_type=False)
+# VARCHAR (member NAME): new skill-effect modes need no migration.
+SkillEffectModeType = SAEnum(SkillEffectMode, native_enum=False, create_constraint=False, length=30)
 ArticleStatusType = SAEnum(ArticleStatus, name="article_status", create_type=False)
 ArticleVisibilityType = SAEnum(ArticleVisibility, name="article_visibility", create_type=False)
 ArticleProposalStatusType = SAEnum(ArticleProposalStatus, name="article_proposal_status", create_type=False)

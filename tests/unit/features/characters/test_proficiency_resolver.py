@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
-from app.features.characters.grants.effects import GrantEffects
+from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType, SkillEffectMode
+from app.features.characters.grants.effects import GrantEffects, SkillClaim
 from app.features.characters.proficiencies.resolver import (
     feature_entries,
     proficiency_key,
@@ -41,6 +41,25 @@ def resolve_skill(*entries, skill_id=1):
     return resolve_group((SKILL, skill_id), list(entries))
 
 
+def claim(*modes: SkillEffectMode) -> SkillClaim:
+    folded = SkillClaim()
+    for mode in modes:
+        folded.add(mode)
+    return folded
+
+
+def skill_grant(*modes: SkillEffectMode, feature_id=7):
+    """The entries of a feature grant whose skill effects in skill 1 have ``modes``."""
+
+    return feature_entries(make_feature(feature_id), GrantEffects(skills={1: claim(*modes)}))
+
+
+PROFICIENCY = SkillEffectMode.PROFICIENCY
+BOTH = SkillEffectMode.PROFICIENCY_AND_EXPERTISE
+EXPERTISE = SkillEffectMode.EXPERTISE
+UPGRADE = SkillEffectMode.UPGRADE
+
+
 @pytest.mark.unit
 class TestKeys:
     def test_keyword_discriminator_matches_the_row_key(self):
@@ -56,6 +75,36 @@ class TestKeys:
         )
 
 
+    def test_armor_key_is_category_or_item(self):
+        assert proficiency_key(ProficiencyType.ARMOR, armor_type="LIGHT", item_id=None) == (
+            ProficiencyType.ARMOR,
+            "LIGHT",
+            None,
+        )
+        assert proficiency_key(ProficiencyType.ARMOR, armor_type=None, item_id=40) == (
+            ProficiencyType.ARMOR,
+            None,
+            40,
+        )
+
+    def test_armor_row_key_carries_both_columns(self):
+        row = SimpleNamespace(
+            proficiency_type=ProficiencyType.ARMOR,
+            armor_type=None,
+            item_id=40,
+            weapon_category=None,
+            skill_id=None,
+            ability=None,
+        )
+
+        assert row_key(row) == (ProficiencyType.ARMOR, None, 40)
+
+    def test_item_armor_effect_yields_item_key(self):
+        entries = feature_entries(make_feature(), GrantEffects(armor={(None, 40)}))
+
+        assert [entry.key for entry in entries] == [(ProficiencyType.ARMOR, None, 40)]
+
+
 @pytest.mark.unit
 class TestResolveGroup:
     def test_no_entries_means_not_proficient(self):
@@ -69,7 +118,7 @@ class TestResolveGroup:
         assert [source.source_type for source in resolved.sources] == [ProficiencySourceType.CLASS_CHOICE]
 
     def test_feature_grant_alone_grants_and_is_tagged_with_its_feature(self):
-        entries = feature_entries(make_feature(), GrantEffects(skills={1: True}))
+        entries = skill_grant(BOTH)
 
         resolved = resolve_skill(*entries)
 
@@ -81,7 +130,7 @@ class TestResolveGroup:
     def test_gm_revoke_vetoes_every_other_source(self):
         resolved = resolve_skill(
             row_entry(make_row(ProficiencySourceType.CLASS_CHOICE)),
-            *feature_entries(make_feature(), GrantEffects(skills={1: False})),
+            *skill_grant(PROFICIENCY),
             row_entry(make_row(ProficiencySourceType.GM, action=ProficiencyAction.REVOKE, is_expertise=None)),
         )
 
@@ -90,7 +139,7 @@ class TestResolveGroup:
     def test_expertise_is_the_or_of_sources_without_an_explicit_gm_decision(self):
         resolved = resolve_skill(
             row_entry(make_row(ProficiencySourceType.CLASS_CHOICE, is_expertise=False)),
-            *feature_entries(make_feature(), GrantEffects(skills={1: True})),
+            *skill_grant(BOTH),
             row_entry(make_row(ProficiencySourceType.GM, is_expertise=None)),
         )
 
@@ -98,7 +147,7 @@ class TestResolveGroup:
 
     def test_explicit_gm_false_clears_expertise_another_source_gives(self):
         resolved = resolve_skill(
-            *feature_entries(make_feature(), GrantEffects(skills={1: True})),
+            *skill_grant(BOTH),
             row_entry(make_row(ProficiencySourceType.GM, is_expertise=False)),
         )
 
@@ -136,9 +185,9 @@ class TestResolveAll:
 
     def test_feature_entries_cover_every_proficiency_kind(self):
         effects = GrantEffects(
-            skills={1: False},
+            skills={1: claim(PROFICIENCY)},
             saving_throws={"CON"},
-            armor={"LIGHT"},
+            armor={("LIGHT", None), (None, 40)},
             weapons={("MARTIAL", None), (None, 9)},
         )
 
@@ -147,7 +196,55 @@ class TestResolveAll:
         assert keys == {
             (SKILL, 1),
             (ProficiencyType.SAVING_THROW, "CON"),
-            (ProficiencyType.ARMOR, "LIGHT"),
+            (ProficiencyType.ARMOR, "LIGHT", None),
+            (ProficiencyType.ARMOR, None, 40),
             (ProficiencyType.WEAPON, "MARTIAL", None),
             (ProficiencyType.WEAPON, None, 9),
         }
+
+
+@pytest.mark.unit
+class TestSkillEffectModes:
+    def test_expertise_only_without_another_source_gives_nothing(self):
+        assert resolve_skill(*skill_grant(EXPERTISE)) is None
+
+    def test_expertise_only_on_top_of_a_stored_proficiency_is_expertise(self):
+        resolved = resolve_skill(row_entry(make_row(ProficiencySourceType.CLASS_CHOICE)), *skill_grant(EXPERTISE))
+
+        assert resolved is not None
+        assert resolved.is_expertise is True
+        assert len(resolved.sources) == 2
+
+    def test_expertise_only_is_cleared_by_an_explicit_gm_false(self):
+        resolved = resolve_skill(
+            row_entry(make_row(ProficiencySourceType.CLASS_CHOICE)),
+            row_entry(make_row(ProficiencySourceType.GM, is_expertise=False)),
+            *skill_grant(EXPERTISE),
+        )
+
+        assert resolved is not None
+        assert resolved.is_expertise is False
+
+    def test_upgrade_alone_is_plain_proficiency(self):
+        resolved = resolve_skill(*skill_grant(UPGRADE))
+
+        assert resolved is not None
+        assert resolved.is_expertise is False
+
+    def test_upgrade_with_another_source_becomes_expertise(self):
+        resolved = resolve_skill(row_entry(make_row(ProficiencySourceType.BACKGROUND)), *skill_grant(UPGRADE))
+
+        assert resolved is not None
+        assert resolved.is_expertise is True
+
+    def test_two_upgrades_from_different_grants_make_expertise(self):
+        resolved = resolve_skill(*skill_grant(UPGRADE, feature_id=7), *skill_grant(UPGRADE, feature_id=8))
+
+        assert resolved is not None
+        assert resolved.is_expertise is True
+
+    def test_expertise_only_on_an_upgrades_own_proficiency_is_expertise(self):
+        resolved = resolve_skill(*skill_grant(UPGRADE, feature_id=7), *skill_grant(EXPERTISE, feature_id=8))
+
+        assert resolved is not None
+        assert resolved.is_expertise is True

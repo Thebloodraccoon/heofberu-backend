@@ -157,12 +157,11 @@ async def change_subrace(
                 "A chosen skill isn't available for the class or too many were chosen, "
                 "asi_choices doesn't exactly cover every ASI level already reached, or "
                 "max_hp is outside the range the new class/level allow, or a chosen feat "
-                "needs a higher level or would push a score above the cap of 20."
+                "needs a higher level or its prerequisite is unmet."
             )
         },
         403: {"description": "You do not have access to this character."},
         404: {"description": "Character, class, subclass, race, subrace, or background not found."},
-        422: {"description": "A feat in asi_choices offers ASI options but no ability_score_increase_id was given."},
     },
 )
 async def rebuild_character(
@@ -208,7 +207,9 @@ async def rebuild_character(
     ``max_hp`` is validated against the new class/level's range and set,
     spell slots are recomputed, and known spells are cleared. Level,
     notes, personality, backstory, inventory, GM ASI adjustments, and
-    GM-granted feats are untouched.
+    GM-granted feats are untouched. A feat taken again keeps its grant and
+    picks; a new feat's choices (its ASI pick included) are answered
+    afterwards in ``GET /grants/pending``.
     """
 
     await progression_service.rebuild_character(character_id, data, current_user)
@@ -224,22 +225,14 @@ async def rebuild_character(
             "description": (
                 "The character is already at the maximum level, an ASI choice is "
                 "required but missing (or given on a non-ASI level), the hit-point gain "
-                "is out of range, an ASI choice or a chosen feat's ASI option exceeds the "
-                "ability-score cap of 20, the feat's prerequisite is unmet, or the feat needs a "
-                "higher character level (`min_level`)."
+                "is out of range, an ASI choice exceeds the ability-score cap of 20, the "
+                "feat's prerequisite is unmet, or the feat needs a higher character level "
+                "(`min_level`)."
             )
         },
         403: {"description": "You do not have access to this character."},
         404: {"description": "Character or feat not found."},
         409: {"description": "The character already has the feat chosen by the ASI option."},
-        422: {
-            "description": (
-                "A feature newly unlocked by this level (class/subclass feature or the "
-                "chosen feat itself) still has an unresolved 'pick N of M' choice group "
-                "after applying feature_choices, or one of the picked options carries an "
-                "open ('any skill'/'any spell') effect — not resolvable via the API yet."
-            )
-        },
     },
 )
 async def level_up(
@@ -263,10 +256,6 @@ async def level_up(
                     "summary": "Level up taking a feat instead of the ASI",
                     "value": {"choice": {"type": "FEAT", "feat_id": 12}},
                 },
-                "feature-choice": {
-                    "summary": "Level up resolving a newly unlocked feature's pick-N-of-M choice group",
-                    "value": {"feature_choices": [{"feature_id": 8, "choice_group_id": 21, "choice_option_id": 55}]},
-                },
             }
         ),
     ],
@@ -279,13 +268,12 @@ async def level_up(
     ``choice`` (ASI increments or a feat) is required and is recorded in
     ``character_asi_choices``.
 
-    Any OTHER feature this level unlocks (a class/subclass feature or the
-    chosen feat's own grant) that carries a "pick N of M" choice group —
-    e.g. a bonus proficiency — must be resolved via ``feature_choices``; an
-    option carrying an open ("any skill"/"any spell") effect can't be
-    picked yet (422). A feature with no choice groups needs no entry there.
-    A newly unlocked feature left with an unanswered group aborts the
-    whole level-up (422), the same way a missing ASI ``choice`` does.
+    Nothing else is chosen here. Every "pick N of M" group of what this
+    level grants — a class/subclass feature, or the chosen feat (its
+    ability-score pick included) — stays pending and is answered afterwards
+    (``GET /characters/{id}/grants/pending``, ``PATCH
+    /characters/{id}/features/{grant_id}/choices``): the one place choices
+    are made.
     """
 
     await progression_service.level_up(character_id, data, current_user)

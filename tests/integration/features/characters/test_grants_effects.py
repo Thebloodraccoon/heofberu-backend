@@ -14,14 +14,7 @@ from tests.helpers import set_choice_groups, set_effects
 
 
 async def _seed_open_spell_choice_group(db_session, feature_id: int) -> tuple[int, int]:
-    """
-    Insert a SPELL choice group with one "any spell" (``spell_id=None``) option directly.
-
-    Authoring an open pick through ``POST /features/{id}/choice-groups`` is
-    rejected by ``ChoiceGroupPayload.validate_no_open_picks`` — this
-    simulates a pre-existing catalog row from before that validation was
-    added, which the PATCH-time resolution guard still has to handle.
-    """
+    """Insert a SPELL choice group with one unfiltered "any spell" (``spell_id=None``) option directly."""
 
     group = FeatureChoiceGroup(feature_id=feature_id, pick_count=1, choice_type=ChoiceType.SPELL)
     db_session.add(group)
@@ -107,6 +100,38 @@ class TestFixedEffectTypes:
         )
         weapons = prof_resp.json()["weapons"]
         assert [w["item_id"] for w in weapons] == [longsword.id]
+
+    async def test_fixed_armor_item_effect_applies(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_item
+    ):
+        feature_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
+        feature = await create_feature(name="Signature Armor", source_type="CLASS", level=None)
+        chain_mail = await create_item(name="Chain Mail", item_type="ARMOR")
+
+        fx_resp = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"item_id": chain_mail.id}]}]},
+        )
+        assert fx_resp.status_code == 200
+
+        grant_resp = await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": feature.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert grant_resp.status_code == 201, grant_resp.text
+
+        prof_resp = await client.get(
+            f"/characters/{character.id}/proficiencies",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert prof_resp.status_code == 200
+        armor = prof_resp.json()["armor"]
+        assert [(a["armor_type"], a["item_id"]) for a in armor] == [(None, chain_mail.id)]
+        assert armor[0]["sources"]
 
 
 @pytest.mark.integration
@@ -270,7 +295,7 @@ class TestSkillExpertiseFollowsPick:
                                 "effects": [
                                     {
                                         "effect_type": "skill",
-                                        "items": [{"skill_id": skill.id, "grants_expertise": False}],
+                                        "items": [{"skill_id": skill.id, "mode": "PROFICIENCY"}],
                                     }
                                 ]
                             },
@@ -278,7 +303,7 @@ class TestSkillExpertiseFollowsPick:
                                 "effects": [
                                     {
                                         "effect_type": "skill",
-                                        "items": [{"skill_id": skill.id, "grants_expertise": True}],
+                                        "items": [{"skill_id": skill.id, "mode": "PROFICIENCY_AND_EXPERTISE"}],
                                     }
                                 ]
                             },
@@ -619,11 +644,8 @@ class TestSpellResolutionEdgeCases:
             json={"answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": 999999}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        # The option is rejected as unconditionally open before spell_id is
-        # even looked up, so a nonexistent id gets the same "open" 422, not
-        # a not-found error.
         assert ans.status_code == 422
-        assert "open" in ans.json()["error"]["message"]
+        assert "Unknown spell_id" in ans.json()["error"]["message"]
 
     async def test_reanswer_removes_stale_granted_spell(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_spell

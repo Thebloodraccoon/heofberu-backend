@@ -15,6 +15,7 @@ from app.features.features.effects.schemas import (
     EffectType,
     FeatureEffectsResponse,
     FeatureEffectsUpdate,
+    OptionEffectsUpdate,
 )
 
 router = APIRouter()
@@ -33,7 +34,10 @@ EffectChanges = Annotated[
     dict[str, Any],
     Body(
         openapi_examples={
-            "expertise": {"summary": "Skill effect: grant expertise", "value": {"grants_expertise": True}},
+            "expertise": {
+                "summary": "Skill effect: proficiency and expertise",
+                "value": {"mode": "PROFICIENCY_AND_EXPERTISE"},
+            },
             "ability": {"summary": "Ability effect: change the amount", "value": {"amount": 2}},
         }
     ),
@@ -116,7 +120,7 @@ async def update_feature_effect(
     """
     Change fields of one fixed effect (``id`` as returned by the read). **GM only.**
 
-    The body holds only the item fields to change (e.g. ``{"grants_expertise": true}``);
+    The body holds only the item fields to change (e.g. ``{"mode": "EXPERTISE"}``);
     the result must still be a valid item of that ``effect_type``. Returns the feature's full effect tree.
     """
 
@@ -312,11 +316,16 @@ async def add_feature_option_effects(
     feature_id: int,
     group_id: int,
     option_id: int,
-    data: FeatureEffectsUpdate,
+    data: OptionEffectsUpdate,
     service: FeatureEffectsDep,
     _: GmUserDep,
 ):
-    """Add new effect rows (same ``static_groups`` body as the fixed ones) to an option. **GM only.**"""
+    """
+    Add new effect rows (same ``static_groups`` body as the fixed ones) to an option. **GM only.**
+
+    Unlike a fixed effect, a skill effect here may be open (no ``skill_id`` — "any skill"); the
+    player names the skill when picking. Making an option open or concrete clears its stored picks.
+    """
 
     return await service.add_option_effects(feature_id, group_id, option_id, data)
 

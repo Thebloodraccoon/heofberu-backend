@@ -46,6 +46,8 @@ def make_choice(ability_score_increase_id: int) -> SimpleNamespace:
     return SimpleNamespace(
         choice_group_id=1,
         choice_option_id=1,
+        picked_skill_id=None,
+        picked_spell_id=None,
         choice_option=SimpleNamespace(
             ability_effects=[SimpleNamespace(id=ability_score_increase_id, ability=AbilityScore.STR, amount=1)],
             skill_effects=[],
@@ -142,7 +144,6 @@ class FakeASIChoiceRepository:
         choice_type,
         *,
         feat_id=None,
-        ability_score_increase_id=None,
         increases=None,
     ):
         self.add_calls.append(
@@ -151,7 +152,6 @@ class FakeASIChoiceRepository:
                 "class_level": class_level,
                 "choice_type": choice_type,
                 "feat_id": feat_id,
-                "ability_score_increase_id": ability_score_increase_id,
             }
         )
         return SimpleNamespace(id=1)
@@ -215,7 +215,8 @@ class TestAddFeat:
         )
 
         assert service.feat_grant_repository.add_calls == [(character, 2, 200, GrantSource.GM)]
-        assert service.asi_repository.add_calls[0]["ability_score_increase_id"] == 200
+        # the ASI pick is stored on the grant only; the audit row names the feat
+        assert service.asi_repository.add_calls[0]["feat_id"] == 2
         assert stats.refresh_calls == [character]
 
     async def test_asi_offering_feat_can_be_granted_without_a_choice(self):
@@ -229,7 +230,7 @@ class TestAddFeat:
 
         assert result.id == 7
         assert service.feat_grant_repository.add_calls == [(character, 2, None, GrantSource.GM)]
-        assert service.asi_repository.add_calls[0]["ability_score_increase_id"] is None
+        assert service.asi_repository.add_calls[0]["feat_id"] == 2
 
     async def test_cap_exceeded_does_not_reject_the_choice(self):
         feat = make_feat(ability_effects=[(AbilityScore.STR, 1)])

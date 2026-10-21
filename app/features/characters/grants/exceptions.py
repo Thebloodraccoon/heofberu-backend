@@ -55,14 +55,69 @@ class ChoiceCountMismatchError(AppError):
         super().__init__(f"Choice group {group_id} requires exactly {pick_count} option(s); received {given}.")
 
 
-class SkillResolutionsError(AppError):
-    """Raised (422) when an "any skill" (open) option is picked — not yet resolvable via the API."""
+class SkillPickRequiredError(AppError):
+    """Raised (422) when an "any skill" (open) option is picked without naming the skill."""
 
     status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def __init__(self, option_id: int):
         """Initialize with the offending option id."""
-        super().__init__(f"Option {option_id} has an open ('any skill') skill effect — picking it isn't supported yet.")
+        super().__init__(f"Option {option_id} has an open ('any skill') skill effect — name the skill in 'skill_id'.")
+
+
+class UnexpectedSkillPickError(AppError):
+    """Raised (422) when an answer names a ``skill_id`` for an option that has no open skill effect."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int):
+        """Initialize with the offending option id."""
+        super().__init__(f"Option {option_id} has no open ('any skill') skill effect — 'skill_id' must not be set.")
+
+
+class UnknownSkillPickError(AppError):
+    """Raised (422) when an answer names skills that don't exist."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, skill_ids: list[int]):
+        """Initialize with the unknown ids."""
+        super().__init__(f"Unknown skill_id(s): {skill_ids}.")
+
+
+class SkillPickNotAllowedError(AppError):
+    """
+    Raised (422) when a skill option's effect doesn't fit the character's
+    other sources: proficiency it already has, expertise without the
+    proficiency, or expertise it already has.
+    """
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int, skill_id: int, reason: str):
+        """Initialize with the offending option/skill and why the pick is refused."""
+        super().__init__(f"Option {option_id} can't be taken for skill {skill_id}: {reason}.")
+
+
+class AbilityPickCapExceededError(AppError):
+    """
+    Raised (400) when a picked ability-score option takes the score above the cap of 20 (or the option's own
+    ``new_cap``): the player's structured choices are capped there — a feat's ASI pick included.
+    """
+
+    status_code = status.HTTP_400_BAD_REQUEST
+
+    def __init__(self, ability: str, current_total: int, requested: int, cap: int = 20):
+        """Initialize with the ability, its totals without/with the pick and the cap."""
+
+        self.ability = ability
+        self.current_total = current_total
+        self.requested = requested
+        self.cap = cap
+        super().__init__(
+            f"Cannot increase {ability} to {requested}: the effective score is already {current_total} "
+            f"and cannot exceed the cap of {cap}."
+        )
 
 
 class GrantChoiceRequiredException(AppError):
@@ -88,11 +143,44 @@ class GrantChoiceRequiredException(AppError):
         )
 
 
-class SpellResolutionsError(AppError):
-    """Raised (422) when an "any spell" (open) option is picked — not yet resolvable via the API."""
+class SpellPickRequiredError(AppError):
+    """Raised (422) when an "any spell" (open) option is picked without naming the spell."""
 
     status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def __init__(self, option_id: int):
         """Initialize with the offending option id."""
-        super().__init__(f"Option {option_id} has an open ('any spell') spell effect — picking it isn't supported yet.")
+        super().__init__(f"Option {option_id} has an open ('any spell') spell effect — name the spell in 'spell_id'.")
+
+
+class UnexpectedSpellPickError(AppError):
+    """Raised (422) when an answer names a ``spell_id`` for an option that has no open spell effect."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int):
+        """Initialize with the offending option id."""
+        super().__init__(f"Option {option_id} has no open ('any spell') spell effect — 'spell_id' must not be set.")
+
+
+class UnknownSpellPickError(AppError):
+    """Raised (422) when an answer names spells that don't exist."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, spell_ids: list[int]):
+        """Initialize with the unknown ids."""
+        super().__init__(f"Unknown spell_id(s): {spell_ids}.")
+
+
+class SpellPickNotAllowedError(AppError):
+    """
+    Raised (422) when the spell named for an open option fails the option's
+    filter (class list, level, school, ritual) or the character already has it.
+    """
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int, spell_id: int, reason: str):
+        """Initialize with the offending option/spell and why the pick is refused."""
+        super().__init__(f"Option {option_id} can't be taken with spell {spell_id}: {reason}.")

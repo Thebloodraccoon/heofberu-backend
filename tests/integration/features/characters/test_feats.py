@@ -180,7 +180,7 @@ class TestCharacterFeats:
         assert choices[0]["choice_type"] == "FEAT"
         assert choices[0]["class_level"] is None
         assert choices[0]["feat_id"] == feat.id
-        assert choices[0]["ability_score_increase_id"] == asi_id
+        assert "ability_score_increase_id" not in choices[0]
 
     async def test_revoke_feat(self, client, gm, gm_token, create_class, create_character, create_feat):
         character_class = await create_class(name="Fighter")

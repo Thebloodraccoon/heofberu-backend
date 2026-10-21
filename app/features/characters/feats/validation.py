@@ -39,11 +39,11 @@ def validate_asi_choice_required(feat: Feature, ability_score_increase_id: int |
     """
     Raise unless an ASI-offering feat is given an explicit choice.
 
-    Enforced by ``GmPanelFeatService.update_feat`` (an already-granted feat's
-    ASI choice must always resolve to one of its options, never back to
-    unset) and by a rebuild (which has no later step to answer the pick). A
-    fresh GM grant (``add_feat``) does NOT call this — it may leave the
-    choice group pending, like any other feature choice group.
+    Enforced only by ``GmPanelFeatService.update_feat`` (an already-granted
+    feat's ASI choice must always resolve to one of its options, never back
+    to unset). A fresh GM grant (``add_feat``), a level-up and a rebuild do
+    NOT call this — the choice group stays pending and is answered via
+    ``PATCH .../choices``, like any other feature choice group.
     """
 
     increases = feat_ability_score_effects(feat)
@@ -58,19 +58,6 @@ def ensure_within_cap(totals: dict[str, int], ability: AbilityScore, amount: int
     requested = current_total + amount
     if requested > ABILITY_SCORE_CAP:
         raise AbilityScoreCapExceededException(ability=ability.value, current_total=current_total, requested=requested)
-
-
-def ensure_feat_asi_within_cap(feat: Feature, ability_score_increase_id: int | None, totals: dict[str, int]) -> None:
-    """
-    Raise ``AbilityScoreCapExceededException`` if the feat's selected ASI
-    option would push the effective score above ``ABILITY_SCORE_CAP`` (20).
-    Player structured choices (ASI or feat) are always bounded by 20 — only
-    GM-panel adjustments or feature effects may go above.
-    """
-
-    increase = next((e for e in feat_ability_score_effects(feat) if e.id == ability_score_increase_id), None)
-    if increase is not None:
-        ensure_within_cap(totals, increase.ability, increase.amount)
 
 
 def ensure_prerequisite_met(feat: Feature, totals: dict[str, int]) -> None:

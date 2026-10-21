@@ -9,32 +9,49 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
-from app.features.features.effects.rendering import render_effects_summary
+from app.constants import (
+    AbilityScore,
+    ArmorProficiency,
+    ChoiceType,
+    SkillEffectMode,
+    SpellLevel,
+    SpellSchool,
+    WeaponProficiency,
+)
+from app.features.features.effects.rendering import describe_spell_filter, render_effects_summary
 
 
 def _ability(ability, amount, new_cap=None):
     return SimpleNamespace(ability=ability, amount=amount, new_cap=new_cap)
 
 
-def _skill(skill_id, grants_expertise=False, skill=None):
-    return SimpleNamespace(skill_id=skill_id, grants_expertise=grants_expertise, skill=skill)
+def _skill(skill_id, mode=SkillEffectMode.PROFICIENCY, skill=None):
+    return SimpleNamespace(skill_id=skill_id, mode=mode, skill=skill)
 
 
 def _save(ability):
     return SimpleNamespace(ability=ability)
 
 
-def _armor(armor_type):
-    return SimpleNamespace(armor_type=armor_type)
+def _armor(armor_type=None, item_id=None, item=None):
+    return SimpleNamespace(armor_type=armor_type, item_id=item_id, item=item)
 
 
 def _weapon(weapon_category=None, item_id=None, item=None):
     return SimpleNamespace(weapon_category=weapon_category, item_id=item_id, item=item)
 
 
-def _spell(spell_id=None, spell=None):
-    return SimpleNamespace(spell_id=spell_id, spell=spell)
+def _spell(spell_id=None, spell=None, **spell_filter):
+    return SimpleNamespace(
+        spell_id=spell_id,
+        spell=spell,
+        class_ids=spell_filter.get("class_ids", []),
+        min_level=spell_filter.get("min_level"),
+        max_level=spell_filter.get("max_level"),
+        castable_only=spell_filter.get("castable_only", False),
+        schools=spell_filter.get("schools", []),
+        ritual_only=spell_filter.get("ritual_only", False),
+    )
 
 
 def _feature(
@@ -105,8 +122,18 @@ class TestStaticEffectsSummary:
 
     def test_skill_effect_with_expertise(self):
         skill = SimpleNamespace(name="Скрытность")
-        text = render_effects_summary(_feature(skill_effects=[_skill(7, grants_expertise=True, skill=skill)]))
+        text = render_effects_summary(
+            _feature(skill_effects=[_skill(7, SkillEffectMode.PROFICIENCY_AND_EXPERTISE, skill=skill)])
+        )
         assert "экспертизой" in text
+
+    def test_expertise_only_and_upgrade_modes_are_spelled_out(self):
+        skill = SimpleNamespace(name="Скрытность")
+        expertise = render_effects_summary(_feature(skill_effects=[_skill(7, SkillEffectMode.EXPERTISE, skill=skill)]))
+        upgrade = render_effects_summary(_feature(skill_effects=[_skill(7, SkillEffectMode.UPGRADE, skill=skill)]))
+
+        assert "только экспертиза" in expertise
+        assert "если уже есть владение" in upgrade
 
     def test_open_skill_effect_renders_any_skill_text(self):
         """The branch integration tests never reach: skill_id is None in a FIXED effect."""
@@ -120,6 +147,15 @@ class TestStaticEffectsSummary:
     def test_armor_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(armor_effects=[_armor(ArmorProficiency.HEAVY)]))
         assert "Владения доспехами: тяжёлые доспехи" in text
+
+    def test_armor_item_effect_uses_catalog_name(self):
+        item = SimpleNamespace(name="Кольчуга")
+        text = render_effects_summary(_feature(armor_effects=[_armor(item_id=40, item=item)]))
+        assert "Владения доспехами: «Кольчуга»" in text
+
+    def test_armor_item_effect_falls_back_to_id(self):
+        text = render_effects_summary(_feature(armor_effects=[_armor(item_id=40)]))
+        assert "«предмет #40»" in text
 
     def test_weapon_category_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(weapon_effects=[_weapon(weapon_category=WeaponProficiency.MARTIAL)]))
@@ -138,7 +174,46 @@ class TestStaticEffectsSummary:
 
     def test_open_spell_effect_with_no_filters(self):
         text = render_effects_summary(_feature(spell_effects=[_spell()]))
-        assert "Заклинания: любое" in text
+        assert "Заклинания: любое на выбор</li>" in text
+
+    def test_open_spell_effect_lists_its_filter(self):
+        effect = _spell(
+            castable_only=True, schools=[SpellSchool.ABJURATION, SpellSchool.EVOCATION], ritual_only=True, class_ids=[1]
+        )
+        text = render_effects_summary(_feature(spell_effects=[effect]))
+        assert (
+            "любое на выбор (заговор или доступного вам уровня; школа: Ограждение, Воплощение; ритуал; "
+            "из списка класса)"
+        ) in text
+
+    def test_open_spell_effect_names_its_classes_when_known(self):
+        effect = _spell(class_ids=[1, 2])
+        effect.class_names = ["Бард", "Жрец"]
+
+        assert describe_spell_filter(effect) == ["из списка: Бард, Жрец"]
+
+    def test_open_spell_effect_escapes_class_names_in_html(self):
+        effect = _spell(class_ids=[1])
+        effect.class_names = ["<script>"]
+
+        text = render_effects_summary(_feature(spell_effects=[effect]))
+
+        assert "из списка: &lt;script&gt;" in text
+        assert "<script>" not in text
+
+    @pytest.mark.parametrize(
+        ("min_level", "max_level", "expected"),
+        [
+            (SpellLevel.CANTRIP, SpellLevel.CANTRIP, "заговор"),
+            (SpellLevel.LEVEL_6, SpellLevel.LEVEL_6, "6-го уровня"),
+            (None, SpellLevel.LEVEL_5, "до 5-го уровня"),
+            (SpellLevel.LEVEL_1, SpellLevel.LEVEL_5, "1–5-го уровня"),
+            (SpellLevel.CANTRIP, SpellLevel.LEVEL_2, "заговор или до 2-го уровня"),
+            (SpellLevel.LEVEL_3, None, "от 3-го уровня"),
+        ],
+    )
+    def test_open_spell_level_range(self, min_level, max_level, expected):
+        assert describe_spell_filter(_spell(min_level=min_level, max_level=max_level)) == [expected]
 
     def test_unknown_skill_falls_back_to_id(self):
         """No eager-loaded ``.skill`` relationship — falls back to a numbered placeholder, never crashes."""
@@ -365,6 +440,12 @@ class TestHtmlEscaping:
         text = render_effects_summary(_feature(skill_effects=[_skill(1, skill=skill)]))
         assert "<img" not in text
         assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in text
+
+    def test_armor_item_name_is_escaped(self):
+        item = SimpleNamespace(name="Mail & <b>Plate</b>")
+        text = render_effects_summary(_feature(armor_effects=[_armor(item_id=1, item=item)]))
+        assert "Mail &amp; &lt;b&gt;Plate&lt;/b&gt;" in text
+        assert "<b>" not in text
 
     def test_item_name_is_escaped(self):
         item = SimpleNamespace(name="Sword & <b>Board</b>")

@@ -2,55 +2,7 @@
 
 import pytest
 
-from app.constants import ChoiceType
-from app.models.features.feature_engine_models import (
-    FeatureChoiceGroup,
-    FeatureChoiceOption,
-    FeatureSkillProficiencyEffect,
-    FeatureSpellGrantEffect,
-)
-from tests.helpers import set_choice_groups, set_effects
-
-
-async def _seed_open_skill_choice_group(db_session, feature_id: int) -> tuple[int, int]:
-    """
-    Insert a SKILL choice group with one "any skill" (``skill_id=None``) option directly.
-
-    Authoring an open pick through ``POST /features/{id}/choice-groups`` is
-    rejected by ``ChoiceGroupPayload.validate_no_open_picks`` — this
-    simulates a pre-existing catalog row from before that validation was
-    added, which the PATCH-time resolution guard still has to handle.
-    """
-
-    group = FeatureChoiceGroup(feature_id=feature_id, pick_count=1, choice_type=ChoiceType.SKILL)
-    db_session.add(group)
-    await db_session.flush()
-
-    option = FeatureChoiceOption(group_id=group.id)
-    db_session.add(option)
-    await db_session.flush()
-
-    db_session.add(FeatureSkillProficiencyEffect(choice_option_id=option.id, skill_id=None))
-    await db_session.commit()
-
-    return group.id, option.id
-
-
-async def _seed_open_spell_choice_group(db_session, feature_id: int) -> tuple[int, int]:
-    """Insert a SPELL choice group with one "any spell" (``spell_id=None``) option directly (see above)."""
-
-    group = FeatureChoiceGroup(feature_id=feature_id, pick_count=1, choice_type=ChoiceType.SPELL)
-    db_session.add(group)
-    await db_session.flush()
-
-    option = FeatureChoiceOption(group_id=group.id)
-    db_session.add(option)
-    await db_session.flush()
-
-    db_session.add(FeatureSpellGrantEffect(choice_option_id=option.id, spell_id=None))
-    await db_session.commit()
-
-    return group.id, option.id
+from tests.helpers import effect_items, set_choice_groups, set_effects
 
 
 @pytest.mark.integration
@@ -164,6 +116,100 @@ class TestPendingChoiceGroups:
             f"/characters/{char_b.id}/features/{cf_id_a}/choices",
             headers={"Authorization": f"Bearer {gm_token}"},
         )
+        assert response.status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestPendingChoiceCount:
+    async def test_count_is_zero_without_pending_choices(
+        self, client, gm, gm_token, create_class, create_character, create_feature
+    ):
+        feature_class = await create_class(name="Fighter")
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
+        feature = await create_feature(name="Plain", source_type="CLASS", level=None)
+        grant_resp = await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": feature.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert grant_resp.status_code == 201, grant_resp.text
+
+        response = await client.get(
+            f"/characters/{character.id}/grants/pending/count",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"count": 0}
+
+    async def test_count_is_the_number_of_grants_with_unanswered_groups(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
+    ):
+        feature_class = await create_class(name="Rogue")
+        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
+        skill = await create_skill(name="Stealth", ability="DEX")
+        grant_ids = []
+        for name in ("First Training", "Second Training"):
+            feature = await create_feature(name=name, source_type="CLASS", level=None)
+            groups_resp = await set_choice_groups(
+                client,
+                gm_token,
+                feature.id,
+                {
+                    "choice_groups": [
+                        {
+                            "pick_count": 1,
+                            "choice_type": "SKILL",
+                            "options": [{"effects": [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]}],
+                        }
+                    ]
+                },
+            )
+            assert groups_resp.status_code == 200, groups_resp.text
+            grant_resp = await client.post(
+                f"/characters/{character.id}/gm-panel/features",
+                json={"feature_id": feature.id},
+                headers={"Authorization": f"Bearer {gm_token}"},
+            )
+            assert grant_resp.status_code == 201, grant_resp.text
+            grant_ids.append((grant_resp.json()["id"], groups_resp.json()[0]))
+
+        plain = await create_feature(name="Plain", source_type="CLASS", level=None)
+        await client.post(
+            f"/characters/{character.id}/gm-panel/features",
+            json={"feature_id": plain.id},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        headers = {"Authorization": f"Bearer {gm_token}"}
+
+        assert (await client.get(f"/characters/{character.id}/grants/pending/count", headers=headers)).json() == {
+            "count": 2
+        }
+
+        first_cf_id, first_group = grant_ids[0]
+        answer = await client.patch(
+            f"/characters/{character.id}/features/{first_cf_id}/choices",
+            json={
+                "answers": [
+                    {
+                        "choice_group_id": first_group["id"],
+                        "choice_option_id": first_group["options"][0]["id"],
+                    }
+                ]
+            },
+            headers=headers,
+        )
+        assert answer.status_code == 200, answer.text
+
+        response = await client.get(f"/characters/{character.id}/grants/pending/count", headers=headers)
+        assert response.json() == {"count": 1}
+
+    async def test_count_for_an_unknown_character_is_404(self, client, gm_token):
+        response = await client.get(
+            "/characters/999999/grants/pending/count", headers={"Authorization": f"Bearer {gm_token}"}
+        )
+
         assert response.status_code == 404
 
 
@@ -387,15 +433,30 @@ class TestAnswerChoices:
         assert skill_b.id in skill_ids_after_b
 
     async def test_open_skill_without_skill_id_returns_422(
-        self, client, gm, gm_token, create_class, create_character, create_feature, db_session
+        self, client, gm, gm_token, create_class, create_character, create_feature
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
         feature = await create_feature(name="Any Skill Pick", source_type="CLASS", level=None)
 
-        # Pre-existing open ("any") skill effect (skill_id=null) — authoring one
-        # via the API is rejected now, so this is seeded directly.
-        group_id, option_id = await _seed_open_skill_choice_group(db_session, feature.id)
+        # an open ("any skill") option: a skill effect without skill_id
+        groups = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SKILL",
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{}]}]}],
+                    }
+                ]
+            },
+        )
+        assert groups.status_code == 200, groups.text
+        group_id = groups.json()[0]["id"]
+        option_id = groups.json()[0]["options"][0]["id"]
 
         grant_resp = await client.post(
             f"/characters/{character.id}/gm-panel/features",
@@ -413,7 +474,7 @@ class TestAnswerChoices:
         assert choices_resp.status_code == 200
         assert choices_resp.json()["groups"][0]["options"][0]["needs_skill"] is True
 
-        # PATCH without skill_id → 422 SkillResolutionsError
+        # PATCH without skill_id → 422 SkillPickRequiredError
         ans_no_skill = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
             json={"answers": [{"choice_group_id": group_id, "choice_option_id": option_id}]},
@@ -421,17 +482,31 @@ class TestAnswerChoices:
         )
         assert ans_no_skill.status_code == 422
 
-    async def test_open_skill_with_skill_id_still_returns_422(
-        self, client, gm, gm_token, create_class, create_character, create_feature, create_skill, db_session
+    async def test_open_skill_with_skill_id_grants_that_skill(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
     ):
         feature_class = await create_class(name="Rogue")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
         skill = await create_skill(name="Arcana", ability="INT")
         feature = await create_feature(name="Any Skill Resolve", source_type="CLASS", level=None)
 
-        # Pre-existing open ("any") skill effect (skill_id=null) — authoring one
-        # via the API is rejected now, so this is seeded directly.
-        group_id, option_id = await _seed_open_skill_choice_group(db_session, feature.id)
+        groups = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SKILL",
+                        "options": [{"effects": [{"effect_type": "skill", "items": [{}]}]}],
+                    }
+                ]
+            },
+        )
+        assert groups.status_code == 200, groups.text
+        group_id = groups.json()[0]["id"]
+        option_id = groups.json()[0]["options"][0]["id"]
 
         grant_resp = await client.post(
             f"/characters/{character.id}/gm-panel/features",
@@ -441,15 +516,18 @@ class TestAnswerChoices:
         assert grant_resp.status_code == 201, grant_resp.text
         cf_id = grant_resp.json()["id"]
 
-        # An open option is unconditionally unpickable — supplying skill_id
-        # in the answer doesn't resolve it, the API doesn't support that yet.
         ans = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
             json={"answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "skill_id": skill.id}]},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        assert ans.status_code == 422
-        assert "open" in ans.json()["error"]["message"]
+        assert ans.status_code == 200, ans.text
+
+        proficiencies = await client.get(
+            f"/characters/{character.id}/proficiencies",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert [entry["skill_id"] for entry in proficiencies.json()["skills"]] == [skill.id]
 
     async def test_option_from_different_group_returns_404(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_skill
@@ -551,16 +629,40 @@ class TestAnswerChoices:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestOpenSpellResolution:
-    async def test_open_spell_needs_spell_appears_in_pending(
-        self, client, gm, gm_token, create_class, create_character, create_feature, db_session
-    ):
+    """An open ("any spell") option: an extra spell the player picks, narrowed by the option's filter."""
+
+    async def _grant_open_spell_feature(self, client, gm, gm_token, create_class, create_character, create_feature):
+        """A Wizard with a granted feature whose one SPELL group offers "any 1st-level evocation spell"."""
+
         feature_class = await create_class(name="Wizard")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
         feature = await create_feature(name="Spell Pick", source_type="CLASS", level=None)
 
-        # Pre-existing open ("any") spell effect (spell_id=null) — authoring one
-        # via the API is rejected now, so this is seeded directly.
-        _, option_id = await _seed_open_spell_choice_group(db_session, feature.id)
+        groups_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
+                "choice_groups": [
+                    {
+                        "choice_type": "SPELL",
+                        "pick_count": 1,
+                        "options": [
+                            {
+                                "effects": [
+                                    {
+                                        "effect_type": "spell",
+                                        "items": [{"max_level": "LEVEL_1", "schools": ["EVOCATION"]}],
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        assert groups_resp.status_code == 200, groups_resp.text
+        group = groups_resp.json()[0]
 
         grant_resp = await client.post(
             f"/characters/{character.id}/gm-panel/features",
@@ -568,7 +670,17 @@ class TestOpenSpellResolution:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert grant_resp.status_code == 201, grant_resp.text
-        cf_id = grant_resp.json()["id"]
+        return character, grant_resp.json()["id"], group["id"], group["options"][0]["id"]
+
+    async def test_pending_open_option_lists_only_the_spells_its_filter_allows(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
+    ):
+        magic_missile = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+        await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
+        await create_spell(name="Shield", school="ABJURATION", level="LEVEL_1")
+        character, cf_id, _, _ = await self._grant_open_spell_feature(
+            client, gm, gm_token, create_class, create_character, create_feature
+        )
 
         choices_resp = await client.get(
             f"/characters/{character.id}/features/{cf_id}/choices",
@@ -578,24 +690,115 @@ class TestOpenSpellResolution:
         option = choices_resp.json()["groups"][0]["options"][0]
         assert option["needs_spell"] is True
         assert option["needs_skill"] is False
+        assert option["available"] is True
+        assert [spell["id"] for spell in option["allowed_spells"]] == [magic_missile.id]
+        assert option["allowed_spells"][0]["name"] == "Magic Missile"
 
-    async def test_open_spell_without_spell_id_returns_422(
-        self, client, gm, gm_token, create_class, create_character, create_feature, db_session
+    async def test_picking_an_open_option_gives_the_named_spell(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
     ):
-        feature_class = await create_class(name="Wizard")
-        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        feature = await create_feature(name="Spell Pick", source_type="CLASS", level=None)
+        magic_missile = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+        character, cf_id, group_id, option_id = await self._grant_open_spell_feature(
+            client, gm, gm_token, create_class, create_character, create_feature
+        )
 
-        # Pre-existing open ("any") spell effect (spell_id=null) — authoring one
-        # via the API is rejected now, so this is seeded directly.
-        group_id, option_id = await _seed_open_spell_choice_group(db_session, feature.id)
-
-        grant_resp = await client.post(
-            f"/characters/{character.id}/gm-panel/features",
-            json={"feature_id": feature.id},
+        ans = await client.patch(
+            f"/characters/{character.id}/features/{cf_id}/choices",
+            json={
+                "answers": [
+                    {"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": magic_missile.id}
+                ]
+            },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        cf_id = grant_resp.json()["id"]
+        assert ans.status_code == 200, ans.text
+        assert ans.json()["groups"] == []
+
+        spells_resp = await client.get(
+            f"/characters/{character.id}/spells",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert [spell["id"] for spell in spells_resp.json()["feature_spells"]] == [magic_missile.id]
+
+        answered = await client.get(
+            f"/characters/{character.id}/features/{cf_id}/choices/answered",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert answered.json()["choices"][0]["picked_spell_id"] == magic_missile.id
+
+    async def test_deleting_a_spell_picked_through_an_open_option_is_409(
+        self, client, gm, gm_token, founder_token, create_class, create_character, create_feature, create_spell
+    ):
+        magic_missile = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+        # the 409 rolls the shared session back and expires fixture rows: read the ids up front
+        spell_id = magic_missile.id
+        character, cf_id, group_id, option_id = await self._grant_open_spell_feature(
+            client, gm, gm_token, create_class, create_character, create_feature
+        )
+        ans = await client.patch(
+            f"/characters/{character.id}/features/{cf_id}/choices",
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": spell_id}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert ans.status_code == 200, ans.text
+
+        response = await client.delete(f"/spells/{spell_id}", headers={"Authorization": f"Bearer {founder_token}"})
+
+        assert response.status_code == 409
+        assert (await client.get(f"/spells/{spell_id}")).status_code == 200
+
+    async def test_open_option_summary_names_the_classes_of_its_filter(
+        self, client, gm_token, create_class, create_feature
+    ):
+        bard = await create_class(name="Bard")
+        cleric = await create_class(name="Cleric")
+        feature = await create_feature(name="Any Caster Spell", source_type="CLASS", level=None)
+        groups_resp = await set_choice_groups(
+            client,
+            gm_token,
+            feature.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "SPELL",
+                        "options": [
+                            {"effects": [{"effect_type": "spell", "items": [{"class_ids": [cleric.id, bard.id]}]}]}
+                        ],
+                    }
+                ]
+            },
+        )
+        assert groups_resp.status_code == 200, groups_resp.text
+
+        groups = (await client.get(f"/features/{feature.id}/choice-groups")).json()
+
+        (spell_item,) = effect_items(groups[0]["options"][0]["effects"], "spell")
+        assert spell_item["summary"] == ["из списка: Bard, Cleric"]
+        assert spell_item["class_ids"] == [cleric.id, bard.id]
+
+    async def test_a_spell_outside_the_filter_returns_422(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
+    ):
+        fireball = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
+        character, cf_id, group_id, option_id = await self._grant_open_spell_feature(
+            client, gm, gm_token, create_class, create_character, create_feature
+        )
+
+        ans = await client.patch(
+            f"/characters/{character.id}/features/{cf_id}/choices",
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": fireball.id}]},
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        assert ans.status_code == 422
+        assert "above the option's range" in ans.json()["error"]["message"]
+
+    async def test_open_spell_without_spell_id_returns_422(
+        self, client, gm, gm_token, create_class, create_character, create_feature
+    ):
+        character, cf_id, group_id, option_id = await self._grant_open_spell_feature(
+            client, gm, gm_token, create_class, create_character, create_feature
+        )
 
         ans = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
@@ -603,45 +806,41 @@ class TestOpenSpellResolution:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert ans.status_code == 422
-        assert "open" in ans.json()["error"]["message"]
+        assert "name the spell" in ans.json()["error"]["message"]
 
-    async def test_open_spell_with_spell_id_still_returns_422(
-        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell, db_session
+    async def test_a_spell_the_character_already_has_is_not_offered_nor_pickable(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
     ):
-        feature_class = await create_class(name="Wizard")
-        character = await create_character(owner_id=gm.id, class_id=feature_class.id)
-        feature = await create_feature(name="Spell Pick", source_type="CLASS", level=None)
-
-        evocation_spell = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
-
-        # Pre-existing open ("any") spell effect (spell_id=null) — authoring one
-        # via the API is rejected now, so this is seeded directly.
-        group_id, option_id = await _seed_open_spell_choice_group(db_session, feature.id)
-
-        grant_resp = await client.post(
-            f"/characters/{character.id}/gm-panel/features",
-            json={"feature_id": feature.id},
+        magic_missile = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+        character, cf_id, group_id, option_id = await self._grant_open_spell_feature(
+            client, gm, gm_token, create_class, create_character, create_feature
+        )
+        granted = await client.post(
+            f"/characters/{character.id}/gm-panel/spells",
+            json={"spell_id": magic_missile.id},
             headers={"Authorization": f"Bearer {gm_token}"},
         )
-        cf_id = grant_resp.json()["id"]
+        assert granted.status_code == 201, granted.text
 
-        # An open option is unconditionally unpickable — supplying spell_id
-        # in the answer doesn't resolve it, the API doesn't support that yet.
+        choices_resp = await client.get(
+            f"/characters/{character.id}/features/{cf_id}/choices",
+            headers={"Authorization": f"Bearer {gm_token}"},
+        )
+        option = choices_resp.json()["groups"][0]["options"][0]
+        assert option["allowed_spells"] == []
+        assert option["available"] is False
+
         ans = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
             json={
                 "answers": [
-                    {
-                        "choice_group_id": group_id,
-                        "choice_option_id": option_id,
-                        "spell_id": evocation_spell.id,
-                    }
+                    {"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": magic_missile.id}
                 ]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert ans.status_code == 422
-        assert "open" in ans.json()["error"]["message"]
+        assert "already has it" in ans.json()["error"]["message"]
 
     async def test_fixed_spell_effect_materializes_granted_spell(
         self, client, gm, gm_token, create_class, create_character, create_feature, create_spell

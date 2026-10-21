@@ -4,7 +4,15 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
+from app.constants import (
+    AbilityScore,
+    ArmorProficiency,
+    ChoiceType,
+    SkillEffectMode,
+    SpellLevel,
+    SpellSchool,
+    WeaponProficiency,
+)
 from app.core.types import EntityId
 from app.features.characters.spells.schemas import CharacterSpellResponse
 from app.features.features.effects.schemas import EffectGroup
@@ -17,14 +25,17 @@ class ChoiceAnswerItem(BaseModel):
     """
     One picked option inside one answered choice group.
 
-    No ``skill_id``/``spell_id`` field: picking an option that carries an
-    open ("any skill"/"any spell") effect isn't supported yet — the answer
-    is rejected (``SkillResolutionsError``/``SpellResolutionsError``, 422)
-    regardless of what's requested.
+    ``skill_id`` names the skill for an option with an open ("any skill")
+    skill effect, ``spell_id`` the spell for an option with an open ("any
+    spell") spell effect — required there, rejected on any other option
+    (422). The same open option may be picked several times in one group,
+    each time with a different skill/spell.
     """
 
     choice_group_id: EntityId
     choice_option_id: EntityId
+    skill_id: EntityId | None = None
+    spell_id: EntityId | None = None
 
 
 class GrantChoicesUpdate(BaseModel):
@@ -41,12 +52,35 @@ class GrantChoicesUpdate(BaseModel):
     answers: list[ChoiceAnswerItem] = Field(default_factory=list, max_length=MAX_ANSWERS)
 
 
+class SpellPickCandidate(BaseModel):
+    """A spell an open ("any spell") option may be picked with — enough to list and search it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    level: SpellLevel
+    school: SpellSchool
+    is_ritual: bool = False
+
+
 class PendingChoiceOption(BaseModel):
     """
     A pending option inside a pending choice group, with its open-effect
     flags and its full effect bundle — so a client can render what the
     option actually does (e.g. "+1 STR") without a separate fetch of the
     feature's catalog definition.
+
+    Skill options are checked against the character's other sources:
+    ``allowed_skill_ids`` (open options only) lists the skills it may be
+    picked with right now; ``available`` is ``False`` for a concrete option
+    the character can't take (e.g. expertise in a skill it isn't proficient
+    in, or proficiency it already has) and for an open option with no
+    allowed skill.
+
+    An open spell option lists in ``allowed_spells`` (by level, then name)
+    every spell that passes its filter and that the character doesn't have
+    yet; ``available`` is ``False`` when there is none.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -54,6 +88,9 @@ class PendingChoiceOption(BaseModel):
     id: int
     needs_skill: bool = False
     needs_spell: bool = False
+    allowed_skill_ids: list[int] | None = None
+    allowed_spells: list[SpellPickCandidate] | None = None
+    available: bool = True
     effects: list[EffectGroup] = Field(default_factory=list)
 
 
@@ -66,6 +103,12 @@ class PendingChoiceGroup(BaseModel):
     pick_count: int
     choice_type: ChoiceType
     options: list[PendingChoiceOption] = Field(default_factory=list)
+
+
+class PendingChoicesCountResponse(BaseModel):
+    """How many of a character's grants still have unanswered choice groups (the light badge read)."""
+
+    count: int
 
 
 class PendingChoiceGroupsResponse(BaseModel):
@@ -86,11 +129,12 @@ class CharacterSavingThrowProficiencyResponse(BaseModel):
 
 
 class CharacterArmorProficiencyResponse(BaseModel):
-    """An armor proficiency on the character."""
+    """An armor proficiency on the character (category or item)."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    armor_type: ArmorProficiency
+    armor_type: ArmorProficiency | None = None
+    item_id: int | None = None
 
 
 class CharacterWeaponProficiencyResponse(BaseModel):
@@ -103,12 +147,19 @@ class CharacterWeaponProficiencyResponse(BaseModel):
 
 
 class GrantedSkillEffectResponse(BaseModel):
-    """A skill proficiency a grant gives."""
+    """
+    What a grant gives in one skill. ``mode`` is its effects folded into one
+    (``EXPERTISE``: expertise only, effective while another source gives the
+    proficiency; ``UPGRADE``: proficiency, or expertise on top of another
+    source); ``is_expertise`` is the expertise the grant gives on its own.
+    The character's resolved result is ``GET /characters/{id}/proficiencies``.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     skill_id: int
     is_expertise: bool
+    mode: SkillEffectMode = SkillEffectMode.PROFICIENCY
 
 
 class GrantedAbilityEffectResponse(BaseModel):
@@ -176,10 +227,15 @@ GrantEffectGroup = Annotated[
 
 
 class ChosenOptionResponse(BaseModel):
-    """One of the player's stored picks for a grant's choice group, with the option's non-empty effect groups."""
+    """
+    One of the player's stored picks for a grant's choice group, with the option's non-empty effect groups
+    and, for an open ("any skill/spell") option, the skill/spell named for it.
+    """
 
     choice_group_id: int
     choice_option_id: int
+    picked_skill_id: int | None = None
+    picked_spell_id: int | None = None
     effects: list[EffectGroup] = Field(default_factory=list)
 
 

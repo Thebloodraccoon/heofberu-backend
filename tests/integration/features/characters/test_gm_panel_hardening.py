@@ -128,7 +128,11 @@ class TestGmOwnsExpertise:
             gm_token,
             character.id,
             feature.id,
-            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
+            {
+                "static_groups": [
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY_AND_EXPERTISE"}]}
+                ]
+            },
         )
         assert (await read_skills(client, gm_token, character.id))[skill.id]["is_expertise"] is True
         url = PROFICIENCIES.format(character_id=character.id) + "/skills/expertise"
@@ -162,7 +166,11 @@ class TestGmOwnsExpertise:
             gm_token,
             character.id,
             feature.id,
-            {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "grants_expertise": True}]}]},
+            {
+                "static_groups": [
+                    {"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY_AND_EXPERTISE"}]}
+                ]
+            },
         )
 
         assert (await read_skills(client, gm_token, character.id))[skill.id]["is_expertise"] is True

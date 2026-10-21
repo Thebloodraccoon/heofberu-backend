@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import EFFECT_TYPE_BY_CHOICE_TYPE, ChoiceType
+from app.constants import EFFECT_TYPE_BY_CHOICE_TYPE, ChoiceType, ItemType
 from app.core.base.transaction import TransactionMixin
 from app.core.exceptions import RecordInUseError, RecordNotFoundError
 from app.features.characters.progression.feature_sync import refresh_feature_effect_caches
@@ -26,8 +26,9 @@ from app.features.features.effects.schemas import (
     ChoiceOptionPayload,
     FeatureEffectsResponse,
     FeatureEffectsUpdate,
+    OptionEffectsUpdate,
 )
-from app.models import Item, Skill, Spell
+from app.models import Class, Item, Skill, Spell
 from app.models.features.feature_engine_models import (
     EFFECT_TYPES,
     FeatureAbilityScoreEffect,
@@ -58,8 +59,22 @@ _EFFECT_DIMENSIONS = tuple((_MODEL_BY_EFFECT_TYPE[effect_type], attr) for effect
 _CATALOG_REFERENCES = (
     ("skill_effects", "skill_id", "skill_id", Skill),
     ("weapon_effects", "item_id", "item_id", Item),
+    ("armor_effects", "item_id", "item_id", Item),
     ("spell_effects", "spell_id", "spell_id", Spell),
 )
+
+# The item types a concrete-item proficiency effect may point at.
+_ITEM_TYPES_BY_EFFECT_FIELD = {
+    "weapon_effects": {ItemType.WEAPON},
+    "armor_effects": {ItemType.ARMOR, ItemType.SHIELD},
+}
+
+# Item fields that aren't columns: the row id and the read-only ``summary`` of a spell effect.
+_NOT_ROW_FIELDS = {"id", "summary"}
+
+# The effect fields whose target may be left open ("any skill/spell") in a choice option, with the target
+# attribute that is ``None`` on an open effect.
+_OPEN_TARGETS = {"skill_effects": "skill_id", "spell_effects": "spell_id"}
 
 
 class FeatureEffectsService(TransactionMixin):
@@ -76,7 +91,10 @@ class FeatureEffectsService(TransactionMixin):
     (``refresh_feature_effect_caches``; their other effects are computed on
     read) and the post-commit cache purge. ``CharacterFeatureChoice.choice_option_id``
     is ``ondelete RESTRICT``, so deleting an option/group first deletes the
-    stored picks of it (the pick reverts to pending).
+    stored picks of it (the pick reverts to pending). The same happens when a
+    skill/spell-effect write turns an option open ("any skill/spell") or
+    concrete: the stored picks no longer match its shape (an open pick names a
+    skill/spell, a concrete one doesn't).
     """
 
     repository: FeatureEffectsRepository
@@ -140,7 +158,10 @@ class FeatureEffectsService(TransactionMixin):
         return [ChoiceGroupResponse.model_validate(group) for group in groups]
 
     async def _ensure_targets_exist(self, owners: Iterable[Any]) -> None:
-        """422 for any skill/item/spell id the payloads reference but the catalog lacks."""
+        """
+        422 for any skill/item/spell/class id the payloads reference but the catalog lacks, and for an item of
+        the wrong kind (a weapon effect needs a weapon, an armor effect an armor or a shield).
+        """
 
         owners = list(owners)
         for field_name, id_attr, label, model in _CATALOG_REFERENCES:
@@ -154,14 +175,58 @@ class FeatureEffectsService(TransactionMixin):
             if missing:
                 raise InvalidFeatureEffectDataError(f"Unknown {label}(s): {missing}.")
 
+        class_ids = {
+            class_id
+            for owner in owners
+            for effect in owner.spell_effects or []
+            for class_id in effect.class_ids
+        }
+        missing = await self.repository.missing_ids(Class, class_ids)
+        if missing:
+            raise InvalidFeatureEffectDataError(f"Unknown class_id(s) in a spell filter: {missing}.")
+
+        for field_name, allowed in _ITEM_TYPES_BY_EFFECT_FIELD.items():
+            item_ids = {
+                effect.item_id for owner in owners for effect in getattr(owner, field_name) or [] if effect.item_id
+            }
+            wrong = sorted(
+                item_id for item_id, item_type in (await self.repository.item_types(item_ids)).items()
+                if item_type not in allowed
+            )
+            if wrong:
+                kinds = "/".join(sorted(item_type.value for item_type in allowed))
+                raise InvalidFeatureEffectDataError(f"item_id(s) {wrong} in {field_name} must be of type {kinds}.")
+
     @staticmethod
-    def _validated(groups: list) -> FeatureEffectsUpdate:
-        """Run the fixed-effect validators (concrete skill/spell, no duplicates...) over ``groups``; 422 on failure."""
+    def _validated(groups: list, payload: type[FeatureEffectsUpdate] = FeatureEffectsUpdate) -> FeatureEffectsUpdate:
+        """
+        Run the effect validators (no duplicates; concrete skill/spell unless ``payload`` is
+        ``OptionEffectsUpdate``) over ``groups``; 422 on failure.
+        """
 
         try:
-            return FeatureEffectsUpdate(static_groups=groups)
+            return payload(static_groups=groups)
         except ValidationError as exc:
             raise InvalidFeatureEffectDataError("; ".join(error["msg"] for error in exc.errors())) from exc
+
+    @staticmethod
+    def _payload_for(owner_field: str) -> type[FeatureEffectsUpdate]:
+        """An option's bundle may hold an open skill/spell effect; a feature's fixed effects may not."""
+
+        return OptionEffectsUpdate if owner_field == "choice_option_id" else FeatureEffectsUpdate
+
+    @staticmethod
+    def _has_open(field_name: str, effects: Iterable[Any]) -> bool:
+        """Whether any of the effects (rows or payload items) of ``field_name`` is open ("any skill/spell")."""
+
+        target = _OPEN_TARGETS.get(field_name)
+        return target is not None and any(getattr(effect, target) is None for effect in effects)
+
+    async def _clear_picks_if_reshaped(self, owner_field: str, owner_id: int, reshaped: bool) -> None:
+        """An option that turned open or concrete (``reshaped``) drops its stored picks (inside the caller's write)."""
+
+        if owner_field == "choice_option_id" and reshaped:
+            await self.repository.clear_character_picks(option_ids=[owner_id])
 
     @staticmethod
     def _new_rows(owner_field: str, owner_id: int, data: Any) -> list:
@@ -172,7 +237,7 @@ class FeatureEffectsService(TransactionMixin):
             for item in getattr(data, field_name) or []:
                 if item.id is not None:
                     raise InvalidFeatureEffectDataError("New effects must not carry an id.")
-                rows.append(model(**{owner_field: owner_id}, **item.model_dump(exclude={"id"})))
+                rows.append(model(**{owner_field: owner_id}, **item.model_dump(exclude=_NOT_ROW_FIELDS)))
         return rows
 
     async def _owned_rows(self, model: Any, owner_field: str, owner_id: int) -> dict[int, Any]:
@@ -205,12 +270,16 @@ class FeatureEffectsService(TransactionMixin):
             return
 
         await self._ensure_targets_exist([data])
+        reshaped = False
         for model, field_name in _EFFECT_DIMENSIONS:
             if items := getattr(data, field_name):
                 owned = await self._owned_rows(model, owner_field, owner_id)
                 self._reject_existing_duplicates(field_name, items, owned)
+                was_open = self._has_open(field_name, owned.values())
+                reshaped |= was_open != (was_open or self._has_open(field_name, items))
 
         async with self._write():
+            await self._clear_picks_if_reshaped(owner_field, owner_id, reshaped)
             self.repository.add(*rows)
             await self._finish_write(feature)
 
@@ -223,14 +292,22 @@ class FeatureEffectsService(TransactionMixin):
         owned = await self._owned_rows(model, owner_field, owner_id)
         row = self._row_or_404(model, owned, effect_id)
 
-        current = ITEM_BY_EFFECT_TYPE[effect_type].model_validate(row).model_dump(exclude={"id"})
-        data = self._validated([{"effect_type": effect_type, "items": [{**current, **changes}]}])
+        current = ITEM_BY_EFFECT_TYPE[effect_type].model_validate(row).model_dump(exclude=_NOT_ROW_FIELDS)
+        data = self._validated(
+            [{"effect_type": effect_type, "items": [{**current, **changes}]}], self._payload_for(owner_field)
+        )
         await self._ensure_targets_exist([data])
         field_name = f"{effect_type}_effects"
         self._reject_existing_duplicates(field_name, getattr(data, field_name), owned, skip_id=effect_id)
 
+        others = [other for other_id, other in owned.items() if other_id != effect_id]
+        reshaped = self._has_open(field_name, owned.values()) != self._has_open(
+            field_name, [*others, *getattr(data, field_name)]
+        )
+
         async with self._write():
-            for field, value in getattr(data, field_name)[0].model_dump(exclude={"id"}).items():
+            await self._clear_picks_if_reshaped(owner_field, owner_id, reshaped)
+            for field, value in getattr(data, field_name)[0].model_dump(exclude=_NOT_ROW_FIELDS).items():
                 setattr(row, field, value)
             await self._finish_write(feature)
 
@@ -238,9 +315,16 @@ class FeatureEffectsService(TransactionMixin):
         self, feature: Feature, owner_field: str, owner_id: int, effect_type: str, effect_id: int
     ) -> None:
         model = _MODEL_BY_EFFECT_TYPE[effect_type]
-        row = self._row_or_404(model, await self._owned_rows(model, owner_field, owner_id), effect_id)
+        owned = await self._owned_rows(model, owner_field, owner_id)
+        row = self._row_or_404(model, owned, effect_id)
+
+        field_name = f"{effect_type}_effects"
+        reshaped = self._has_open(field_name, owned.values()) != self._has_open(
+            field_name, (other for other_id, other in owned.items() if other_id != effect_id)
+        )
 
         async with self._write():
+            await self._clear_picks_if_reshaped(owner_field, owner_id, reshaped)
             await self.repository.remove([row])
             await self._finish_write(feature)
 
@@ -395,7 +479,7 @@ class FeatureEffectsService(TransactionMixin):
         feature, group = await self._locked_group(feature_id, group_id)
         if payload.id is not None:
             raise InvalidFeatureEffectDataError("A new choice option must not carry an id.")
-        self._validated(payload.effects)
+        self._validated(payload.effects, OptionEffectsUpdate)
         self._check_effects_fit(group, payload)
         await self._ensure_targets_exist([payload])
 
@@ -434,7 +518,7 @@ class FeatureEffectsService(TransactionMixin):
         return await self._choice_group_responses(feature_id)
 
     async def add_option_effects(
-        self, feature_id: int, group_id: int, option_id: int, data: FeatureEffectsUpdate
+        self, feature_id: int, group_id: int, option_id: int, data: OptionEffectsUpdate
     ) -> list[ChoiceGroupResponse]:
         """Insert new effect rows into an option's bundle."""
 

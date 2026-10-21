@@ -14,7 +14,6 @@ from app.features.characters.schemas import ABILITY_SCORE_MAX, ABILITY_SCORE_MIN
 ASI_TOTAL_BUDGET = 2
 
 # Bounds on client-supplied lists and numbers (the real limits are enforced by the service).
-MAX_FEATURE_CHOICES = 50
 MAX_REBUILD_SKILLS = 30
 MAX_HIT_POINTS_GAINED = 50
 MAX_REBUILD_HP = 1000
@@ -98,16 +97,15 @@ class FeatChoice(BaseModel):
     """
     Level-up choice taking a feat instead of the Ability Score Improvement.
 
-    ``ability_score_increase_id`` is the id of the specific ASI option (a
-    ``feature_ability_score_effects`` row) of a feat that offers ASI options
-    of its own (e.g. Resilient). A rebuild rejects such a feat without one
-    (422); a level-up rejects it through the unresolved choice group (422).
-    The feat's ``min_level`` and the ability cap of 20 apply to the pick.
+    Only the feat is named here (its ``min_level`` and prerequisite apply).
+    Every choice group of the feat — the ability-score pick of e.g.
+    Resilient included — stays pending on the new grant and is answered via
+    ``PATCH /characters/{id}/features/{grant_id}/choices``, the single place
+    choices are made (the ability cap of 20 is checked there).
     """
 
     type: Literal["FEAT"] = "FEAT"
     feat_id: EntityId
-    ability_score_increase_id: EntityId | None = None
 
 
 LevelUpChoice = Annotated[ASIChoice | FeatChoice, Field(discriminator="type")]
@@ -204,26 +202,6 @@ class CharacterRebuildRequest(BaseModel):
         return asi_choices
 
 
-class LevelUpFeatureChoiceAnswer(BaseModel):
-    """
-    One picked option, for one choice group, on one feature newly unlocked
-    by this level-up (e.g. a class feature at level 3 that grants "choose a
-    tool proficiency"). ``feature_id`` identifies the catalog feature — not
-    the per-character grant, whose id doesn't exist until the level-up
-    creates it — since ``choice_group_id``/``choice_option_id`` are reference
-    data, fetchable ahead of time from ``GET /classes/{id}/features`` (or the
-    equivalent for the granting source) before submitting the level-up.
-
-    No ``skill_id``/``spell_id`` field: picking an option that carries an
-    open ("any skill"/"any spell") effect isn't supported yet — the whole
-    level-up is rejected (422) if one is picked.
-    """
-
-    feature_id: EntityId
-    choice_group_id: EntityId
-    choice_option_id: EntityId
-
-
 class LevelUpRequest(BaseModel):
     """
     Level a character up exactly one level.
@@ -235,20 +213,15 @@ class LevelUpRequest(BaseModel):
     ``choice`` is required when the new level is an Ability Score
     Improvement level and rejected otherwise. See ``ASI_LEVELS``.
 
-    ``feature_choices`` resolves the "pick N of M" choice group(s) of any
-    OTHER feature this level unlocks (a class feature granting a skill/tool/
-    armor/weapon proficiency or a bonus spell, a subclass trait, ...) —
-    unrelated to the ASI-vs-feat ``choice`` above. A newly unlocked feature
-    with a still-unanswered group after applying these aborts the whole
-    level-up with ``GrantChoiceRequiredException`` (422) naming what's
-    missing, exactly like a missing ASI ``choice`` does — the grant is never
-    left silently half-resolved. A feature with no choice groups needs no
-    entry here; its fixed effects apply automatically.
+    Nothing else is chosen here: the "pick N of M" groups of every feature
+    this level unlocks (and of a feat taken in ``choice``) stay pending on
+    their grants and are answered afterwards — ``GET /grants/pending`` lists
+    them, ``PATCH .../choices`` answers them. A feature with no choice
+    groups applies its fixed effects automatically.
     """
 
     hit_points_gained: int | None = Field(default=None, ge=1, le=MAX_HIT_POINTS_GAINED)
     choice: LevelUpChoice | None = None
-    feature_choices: list[LevelUpFeatureChoiceAnswer] = Field(default_factory=list, max_length=MAX_FEATURE_CHOICES)
 
 
 class CanLevelUpResponse(BaseModel):
@@ -288,5 +261,4 @@ class CharacterASIChoiceResponse(BaseModel):
     class_level: int | None = None
     choice_type: ASILevelChoice
     feat_id: int | None = None
-    ability_score_increase_id: int | None = None
     increases: list[ASIIncreaseResponse] = Field(default_factory=list)

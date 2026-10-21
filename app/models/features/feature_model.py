@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Index, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants import AbilityScore, FeatureSourceType
@@ -70,6 +71,13 @@ class Feature(Base):
     level: Mapped[int | None] = mapped_column()
 
     description: Mapped[str] = mapped_column(Text, default="")
+
+    # One line of the feature that grows with the character's level (Song of
+    # Rest: "Extra hit points" 1d6 -> 1d8 at 9 -> ...): ``{"label": str,
+    # "steps": [{"level": int, "value": str}, ...]}``, steps sorted by level
+    # (``FeatureScaling`` validates it). The character sheet shows the value of
+    # the highest step reached. NULL = nothing scales.
+    scaling: Mapped[dict | None] = mapped_column(JSONB)
 
     # -- Feat fields (only meaningful when source_type == FEAT) ---------------
     # Minimum character level required to take this feat (e.g. level 4+

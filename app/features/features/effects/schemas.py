@@ -3,16 +3,20 @@
 from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.constants import (
     EFFECT_TYPE_BY_CHOICE_TYPE,
     AbilityScore,
     ArmorProficiency,
     ChoiceType,
+    SkillEffectMode,
+    SpellLevel,
+    SpellSchool,
     WeaponProficiency,
 )
 from app.core.types import EntityId
+from app.features.features.effects.rendering import describe_spell_filter
 
 VALID_NEW_CAP_MIN = 20
 VALID_NEW_CAP_MAX = 30
@@ -23,6 +27,10 @@ MAX_CHOICE_GROUPS = 20
 MAX_PICK_COUNT = 50
 MAX_SORT_ORDER = 10_000
 MAX_ABILITY_AMOUNT = 30
+MAX_SPELL_FILTER_CLASSES = 20
+
+# Spell levels from cantrip up — the order a spell effect's level range is checked in.
+SPELL_LEVEL_ORDER: tuple[SpellLevel, ...] = tuple(SpellLevel)
 
 
 # What makes two effects of the same type "the same effect" (and so a duplicate).
@@ -30,7 +38,7 @@ DUPLICATE_KEY_BY_EFFECT_FIELD: dict[str, Callable[[Any], Any]] = {
     "ability_effects": lambda effect: effect.ability,
     "skill_effects": lambda effect: effect.skill_id,
     "saving_throw_effects": lambda effect: effect.ability,
-    "armor_effects": lambda effect: effect.armor_type,
+    "armor_effects": lambda effect: (effect.armor_type, effect.item_id),
     "weapon_effects": lambda effect: (effect.weapon_category, effect.item_id),
     "spell_effects": lambda effect: effect.spell_id,
 }
@@ -86,13 +94,13 @@ class AbilityEffectItem(BaseModel):
 
 class SkillEffectItem(BaseModel):
     """
-    A fixed/option skill-proficiency effect: a concrete ``skill_id``.
+    A fixed/option skill effect: what ``mode`` gives (proficiency,
+    expertise or both — see ``SkillEffectMode``) in ``skill_id``.
 
-    ``skill_id=None`` ("any skill", choice options only) can no longer be
-    WRITTEN — ``ChoiceGroupPayload.validate_options_match_choice_type``
-    rejects it on a SKILL-type choice group, since the system doesn't yet
-    support resolving an open skill pick end to end. Reads may still show
-    ``None`` on a pre-existing catalog row.
+    ``skill_id=None`` is an open ("any skill") effect, valid in a choice
+    option only: the player names the skill when picking the option. A
+    fixed effect needs a concrete ``skill_id``, and an option may carry at
+    most one open effect (two would repeat the same ``None`` entry).
 
     ``id`` is the DB row id: present on a response, and the path's ``effect_id``
     for a point write — a new row's payload must not carry one (422).
@@ -102,7 +110,7 @@ class SkillEffectItem(BaseModel):
 
     id: EntityId | None = None
     skill_id: EntityId | None = None
-    grants_expertise: bool = False
+    mode: SkillEffectMode = SkillEffectMode.PROFICIENCY
 
 
 class SavingThrowEffectItem(BaseModel):
@@ -115,12 +123,23 @@ class SavingThrowEffectItem(BaseModel):
 
 
 class ArmorEffectItem(BaseModel):
-    """A fixed/option armor-proficiency effect. ``id``: see ``SkillEffectItem``."""
+    """
+    A fixed/option armor-proficiency effect: a category OR a concrete armor
+    item (``item_id``), exactly one. ``id``: see ``SkillEffectItem``.
+    """
 
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: EntityId | None = None
-    armor_type: ArmorProficiency
+    armor_type: ArmorProficiency | None = None
+    item_id: EntityId | None = None
+
+    @model_validator(mode="after")
+    def _guard_single_target(self):
+        """Guard: exactly one of ``armor_type`` / ``item_id`` must be set."""
+        if (self.armor_type is None) == (self.item_id is None):
+            raise ValueError("Set exactly one of armor_type or item_id.")
+        return self
 
 
 class WeaponEffectItem(BaseModel):
@@ -142,20 +161,82 @@ class WeaponEffectItem(BaseModel):
 
 class SpellEffectItem(BaseModel):
     """
-    A fixed/option spell-grant effect: a concrete ``spell_id``.
+    A fixed/option spell-grant effect: a concrete ``spell_id``, or an open
+    ("any spell") effect — ``spell_id`` unset, valid in a choice option only:
+    an extra spell the player picks when picking the option (Magical Secrets).
 
-    An open choice (``spell_id`` unset, letting the player pick any spell
-    from the catalog) can no longer be WRITTEN — same restriction as
-    ``SkillEffectItem``'s open skill, and for the same reason. Reads may
-    still show ``None`` on a pre-existing catalog row.
+    An open effect's filters narrow what may be picked, all of them at once;
+    the defaults don't restrict:
 
-    ``id``: see ``SkillEffectItem``.
+    - ``class_ids`` — on one of these classes' spell lists (a spell with no
+      class restriction is on every list);
+    - ``min_level`` / ``max_level`` — the level range (``CANTRIP`` included;
+      ``min_level == max_level`` is "exactly this level");
+    - ``castable_only`` — a cantrip or a level the character has spell slots of;
+    - ``schools`` — one of these schools;
+    - ``ritual_only`` — a ritual.
+
+    A concrete effect may not carry a filter (422). ``id``: see ``SkillEffectItem``.
+
+    On read an open effect also carries ``summary``: its filter as ready-made
+    Russian phrases (``describe_spell_filter``, class names included when the
+    row's ``filter_classes`` were loaded) — the one place that text is built.
     """
 
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: EntityId | None = None
     spell_id: EntityId | None = None
+    class_ids: list[EntityId] = Field([], max_length=MAX_SPELL_FILTER_CLASSES)
+    min_level: SpellLevel | None = None
+    max_level: SpellLevel | None = None
+    castable_only: bool = False
+    schools: list[SpellSchool] = Field([], max_length=len(SpellSchool))
+    ritual_only: bool = False
+    # Read side only: the filter's class names (``FeatureSpellGrantEffect.class_names``); never written.
+    class_names: list[str] | None = Field(None, exclude=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def summary(self) -> list[str]:
+        """The open effect's filter as phrases (``[]`` for a concrete spell or no filter)."""
+
+        return describe_spell_filter(self) if self.spell_id is None else []
+
+    @field_validator("class_ids", "schools")
+    @classmethod
+    def _dedupe(cls, values: list) -> list:
+        """A filter list is a set: repeats are dropped, order kept."""
+
+        return list(dict.fromkeys(values))
+
+    @property
+    def has_filter(self) -> bool:
+        """Whether any filter restricts the pick."""
+
+        return bool(
+            self.class_ids
+            or self.min_level
+            or self.max_level
+            or self.castable_only
+            or self.schools
+            or self.ritual_only
+        )
+
+    @model_validator(mode="after")
+    def _check_filters(self):
+        """Filters belong to an open effect only, and the level range must not be inverted."""
+
+        if self.spell_id is not None and self.has_filter:
+            raise ValueError("Spell filters apply only to an open ('any spell') effect — leave spell_id unset.")
+
+        if (
+            self.min_level is not None
+            and self.max_level is not None
+            and SPELL_LEVEL_ORDER.index(self.min_level) > SPELL_LEVEL_ORDER.index(self.max_level)
+        ):
+            raise ValueError("min_level must not be above max_level.")
+        return self
 
 
 class AbilityEffectGroup(BaseModel):
@@ -366,35 +447,6 @@ class ChoiceGroupPayload(BaseModel):
                     )
         return self
 
-    @model_validator(mode="after")
-    def validate_no_open_picks(self):
-        """
-        Reject a new/updated SKILL or SPELL option left "open" (``skill_id``/
-        ``spell_id`` unset) — the system doesn't yet support resolving an
-        open pick end to end, so authoring one is disallowed until it does.
-        Pre-existing catalog rows with an open effect are untouched by this
-        (only reachable by re-submitting the same option unchanged, which
-        would fail here too — an open option must be given a concrete id to
-        pass through an update).
-        """
-
-        for index, option in enumerate(self.options):
-            if self.choice_type == ChoiceType.SKILL:
-                for skill_effect in option.skill_effects or []:
-                    if skill_effect.skill_id is None:
-                        raise ValueError(
-                            f"Option {index}: an open ('any skill') skill effect is not "
-                            "supported — skill_id is required."
-                        )
-            elif self.choice_type == ChoiceType.SPELL:
-                for spell_effect in option.spell_effects or []:
-                    if spell_effect.spell_id is None:
-                        raise ValueError(
-                            f"Option {index}: an open ('any spell') spell effect is not "
-                            "supported — spell_id is required."
-                        )
-        return self
-
 
 class ChoiceOptionResponse(BaseModel):
     """A choice option with its id and bundle: only its non-empty effect groups (``FeatureChoiceOption.effects``)."""
@@ -439,6 +491,8 @@ class FeatureEffectsUpdate(_EffectGroupsPayload):
     model_config = ConfigDict(extra="forbid")
 
     _ABSENT: ClassVar[list | None] = None
+    # Whether ``skill_id=None`` / ``spell_id=None`` ("any skill/spell") is accepted — only inside a choice option.
+    _OPEN_ALLOWED: ClassVar[bool] = False
 
     static_groups: list[EffectGroup] = Field([], max_length=len(_ALL_OPTION_EFFECT_FIELDS))
 
@@ -453,13 +507,23 @@ class FeatureEffectsUpdate(_EffectGroupsPayload):
 
         _validate_effect_lists(self, _ALL_OPTION_EFFECT_FIELDS)
 
-        if any(effect.skill_id is None for effect in self.skill_effects or []):
+        if not self._OPEN_ALLOWED and any(effect.skill_id is None for effect in self.skill_effects or []):
             raise ValueError("A fixed skill_effects entry requires skill_id.")
 
-        if any(effect.spell_id is None for effect in self.spell_effects or []):
+        if not self._OPEN_ALLOWED and any(effect.spell_id is None for effect in self.spell_effects or []):
             raise ValueError("A fixed spell_effects entry requires spell_id.")
 
         return self
+
+
+class OptionEffectsUpdate(FeatureEffectsUpdate):
+    """
+    Body of an option's ``POST .../options/{option_id}/effects``: the same
+    ``static_groups`` list, except a skill/spell effect may be open
+    (``skill_id``/``spell_id`` unset — "any skill/spell").
+    """
+
+    _OPEN_ALLOWED: ClassVar[bool] = True
 
 
 class ChoiceGroupPatch(BaseModel):

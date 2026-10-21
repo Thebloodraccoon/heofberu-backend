@@ -33,6 +33,9 @@ _FEAT_ONLY_FIELDS = ("min_level", "prerequisite_ability", "prerequisite_minimum_
 _NAME_MAX_LENGTH = 200
 _TEXT_MAX_LENGTH = 20_000
 
+_SCALING_LABEL_MAX_LENGTH = 100
+_SCALING_VALUE_MAX_LENGTH = 100
+
 
 def _validate_source_fk_consistency(source_type: FeatureSourceType, values: dict) -> None:
     """Enforce that exactly the FK matching ``source_type`` is set, plus the level and feat-column rules."""
@@ -87,6 +90,47 @@ def _validate_min_level(value: int | None) -> int | None:
         raise ValueError(f"min_level must be between {_FEATURE_LEVEL_MIN} and {_FEATURE_LEVEL_MAX}.")
 
     return value
+
+
+class FeatureScalingStep(BaseModel):
+    """One step of a scaling line: from ``level`` on, the line reads ``value``."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    level: int = Field(ge=_FEATURE_LEVEL_MIN, le=_FEATURE_LEVEL_MAX)
+    value: str = Field(min_length=1, max_length=_SCALING_VALUE_MAX_LENGTH)
+
+
+class FeatureScaling(BaseModel):
+    """
+    The one line of a feature that grows with the character's level, e.g.
+    Song of Rest: ``label="Extra hit points"``, steps ``2 -> 1d6``,
+    ``9 -> 1d8``, ``13 -> 1d10``, ``17 -> 1d12``. The description stays the
+    same; the sheet shows the value of the highest step the character has
+    reached (``value_at``). Steps come back sorted by level, one per level.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    label: str = Field(min_length=1, max_length=_SCALING_LABEL_MAX_LENGTH)
+    steps: list[FeatureScalingStep] = Field(min_length=1, max_length=_FEATURE_LEVEL_MAX)
+
+    @field_validator("steps")
+    @classmethod
+    def validate_steps(cls, steps: list[FeatureScalingStep]) -> list[FeatureScalingStep]:
+        """Sort the steps by level; two steps on one level are ambiguous."""
+
+        levels = [step.level for step in steps]
+        if len(set(levels)) != len(levels):
+            raise ValueError("scaling steps must be on different levels.")
+
+        return sorted(steps, key=lambda step: step.level)
+
+    def value_at(self, level: int) -> str | None:
+        """The value of the highest step reached at ``level`` (``None`` below the first step)."""
+
+        reached = [step.value for step in self.steps if step.level <= level]
+        return reached[-1] if reached else None
 
 
 class FeatPrerequisiteFields(BaseModel):
@@ -144,6 +188,7 @@ class FeatureBase(FeatPrerequisiteFields):
     background_id: int | None = None
 
     level: int | None = None
+    scaling: FeatureScaling | None = None
 
     description: str = ""
 
@@ -156,7 +201,8 @@ class FeatureCreate(FeatureBase):
     The parent FK is set directly for source-owned features; a standalone
     ``FEAT`` or ``OTHER`` feature needs no FK. Feat rows additionally carry
     ``min_level`` / ``prerequisite_*``; those columns are rejected on every
-    other source type, the same rule ``PATCH`` applies.
+    other source type, the same rule ``PATCH`` applies. ``scaling`` is the
+    feature's one line that grows with the character's level (any source).
     """
 
     name: str = Field(min_length=1, max_length=_NAME_MAX_LENGTH)
@@ -221,6 +267,7 @@ class NestedFeatureCreate(BaseModel):
     name: str = Field(min_length=1, max_length=_NAME_MAX_LENGTH)
     description: str = Field("", max_length=_TEXT_MAX_LENGTH)
     level: int | None = Field(None, ge=_FEATURE_LEVEL_MIN, le=_FEATURE_LEVEL_MAX)
+    scaling: FeatureScaling | None = None
 
 
 class NestedFeatureResponse(BaseModel):
@@ -232,6 +279,7 @@ class NestedFeatureResponse(BaseModel):
     name: str
     description: str
     level: int | None = None
+    scaling: FeatureScaling | None = None
 
     choice_groups: list[ChoiceGroupResponse] = []
     static_groups: list[EffectGroup] = []
@@ -246,17 +294,19 @@ class FeatureUpdate(FeatPrerequisiteFieldsUpdate):
     All fields optional — PATCH semantics.
 
     ``source_type`` and its FK are immutable once a feature exists; only
-    ``name``, ``level``, ``description`` are editable for source-owned
-    features, plus the feat columns (``min_level``, ``prerequisite_*``,
-    inherited from ``FeatPrerequisiteFieldsUpdate``) for FEAT rows. A
-    CLASS/SUBCLASS feature's ``level`` can be changed but never cleared —
-    the service enforces this against the existing ``source_type``.
+    ``name``, ``level``, ``scaling``, ``description`` are editable for
+    source-owned features, plus the feat columns (``min_level``,
+    ``prerequisite_*``, inherited from ``FeatPrerequisiteFieldsUpdate``) for
+    FEAT rows. A CLASS/SUBCLASS feature's ``level`` can be changed but never
+    cleared — the service enforces this against the existing
+    ``source_type``. ``scaling`` is replaced whole; ``null`` removes it.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(None, min_length=1, max_length=_NAME_MAX_LENGTH)
     level: int | None = None
+    scaling: FeatureScaling | None = None
     description: str | None = Field(None, max_length=_TEXT_MAX_LENGTH)
     prerequisite_minimum_score: int | None = Field(None, ge=1, le=30)
     prerequisite_description: str | None = Field(None, max_length=_TEXT_MAX_LENGTH)

@@ -57,11 +57,11 @@ class CharacterRebuilder:
       ``data.asi_choices``: the prior ASI-sourced feat grants and the
       level-resolved part of ``character_asi_choices`` are cleared first,
       then the new choices are applied in level order (so ability-cap checks
-      see each choice's own predecessors, as when leveling up). GM
-      adjustments and GM-granted feats are not part of that history and are
-      kept. A feat's choice groups beyond its ASI pick stay pending (the
-      payload has no place to answer them): they show up in
-      ``GET /grants/pending``.
+      see each choice's own predecessors, as when leveling up). A feat taken
+      again keeps its grant and the picks made for it; a newly taken feat's
+      choice groups (its ASI pick included) stay pending and show up in
+      ``GET /grants/pending``. GM adjustments and GM-granted feats are not
+      part of that history and are kept.
     - ``max_hp`` is the caller-supplied value, validated against the range
       the new class's hit die, the new effective CON modifier and the level
       allow (``rules.max_hp_bounds``); ``current_hp``/``temp_hp`` follow a
@@ -182,22 +182,30 @@ class CharacterRebuilder:
         """
         Replace the level-resolved ASI history with ``data.asi_choices``
         applied in level order; returns the effective totals afterwards.
+        ASI feats that aren't taken again are revoked; the ones that are keep
+        their grant with its picks (so the player doesn't answer them twice).
         The totals are computed once and advanced in memory across ASI
         choices; a feat's own effects are only known after its grant, so
         totals are re-read after each feat.
         """
 
-        await self.asi.feat_grant_repository.remove_feats_by_source(character.id, GrantSource.ASI)
+        feat_ids = {item.choice.feat_id for item in data.asi_choices if not isinstance(item.choice, ASIChoice)}
+        await self.asi.feat_grant_repository.remove_feats_by_source(
+            character.id, GrantSource.ASI, keep_feat_ids=feat_ids
+        )
         await self.asi.asi_repository.clear_character_choices(character.id)
 
         totals = await self.stats_service.compute(character)
+        reused: set[int] = set()
         for asi_choice in sorted(data.asi_choices, key=lambda item: item.class_level):
             if isinstance(asi_choice.choice, ASIChoice):
                 await self.asi.apply_asi(character, asi_choice.choice.increases, asi_choice.class_level, totals)
             else:
+                feat_id = asi_choice.choice.feat_id
                 await self.asi.apply_feat(
-                    character, asi_choice.choice, asi_choice.class_level, totals, require_asi_pick=True
+                    character, asi_choice.choice, asi_choice.class_level, totals, reuse_asi_grant=feat_id not in reused
                 )
+                reused.add(feat_id)
                 totals = await self.stats_service.compute(character)
 
         return totals

@@ -51,9 +51,10 @@ class SavingThrowProficiencyView(BaseModel):
 
 
 class ArmorProficiencyView(BaseModel):
-    """A resolved armor proficiency with every source that grants it."""
+    """A resolved armor proficiency (category or item) with every source that grants it."""
 
-    armor_type: ArmorProficiency
+    armor_type: ArmorProficiency | None = None
+    item_id: int | None = None
     sources: list[ProficiencySource]
 
 

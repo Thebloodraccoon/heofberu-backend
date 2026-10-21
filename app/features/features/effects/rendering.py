@@ -18,7 +18,15 @@ is interpolated into it is HTML-escaped, so a name can never inject markup.
 from html import escape
 from typing import TYPE_CHECKING
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
+from app.constants import (
+    AbilityScore,
+    ArmorProficiency,
+    ChoiceType,
+    SkillEffectMode,
+    SpellLevel,
+    SpellSchool,
+    WeaponProficiency,
+)
 
 if TYPE_CHECKING:
     from app.models.features.feature_model import Feature
@@ -45,6 +53,19 @@ _WEAPON_NAMES_NOM_RU = {
     WeaponProficiency.SIMPLE: "простое оружие",
     WeaponProficiency.MARTIAL: "воинское оружие",
 }
+
+_SPELL_SCHOOL_NAMES_RU = {
+    SpellSchool.ABJURATION: "Ограждение",
+    SpellSchool.CONJURATION: "Вызов",
+    SpellSchool.DIVINATION: "Прорицание",
+    SpellSchool.ENCHANTMENT: "Очарование",
+    SpellSchool.EVOCATION: "Воплощение",
+    SpellSchool.ILLUSION: "Иллюзия",
+    SpellSchool.NECROMANCY: "Некромантия",
+    SpellSchool.TRANSMUTATION: "Превращение",
+}
+
+_SPELL_LEVELS = tuple(SpellLevel)
 
 
 def _skill_name(effect) -> str:
@@ -83,22 +104,36 @@ def _render_saving_throw_short(effects) -> list[str]:
     return [_ABILITY_NAMES_NOM_RU.get(effect.ability, effect.ability.value) for effect in effects]
 
 
+# What each skill-effect mode adds after the skill name in the "Владения навыками" <li>.
+_SKILL_MODE_SUFFIX_RU = {
+    SkillEffectMode.PROFICIENCY: "",
+    SkillEffectMode.PROFICIENCY_AND_EXPERTISE: " с экспертизой",
+    SkillEffectMode.EXPERTISE: " — только экспертиза (нужно владение)",
+    SkillEffectMode.UPGRADE: " (экспертиза, если уже есть владение)",
+}
+
+
 def _render_skill_short(effects) -> list[str]:
-    """Bare skill names for the grouped "Владения навыками" <li>."""
+    """Bare skill names for the grouped "Владения навыками" <li>, each with its mode's suffix."""
 
     parts: list[str] = []
     for effect in effects:
-        expertise = " с экспертизой" if effect.grants_expertise else ""
-        parts.append(
-            f"любым навыком на выбор{expertise}" if effect.skill_id is None else f"«{_skill_name(effect)}»{expertise}"
-        )
+        suffix = _SKILL_MODE_SUFFIX_RU.get(effect.mode, "")
+        name = "любым навыком на выбор" if effect.skill_id is None else f"«{_skill_name(effect)}»"
+        parts.append(f"{name}{suffix}")
     return parts
 
 
 def _render_armor_short(effects) -> list[str]:
-    """Nominative armor-type names for the grouped "Владения доспехами" <li>."""
+    """Nominative armor-type / concrete armor names for the grouped "Владения доспехами" <li>."""
 
-    return [_ARMOR_NAMES_NOM_RU.get(effect.armor_type, effect.armor_type.value) for effect in effects]
+    parts: list[str] = []
+    for effect in effects:
+        if effect.item_id is not None:
+            parts.append(f"«{_item_name(effect)}»")
+        elif effect.armor_type is not None:
+            parts.append(_ARMOR_NAMES_NOM_RU.get(effect.armor_type, effect.armor_type.value))
+    return parts
 
 
 def _render_weapon_short(effects) -> list[str]:
@@ -113,6 +148,59 @@ def _render_weapon_short(effects) -> list[str]:
     return parts
 
 
+def _spell_level_range(min_level, max_level) -> str | None:
+    """``"заговор"`` / ``"3-го уровня"`` / ``"1–5-го уровня"`` / ``"до 5-го уровня"`` for a filter's level range."""
+
+    low = _SPELL_LEVELS.index(min_level) if min_level is not None else None
+    high = _SPELL_LEVELS.index(max_level) if max_level is not None else None
+
+    if low is not None and low == high:
+        return "заговор" if low == 0 else f"{low}-го уровня"
+    if high == 0:
+        return "заговор"
+    if low is not None and high is not None:
+        return f"заговор или до {high}-го уровня" if low == 0 else f"{low}–{high}-го уровня"
+    if low:
+        return f"от {low}-го уровня"
+    if high is not None:
+        return f"до {high}-го уровня"
+    return None
+
+
+def describe_spell_filter(effect) -> list[str]:
+    """
+    The conditions of an open ("any spell") effect's filter as short Russian phrases; ``[]`` = any spell
+    at all. Class names come from ``effect.class_names`` when known, else only how many lists are allowed.
+    """
+
+    conditions: list[str] = []
+
+    level_range = _spell_level_range(effect.min_level, effect.max_level)
+    if effect.castable_only:
+        cantrips_allowed = effect.min_level in (None, SpellLevel.CANTRIP)
+        conditions.append("заговор или доступного вам уровня" if cantrips_allowed else "доступного вам уровня")
+        if level_range is not None and level_range != "заговор":
+            conditions.append(level_range)
+    elif level_range is not None:
+        conditions.append(level_range)
+
+    if effect.schools:
+        schools = ", ".join(_SPELL_SCHOOL_NAMES_RU.get(school, school.value) for school in effect.schools)
+        conditions.append(f"школа: {schools}")
+
+    if effect.ritual_only:
+        conditions.append("ритуал")
+
+    if effect.class_ids:
+        names = getattr(effect, "class_names", None)
+        if names:
+            conditions.append(f"из списка: {', '.join(names)}")
+        else:
+            conditions.append("из списка класса" if len(effect.class_ids) == 1 else "из списков выбранных классов")
+
+    return conditions
+
+
 def _render_spell_short(effects) -> list[str]:
     """Spell names (linked to ``/catalog/spells/{id}``) / filters for the grouped "Заклинания" <li>."""
 
@@ -120,8 +208,10 @@ def _render_spell_short(effects) -> list[str]:
     for effect in effects:
         if effect.spell_id is not None:
             parts.append(f'<a href="/catalog/spells/{effect.spell_id}">{_spell_name(effect)}</a>')
-        else:
-            parts.append("любое на выбор")
+            continue
+
+        conditions = [escape(condition) for condition in describe_spell_filter(effect)]
+        parts.append(f"любое на выбор ({'; '.join(conditions)})" if conditions else "любое на выбор")
     return parts
 
 

@@ -7,8 +7,6 @@ from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.crud.service import CharacterService
 from app.features.characters.exceptions import BackgroundNotFoundException
-from app.features.characters.grants.schemas import ChoiceAnswerItem
-from app.features.characters.grants.service import FeatureGrantService
 from app.features.characters.level.repository import CharacterMaxLevelRepository
 from app.features.characters.progression.asi import AsiChoiceService
 from app.features.characters.progression.background import BackgroundGrants
@@ -32,7 +30,6 @@ from app.features.characters.progression.schemas import (
     CanLevelUpResponse,
     CharacterASIChoiceResponse,
     CharacterRebuildRequest,
-    LevelUpFeatureChoiceAnswer,
     LevelUpRequest,
     SubclassChange,
     SubraceChange,
@@ -79,7 +76,6 @@ class CharacterProgressionService(CharacterSubDomainService):
         self.background_repository = BackgroundRepository(db)
         self.max_level_repository = CharacterMaxLevelRepository(db)
         self.stats_service = CharacterStatsService(db)
-        self.grant_service = FeatureGrantService(db)
         self.asi = AsiChoiceService(db)
         self.background_grants = BackgroundGrants(db)
         self.rebuilder = CharacterRebuilder(
@@ -196,11 +192,11 @@ class CharacterProgressionService(CharacterSubDomainService):
         class's standard average (half hit die + 1 + CON) unless
         ``hit_points_gained`` is given (bounded by the hit die + CON), using
         the CON the character has once everything this level grants is
-        applied. Features unlocked by the new level are granted; a chosen
-        feat's own choice groups (beyond its ASI pick) count too. Any of
-        them still left with an unanswered "pick N of M" group after
-        applying ``data.feature_choices`` aborts the whole level-up
-        (``GrantChoiceRequiredException``). Spell slots are re-applied.
+        applied. Features unlocked by the new level (and a chosen feat) are
+        granted with their "pick N of M" groups pending: the player answers
+        them afterwards (``GET /grants/pending`` + ``PATCH .../choices``) —
+        the single place choices are made, so a level never waits on one.
+        Spell slots are re-applied.
         Leveling up fully heals: ``current_hp`` is set to the new
         ``max_hp`` and ``temp_hp`` clears.
         """
@@ -218,18 +214,14 @@ class CharacterProgressionService(CharacterSubDomainService):
             check_level_up_choice(new_level, data.choice is not None)
             character.level = new_level
 
-            feat_grant = None
             if data.choice is not None:
                 totals = await self.stats_service.compute(character)
                 if isinstance(data.choice, ASIChoice):
                     await self.asi.apply_asi(character, data.choice.increases, new_level, totals)
                 else:
-                    feat_grant = await self.asi.apply_feat(character, data.choice, new_level, totals)
+                    await self.asi.apply_feat(character, data.choice, new_level, totals)
 
-            new_grants = await sync_progression_features(self.db, character)
-            if feat_grant is not None:
-                new_grants.append(feat_grant)
-            await self.grant_service.resolve_grants_choices(new_grants, self._answers_by_feature(data.feature_choices))
+            await sync_progression_features(self.db, character)
 
             totals = await self.stats_service.compute(character)
             hp_gain = resolve_hp_gain(
@@ -306,14 +298,3 @@ class CharacterProgressionService(CharacterSubDomainService):
             raise ClassNotFoundException(class_id=class_id)
 
         return hit_die_sides(hit_dice)
-
-    @staticmethod
-    def _answers_by_feature(answers: list[LevelUpFeatureChoiceAnswer]) -> dict[int, list[ChoiceAnswerItem]]:
-        """Group the level-up's feature-choice answers by the feature they belong to."""
-
-        grouped: dict[int, list[ChoiceAnswerItem]] = {}
-        for answer in answers:
-            grouped.setdefault(answer.feature_id, []).append(
-                ChoiceAnswerItem(choice_group_id=answer.choice_group_id, choice_option_id=answer.choice_option_id)
-            )
-        return grouped

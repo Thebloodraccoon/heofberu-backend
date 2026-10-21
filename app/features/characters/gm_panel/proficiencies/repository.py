@@ -16,11 +16,17 @@ Writes only flush; the service owns the transaction.
 from types import SimpleNamespace
 from typing import Any, cast
 
-from sqlalchemy import and_, false, select, union_all
+from sqlalchemy import and_, null, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
-from app.features.characters.proficiencies.resolver import ProficiencyEntry, feature_source, proficiency_key
+from app.features.characters.grants.effects import SkillClaim
+from app.features.characters.proficiencies.resolver import (
+    ProficiencyEntry,
+    feature_source,
+    proficiency_key,
+    skill_claim_entry,
+)
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.character.character_proficiency_model import CharacterProficiency
@@ -71,14 +77,23 @@ class CharacterProficiencyGmRepository:
         """
         One entry per feature/feat grant of the character whose effects give
         this proficiency — a fixed effect of the feature or an effect of an
-        option the player picked — fetched with a single targeted query
-        instead of loading every grant's whole effect tree.
+        option the player picked (an open "any skill" effect matches through
+        the skill named for the pick) — fetched with a single targeted query
+        instead of loading every grant's whole effect tree. A skill entry
+        carries the grant's folded claim (see ``SkillClaim``).
         """
 
         effect = _EFFECT_MODEL[proficiency_type]
+        is_skill = proficiency_type == ProficiencyType.SKILL
         key_conditions = [getattr(effect, column) == value for column, value in discriminator.items()]
-        expertise = effect.grants_expertise if proficiency_type == ProficiencyType.SKILL else false()
-        columns = (Feature.id, Feature.name, Feature.source_type, expertise.label("grants_expertise"))
+        mode = effect.mode if is_skill else null()
+        columns = (Feature.id, Feature.name, Feature.source_type, mode.label("mode"))
+
+        picked_conditions = key_conditions
+        if is_skill:
+            # an open effect (skill_id NULL) gives the skill the player named for the pick
+            named = and_(effect.skill_id.is_(None), CharacterFeatureChoice.picked_skill_id == discriminator["skill_id"])
+            picked_conditions = [or_(*key_conditions, named)]
 
         fixed = (
             select(*columns)
@@ -101,21 +116,25 @@ class CharacterProficiencyGmRepository:
                     CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id,
                 ),
             )
-            .where(CharacterFeature.character_id == character_id, *key_conditions)
+            .where(CharacterFeature.character_id == character_id, *picked_conditions)
         )
 
-        expertise_by_feature: dict[int, bool] = {}
+        claims: dict[int, SkillClaim] = {}
         features: dict[int, SimpleNamespace] = {}
-        for feature_id, name, source_type, grants_expertise in (await self.db.execute(union_all(fixed, picked))).all():
+        for feature_id, name, source_type, effect_mode in (await self.db.execute(union_all(fixed, picked))).all():
             features[feature_id] = SimpleNamespace(id=feature_id, name=name, source_type=source_type)
-            expertise_by_feature[feature_id] = expertise_by_feature.get(feature_id, False) or bool(grants_expertise)
+            claim = claims.setdefault(feature_id, SkillClaim())
+            if effect_mode is not None:
+                claim.add(effect_mode)
 
         key = proficiency_key(proficiency_type, **discriminator)
-        return [
-            # feature_source reads only id/name/source_type, which the namespace carries
-            ProficiencyEntry(key, feature_source(cast(Feature, feature)), is_expertise=expertise_by_feature[feature_id])
-            for feature_id, feature in features.items()
-        ]
+        # feature_source reads only id/name/source_type, which the namespace carries
+        if is_skill:
+            return [
+                skill_claim_entry(discriminator["skill_id"], feature_source(cast(Feature, feature)), claims[feature_id])
+                for feature_id, feature in features.items()
+            ]
+        return [ProficiencyEntry(key, feature_source(cast(Feature, feature))) for feature in features.values()]
 
     async def apply(
         self,

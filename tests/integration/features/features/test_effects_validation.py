@@ -200,7 +200,7 @@ class TestFixedEffectInput:
             client,
             gm_token,
             feature.id,
-            {"static_groups": [{"effect_type": "skill", "items": [{"grants_expertise": True}]}]},
+            {"static_groups": [{"effect_type": "skill", "items": [{"mode": "PROFICIENCY_AND_EXPERTISE"}]}]},
         )
 
         assert response.status_code == 422
@@ -214,6 +214,43 @@ class TestFixedEffectInput:
 
         assert response.status_code == 422
         assert "555555" in response.text
+
+    async def test_item_of_the_wrong_kind_is_422(self, client, gm_token, create_feature, create_item):
+        feature = await create_feature(name="Armed")
+        sword = await create_item(name="Longsword", item_type="WEAPON")
+        plate = await create_item(name="Plate", item_type="ARMOR")
+
+        weapon_from_armor = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "weapon", "items": [{"item_id": plate.id}]}]},
+        )
+        armor_from_weapon = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"item_id": sword.id}]}]},
+        )
+
+        assert weapon_from_armor.status_code == 422
+        assert "must be of type WEAPON" in weapon_from_armor.text
+        assert armor_from_weapon.status_code == 422
+        assert "must be of type ARMOR/SHIELD" in armor_from_weapon.text
+
+    async def test_a_shield_is_a_valid_armor_effect_item(self, client, gm_token, create_feature, create_item):
+        feature = await create_feature(name="Shielded")
+        shield = await create_item(name="Shield", item_type="SHIELD")
+
+        response = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"item_id": shield.id}]}]},
+        )
+
+        assert response.status_code == 200
+        assert [item["item_id"] for item in response.json()["static_groups"][0]["items"]] == [shield.id]
 
     async def test_unknown_item_and_spell_ids_are_422(self, client, gm_token, create_feature):
         feature = await create_feature(name="Armed")

@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType
+from app.constants import ProficiencyAction, ProficiencySourceType, ProficiencyType, SkillEffectMode
 from app.features.characters.gm_panel.proficiencies.repository import CharacterProficiencyGmRepository
 from app.models.character.character_proficiency_model import CharacterProficiency
 from tests.unit.fakes import FakeAsyncSession, FakeResult
@@ -120,7 +120,13 @@ class TestFeatureEntries:
     async def test_one_query_returns_one_entry_per_granting_feature_with_summed_expertise(self):
         db = FakeAsyncSession(
             execute_results=[
-                FakeResult([(7, "Nimble", "CLASS", False), (7, "Nimble", "CLASS", True), (8, "Lucky", "FEAT", False)])
+                FakeResult(
+                    [
+                        (7, "Nimble", "CLASS", SkillEffectMode.PROFICIENCY),
+                        (7, "Nimble", "CLASS", SkillEffectMode.PROFICIENCY_AND_EXPERTISE),
+                        (8, "Lucky", "FEAT", SkillEffectMode.PROFICIENCY),
+                    ]
+                )
             ]
         )
 

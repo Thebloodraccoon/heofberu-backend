@@ -7,6 +7,7 @@ from app.constants import ProficiencyType
 from app.core.base.repository import BaseRepository
 from app.features.shared.skills.mixins import SkillLookupMixin
 from app.models import Skill, background_skills, class_available_skills, race_skills
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_proficiency_model import CharacterProficiency
 from app.models.features.feature_engine_models import FeatureSkillProficiencyEffect
 
@@ -38,6 +39,7 @@ class SkillRepository(SkillLookupMixin, BaseRepository[Skill]):
                     CharacterProficiency.skill_id == skill_id,
                 ),
                 exists().where(FeatureSkillProficiencyEffect.skill_id == skill_id),
+                exists().where(CharacterFeatureChoice.picked_skill_id == skill_id),
             )
         )
         return bool(await self.db.scalar(query))

@@ -8,6 +8,7 @@ no separate storage. The chosen ASI option (if any) is a single
 from it like any other grant's (``app.features.characters.grants.effects``).
 """
 
+from collections.abc import Collection
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -254,21 +255,24 @@ class CharacterFeatRepository(BaseRepository[CharacterFeature]):
         await self.flush()
         return True
 
-    async def remove_feats_by_source(self, character_id: int, source_type: GrantSource) -> None:
+    async def remove_feats_by_source(
+        self, character_id: int, source_type: GrantSource, *, keep_feat_ids: Collection[int] = ()
+    ) -> None:
         """
-        Revoke every feat grant of a given ``source_type`` for a character
-        — a point-rebuild uses this to clear the feats granted by prior
-        ASI-level choices (the caller clears their log rows). Scoped to
-        FEAT-source features only; cascades clean up their stored picks.
+        Revoke every feat grant of a given ``source_type`` for a character,
+        bar the feats in ``keep_feat_ids`` — a point-rebuild uses this to
+        clear the feats granted by prior ASI-level choices that aren't taken
+        again (the caller clears their log rows). Scoped to FEAT-source
+        features only; cascades clean up their stored picks.
         """
 
-        await self.db.execute(
-            delete(CharacterFeature).where(
-                CharacterFeature.character_id == character_id,
-                CharacterFeature.grant_source == source_type,
-                CharacterFeature.feature_id.in_(
-                    select(Feature.id).where(Feature.source_type == FeatureSourceType.FEAT)
-                ),
-            )
-        )
+        conditions = [
+            CharacterFeature.character_id == character_id,
+            CharacterFeature.grant_source == source_type,
+            CharacterFeature.feature_id.in_(select(Feature.id).where(Feature.source_type == FeatureSourceType.FEAT)),
+        ]
+        if keep_feat_ids:
+            conditions.append(CharacterFeature.feature_id.not_in(list(keep_feat_ids)))
+
+        await self.db.execute(delete(CharacterFeature).where(*conditions))
         await self.flush()

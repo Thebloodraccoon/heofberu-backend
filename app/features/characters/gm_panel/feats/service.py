@@ -80,13 +80,7 @@ class GmPanelFeatService(CharacterSubDomainService):
             grant = await self.feat_grant_repository.add_character_feat(
                 character, data.feat_id, data.ability_score_increase_id, source_type=GrantSource.GM
             )
-            await self.asi_repository.add(
-                character.id,
-                None,
-                ASILevelChoice.FEAT,
-                feat_id=data.feat_id,
-                ability_score_increase_id=data.ability_score_increase_id,
-            )
+            await self.asi_repository.add(character.id, None, ASILevelChoice.FEAT, feat_id=data.feat_id)
             await sync_progression_features(self.repository.db, character)
             await self.grant_service.resolve_grant_choices(character, grant, data.choices, enforce=False)
             await self._refresh_stats(character)

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, FeatureSourceType
+from app.constants import AbilityScore, ArmorProficiency, ChoiceType, FeatureSourceType, ItemType, SkillEffectMode
 from app.core.exceptions import RecordInUseError, RecordNotFoundError
 from app.features.features.effects.exceptions import InvalidFeatureEffectDataError
 from app.features.features.effects.schemas import (
@@ -73,12 +73,13 @@ def armor_groups(*armor_types):
 class FakeEffectsRepository:
     """Rows live in ``rows[model]`` as ``{owner_id: {row_id: row}}``; writes are recorded."""
 
-    def __init__(self, db, feature, rows=None, groups=None, known_ids=None):
+    def __init__(self, db, feature, rows=None, groups=None, known_ids=None, item_kinds=None):
         self.db = db
         self.feature = feature
         self.rows = rows or {}
         self.groups = groups or []
         self.known_ids = known_ids or {}
+        self.item_kinds = item_kinds or {}
         self.added = []
         self.removed = []
         self.flushes = 0
@@ -118,6 +119,9 @@ class FakeEffectsRepository:
         known = self.known_ids.get(model.__name__, set())
         return sorted(set(ids) - known)
 
+    async def item_types(self, item_ids):
+        return {item_id: self.item_kinds[item_id] for item_id in item_ids if item_id in self.item_kinds}
+
     async def refresh_effect_flags(self, feature):
         self.flag_refreshes += 1
 
@@ -137,11 +141,13 @@ def spies(monkeypatch):
     return SimpleNamespace(refresh=refresh, invalidate=invalidate)
 
 
-def make_service(rows=None, groups=None, known_ids=None, feature="default"):
+def make_service(rows=None, groups=None, known_ids=None, feature="default", item_kinds=None):
     db = FakeAsyncSession()
     feature = SimpleNamespace(id=1, source_type=FeatureSourceType.OTHER) if feature == "default" else feature
     service = FeatureEffectsService(db)
-    service.repository = FakeEffectsRepository(db, feature, rows=rows, groups=groups, known_ids=known_ids)
+    service.repository = FakeEffectsRepository(
+        db, feature, rows=rows, groups=groups, known_ids=known_ids, item_kinds=item_kinds
+    )
     return service, db
 
 
@@ -190,6 +196,59 @@ class TestAddFixedEffects:
 
         assert service.repository.added == []
         assert db.commits == 0
+
+    async def test_unknown_armor_item_id_is_rejected_before_any_write(self, spies):
+        service, db = make_service(known_ids={"Item": {2}})
+        data = FeatureEffectsUpdate(
+            static_groups=[{"effect_type": "armor", "items": [{"item_id": 2}, {"item_id": 40}]}]
+        )
+
+        with pytest.raises(InvalidFeatureEffectDataError, match=r"Unknown item_id\(s\): \[40\]"):
+            await service.add_fixed_effects(1, data)
+
+        assert service.repository.added == []
+        assert db.commits == 0
+
+    async def test_known_armor_item_id_is_written_as_an_item_row(self, spies):
+        service, db = make_service(known_ids={"Item": {40}})
+
+        await service.add_fixed_effects(
+            1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"item_id": 40}]}])
+        )
+
+        (row,) = service.repository.added
+        assert (type(row), row.armor_type, row.item_id) == (FeatureArmorProficiencyEffect, None, 40)
+        assert db.commits == 1
+
+    async def test_armor_effect_pointing_at_a_weapon_is_rejected(self, spies):
+        service, db = make_service(known_ids={"Item": {40}}, item_kinds={40: ItemType.WEAPON})
+        data = FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"item_id": 40}]}])
+
+        with pytest.raises(InvalidFeatureEffectDataError, match=r"item_id\(s\) \[40\] in armor_effects must be"):
+            await service.add_fixed_effects(1, data)
+
+        assert service.repository.added == []
+        assert db.commits == 0
+
+    async def test_weapon_effect_pointing_at_armor_is_rejected(self, spies):
+        service, db = make_service(known_ids={"Item": {41}}, item_kinds={41: ItemType.ARMOR})
+        data = FeatureEffectsUpdate(static_groups=[{"effect_type": "weapon", "items": [{"item_id": 41}]}])
+
+        with pytest.raises(InvalidFeatureEffectDataError, match=r"item_id\(s\) \[41\] in weapon_effects must be"):
+            await service.add_fixed_effects(1, data)
+
+        assert service.repository.added == []
+        assert db.commits == 0
+
+    async def test_armor_effect_accepts_a_shield(self, spies):
+        service, db = make_service(known_ids={"Item": {42}}, item_kinds={42: ItemType.SHIELD})
+
+        await service.add_fixed_effects(
+            1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"item_id": 42}]}])
+        )
+
+        assert [row.item_id for row in service.repository.added] == [42]
+        assert db.commits == 1
 
     async def test_write_takes_a_row_lock(self, spies):
         service, _ = make_service()
@@ -249,7 +308,7 @@ class TestUpdateFixedEffect:
         assert db.commits == 0
 
     async def test_unknown_catalog_id_in_the_changes_is_rejected(self, spies):
-        row = FeatureSkillProficiencyEffect(feature_id=1, skill_id=1, grants_expertise=False)
+        row = FeatureSkillProficiencyEffect(feature_id=1, skill_id=1, mode=SkillEffectMode.PROFICIENCY)
         row.id = 4
         service, db = make_service(rows={FeatureSkillProficiencyEffect: {1: {4: row}}}, known_ids={"Skill": {1}})
 

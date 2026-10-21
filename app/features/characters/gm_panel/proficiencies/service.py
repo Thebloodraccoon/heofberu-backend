@@ -305,7 +305,7 @@ class GmPanelProficiencyService(CharacterSubDomainService):
                 proficiency_type,
                 rows,
                 granted=wanted,
-                others_grant=any(not entry.is_gm for entry in entries),
+                others_grant=any(not entry.is_gm and entry.grants for entry in entries),
                 actor_user_id=current_user.id,
                 is_expertise=is_expertise,
                 **discriminator,

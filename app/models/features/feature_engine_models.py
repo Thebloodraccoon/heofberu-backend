@@ -20,21 +20,38 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    ARRAY,
     CheckConstraint,
     ForeignKey,
+    Integer,
+    false,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, WeaponProficiency
+from app.constants import (
+    AbilityScore,
+    ArmorProficiency,
+    ChoiceType,
+    SkillEffectMode,
+    SpellLevel,
+    SpellSchool,
+    WeaponProficiency,
+)
 from app.models.enums import (
     AbilityScoreType,
     ArmorProficiencyType,
     ChoiceTypeType,
+    SkillEffectModeType,
+    SpellLevelType,
+    SpellSchoolType,
     WeaponProficiencyType,
 )
 from app.settings.base import Base
 
 if TYPE_CHECKING:
+    from app.models.classes.class_model import Class
     from app.models.features.feature_model import Feature
     from app.models.items.item_model import Item
     from app.models.skill_model import Skill
@@ -207,11 +224,13 @@ class FeatureAbilityScoreEffect(Base):
 
 class FeatureSkillProficiencyEffect(Base):
     """
-    Grants proficiency (optionally expertise) in a skill.
+    Grants proficiency and/or expertise in a skill, as ``mode`` says (see
+    ``SkillEffectMode``).
 
-    ``skill_id`` NULL means "any skill": inside a choice option the usable
-    options are computed in the admin UI (one per known skill) rather than
-    stored as rows; for a fixed effect a NULL ``skill_id`` is invalid.
+    ``skill_id`` NULL means "any skill" (an open effect, choice options
+    only — a fixed one is invalid): the player names the skill when picking
+    the option, stored as ``CharacterFeatureChoice.picked_skill_id``. An
+    option carries at most one open skill effect.
     """
 
     __tablename__ = "feature_skill_proficiency_effects"
@@ -223,7 +242,9 @@ class FeatureSkillProficiencyEffect(Base):
     )
 
     skill_id: Mapped[int | None] = mapped_column(ForeignKey("skills.id", ondelete="RESTRICT"), index=True)
-    grants_expertise: Mapped[bool] = mapped_column(default=False)
+    mode: Mapped[SkillEffectMode] = mapped_column(
+        SkillEffectModeType, default=SkillEffectMode.PROFICIENCY, server_default=SkillEffectMode.PROFICIENCY.value
+    )
 
     __table_args__ = (
         CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_skill_proficiency_effect_parent"),
@@ -240,7 +261,7 @@ class FeatureSkillProficiencyEffect(Base):
     def __repr__(self) -> str:
         return (
             f"<FeatureSkillProficiencyEffect(feature_id={self.feature_id}, "
-            f"choice_option_id={self.choice_option_id}, skill_id={self.skill_id})>"
+            f"choice_option_id={self.choice_option_id}, skill_id={self.skill_id}, mode={self.mode})>"
         )
 
 
@@ -270,7 +291,11 @@ class FeatureSavingThrowEffect(Base):
 
 
 class FeatureArmorProficiencyEffect(Base):
-    """Grants proficiency in an armor category (LIGHT/MEDIUM/HEAVY/SHIELD)."""
+    """
+    Grants proficiency in an armor category (LIGHT/MEDIUM/HEAVY/SHIELD) **or**
+    one concrete armor (``item_id`` pointing at an ``Item`` row) — exactly one
+    of the two, like :class:`FeatureWeaponProficiencyEffect`.
+    """
 
     __tablename__ = "feature_armor_proficiency_effects"
 
@@ -280,17 +305,25 @@ class FeatureArmorProficiencyEffect(Base):
         ForeignKey("feature_choice_options.id", ondelete="CASCADE"), index=True
     )
 
-    armor_type: Mapped[ArmorProficiency] = mapped_column(ArmorProficiencyType)
+    armor_type: Mapped[ArmorProficiency | None] = mapped_column(ArmorProficiencyType)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="RESTRICT"), index=True)
 
-    __table_args__ = (CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_armor_proficiency_effect_parent"),)
+    __table_args__ = (
+        CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_armor_proficiency_effect_parent"),
+        CheckConstraint(
+            "(armor_type IS NOT NULL AND item_id IS NULL) OR (armor_type IS NULL AND item_id IS NOT NULL)",
+            name="ck_feature_armor_proficiency_one_target",
+        ),
+    )
 
     feature: Mapped[Feature | None] = relationship(back_populates="armor_effects")
     choice_option: Mapped[FeatureChoiceOption | None] = relationship(back_populates="armor_effects")
+    item: Mapped[Item | None] = relationship()
 
     def __repr__(self) -> str:
         return (
             f"<FeatureArmorProficiencyEffect(feature_id={self.feature_id}, "
-            f"choice_option_id={self.choice_option_id}, armor_type='{self.armor_type}')>"
+            f"choice_option_id={self.choice_option_id}, armor_type='{self.armor_type}', item_id={self.item_id})>"
         )
 
 
@@ -340,8 +373,22 @@ class FeatureSpellGrantEffect(Base):
     """
     Grants a spell to the character.
 
-    ``spell_id`` NULL means an open choice: the player may pick any spell
-    from the catalog at choice time, unconstrained.
+    ``spell_id`` NULL means "any spell" (an open effect, choice options only —
+    a fixed one is invalid): an extra spell the player picks when picking the
+    option, stored as ``CharacterFeatureChoice.picked_spell_id``. The filter
+    columns narrow what may be picked (all of them must hold; an empty list /
+    NULL / ``False`` doesn't restrict):
+
+    - ``class_ids`` — the spell is on one of these classes' lists (a spell with
+      no class restriction counts as on every list);
+    - ``min_level`` / ``max_level`` — the spell level range (cantrips included);
+    - ``castable_only`` — a cantrip or a level the character has spell slots of
+      (Magical Secrets: "a level you can cast");
+    - ``schools`` — one of these schools;
+    - ``ritual_only`` — a ritual.
+
+    A concrete effect (``spell_id`` set) carries no filter. An option carries at
+    most one open spell effect.
     """
 
     __tablename__ = "feature_spell_grant_effects"
@@ -354,10 +401,35 @@ class FeatureSpellGrantEffect(Base):
 
     spell_id: Mapped[int | None] = mapped_column(ForeignKey("spells.id", ondelete="RESTRICT"), index=True)
 
+    # Filters of an open effect (see the class docstring).
+    class_ids: Mapped[list[int]] = mapped_column(ARRAY(Integer), default=list, server_default=text("'{}'"))
+    min_level: Mapped[SpellLevel | None] = mapped_column(SpellLevelType)
+    max_level: Mapped[SpellLevel | None] = mapped_column(SpellLevelType)
+    castable_only: Mapped[bool] = mapped_column(default=False, server_default=false())
+    schools: Mapped[list[SpellSchool]] = mapped_column(
+        ARRAY(SpellSchoolType), default=list, server_default=text("'{}'")
+    )
+    ritual_only: Mapped[bool] = mapped_column(default=False, server_default=false())
+
     __table_args__ = (CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_spell_grant_effect_parent"),)
 
     feature: Mapped[Feature | None] = relationship(back_populates="spell_effects")
     choice_option: Mapped[FeatureChoiceOption | None] = relationship(back_populates="spell_effects")
+    # The classes of ``class_ids`` (view-only, joined over the array) — for their names in the filter text.
+    filter_classes: Mapped[list[Class]] = relationship(
+        primaryjoin="remote(Class.id) == any_(foreign(FeatureSpellGrantEffect.class_ids))",
+        viewonly=True,
+        uselist=True,
+        order_by="Class.name",
+    )
+
+    @property
+    def class_names(self) -> list[str] | None:
+        """Names of the filter's classes when ``filter_classes`` is loaded, else ``None`` (never lazy-loads)."""
+
+        if "filter_classes" in inspect(self).unloaded:
+            return None
+        return [cls.name.strip() for cls in self.filter_classes]
     spell: Mapped[Spell | None] = relationship()
 
     def __repr__(self) -> str:

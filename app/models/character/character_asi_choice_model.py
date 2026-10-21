@@ -25,10 +25,11 @@ class CharacterASIChoice(Base):
 
       - ASI: ``increases`` holds the chosen increments as child
         ``CharacterASIChoiceIncrease`` rows (e.g. STR +2).
-      - FEAT: ``feat_id`` (+ optional ``ability_score_increase_id``) points
-        at the chosen feat — a ``features`` row with ``source_type``
-        ``"FEAT"`` — which is also granted as a ``character_features`` row
-        with ``grant_source`` ``"ASI"``.
+      - FEAT: ``feat_id`` points at the chosen feat — a ``features`` row
+        with ``source_type`` ``"FEAT"`` — which is also granted as a
+        ``character_features`` row with ``grant_source`` ``"ASI"``. The
+        feat's own choices (its ASI pick included) are that grant's
+        ``character_feature_choices``, not part of this log.
 
     ...or by a GM adjustment from the GM panel (``class_level`` NULL):
     a free-form ±increase bound to no class level. PostgreSQL treats
@@ -59,9 +60,6 @@ class CharacterASIChoice(Base):
     choice_type: Mapped[ASILevelChoice] = mapped_column(ASILevelChoiceType)
 
     feat_id: Mapped[int | None] = mapped_column(ForeignKey("features.id", ondelete="RESTRICT"), index=True)
-    ability_score_increase_id: Mapped[int | None] = mapped_column(
-        ForeignKey("feature_ability_score_effects.id", ondelete="SET NULL"), index=True
-    )
 
     # True for pre-rework rows whose points were already folded into the
     # base columns — excluded from the calculator to avoid double counting.

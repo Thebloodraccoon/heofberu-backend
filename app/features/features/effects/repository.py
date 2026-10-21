@@ -7,10 +7,16 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
-from app.constants import EFFECT_TYPE_BY_CHOICE_TYPE
+from app.constants import EFFECT_TYPE_BY_CHOICE_TYPE, ItemType
 from app.features.features.crud.repository import FeatureRepository, load_effect_flags
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
-from app.models.features.feature_engine_models import EFFECT_TYPES, FeatureChoiceGroup, FeatureChoiceOption
+from app.models.items.item_model import Item
+from app.models.features.feature_engine_models import (
+    EFFECT_TYPES,
+    FeatureChoiceGroup,
+    FeatureChoiceOption,
+    FeatureSpellGrantEffect,
+)
 from app.models.features.feature_model import Feature
 
 _ATTR_BY_EFFECT_TYPE = dict(EFFECT_TYPES)
@@ -87,6 +93,9 @@ class FeatureEffectsRepository(FeatureRepository):
             .order_by(model.id)
             .execution_options(populate_existing=True)
         )
+        if model is FeatureSpellGrantEffect:
+            # an open spell option's filter names its classes in ``summary``
+            statement = statement.options(selectinload(FeatureSpellGrantEffect.filter_classes))
         by_option: dict[int, list[Any]] = {}
         for row in (await self.db.execute(statement)).scalars():
             by_option.setdefault(row.choice_option_id, []).append(row)
@@ -120,6 +129,16 @@ class FeatureEffectsRepository(FeatureRepository):
             await self.db.execute(
                 delete(CharacterFeatureChoice).where(CharacterFeatureChoice.choice_group_id.in_(group_ids))
             )
+
+    async def item_types(self, item_ids: Iterable[int]) -> dict[int, ItemType]:
+        """``{item_id: item_type}`` of the given items (unknown ids are absent)."""
+
+        ids = set(item_ids)
+        if not ids:
+            return {}
+
+        result = await self.db.execute(select(Item.id, Item.item_type).where(Item.id.in_(ids)))
+        return dict(result.all())
 
     async def missing_ids(self, model: Any, ids: Iterable[int]) -> list[int]:
         """The subset of ``ids`` that match no ``model`` row (one query)."""

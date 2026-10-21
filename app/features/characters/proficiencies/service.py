@@ -69,7 +69,10 @@ class CharacterProficiencyService(CharacterSubDomainService):
                     SavingThrowProficiencyView(ability=discriminator[0], sources=proficiency.sources)
                 )
             elif proficiency_type == ProficiencyType.ARMOR:
-                response.armor.append(ArmorProficiencyView(armor_type=discriminator[0], sources=proficiency.sources))
+                armor_type, item_id = discriminator
+                response.armor.append(
+                    ArmorProficiencyView(armor_type=armor_type, item_id=item_id, sources=proficiency.sources)
+                )
             else:
                 weapon_category, item_id = discriminator
                 response.weapons.append(

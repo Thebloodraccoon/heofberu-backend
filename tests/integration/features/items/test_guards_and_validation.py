@@ -179,6 +179,26 @@ class TestDeleteGuards:
 
         assert response.status_code == 409
 
+    async def test_delete_blocked_when_an_armor_effect_references_it(
+        self, client, founder_token, gm_token, create_item, create_feat
+    ):
+        item = await create_item(name="Chain Mail", item_type="ARMOR")
+        feat = await create_feat(name="Heavy Training")
+        item_id = item.id
+        put = await set_effects(
+            client,
+            gm_token,
+            feat.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"item_id": item_id}]}]},
+            base="/feats",
+        )
+        assert put.status_code == 200
+
+        response = await client.delete(f"/items/{item_id}", headers=auth(founder_token))
+
+        assert response.status_code == 409
+        assert (await client.get(f"/items/{item_id}")).status_code == 200
+
     async def test_delete_blocked_when_it_is_background_starting_equipment(
         self, client, founder_token, gm_token, create_item, create_background
     ):

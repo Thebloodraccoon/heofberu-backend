@@ -175,6 +175,77 @@ class TestFeatureEffectsAllTypes:
 
         assert response.status_code == 422
 
+    async def test_armor_effect_with_item_id(self, client, gm_token, create_feature, create_item):
+        feature = await create_feature(name="Chain Training")
+        item = await create_item(name="Chain Mail", item_type="ARMOR")
+
+        response = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"item_id": item.id}]}]},
+        )
+
+        assert response.status_code == 200
+        armor = static_items(response.json(), "armor")[0]
+        assert armor["item_id"] == item.id
+        assert armor["armor_type"] is None
+
+    async def test_armor_category_effect_has_null_item_id(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Light Training")
+
+        response = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]},
+        )
+
+        assert response.status_code == 200
+        armor = static_items(response.json(), "armor")[0]
+        assert armor["armor_type"] == "LIGHT"
+        assert armor["item_id"] is None
+
+    async def test_armor_effect_neither_set_returns_422(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Bad Armor")
+
+        response = await set_effects(
+            client, gm_token, feature.id, {"static_groups": [{"effect_type": "armor", "items": [{}]}]}
+        )
+
+        assert response.status_code == 422
+
+    async def test_armor_effect_both_set_returns_422(self, client, gm_token, create_feature, create_item):
+        feature = await create_feature(name="Bad Armor Both")
+        item = await create_item(name="Chain Mail", item_type="ARMOR")
+
+        response = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {
+                "static_groups": [
+                    {"effect_type": "armor", "items": [{"armor_type": "HEAVY", "item_id": item.id}]}
+                ]
+            },
+        )
+
+        assert response.status_code == 422
+
+    async def test_armor_effect_unknown_item_id_returns_422(self, client, gm_token, create_feature):
+        feature = await create_feature(name="Ghost Armor")
+
+        response = await set_effects(
+            client,
+            gm_token,
+            feature.id,
+            {"static_groups": [{"effect_type": "armor", "items": [{"item_id": 999_999}]}]},
+        )
+
+        assert response.status_code == 422
+        assert "Unknown item_id" in response.text
+        assert (await client.get(f"/features/{feature.id}/effects")).json()["static_groups"] == []
+
     async def test_spell_effect_with_spell_id(self, client, gm_token, create_feature, create_spell):
         feature = await create_feature(name="Spell Grantor")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")

@@ -12,7 +12,6 @@ from app.features.characters.feats.exceptions import (
     FeatPrerequisiteNotMetException,
 )
 from app.features.characters.feats.validation import (
-    ensure_feat_asi_within_cap,
     ensure_feat_min_level,
     ensure_prerequisite_met,
     ensure_within_cap,
@@ -41,26 +40,6 @@ class TestEnsureWithinCap:
 
         assert (exc_info.value.current_total, exc_info.value.requested) == (19, 21)
         assert exc_info.value.status_code == 400
-
-
-@pytest.mark.unit
-class TestEnsureFeatAsiWithinCap:
-    def test_selected_option_over_the_cap_is_rejected(self):
-        feat = make_feat_with_choice_groups([(AbilityScore.STR, 2)])
-
-        with pytest.raises(AbilityScoreCapExceededException):
-            ensure_feat_asi_within_cap(feat, 200, TOTALS)
-
-    def test_option_within_the_cap_passes(self):
-        feat = make_feat_with_choice_groups([(AbilityScore.DEX, 2)])
-
-        ensure_feat_asi_within_cap(feat, 200, TOTALS)
-
-    def test_no_pick_or_unknown_pick_is_a_noop(self):
-        feat = make_feat_with_choice_groups([(AbilityScore.STR, 2)])
-
-        ensure_feat_asi_within_cap(feat, None, TOTALS)
-        ensure_feat_asi_within_cap(feat, 999, TOTALS)
 
 
 @pytest.mark.unit

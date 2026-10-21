@@ -11,8 +11,13 @@ any character row.
 Ability effects are collected for display only (``GrantEffects.abilities``):
 the totals still come from the ability-score calculator
 (``CharacterStatsRepository.get_feature_increases_many``) and its cache row.
-Open ("any skill"/"any spell") effects contribute nothing, since picking one
-isn't supported (``FeatureGrantService.answer_choices`` rejects it).
+
+A skill effect gives what its ``mode`` says, folded per skill into a
+:class:`SkillClaim`; whether an ``EXPERTISE``/``UPGRADE`` claim actually
+yields expertise depends on the character's other sources and is decided
+by the proficiency resolver. An open ("any skill") effect applies to the
+skill the player named for the pick (``CharacterFeatureChoice.picked_skill_id``),
+an open ("any spell") effect gives the spell named for it (``picked_spell_id``).
 """
 
 from collections import defaultdict
@@ -24,6 +29,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants import SkillEffectMode
 from app.features.characters.grants.schemas import (
     CharacterArmorProficiencyResponse,
     CharacterSavingThrowProficiencyResponse,
@@ -39,6 +45,7 @@ from app.models.features.feature_engine_models import (
     EFFECT_TYPES,
     FeatureChoiceGroup,
     FeatureChoiceOption,
+    FeatureSpellGrantEffect,
     effect_groups,
 )
 from app.models.features.feature_model import Feature
@@ -47,23 +54,38 @@ from app.models.spells.spell_model import Spell
 _EFFECT_ATTRS = tuple(attr for _, attr in EFFECT_TYPES)
 
 
-def choice_option_effect_loads(base_loader) -> list:
-    """Chain the six effect-type loads of a ``FeatureChoiceOption`` onto ``base_loader``."""
+def choice_option_effect_loads(base_loader, *, with_spell_filters: bool = False) -> list:
+    """
+    Chain the six effect-type loads of a ``FeatureChoiceOption`` onto ``base_loader``; with
+    ``with_spell_filters`` spell rows also load their filter's classes (for ``summary`` in responses).
+    """
 
-    return [base_loader.selectinload(getattr(FeatureChoiceOption, attr)) for attr in _EFFECT_ATTRS]
+    loads = [base_loader.selectinload(getattr(FeatureChoiceOption, attr)) for attr in _EFFECT_ATTRS]
+    if with_spell_filters:
+        loads.append(
+            base_loader.selectinload(FeatureChoiceOption.spell_effects).selectinload(
+                FeatureSpellGrantEffect.filter_classes
+            )
+        )
+    return loads
 
 
 _CHOICES_LOADER = selectinload(CharacterFeature.choices).selectinload(CharacterFeatureChoice.choice_option)
 
 # A grant's stored picks with each picked option's six effect bundles.
-GRANT_CHOICES_LOADS = (_CHOICES_LOADER, *choice_option_effect_loads(_CHOICES_LOADER))
+GRANT_CHOICES_LOADS = (_CHOICES_LOADER, *choice_option_effect_loads(_CHOICES_LOADER, with_spell_filters=True))
 
 
-def engine_effect_loads() -> list:
-    """Eager loads for a feature's whole effect tree: fixed effects plus every choice option's bundle."""
+def engine_effect_loads(*, with_spell_filters: bool = False) -> list:
+    """
+    Eager loads for a feature's whole effect tree: fixed effects plus every choice option's bundle
+    (``with_spell_filters``: see :func:`choice_option_effect_loads` — only the choices surface needs it).
+    """
 
     options_loader = selectinload(Feature.choice_groups).selectinload(FeatureChoiceGroup.options)
-    return [selectinload(getattr(Feature, attr)) for attr in _EFFECT_ATTRS] + choice_option_effect_loads(options_loader)
+    return [selectinload(getattr(Feature, attr)) for attr in _EFFECT_ATTRS] + choice_option_effect_loads(
+        options_loader, with_spell_filters=with_spell_filters
+    )
 
 
 async def load_feature_effect_tree(db: AsyncSession, feature_id: int) -> Feature | None:
@@ -73,58 +95,130 @@ async def load_feature_effect_tree(db: AsyncSession, feature_id: int) -> Feature
     return result.scalars().first()
 
 
-async def load_feature_effect_trees(db: AsyncSession, feature_ids: Iterable[int]) -> dict[int, Feature]:
+async def load_feature_effect_trees(
+    db: AsyncSession, feature_ids: Iterable[int], *, with_spell_filters: bool = False
+) -> dict[int, Feature]:
     """Batched ``load_feature_effect_tree``; missing ids are absent from the result."""
 
     ids = set(feature_ids)
     if not ids:
         return {}
 
-    result = await db.execute(select(Feature).where(Feature.id.in_(ids)).options(*engine_effect_loads()))
+    loads = engine_effect_loads(with_spell_filters=with_spell_filters)
+    result = await db.execute(select(Feature).where(Feature.id.in_(ids)).options(*loads))
     return {feature.id: feature for feature in result.scalars().unique().all()}
+
+
+@dataclass
+class SkillClaim:
+    """
+    What one grant's skill effects give in ONE skill, folded across its
+    effects: ``proficiency`` (PROFICIENCY / PROFICIENCY_AND_EXPERTISE),
+    ``expertise`` (PROFICIENCY_AND_EXPERTISE / EXPERTISE) and ``upgrade``
+    (UPGRADE — proficiency, or expertise when another source gives the
+    proficiency).
+    """
+
+    proficiency: bool = False
+    expertise: bool = False
+    upgrade: bool = False
+
+    def add(self, mode: SkillEffectMode) -> None:
+        """Fold one effect's ``mode`` in."""
+
+        self.proficiency |= mode in (SkillEffectMode.PROFICIENCY, SkillEffectMode.PROFICIENCY_AND_EXPERTISE)
+        self.expertise |= mode in (SkillEffectMode.PROFICIENCY_AND_EXPERTISE, SkillEffectMode.EXPERTISE)
+        self.upgrade |= mode == SkillEffectMode.UPGRADE
+
+    @property
+    def grants(self) -> bool:
+        """Whether the claim gives the proficiency itself (an EXPERTISE-only claim does not)."""
+
+        return self.proficiency or self.upgrade
+
+    @property
+    def is_expertise(self) -> bool:
+        """Expertise this grant gives on its own (an UPGRADE counts when the same grant also gives the proficiency)."""
+
+        return self.expertise or (self.upgrade and self.proficiency)
+
+    @property
+    def mode(self) -> SkillEffectMode:
+        """The one mode the folded claim amounts to (for responses)."""
+
+        if self.grants and self.is_expertise:
+            return SkillEffectMode.PROFICIENCY_AND_EXPERTISE
+        if self.upgrade:
+            return SkillEffectMode.UPGRADE
+        if self.proficiency:
+            return SkillEffectMode.PROFICIENCY
+        return SkillEffectMode.EXPERTISE
 
 
 @dataclass
 class GrantEffects:
     """
-    What one grant gives the character: skill id -> expertise, the other
-    proficiency keys and spell ids, plus its ability effects (display only).
+    What one grant gives the character: a :class:`SkillClaim` per skill id,
+    the other proficiency keys and spell ids, plus its ability effects
+    (display only).
     """
 
     abilities: list[tuple] = field(default_factory=list)
-    skills: dict[int, bool] = field(default_factory=dict)
+    skills: dict[int, SkillClaim] = field(default_factory=dict)
     saving_throws: set = field(default_factory=set)
-    armor: set = field(default_factory=set)
+    armor: set[tuple] = field(default_factory=set)
     weapons: set[tuple] = field(default_factory=set)
     spells: set[int] = field(default_factory=set)
 
-    def add(self, holder: Feature | FeatureChoiceOption) -> None:
-        """Fold one effect bundle (a feature's fixed rows or a picked option's rows) in."""
+    def add(
+        self,
+        holder: Feature | FeatureChoiceOption,
+        picked_skill_id: int | None = None,
+        picked_spell_id: int | None = None,
+    ) -> None:
+        """
+        Fold one effect bundle (a feature's fixed rows or a picked option's rows) in. An open skill/spell
+        effect gives ``picked_skill_id``/``picked_spell_id`` (named for the pick); without one it gives nothing.
+        """
 
         self.abilities.extend((effect.ability, effect.amount, effect.new_cap) for effect in holder.ability_effects)
         for effect in holder.skill_effects:
-            if effect.skill_id is not None:
-                self.skills[effect.skill_id] = self.skills.get(effect.skill_id, False) or bool(effect.grants_expertise)
+            skill_id = effect.skill_id if effect.skill_id is not None else picked_skill_id
+            if skill_id is not None:
+                self.skills.setdefault(skill_id, SkillClaim()).add(effect.mode)
 
         self.saving_throws.update(effect.ability for effect in holder.saving_throw_effects)
-        self.armor.update(effect.armor_type for effect in holder.armor_effects)
+        self.armor.update((effect.armor_type, effect.item_id) for effect in holder.armor_effects)
         self.weapons.update((effect.weapon_category, effect.item_id) for effect in holder.weapon_effects)
-        self.spells.update(effect.spell_id for effect in holder.spell_effects if effect.spell_id is not None)
+        for effect in holder.spell_effects:
+            spell_id = effect.spell_id if effect.spell_id is not None else picked_spell_id
+            if spell_id is not None:
+                self.spells.add(spell_id)
 
 
-def grant_effects(feature: Feature, picked_option_ids: Iterable[int]) -> GrantEffects:
-    """Effects of a grant of ``feature`` whose player picked ``picked_option_ids`` (unknown ids are ignored)."""
+# One stored pick as ``grant_effects`` reads it: ``(choice_option_id, picked_skill_id, picked_spell_id)``.
+Pick = tuple[int, int | None, int | None]
+
+
+def grant_effects(feature: Feature, picks: Iterable[Pick]) -> GrantEffects:
+    """Effects of a grant of ``feature`` whose player made ``picks`` (unknown option ids are ignored)."""
 
     effects = GrantEffects()
     effects.add(feature)
 
     options = {option.id: option for group in feature.choice_groups for option in group.options}
-    for option_id in picked_option_ids:
+    for option_id, picked_skill_id, picked_spell_id in picks:
         option = options.get(option_id)
         if option is not None:
-            effects.add(option)
+            effects.add(option, picked_skill_id, picked_spell_id)
 
     return effects
+
+
+def stored_picks(choices: Iterable[CharacterFeatureChoice]) -> list[Pick]:
+    """``grant_effects`` input from stored pick rows."""
+
+    return [(choice.choice_option_id, choice.picked_skill_id, choice.picked_spell_id) for choice in choices]
 
 
 def pending_groups(feature: Feature, stored_choices: list[CharacterFeatureChoice]) -> list[FeatureChoiceGroup]:
@@ -151,14 +245,17 @@ async def load_grant_effects(
 
     features = await load_feature_effect_trees(db, (grant.feature_id for grant in grants))
 
-    picks: dict[int, list[int]] = defaultdict(list)
+    picks: dict[int, list[Pick]] = defaultdict(list)
     result = await db.execute(
-        select(CharacterFeatureChoice.character_feature_id, CharacterFeatureChoice.choice_option_id).where(
-            CharacterFeatureChoice.character_feature_id.in_([grant.id for grant in grants])
-        )
+        select(
+            CharacterFeatureChoice.character_feature_id,
+            CharacterFeatureChoice.choice_option_id,
+            CharacterFeatureChoice.picked_skill_id,
+            CharacterFeatureChoice.picked_spell_id,
+        ).where(CharacterFeatureChoice.character_feature_id.in_([grant.id for grant in grants]))
     )
-    for grant_id, option_id in result.all():
-        picks[grant_id].append(option_id)
+    for grant_id, option_id, picked_skill_id, picked_spell_id in result.all():
+        picks[grant_id].append((option_id, picked_skill_id, picked_spell_id))
 
     return {
         grant.id: (feature, grant_effects(feature, picks[grant.id]))
@@ -175,6 +272,14 @@ async def load_character_grant_effects(db: AsyncSession, character_id: int) -> l
     their tree.
     """
 
+    return list((await load_character_grant_effects_by_grant(db, character_id)).values())
+
+
+async def load_character_grant_effects_by_grant(
+    db: AsyncSession, character_id: int
+) -> dict[int, tuple[Feature, GrantEffects]]:
+    """:func:`load_character_grant_effects` keyed by grant id (to leave one grant out of a computation)."""
+
     result = await db.execute(
         select(CharacterFeature)
         .join(Feature, Feature.id == CharacterFeature.feature_id)
@@ -183,8 +288,7 @@ async def load_character_grant_effects(db: AsyncSession, character_id: int) -> l
             or_(Feature.has_static_effects.is_(True), Feature.has_choices.is_(True)),
         )
     )
-    by_grant = await load_grant_effects(db, list(result.scalars().all()))
-    return list(by_grant.values())
+    return await load_grant_effects(db, list(result.scalars().all()))
 
 
 async def load_spell_responses(db: AsyncSession, spell_ids: Iterable[int]) -> dict[int, CharacterSpellResponse]:
@@ -204,10 +308,10 @@ def spell_list(spell_ids: Iterable[int], spells: dict[int, CharacterSpellRespons
     return sorted((spells[spell_id] for spell_id in set(spell_ids) if spell_id in spells), key=lambda spell: spell.name)
 
 
-def _weapon_sort_key(weapon: tuple) -> tuple:
-    """Stable order for ``(weapon_category, item_id)`` pairs, either part possibly ``None``."""
+def _target_sort_key(target: tuple) -> tuple:
+    """Stable order for ``(category, item_id)`` pairs (weapons, armor), either part possibly ``None``."""
 
-    category, item_id = weapon
+    category, item_id = target
     return (category is None, getattr(category, "value", category) or "", item_id is None, item_id or 0)
 
 
@@ -220,16 +324,19 @@ def _to_response(effects: GrantEffects, spells: dict[int, CharacterSpellResponse
             for ability, amount, new_cap in effects.abilities
         ],
         "skill": [
-            GrantedSkillEffectResponse(skill_id=skill_id, is_expertise=expertise)
-            for skill_id, expertise in sorted(effects.skills.items())
+            GrantedSkillEffectResponse(skill_id=skill_id, is_expertise=claim.is_expertise, mode=claim.mode)
+            for skill_id, claim in sorted(effects.skills.items())
         ],
         "saving_throw": [
             CharacterSavingThrowProficiencyResponse(ability=ability) for ability in sorted(effects.saving_throws)
         ],
-        "armor": [CharacterArmorProficiencyResponse(armor_type=armor_type) for armor_type in sorted(effects.armor)],
+        "armor": [
+            CharacterArmorProficiencyResponse(armor_type=armor_type, item_id=item_id)
+            for armor_type, item_id in sorted(effects.armor, key=_target_sort_key)
+        ],
         "weapon": [
             CharacterWeaponProficiencyResponse(weapon_category=category, item_id=item_id)
-            for category, item_id in sorted(effects.weapons, key=_weapon_sort_key)
+            for category, item_id in sorted(effects.weapons, key=_target_sort_key)
         ],
         "spell": spell_list(effects.spells, spells),
     }
@@ -249,10 +356,7 @@ async def get_grant_effects_map(db: AsyncSession, grants: list[CharacterFeature]
     the spell lookup.
     """
 
-    effects_by_grant = {
-        grant.id: grant_effects(grant.feature, (choice.choice_option_id for choice in grant.choices))
-        for grant in grants
-    }
+    effects_by_grant = {grant.id: grant_effects(grant.feature, stored_picks(grant.choices)) for grant in grants}
     spells = await load_spell_responses(
         db, (spell_id for effects in effects_by_grant.values() for spell_id in effects.spells)
     )
@@ -272,6 +376,8 @@ def build_chosen_options(grant: CharacterFeature) -> list[ChosenOptionResponse]:
             {
                 "choice_group_id": choice.choice_group_id,
                 "choice_option_id": choice.choice_option_id,
+                "picked_skill_id": choice.picked_skill_id,
+                "picked_spell_id": choice.picked_spell_id,
                 "effects": effect_groups(choice.choice_option) if choice.choice_option is not None else [],
             },
             from_attributes=True,

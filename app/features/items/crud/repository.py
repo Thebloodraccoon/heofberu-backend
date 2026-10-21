@@ -8,7 +8,7 @@ from app.constants import FeatureSourceType
 from app.core.base.repository import BaseRepository
 from app.models.character.character_item_model import CharacterItem
 from app.models.character.character_proficiency_model import CharacterProficiency
-from app.models.features.feature_engine_models import FeatureWeaponProficiencyEffect
+from app.models.features.feature_engine_models import FeatureArmorProficiencyEffect, FeatureWeaponProficiencyEffect
 from app.models.items.item_model import Item
 from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption
 from app.models.items.item_source_model import SourceItem
@@ -80,6 +80,7 @@ class ItemRepository(BaseRepository[Item]):
             (CharacterItem, "item_id"),
             (CharacterProficiency, "item_id"),
             (FeatureWeaponProficiencyEffect, "item_id"),
+            (FeatureArmorProficiencyEffect, "item_id"),
             (SourceItem, "item_id"),
             (SourceItemChoiceOption, "item_id"),
         )

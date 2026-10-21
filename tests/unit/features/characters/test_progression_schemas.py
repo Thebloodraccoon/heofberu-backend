@@ -4,7 +4,6 @@ from pydantic import ValidationError
 import pytest
 
 from app.features.characters.progression.schemas import (
-    MAX_FEATURE_CHOICES,
     MAX_HIT_POINTS_GAINED,
     MAX_REBUILD_HP,
     MAX_REBUILD_SKILLS,
@@ -78,8 +77,9 @@ class TestFeatChoice:
         assert choice.type == "FEAT"
         assert choice.feat_id == 9
 
-    def test_asi_increase_id_is_optional(self):
-        assert FeatChoice(feat_id=9).ability_score_increase_id is None
+    def test_ability_score_increase_id_is_ignored(self):
+        # Choice groups are answered via PATCH /characters/{id}/features/{grant_id}/choices, not at level-up.
+        assert "ability_score_increase_id" not in FeatChoice(feat_id=9, ability_score_increase_id=5).model_dump()
 
     def test_missing_feat_id_is_rejected(self):
         with pytest.raises(ValidationError):
@@ -169,14 +169,8 @@ class TestInputBounds:
         with pytest.raises(ValidationError):
             LevelUpRequest(hit_points_gained=MAX_HIT_POINTS_GAINED + 1)
 
-    def test_feature_choices_list_is_bounded(self):
-        answer = {"feature_id": 1, "choice_group_id": 1, "choice_option_id": 1}
-
-        assert (
-            len(LevelUpRequest(feature_choices=[answer] * MAX_FEATURE_CHOICES).feature_choices) == MAX_FEATURE_CHOICES
-        )
-        with pytest.raises(ValidationError):
-            LevelUpRequest(feature_choices=[answer] * (MAX_FEATURE_CHOICES + 1))
+    def test_feature_choices_is_no_longer_a_level_up_field(self):
+        assert "feature_choices" not in LevelUpRequest.model_fields
 
     def test_rebuild_lists_and_hp_are_bounded(self):
         build = {

@@ -128,15 +128,15 @@ class TestUpdateFixedEffect:
             client, gm_token, feature.id, [{"effect_type": "skill", "items": [{"skill_id": skill.id}]}]
         )
         row = static_items(created.json(), "skill")[0]
-        assert row["grants_expertise"] is False
+        assert row["mode"] == "PROFICIENCY"
 
         response = await client.patch(
-            f"/features/{feature.id}/effects/skill/{row['id']}", json={"grants_expertise": True}, headers=auth(gm_token)
+            f"/features/{feature.id}/effects/skill/{row['id']}", json={"mode": "EXPERTISE"}, headers=auth(gm_token)
         )
 
         assert response.status_code == 200, response.text
         assert static_items(response.json(), "skill") == [
-            {"id": row["id"], "skill_id": skill.id, "grants_expertise": True}
+            {"id": row["id"], "skill_id": skill.id, "mode": "EXPERTISE"}
         ]
 
     async def test_patch_ability_amount(self, client, gm_token, create_feature):
@@ -343,11 +343,10 @@ class TestChoiceGroups:
                 "choice_type": "SKILL",
                 "options": [{"effects": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]}],
             },
-            {"choice_type": "SKILL", "options": [{"effects": [{"effect_type": "skill", "items": [{}]}]}]},
             {"choice_type": "SKILL", "options": [skill_option(999999)]},
             {"choice_type": "SKILL", "pick_count": 0},
         ],
-        ids=["group-id", "option-id", "wrong-effect-type", "open-skill", "unknown-skill", "pick-count"],
+        ids=["group-id", "option-id", "wrong-effect-type", "unknown-skill", "pick-count"],
     )
     async def test_invalid_group_returns_422(self, client, gm_token, create_feature, payload):
         feature = await create_feature(name="Invalid Group")
@@ -489,10 +488,9 @@ class TestChoiceOptions:
         [
             {"id": 1},
             {"effects": [{"effect_type": "armor", "items": [{"armor_type": "LIGHT"}]}]},
-            {"effects": [{"effect_type": "skill", "items": [{}]}]},
             {"effects": [{"effect_type": "skill", "items": [{"skill_id": 999999}]}]},
         ],
-        ids=["id", "wrong-effect-type", "open-skill", "unknown-skill"],
+        ids=["id", "wrong-effect-type", "unknown-skill"],
     )
     async def test_invalid_option_returns_422(self, client, gm_token, create_feature, payload):
         feature = await create_feature(name="Bad Option")
@@ -667,7 +665,7 @@ class TestOptionEffects:
         feature = await create_feature(name="Skill Option")
         url = await self.option(client, gm_token, feature.id, choice_type="SKILL")
 
-        for item in ({}, {"skill_id": 999999}, {"id": 3, "skill_id": 1}):
+        for item in ({"skill_id": 999999}, {"id": 3, "skill_id": 1}):
             response = await client.post(
                 f"{url}/effects",
                 json={"static_groups": [{"effect_type": "skill", "items": [item]}]},

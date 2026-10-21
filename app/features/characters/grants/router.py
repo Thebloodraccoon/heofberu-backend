@@ -10,6 +10,7 @@ from app.features.characters.grants.schemas import (
     AnsweredChoicesResponse,
     GrantChoicesUpdate,
     PendingChoiceGroupsResponse,
+    PendingChoicesCountResponse,
 )
 
 router = APIRouter()
@@ -38,6 +39,28 @@ async def get_all_pending_choices(
     """
 
     return await grant_service.get_all_pending_choices(character_id, current_user)
+
+
+@router.get(
+    "/{character_id:int}/grants/pending/count",
+    response_model=PendingChoicesCountResponse,
+    summary="Count the grants that still need a choice",
+    responses={
+        403: {"description": "You do not have access to this character."},
+        404: {"description": "No character exists with the given ID."},
+    },
+)
+async def count_pending_choices(
+    character_id: int,
+    grant_service: FeatureGrantServiceDep,
+    current_user: CurrentUserDep,
+):
+    """
+    The light version of ``/grants/pending`` for a badge: only how many grants still have an unanswered choice
+    group — no option lists, no candidate spells.
+    """
+
+    return await grant_service.count_pending_choices(character_id, current_user)
 
 
 @router.get(

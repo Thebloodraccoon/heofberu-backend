@@ -27,7 +27,7 @@ features/
 | GET | `/features` | open | Paginated `Page[FeatureGetAllResponse]` of **standalone OTHER** features only (id/name/source_type/FKs/level/`has_static_effects`/`has_choices`), ordered by name; `search` on name. Source-owned features are listed through their parent record. |
 | GET | `/features/{feature_id}` | open | Full `FeatureResponse` for any source, embedding the **whole effect tree** (`choice_groups` + `static_groups`, the discriminated union of fixed effects — see below). |
 | POST | `/features` | GM | Create a feature of **any** source type, including `FEAT` (feat rows carry `min_level`/`prerequisite_*`). Source FK + `level` rules enforced at the schema layer (422). |
-| PATCH | `/features/{feature_id}` | GM | Editable fields only: `name`, `level`, `description` (+ `min_level`/`prerequisite_*` for FEAT rows). `source_type` and its FK are **immutable** — ownership is permanent. Rule violations (level outside 1-20, a cleared CLASS/SUBCLASS level, FEAT-only columns on a non-FEAT feature, half a prerequisite) -> 400 (`InvalidFeatureSourceException`). Characters are re-reconciled **only when `level` changes**. |
+| PATCH | `/features/{feature_id}` | GM | Editable fields only: `name`, `level`, `scaling`, `description` (+ `min_level`/`prerequisite_*` for FEAT rows). `source_type` and its FK are **immutable** — ownership is permanent. Rule violations (level outside 1-20, a cleared CLASS/SUBCLASS level, FEAT-only columns on a non-FEAT feature, half a prerequisite) -> 400 (`InvalidFeatureSourceException`). Characters are re-reconciled **only when `level` changes**. |
 | DELETE | `/features/{feature_id}` | GM | One transaction. A standalone FEAT/OTHER feature held by a character -> **409** (same guard as `DELETE /feats/{id}`). A source-owned feature cascades its grants away and re-reconciles the owning record's characters before the commit. |
 | GET | `/features/{feature_id}/effects` | open | Read the whole effect tree (`choice_groups` + `static_groups`). |
 | POST | `/features/{feature_id}/effects` | GM | **Add** fixed effects (`static_groups` body; every item is a new row, `id` -> 422). Returns the tree. |
@@ -78,12 +78,22 @@ A feature's mechanical payload lives in `app/models/features/feature_engine_mode
 
 Payload rules (schema-enforced, 422 — the schemas reject unknown keys):
 - `AbilityEffectItem`: `ability` + `amount` (-30..30), optional `new_cap` (**20-30**).
-- `SkillEffectItem`: a concrete `skill_id`; `grants_expertise`. `SavingThrowEffectItem`:
+- `SkillEffectItem`: `skill_id` + `mode` (`SkillEffectMode`: `PROFICIENCY` default,
+  `PROFICIENCY_AND_EXPERTISE`, `EXPERTISE` — expertise only, needs the proficiency from another
+  source, `UPGRADE` — proficiency, or expertise on top of another source). `SavingThrowEffectItem`:
   `ability`. `ArmorEffectItem`: `armor_type`. `WeaponEffectItem`: **exactly one** of
-  `weapon_category` / `item_id`. `SpellEffectItem`: a concrete `spell_id`.
-- A **fixed** skill/spell effect needs its `skill_id`/`spell_id`; an open ("any") option is
-  not authorable on a SKILL/SPELL choice group either (`validate_no_open_picks`). Legacy rows
-  may still read back with `None`.
+  `weapon_category` / `item_id`. `SpellEffectItem`: a concrete `spell_id`, or an open one with
+  a filter — `class_ids` (on one of these class lists; a spell tied to no class is on every
+  list), `min_level` / `max_level` (cantrip included; equal = exactly that level),
+  `castable_only` (a cantrip or a level the character has slots of — Magical Secrets),
+  `schools`, `ritual_only`. Defaults don't restrict; a concrete spell may not carry a filter,
+  `min_level` may not be above `max_level`, unknown `class_ids` are a 422.
+- A **fixed** skill/spell effect needs its `skill_id`/`spell_id`. A skill/spell effect inside a
+  **choice option** may be open (no `skill_id`/`spell_id` — "any skill/spell"; at most one per
+  option): the player names the skill/spell when picking (`CharacterFeatureChoice.picked_skill_id`
+  / `picked_spell_id`) — an open spell is an extra spell on top of the class slots. Option effect
+  writes use `OptionEffectsUpdate` for that. A skill/spell-effect write that turns an option open
+  or concrete clears the characters' stored picks of it (they revert to pending).
 - No repeated row `id`, and no repeated effect (same ability / skill / armor type / item /
   category / spell) inside one group's `items` — fixed effects and every option alike.
 - Bounds: ids 1..2^31-1, `pick_count` 1..50, `sort_order` 0..10 000, <= 50 effects per list,
@@ -120,6 +130,18 @@ rollback. Beyond the standard CRUD it owns:
   loaded-and-empty); `update` loads the tree once and serializes that same object; `delete` loads
   only the bare row. `feature_summary_loads(base, with_names=...)` is the shared eager-load set the
   parent catalogs chain onto; the effect endpoints use `with_names=False`.
+
+## Scaling line (`scaling`)
+
+A feature of any source may carry one line that grows with the character's level while the
+description stays the same — Song of Rest: `{"label": "Доп. хиты", "steps": [{"level": 2, "value":
+"1к6"}, {"level": 9, "value": "1к8"}, {"level": 13, "value": "1к10"}, {"level": 17, "value":
+"1к12"}]}`. Stored as JSONB (`Feature.scaling`), validated by `FeatureScaling` (label/value
+trimmed, 1-100 chars; 1-20 steps on distinct levels 1-20, returned sorted). `PATCH` replaces it
+whole, `null` removes it; it never re-reconciles characters (only their caches are purged). It is
+returned on `FeatureResponse` / `NestedFeatureResponse` and on the character's feature brief; the
+current value is the highest step `<= character.level` (`FeatureScaling.value_at`, computed by the
+client from `character.level`), nothing below the first step.
 
 ## The FEAT source type
 

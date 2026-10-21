@@ -35,7 +35,6 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         choice_type: ASILevelChoice | str,
         *,
         feat_id: int | None = None,
-        ability_score_increase_id: int | None = None,
         increases: list[dict] | None = None,
     ) -> CharacterASIChoice:
         """
@@ -43,8 +42,8 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
         class level for level-up resolutions or ``None`` for a GM-panel
         adjustment. ``increases`` (ASI choices) are written as typed
         ``CharacterASIChoiceIncrease`` children — the rows the calculator
-        counts; ``feat_id``/``ability_score_increase_id`` describe FEAT
-        choices, whose stat effect flows through the granted feature row.
+        counts; ``feat_id`` describes a FEAT choice, whose stat effect (its
+        ASI pick included) flows through the granted feature row.
         Always recorded with ``applied_to_base = False`` (the log IS the
         counted source).
         """
@@ -54,7 +53,6 @@ class CharacterASIChoiceRepository(BaseRepository[CharacterASIChoice]):
             class_level=class_level,
             choice_type=choice_type,
             feat_id=feat_id,
-            ability_score_increase_id=ability_score_increase_id,
             applied_to_base=False,
         )
 

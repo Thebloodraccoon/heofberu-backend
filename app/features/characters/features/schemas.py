@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants import FeatureSourceType, GrantSource
 from app.features.characters.grants.schemas import ChosenOptionResponse, GrantEffectGroup
+from app.features.features.crud.schemas import FeatureScaling
 
 
 class CharacterFeatureBriefResponse(BaseModel):
@@ -12,6 +13,8 @@ class CharacterFeatureBriefResponse(BaseModel):
     ``description`` and ``effects_summary`` (the same human-readable effect
     rendering ``FeatureResponse``/``NestedFeatureResponse`` expose) so the
     sheet renders details without a follow-up call to ``/features/{id}``.
+    ``scaling`` is the feature's line that grows with level — the sheet
+    shows ``scaling.value_at(character.level)``.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -20,6 +23,7 @@ class CharacterFeatureBriefResponse(BaseModel):
     name: str
     source_type: FeatureSourceType
     level: int | None = None
+    scaling: FeatureScaling | None = None
     description: str = ""
     effects_summary: str = ""
 

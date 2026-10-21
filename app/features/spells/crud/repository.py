@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
 from app.models import Class, Race, Spell, Subclass, Subrace
+from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_spell_model import CharacterGrantedSpell, CharacterSpell
 from app.models.features.feature_engine_models import FeatureSpellGrantEffect
 from app.models.spells.spell_association_models import (
@@ -84,13 +85,16 @@ class SpellRepository(BaseRepository[Spell]):
         return db_obj
 
     async def is_in_use(self, spell_id: int) -> bool:
-        """Whether a character knows or was granted the spell, or a feature effect grants it (blocks deletion)."""
+        """
+        Whether a character knows, was granted or picked the spell (an open "any spell" option), or a feature
+        effect grants it (blocks deletion).
+        """
 
         for referencing_model in (CharacterSpell, CharacterGrantedSpell, FeatureSpellGrantEffect):
             if await self.exists_referencing(referencing_model, "spell_id", spell_id):
                 return True
 
-        return False
+        return await self.exists_referencing(CharacterFeatureChoice, "picked_spell_id", spell_id)
 
     async def get_dimension_members(self, dimension: AvailabilityDimension, ids: list[int]) -> list[Any]:
         """Fetch the dimension's catalog rows (classes, races, ...) matching ``ids`` (order not guaranteed)."""
