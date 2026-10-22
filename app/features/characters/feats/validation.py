@@ -25,12 +25,14 @@ def validate_ability_score_increase(feat: Feature, ability_score_increase_id: in
     """
     Raise ``InvalidAbilityScoreIncreaseException`` unless the id is one of
     ``feat``'s own ability-score-effect alternatives. A ``None`` value is
-    silently accepted (the caller is responsible for requiring a choice).
+    silently accepted (the caller is responsible for requiring a choice). An
+    open ("any ability") effect can't be picked by id — it needs the ability
+    named, so it is answered through ``choices`` with ``ability``.
     """
 
     if ability_score_increase_id is None:
         return
-    valid_ids = {effect.id for effect in feat_ability_score_effects(feat)}
+    valid_ids = {effect.id for effect in feat_ability_score_effects(feat) if effect.ability is not None}
     if ability_score_increase_id not in valid_ids:
         raise InvalidAbilityScoreIncreaseException(feat_id=feat.id, ability_score_increase_id=ability_score_increase_id)
 

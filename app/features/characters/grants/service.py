@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ABILITY_SCORE_CAP, ChoiceType
+from app.constants import ABILITY_SCORE_CAP, AbilityScore, ChoiceType
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
@@ -21,6 +21,8 @@ from app.features.characters.grants.effects import (
 )
 from app.features.characters.grants.exceptions import (
     AbilityPickCapExceededError,
+    AbilityPickNotAllowedError,
+    AbilityPickRequiredError,
     ChoiceCountMismatchError,
     ChoiceGroupNotFoundError,
     ChoiceOptionAlreadyPickedError,
@@ -31,6 +33,7 @@ from app.features.characters.grants.exceptions import (
     SkillPickRequiredError,
     SpellPickNotAllowedError,
     SpellPickRequiredError,
+    UnexpectedAbilityPickError,
     UnexpectedSkillPickError,
     UnexpectedSpellPickError,
     UnknownSkillPickError,
@@ -84,12 +87,25 @@ def _option_has_open_spell(option: FeatureChoiceOption) -> bool:
     return any(effect.spell_id is None for effect in option.spell_effects)
 
 
+def _ability_rows(option: FeatureChoiceOption) -> list:
+    """The option's ability-score and saving-throw rows (a group carries one of the two types)."""
+
+    return [*option.ability_effects, *option.saving_throw_effects]
+
+
+def _option_has_open_ability(option: FeatureChoiceOption) -> bool:
+    """Whether the option carries an open ("any ability" / "any saving throw") effect."""
+
+    return any(effect.ability is None for effect in _ability_rows(option))
+
+
 class OptionPick(NamedTuple):
-    """One validated pick: the option and, for an open skill/spell option, the skill/spell named for it."""
+    """One validated pick: the option and, for an open option, the skill/spell/ability named for it."""
 
     option: FeatureChoiceOption
     skill_id: int | None = None
     spell_id: int | None = None
+    ability: AbilityScore | None = None
 
 
 def _skill_availability(
@@ -151,6 +167,7 @@ def _to_pending_response(
                 "id": option.id,
                 "needs_skill": _option_has_open_skill(option),
                 "needs_spell": _option_has_open_spell(option),
+                "needs_ability": _option_has_open_ability(option),
                 "allowed_skill_ids": allowed_skill_ids,
                 "allowed_spells": spells,
                 "available": available,
@@ -210,9 +227,10 @@ def _validate_answers(
     Check ``answers`` against the feature's groups/options and return the
     picks per group. Raises on a wrong group, an unknown or foreign option,
     a duplicate pick (the same option — for an open option, with the same
-    skill/spell), a wrong pick count, or a ``skill_id``/``spell_id`` missing
-    on an open ("any skill/spell") option or set on any other. Whether the
-    skills/spells exist and fit the character is checked by the service.
+    skill/spell/ability), a wrong pick count, a ``skill_id``/``spell_id``/``ability``
+    missing on an open ("any skill/spell/ability") option or set on any other,
+    or an ``ability`` the option already names. Whether the skills/spells exist
+    and fit the character is checked by the service.
     """
 
     groups = {group.id: group for group in feature.choice_groups}
@@ -240,7 +258,15 @@ def _validate_answers(
         elif item.spell_id is not None:
             raise UnexpectedSpellPickError(option_id=option.id)
 
-        pick = OptionPick(option, item.skill_id, item.spell_id)
+        if _option_has_open_ability(option):
+            if item.ability is None:
+                raise AbilityPickRequiredError(option_id=option.id)
+            if any(effect.ability == item.ability for effect in _ability_rows(option)):
+                raise AbilityPickNotAllowedError(option_id=option.id, ability=item.ability.value)
+        elif item.ability is not None:
+            raise UnexpectedAbilityPickError(option_id=option.id)
+
+        pick = OptionPick(option, item.skill_id, item.spell_id, item.ability)
         picked = answered.setdefault(group.id, [])
         if any(other.option.id == option.id and other[1:] == pick[1:] for other in picked):
             raise ChoiceOptionAlreadyPickedError(group_id=group.id, option_id=option.id)
@@ -492,7 +518,7 @@ class FeatureGrantService(CharacterSubDomainService):
         new_choices = await self.grant_repository.replace_choices(
             grant.id,
             {
-                group_id: [(pick.option.id, pick.skill_id, pick.spell_id) for pick in picks]
+                group_id: [(pick.option.id, pick.skill_id, pick.spell_id, pick.ability) for pick in picks]
                 for group_id, picks in answered.items()
             },
         )
@@ -668,23 +694,29 @@ def _ensure_picks_within_cap(feature: Feature, answers: list[ChoiceAnswerItem], 
     above ``ABILITY_SCORE_CAP`` (or the option's own ``new_cap``) — ``totals`` already include the picks.
     """
 
-    picked = {item.choice_option_id for item in answers}
-    for group in feature.choice_groups:
-        if group.choice_type != ChoiceType.ABILITY_SCORE:
+    options = {
+        option.id: option
+        for group in feature.choice_groups
+        if group.choice_type == ChoiceType.ABILITY_SCORE
+        for option in group.options
+    }
+    for item in answers:
+        option = options.get(item.choice_option_id)
+        if option is None:
             continue
-        for option in group.options:
-            if option.id not in picked:
+        for effect in option.ability_effects:
+            ability = effect.ability if effect.ability is not None else item.ability
+            if ability is None:
                 continue
-            for effect in option.ability_effects:
-                total = totals[TOTAL_FIELD_BY_ABILITY[effect.ability]]
-                cap = max(ABILITY_SCORE_CAP, effect.new_cap or 0)
-                if effect.amount > 0 and total > cap:
-                    raise AbilityPickCapExceededError(
-                        ability=effect.ability.value,
-                        current_total=total - effect.amount,
-                        requested=total,
-                        cap=cap,
-                    )
+            total = totals[TOTAL_FIELD_BY_ABILITY[ability]]
+            cap = max(ABILITY_SCORE_CAP, effect.new_cap or 0)
+            if effect.amount > 0 and total > cap:
+                raise AbilityPickCapExceededError(
+                    ability=ability.value,
+                    current_total=total - effect.amount,
+                    requested=total,
+                    cap=cap,
+                )
 
 
 class _RulesContext:

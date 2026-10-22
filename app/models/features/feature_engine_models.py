@@ -192,6 +192,11 @@ class FeatureAbilityScoreEffect(Base):
     """
     An ability-score effect: ``amount`` added to an ability's effective total
     (may be negative), optionally raising that ability's cap via ``new_cap``.
+
+    ``ability`` NULL means "any ability" (an open effect, choice options
+    only): the player names the ability when picking the option, stored as
+    ``CharacterFeatureChoice.picked_ability``. An option carries at most one
+    open ability effect.
     """
 
     __tablename__ = "feature_ability_score_effects"
@@ -202,7 +207,7 @@ class FeatureAbilityScoreEffect(Base):
         ForeignKey("feature_choice_options.id", ondelete="CASCADE"), index=True
     )
 
-    ability: Mapped[AbilityScore] = mapped_column(AbilityScoreType)
+    ability: Mapped[AbilityScore | None] = mapped_column(AbilityScoreType)
     amount: Mapped[int] = mapped_column()
     new_cap: Mapped[int | None] = mapped_column()
 
@@ -210,6 +215,9 @@ class FeatureAbilityScoreEffect(Base):
         CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_ability_score_effect_parent"),
         # Bound = MAX_ABILITY_AMOUNT of the effects schema.
         CheckConstraint("amount BETWEEN -30 AND 30", name="ck_feature_ability_score_effect_amount"),
+        CheckConstraint(
+            "feature_id IS NULL OR ability IS NOT NULL", name="ck_feature_ability_score_fixed_requires_ability"
+        ),
     )
 
     feature: Mapped[Feature | None] = relationship(back_populates="ability_effects")
@@ -266,7 +274,11 @@ class FeatureSkillProficiencyEffect(Base):
 
 
 class FeatureSavingThrowEffect(Base):
-    """Grants proficiency in a saving throw for the given ability."""
+    """
+    Grants proficiency in a saving throw for the given ability. ``ability``
+    NULL means "any saving throw" (open, choice options only), named for the
+    pick as ``CharacterFeatureChoice.picked_ability``.
+    """
 
     __tablename__ = "feature_saving_throw_effects"
 
@@ -276,9 +288,14 @@ class FeatureSavingThrowEffect(Base):
         ForeignKey("feature_choice_options.id", ondelete="CASCADE"), index=True
     )
 
-    ability: Mapped[AbilityScore] = mapped_column(AbilityScoreType)
+    ability: Mapped[AbilityScore | None] = mapped_column(AbilityScoreType)
 
-    __table_args__ = (CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_saving_throw_effect_parent"),)
+    __table_args__ = (
+        CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_saving_throw_effect_parent"),
+        CheckConstraint(
+            "feature_id IS NULL OR ability IS NOT NULL", name="ck_feature_saving_throw_fixed_requires_ability"
+        ),
+    )
 
     feature: Mapped[Feature | None] = relationship(back_populates="saving_throw_effects")
     choice_option: Mapped[FeatureChoiceOption | None] = relationship(back_populates="saving_throw_effects")

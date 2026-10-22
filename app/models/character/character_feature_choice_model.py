@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import ForeignKey, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants import AbilityScore
+from app.models.enums import AbilityScoreType
 from app.settings.base import Base
 
 if TYPE_CHECKING:
@@ -20,14 +22,15 @@ class CharacterFeatureChoice(Base):
 
     ``picked_skill_id`` is the skill the player named for an option with an
     open ("any skill") skill effect, ``picked_spell_id`` the spell named for
-    an option with an open ("any spell") spell effect; both NULL for every
-    other option (an option is never open in both — a group carries one
-    effect type). Such an option may be picked several times in one group
-    with different skills/spells ("any two skills" = one open option,
-    ``pick_count=2``).
+    an option with an open ("any spell") spell effect, ``picked_ability`` the
+    ability named for an open ("any ability" / "any saving throw") effect;
+    all NULL for every other option (an option is open in one way at most —
+    a group carries one effect type). Such an option may be picked several
+    times in one group with different skills/spells/abilities ("any two
+    skills" = one open option, ``pick_count=2``).
 
-    Three partial unique indexes prevent double-picking: the same option
-    twice (nothing named), or the same option with the same skill / spell.
+    Four partial unique indexes prevent double-picking: the same option
+    twice (nothing named), or the same option with the same skill / spell / ability.
     Whether the group is fully resolved (the chosen count == ``pick_count``)
     is validated by the grant service.
     """
@@ -47,6 +50,7 @@ class CharacterFeatureChoice(Base):
     )
     picked_skill_id: Mapped[int | None] = mapped_column(ForeignKey("skills.id", ondelete="RESTRICT"), index=True)
     picked_spell_id: Mapped[int | None] = mapped_column(ForeignKey("spells.id", ondelete="RESTRICT"), index=True)
+    picked_ability: Mapped[AbilityScore | None] = mapped_column(AbilityScoreType)
 
     __table_args__ = (
         Index(
@@ -55,7 +59,16 @@ class CharacterFeatureChoice(Base):
             "choice_group_id",
             "choice_option_id",
             unique=True,
-            postgresql_where=text("picked_skill_id IS NULL AND picked_spell_id IS NULL"),
+            postgresql_where=text("picked_skill_id IS NULL AND picked_spell_id IS NULL AND picked_ability IS NULL"),
+        ),
+        Index(
+            "uq_character_feature_choice_option_ability",
+            "character_feature_id",
+            "choice_group_id",
+            "choice_option_id",
+            "picked_ability",
+            unique=True,
+            postgresql_where=text("picked_ability IS NOT NULL"),
         ),
         Index(
             "uq_character_feature_choice_option_skill",
@@ -85,5 +98,5 @@ class CharacterFeatureChoice(Base):
         return (
             f"<CharacterFeatureChoice(character_feature_id={self.character_feature_id}, "
             f"group_id={self.choice_group_id}, option_id={self.choice_option_id}, "
-            f"skill_id={self.picked_skill_id}, spell_id={self.picked_spell_id})>"
+            f"skill_id={self.picked_skill_id}, spell_id={self.picked_spell_id}, ability={self.picked_ability})>"
         )

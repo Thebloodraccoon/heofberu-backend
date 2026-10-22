@@ -1,12 +1,14 @@
 """Repository for a character's effective ability scores and the source rows they are computed from."""
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants import AbilityScore
 from app.core.base.repository import SessionRepository
 from app.models import CharacterAbilityScore, Class, Race, Subrace
 from app.models.character.character_asi_choice_model import CharacterASIChoice, CharacterASIChoiceIncrease
@@ -20,6 +22,16 @@ from app.models.features.feature_engine_models import (
 from app.models.races.race_association_models import RaceAbilityBonus
 from app.models.races.subrace_association_models import SubraceAbilityBonus
 from app.settings._common import utcnow
+
+
+@dataclass(frozen=True)
+class PickedAbilityEffect:
+    """An open option ability effect with the ability its pick named — read like a ``FeatureAbilityScoreEffect``."""
+
+    ability: AbilityScore
+    amount: int
+    new_cap: int | None
+    choice_option: FeatureChoiceOption
 
 
 class CharacterStatsRepository(SessionRepository):
@@ -109,7 +121,9 @@ class CharacterStatsRepository(SessionRepository):
         Ability-score effects of every feature granted to the characters
         (e.g. Primal Champion's +4 STR/CON), grouped by character id: the
         fixed effect rows plus the option rows of the picks stored in
-        ``character_feature_choices``. Two queries total.
+        ``character_feature_choices``. An open ("any ability") option row comes
+        back as a :class:`PickedAbilityEffect` carrying the ability named for
+        the pick (the ORM row itself is never touched). Two queries total.
         """
 
         grouped: dict[int, list] = {character_id: [] for character_id in character_ids}
@@ -129,7 +143,7 @@ class CharacterStatsRepository(SessionRepository):
             grouped[character_id].append(effect)
 
         option_result = await self.db.execute(
-            select(FeatureAbilityScoreEffect, CharacterFeature.character_id)
+            select(FeatureAbilityScoreEffect, CharacterFeature.character_id, CharacterFeatureChoice.picked_ability)
             .join(FeatureChoiceOption, FeatureChoiceOption.id == FeatureAbilityScoreEffect.choice_option_id)
             .join(CharacterFeatureChoice, CharacterFeatureChoice.choice_option_id == FeatureChoiceOption.id)
             .join(CharacterFeature, CharacterFeature.id == CharacterFeatureChoice.character_feature_id)
@@ -143,8 +157,13 @@ class CharacterStatsRepository(SessionRepository):
                 .selectinload(FeatureChoiceGroup.feature)
             )
         )
-        for effect, character_id in option_result.unique().all():
-            grouped[character_id].append(effect)
+        for effect, character_id, picked_ability in option_result.unique().all():
+            if effect.ability is not None:
+                grouped[character_id].append(effect)
+            elif picked_ability is not None:
+                grouped[character_id].append(
+                    PickedAbilityEffect(picked_ability, effect.amount, effect.new_cap, effect.choice_option)
+                )
 
         return grouped
 

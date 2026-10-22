@@ -177,8 +177,8 @@ class TestGrantEffectsMapFromLoadedTrees:
             id=7,
             feature=feature,
             choices=[
-                SimpleNamespace(choice_option_id=11, picked_skill_id=None, picked_spell_id=None),
-                SimpleNamespace(choice_option_id=13, picked_skill_id=1, picked_spell_id=None),
+                SimpleNamespace(choice_option_id=11, picked_skill_id=None, picked_spell_id=None, picked_ability=None),
+                SimpleNamespace(choice_option_id=13, picked_skill_id=1, picked_spell_id=None, picked_ability=None),
             ],
         )
 

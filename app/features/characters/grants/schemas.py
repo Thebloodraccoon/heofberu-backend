@@ -27,15 +27,17 @@ class ChoiceAnswerItem(BaseModel):
 
     ``skill_id`` names the skill for an option with an open ("any skill")
     skill effect, ``spell_id`` the spell for an option with an open ("any
-    spell") spell effect — required there, rejected on any other option
-    (422). The same open option may be picked several times in one group,
-    each time with a different skill/spell.
+    spell") spell effect, ``ability`` the ability for an option with an open
+    ("any ability" / "any saving throw") effect — required there, rejected on
+    any other option (422). The same open option may be picked several times
+    in one group, each time with a different skill/spell/ability.
     """
 
     choice_group_id: EntityId
     choice_option_id: EntityId
     skill_id: EntityId | None = None
     spell_id: EntityId | None = None
+    ability: AbilityScore | None = None
 
 
 class GrantChoicesUpdate(BaseModel):
@@ -81,6 +83,9 @@ class PendingChoiceOption(BaseModel):
     An open spell option lists in ``allowed_spells`` (by level, then name)
     every spell that passes its filter and that the character doesn't have
     yet; ``available`` is ``False`` when there is none.
+
+    ``needs_ability``: an open ability-score / saving-throw option — answer it with ``ability``
+    (any ability the option doesn't already name).
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -88,6 +93,7 @@ class PendingChoiceOption(BaseModel):
     id: int
     needs_skill: bool = False
     needs_spell: bool = False
+    needs_ability: bool = False
     allowed_skill_ids: list[int] | None = None
     allowed_spells: list[SpellPickCandidate] | None = None
     available: bool = True
@@ -229,13 +235,14 @@ GrantEffectGroup = Annotated[
 class ChosenOptionResponse(BaseModel):
     """
     One of the player's stored picks for a grant's choice group, with the option's non-empty effect groups
-    and, for an open ("any skill/spell") option, the skill/spell named for it.
+    and, for an open ("any skill/spell/ability") option, the skill/spell/ability named for it.
     """
 
     choice_group_id: int
     choice_option_id: int
     picked_skill_id: int | None = None
     picked_spell_id: int | None = None
+    picked_ability: AbilityScore | None = None
     effects: list[EffectGroup] = Field(default_factory=list)
 
 

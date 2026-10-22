@@ -107,7 +107,7 @@ class TestStaticEffectsSummary:
         text = render_effects_summary(_feature(ability_effects=[_ability(AbilityScore.STR, 4, new_cap=30)]))
         assert text.startswith("<p>Вы получаете:</p><ul>")
         assert text.endswith("</ul>")
-        assert "Сила +4 (потолок 30)" in text
+        assert "Сила +4 (макс. 30)" in text
 
     def test_ability_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(ability_effects=[_ability(AbilityScore.STR, 1)]))
@@ -117,7 +117,7 @@ class TestStaticEffectsSummary:
     def test_closed_skill_effect_uses_catalog_name(self):
         skill = SimpleNamespace(name="Скрытность")
         text = render_effects_summary(_feature(skill_effects=[_skill(7, skill=skill)]))
-        assert "Владения навыками: «Скрытность»" in text
+        assert "Навыки: «Скрытность»" in text
         assert "экспертизой" not in text
 
     def test_skill_effect_with_expertise(self):
@@ -132,13 +132,13 @@ class TestStaticEffectsSummary:
         expertise = render_effects_summary(_feature(skill_effects=[_skill(7, SkillEffectMode.EXPERTISE, skill=skill)]))
         upgrade = render_effects_summary(_feature(skill_effects=[_skill(7, SkillEffectMode.UPGRADE, skill=skill)]))
 
-        assert "только экспертиза" in expertise
-        assert "если уже есть владение" in upgrade
+        assert "экспертиза в «Скрытность» (нужно владение)" in expertise
+        assert "«Скрытность» (или экспертиза, если владение уже есть)" in upgrade
 
     def test_open_skill_effect_renders_any_skill_text(self):
         """The branch integration tests never reach: skill_id is None in a FIXED effect."""
         text = render_effects_summary(_feature(skill_effects=[_skill(None)]))
-        assert "любым навыком на выбор" in text
+        assert "Навыки: любой</li>" in text
 
     def test_saving_throw_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(saving_throw_effects=[_save(AbilityScore.WIS)]))
@@ -146,12 +146,12 @@ class TestStaticEffectsSummary:
 
     def test_armor_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(armor_effects=[_armor(ArmorProficiency.HEAVY)]))
-        assert "Владения доспехами: тяжёлые доспехи" in text
+        assert "Доспехи: тяжёлые доспехи" in text
 
     def test_armor_item_effect_uses_catalog_name(self):
         item = SimpleNamespace(name="Кольчуга")
         text = render_effects_summary(_feature(armor_effects=[_armor(item_id=40, item=item)]))
-        assert "Владения доспехами: «Кольчуга»" in text
+        assert "Доспехи: «Кольчуга»" in text
 
     def test_armor_item_effect_falls_back_to_id(self):
         text = render_effects_summary(_feature(armor_effects=[_armor(item_id=40)]))
@@ -159,7 +159,7 @@ class TestStaticEffectsSummary:
 
     def test_weapon_category_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(weapon_effects=[_weapon(weapon_category=WeaponProficiency.MARTIAL)]))
-        assert "Владения оружием: воинское оружие" in text
+        assert "Оружие: воинское оружие" in text
 
     def test_weapon_item_effect_uses_catalog_name(self):
         item = SimpleNamespace(name="Длинный меч")
@@ -174,7 +174,7 @@ class TestStaticEffectsSummary:
 
     def test_open_spell_effect_with_no_filters(self):
         text = render_effects_summary(_feature(spell_effects=[_spell()]))
-        assert "Заклинания: любое на выбор</li>" in text
+        assert "Заклинания: любое</li>" in text
 
     def test_open_spell_effect_lists_its_filter(self):
         effect = _spell(
@@ -182,7 +182,7 @@ class TestStaticEffectsSummary:
         )
         text = render_effects_summary(_feature(spell_effects=[effect]))
         assert (
-            "любое на выбор (заговор или доступного вам уровня; школа: Ограждение, Воплощение; ритуал; "
+            "любое (заговор или уровня, на который есть ячейки; школа: Ограждение, Воплощение; ритуал; "
             "из списка класса)"
         ) in text
 
@@ -228,19 +228,18 @@ class TestStaticEffectsSummary:
                 armor_effects=[_armor(ArmorProficiency.LIGHT)],
             )
         )
-        assert text.index("Изменение характеристик") < text.index("Владения доспехами") < text.index("Заклинания")
+        assert text.index("Характеристики") < text.index("Доспехи") < text.index("Заклинания")
 
 
 @pytest.mark.unit
 class TestChoiceGroupsSummary:
-    def test_single_group_single_option_no_pick_prefix(self):
+    def test_single_group_single_option_shows_the_pick_count(self):
         feature = _feature(choice_groups=[_group(pick_count=1, options=[_option(skill_effects=[_skill(None)])])])
         text = render_effects_summary(feature)
         assert text.startswith("<p>У вас есть выбор:</p><ul>")
-        assert "Выберите" not in text
-        assert "Владения навыками: любым навыком на выбор" in text
+        assert "<li>Навыки (выберите 1): любой</li>" in text
 
-    def test_multiple_options_joined_by_or(self):
+    def test_multiple_options_joined_by_slash(self):
         feature = _feature(
             choice_groups=[
                 _group(
@@ -254,7 +253,7 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        assert "<li>Изменение характеристик: Сила +1 или Ловкость +1</li>" in text
+        assert "<li>Характеристики (выберите 1): Сила +1 / Ловкость +1</li>" in text
 
     def test_ability_group_with_pick_count_above_one_shows_count(self):
         feature = _feature(
@@ -269,9 +268,9 @@ class TestChoiceGroupsSummary:
                 )
             ]
         )
-        assert "<li>Изменение характеристик (2): Сила +1 или Ловкость +1</li>" in render_effects_summary(feature)
+        assert "<li>Характеристики (выберите 2): Сила +1 / Ловкость +1</li>" in render_effects_summary(feature)
 
-    def test_pick_count_above_one_is_shown_in_parentheses_before_the_colon(self):
+    def test_pick_count_is_shown_in_parentheses_before_the_colon(self):
         feature = _feature(
             choice_groups=[
                 _group(
@@ -284,12 +283,12 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        assert "<li>Владения навыками (2): «Атлетика» или «Скрытность»</li>" in text
+        assert "<li>Навыки (выберите 2): «Атлетика» / «Скрытность»</li>" in text
 
     def test_option_with_no_effects_renders_placeholder(self):
         feature = _feature(choice_groups=[_group(pick_count=1, options=[_option()])])
         text = render_effects_summary(feature)
-        assert "<li>Владения навыками: —</li>" in text
+        assert "<li>Навыки (выберите 1): —</li>" in text
 
     def test_groups_ordered_by_sort_order(self):
         feature = _feature(
@@ -326,7 +325,7 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        assert "<li>Владения навыками: «Атлетика», «Акробатика»</li>" in text
+        assert "<li>Навыки (выберите 1): «Атлетика», «Акробатика»</li>" in text
 
     @pytest.mark.parametrize(
         ("choice_type", "options", "expected"),
@@ -337,7 +336,7 @@ class TestChoiceGroupsSummary:
                     _option(armor_effects=[_armor(ArmorProficiency.LIGHT)]),
                     _option(armor_effects=[_armor(ArmorProficiency.HEAVY)]),
                 ],
-                "<li>Владения доспехами: лёгкие доспехи или тяжёлые доспехи</li>",
+                "<li>Доспехи (выберите 1): лёгкие доспехи / тяжёлые доспехи</li>",
             ),
             (
                 ChoiceType.WEAPON,
@@ -345,7 +344,7 @@ class TestChoiceGroupsSummary:
                     _option(weapon_effects=[_weapon(WeaponProficiency.SIMPLE)]),
                     _option(weapon_effects=[_weapon(WeaponProficiency.MARTIAL), _weapon(WeaponProficiency.SIMPLE)]),
                 ],
-                "<li>Владения оружием: простое оружие или воинское оружие, простое оружие</li>",
+                "<li>Оружие (выберите 1): простое оружие / простое и воинское оружие</li>",
             ),
             (
                 ChoiceType.SAVING_THROW,
@@ -353,7 +352,7 @@ class TestChoiceGroupsSummary:
                     _option(saving_throw_effects=[_save(AbilityScore.DEX)]),
                     _option(saving_throw_effects=[_save(AbilityScore.WIS), _save(AbilityScore.INT)]),
                 ],
-                "<li>Спасброски: Ловкость или Мудрость, Интеллект</li>",
+                "<li>Спасброски (выберите 1): Ловкость / Интеллект, Мудрость</li>",
             ),
         ],
     )
@@ -374,7 +373,7 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        labels = ["Изменение характеристик", "Владения навыками", "Владения доспехами", "Заклинания"]
+        labels = ["Характеристики", "Навыки", "Доспехи", "Заклинания"]
         assert [text.index(label) for label in labels] == sorted(text.index(label) for label in labels)
 
     def test_static_and_choices_separated_by_blank_line(self):
@@ -408,7 +407,7 @@ class TestSignedAmounts:
 
     def test_zero_amount_with_cap_raise(self):
         text = render_effects_summary(_feature(ability_effects=[_ability(AbilityScore.STR, 0, new_cap=24)]))
-        assert "Сила +0 (потолок 24)" in text
+        assert "Сила +0 (макс. 24)" in text
 
 
 @pytest.mark.unit
@@ -430,7 +429,7 @@ class TestSavingThrowNamesInOptions:
                 _group(choice_type=ChoiceType.SAVING_THROW, options=[_option(saving_throw_effects=[_save(ability)])])
             ]
         )
-        assert f"<li>Спасброски: {expected}</li>" in render_effects_summary(feature)
+        assert f"<li>Спасброски (выберите 1): {expected}</li>" in render_effects_summary(feature)
 
 
 @pytest.mark.unit
@@ -475,3 +474,51 @@ class TestHtmlEscaping:
     def test_plain_cyrillic_names_are_untouched(self):
         skill = SimpleNamespace(name="Скрытность")
         assert "«Скрытность»" in render_effects_summary(_feature(skill_effects=[_skill(1, skill=skill)]))
+
+
+@pytest.mark.unit
+class TestReadability:
+    def test_abilities_follow_strength_to_charisma_order(self):
+        effects = [_ability(AbilityScore.CHA, 1), _ability(AbilityScore.STR, 2), _ability(AbilityScore.WIS, 1)]
+        text = render_effects_summary(_feature(ability_effects=effects))
+        assert "Характеристики: Сила +2, Мудрость +1, Харизма +1</li>" in text
+
+    def test_same_bonus_on_every_ability_collapses(self):
+        text = render_effects_summary(_feature(ability_effects=[_ability(ability, 1) for ability in AbilityScore]))
+        assert "Характеристики: +1 ко всем</li>" in text
+
+    def test_open_ability_and_saving_throw(self):
+        feature = _feature(
+            choice_groups=[
+                _group(
+                    pick_count=2,
+                    choice_type=ChoiceType.ABILITY_SCORE,
+                    options=[
+                        _option(ability_effects=[_ability(None, 2)]),
+                        _option(ability_effects=[_ability(None, 5, new_cap=24), _ability(AbilityScore.WIS, 1)]),
+                    ],
+                ),
+                _group(choice_type=ChoiceType.SAVING_THROW, options=[_option(saving_throw_effects=[_save(None)])]),
+            ]
+        )
+        text = render_effects_summary(feature)
+        assert "<li>Характеристики (выберите 2): +2 к любой / Мудрость +1, +5 к любой (макс. 24)</li>" in text
+        assert "<li>Спасброски (выберите 1): любой</li>" in text
+
+    def test_open_expertise_skill(self):
+        feature = _feature(skill_effects=[_skill(None, SkillEffectMode.EXPERTISE)])
+        assert "Навыки: экспертиза в любом (нужно владение)</li>" in render_effects_summary(feature)
+
+    def test_armor_categories_merge_and_items_follow(self):
+        effects = [
+            _armor(item_id=4, item=SimpleNamespace(name="Кольчуга")),
+            _armor(ArmorProficiency.SHIELD),
+            _armor(ArmorProficiency.MEDIUM),
+            _armor(ArmorProficiency.LIGHT),
+        ]
+        text = render_effects_summary(_feature(armor_effects=effects))
+        assert "Доспехи: лёгкие и средние доспехи, щиты, «Кольчуга»</li>" in text
+
+    def test_castable_spell_with_a_level_range(self):
+        effect = _spell(castable_only=True, max_level=SpellLevel.LEVEL_1)
+        assert describe_spell_filter(effect) == ["до 1-го уровня, если есть ячейки"]

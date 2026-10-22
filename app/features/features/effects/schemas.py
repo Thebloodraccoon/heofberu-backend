@@ -44,6 +44,16 @@ DUPLICATE_KEY_BY_EFFECT_FIELD: dict[str, Callable[[Any], Any]] = {
 }
 _ALL_OPTION_EFFECT_FIELDS = tuple(DUPLICATE_KEY_BY_EFFECT_FIELD)
 
+# The effect fields whose target may be left open in a choice option ("any skill/spell/ability/saving
+# throw"), with the target attribute that is ``None`` on an open effect. At most one open effect per
+# option and field (two would repeat the same ``None`` entry).
+OPEN_TARGETS = {
+    "ability_effects": "ability",
+    "skill_effects": "skill_id",
+    "saving_throw_effects": "ability",
+    "spell_effects": "spell_id",
+}
+
 
 def _reject_duplicates(values: list, label: str) -> None:
     """Raise ``ValueError`` naming the first repeated value in ``values``."""
@@ -74,12 +84,15 @@ class AbilityEffectItem(BaseModel):
     ``new_cap`` raise. ``id`` is the DB row id — absent on a write payload,
     present on any response (e.g. a feat's ASI options each need their own
     id so a grant can point ``ability_score_increase_id`` at the one picked).
+
+    ``ability=None`` is an open ("any ability") effect, valid in a choice
+    option only — the player names the ability when picking (see ``SkillEffectItem``).
     """
 
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: EntityId | None = None
-    ability: AbilityScore
+    ability: AbilityScore | None = None
     amount: int = Field(ge=-MAX_ABILITY_AMOUNT, le=MAX_ABILITY_AMOUNT)
     new_cap: int | None = None
 
@@ -114,12 +127,15 @@ class SkillEffectItem(BaseModel):
 
 
 class SavingThrowEffectItem(BaseModel):
-    """A fixed/option saving-throw-proficiency effect. ``id``: see ``SkillEffectItem``."""
+    """
+    A fixed/option saving-throw-proficiency effect; ``ability=None`` is an open ("any saving throw")
+    one, choice options only. ``id``: see ``SkillEffectItem``.
+    """
 
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: EntityId | None = None
-    ability: AbilityScore
+    ability: AbilityScore | None = None
 
 
 class ArmorEffectItem(BaseModel):
@@ -483,15 +499,15 @@ class FeatureEffectsUpdate(_EffectGroupsPayload):
     """
     Payload for adding fixed effects, as the same ``static_groups`` list
     ``GET /features/{id}/effects`` returns (also the body of an option's
-    ``POST .../effects``). Every item becomes a new row. A fixed skill/spell
-    effect needs a concrete ``skill_id``/``spell_id``; a type may appear once,
+    ``POST .../effects``). Every item becomes a new row. A fixed skill/spell/ability/saving-throw
+    effect needs a concrete target (``OPEN_TARGETS``); a type may appear once,
     and a group may not repeat an id or an effect.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     _ABSENT: ClassVar[list | None] = None
-    # Whether ``skill_id=None`` / ``spell_id=None`` ("any skill/spell") is accepted — only inside a choice option.
+    # Whether an open effect (its ``OPEN_TARGETS`` attribute unset) is accepted — only inside a choice option.
     _OPEN_ALLOWED: ClassVar[bool] = False
 
     static_groups: list[EffectGroup] = Field([], max_length=len(_ALL_OPTION_EFFECT_FIELDS))
@@ -503,15 +519,14 @@ class FeatureEffectsUpdate(_EffectGroupsPayload):
 
     @model_validator(mode="after")
     def validate_effects(self):
-        """Reject duplicate ids/effects and fixed skill/spell effects with no concrete target."""
+        """Reject duplicate ids/effects and fixed effects with no concrete target."""
 
         _validate_effect_lists(self, _ALL_OPTION_EFFECT_FIELDS)
 
-        if not self._OPEN_ALLOWED and any(effect.skill_id is None for effect in self.skill_effects or []):
-            raise ValueError("A fixed skill_effects entry requires skill_id.")
-
-        if not self._OPEN_ALLOWED and any(effect.spell_id is None for effect in self.spell_effects or []):
-            raise ValueError("A fixed spell_effects entry requires spell_id.")
+        if not self._OPEN_ALLOWED:
+            for field_name, target in OPEN_TARGETS.items():
+                if any(getattr(effect, target) is None for effect in getattr(self, field_name) or []):
+                    raise ValueError(f"A fixed {field_name} entry requires {target}.")
 
         return self
 
@@ -519,8 +534,8 @@ class FeatureEffectsUpdate(_EffectGroupsPayload):
 class OptionEffectsUpdate(FeatureEffectsUpdate):
     """
     Body of an option's ``POST .../options/{option_id}/effects``: the same
-    ``static_groups`` list, except a skill/spell effect may be open
-    (``skill_id``/``spell_id`` unset — "any skill/spell").
+    ``static_groups`` list, except a skill/spell/ability/saving-throw effect may be open
+    (its ``OPEN_TARGETS`` attribute unset — "any skill/spell/ability/saving throw").
     """
 
     _OPEN_ALLOWED: ClassVar[bool] = True

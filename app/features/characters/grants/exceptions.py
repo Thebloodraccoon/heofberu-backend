@@ -184,3 +184,33 @@ class SpellPickNotAllowedError(AppError):
     def __init__(self, option_id: int, spell_id: int, reason: str):
         """Initialize with the offending option/spell and why the pick is refused."""
         super().__init__(f"Option {option_id} can't be taken with spell {spell_id}: {reason}.")
+
+
+class AbilityPickRequiredError(AppError):
+    """Raised (422) when an "any ability/saving throw" (open) option is picked without naming the ability."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int):
+        """Initialize with the offending option id."""
+        super().__init__(f"Option {option_id} has an open ('any ability') effect — name the ability in 'ability'.")
+
+
+class UnexpectedAbilityPickError(AppError):
+    """Raised (422) when an answer names an ``ability`` for an option that has no open ability/saving-throw effect."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int):
+        """Initialize with the offending option id."""
+        super().__init__(f"Option {option_id} has no open ('any ability') effect — 'ability' must not be set.")
+
+
+class AbilityPickNotAllowedError(AppError):
+    """Raised (422) when the ability named for an open option is one the same option already names."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int, ability: str):
+        """Initialize with the offending option/ability."""
+        super().__init__(f"Option {option_id} already names {ability} — pick another ability for its open effect.")

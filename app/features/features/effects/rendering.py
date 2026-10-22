@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from app.models.features.feature_model import Feature
 
 # Nominative names: the grouped static-effects <ul> supplies the case via its
-# <li> header ("Изменение характеристик: Сила +1").
+# <li> header ("Характеристики: Сила +1").
 _ABILITY_NAMES_NOM_RU = {
     AbilityScore.STR: "Сила",
     AbilityScore.DEX: "Ловкость",
@@ -42,17 +42,19 @@ _ABILITY_NAMES_NOM_RU = {
     AbilityScore.CHA: "Харизма",
 }
 
-_ARMOR_NAMES_NOM_RU = {
-    ArmorProficiency.LIGHT: "лёгкие доспехи",
-    ArmorProficiency.MEDIUM: "средние доспехи",
-    ArmorProficiency.HEAVY: "тяжёлые доспехи",
-    ArmorProficiency.SHIELD: "щиты",
+# Category adjectives, merged under one noun: "лёгкие и средние доспехи", "простое и воинское оружие".
+_ARMOR_ADJECTIVES_RU = {
+    ArmorProficiency.LIGHT: "лёгкие",
+    ArmorProficiency.MEDIUM: "средние",
+    ArmorProficiency.HEAVY: "тяжёлые",
 }
 
-_WEAPON_NAMES_NOM_RU = {
-    WeaponProficiency.SIMPLE: "простое оружие",
-    WeaponProficiency.MARTIAL: "воинское оружие",
+_WEAPON_ADJECTIVES_RU = {
+    WeaponProficiency.SIMPLE: "простое",
+    WeaponProficiency.MARTIAL: "воинское",
 }
+
+_ABILITY_ORDER = tuple(AbilityScore)
 
 _SPELL_SCHOOL_NAMES_RU = {
     SpellSchool.ABJURATION: "Ограждение",
@@ -86,66 +88,102 @@ def _spell_name(effect) -> str:
     return escape(effect.spell.name if effect.spell is not None else f"заклинание #{effect.spell_id}")
 
 
+def _join_and(words: list[str]) -> str:
+    """``"a"`` / ``"a и b"`` / ``"a, b и c"``."""
+
+    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} и {words[-1]}"
+
+
+def _ability_sort_key(effect) -> int:
+    """Strength-to-Charisma order; an open ("any ability") effect goes last."""
+
+    return _ABILITY_ORDER.index(effect.ability) if effect.ability is not None else len(_ABILITY_ORDER)
+
+
+def _ability_name(ability) -> str:
+    """Nominative ability name (enum value fallback)."""
+
+    return _ABILITY_NAMES_NOM_RU.get(ability, getattr(ability, "value", str(ability)))
+
+
 def _render_ability_short(effects) -> list[str]:
-    """Nominative signed ``"Сила +1"`` / ``"Сила -1"`` items for the grouped "Изменение характеристик" <li>."""
+    """
+    Signed ``"Сила +1"`` items in Strength-to-Charisma order, an open one as ``"+2 к любой"``; ``new_cap`` as
+    ``"(макс. 24)"``. The same amount on all six abilities (no caps) collapses to ``"+1 ко всем"``.
+    """
+
+    effects = sorted(effects, key=_ability_sort_key)
+    if (
+        len(effects) == len(_ABILITY_ORDER)
+        and {effect.ability for effect in effects} == set(_ABILITY_ORDER)
+        and len({effect.amount for effect in effects}) == 1
+        and all(effect.new_cap is None for effect in effects)
+    ):
+        return [f"{effects[0].amount:+d} ко всем"]
 
     parts: list[str] = []
     for effect in effects:
-        text = f"{_ABILITY_NAMES_NOM_RU.get(effect.ability, effect.ability.value)} {effect.amount:+d}"
+        if effect.ability is None:
+            text = f"{effect.amount:+d} к любой"
+        else:
+            text = f"{_ability_name(effect.ability)} {effect.amount:+d}"
         if effect.new_cap is not None:
-            text += f" (потолок {effect.new_cap})"
+            text += f" (макс. {effect.new_cap})"
         parts.append(text)
     return parts
 
 
 def _render_saving_throw_short(effects) -> list[str]:
-    """Nominative ability names for the grouped "Спасброски" <li>."""
+    """Ability names in Strength-to-Charisma order; an open one as ``"любой"``."""
 
-    return [_ABILITY_NAMES_NOM_RU.get(effect.ability, effect.ability.value) for effect in effects]
+    return [
+        "любой" if effect.ability is None else _ability_name(effect.ability)
+        for effect in sorted(effects, key=_ability_sort_key)
+    ]
 
 
-# What each skill-effect mode adds after the skill name in the "Владения навыками" <li>.
-_SKILL_MODE_SUFFIX_RU = {
-    SkillEffectMode.PROFICIENCY: "",
-    SkillEffectMode.PROFICIENCY_AND_EXPERTISE: " с экспертизой",
-    SkillEffectMode.EXPERTISE: " — только экспертиза (нужно владение)",
-    SkillEffectMode.UPGRADE: " (экспертиза, если уже есть владение)",
-}
+def _render_skill(effect) -> str:
+    """One skill effect as what it gives: ``«X»``, ``«X» с экспертизой``, ``экспертиза в «X»``, ..."""
+
+    open_effect = effect.skill_id is None
+    name = "любой" if open_effect else f"«{_skill_name(effect)}»"
+    if effect.mode == SkillEffectMode.PROFICIENCY_AND_EXPERTISE:
+        return f"{name} с экспертизой"
+    if effect.mode == SkillEffectMode.EXPERTISE:
+        return f"экспертиза в {'любом' if open_effect else name} (нужно владение)"
+    if effect.mode == SkillEffectMode.UPGRADE:
+        return f"{name} (или экспертиза, если владение уже есть)"
+    return name
 
 
 def _render_skill_short(effects) -> list[str]:
-    """Bare skill names for the grouped "Владения навыками" <li>, each with its mode's suffix."""
+    """Skill effects for the "Навыки" item, each as what its mode gives."""
 
-    parts: list[str] = []
-    for effect in effects:
-        suffix = _SKILL_MODE_SUFFIX_RU.get(effect.mode, "")
-        name = "любым навыком на выбор" if effect.skill_id is None else f"«{_skill_name(effect)}»"
-        parts.append(f"{name}{suffix}")
+    return [_render_skill(effect) for effect in effects]
+
+
+def _render_categories(effects, attr: str, adjectives: dict, noun: str) -> list[str]:
+    """Category effects merged under one noun (``"простое и воинское оружие"``), shields, then concrete items."""
+
+    categories = {getattr(effect, attr) for effect in effects if effect.item_id is None}
+    words = [adjective for category, adjective in adjectives.items() if category in categories]
+    parts = [f"{_join_and(words)} {noun}"] if words else []
+    if ArmorProficiency.SHIELD in categories:
+        parts.append("щиты")
+    parts.extend(f"«{_item_name(effect)}»" for effect in effects if effect.item_id is not None)
     return parts
 
 
 def _render_armor_short(effects) -> list[str]:
-    """Nominative armor-type / concrete armor names for the grouped "Владения доспехами" <li>."""
+    """Armor categories (``"лёгкие и средние доспехи"``, ``"щиты"``), then concrete armor names."""
 
-    parts: list[str] = []
-    for effect in effects:
-        if effect.item_id is not None:
-            parts.append(f"«{_item_name(effect)}»")
-        elif effect.armor_type is not None:
-            parts.append(_ARMOR_NAMES_NOM_RU.get(effect.armor_type, effect.armor_type.value))
-    return parts
+    return _render_categories(effects, "armor_type", _ARMOR_ADJECTIVES_RU, "доспехи")
 
 
 def _render_weapon_short(effects) -> list[str]:
-    """Nominative weapon-category/item names for the grouped "Владения оружием" <li>."""
+    """Weapon categories (``"простое и воинское оружие"``), then concrete weapon names."""
 
-    parts: list[str] = []
-    for effect in effects:
-        if effect.item_id is not None:
-            parts.append(f"«{_item_name(effect)}»")
-        elif effect.weapon_category is not None:
-            parts.append(_WEAPON_NAMES_NOM_RU.get(effect.weapon_category, effect.weapon_category.value))
-    return parts
+    return _render_categories(effects, "weapon_category", _WEAPON_ADJECTIVES_RU, "оружие")
 
 
 def _spell_level_range(min_level, max_level) -> str | None:
@@ -176,11 +214,12 @@ def describe_spell_filter(effect) -> list[str]:
     conditions: list[str] = []
 
     level_range = _spell_level_range(effect.min_level, effect.max_level)
-    if effect.castable_only:
+    if effect.castable_only and level_range not in (None, "заговор"):
+        conditions.append(f"{level_range}, если есть ячейки")
+    elif effect.castable_only:
         cantrips_allowed = effect.min_level in (None, SpellLevel.CANTRIP)
-        conditions.append("заговор или доступного вам уровня" if cantrips_allowed else "доступного вам уровня")
-        if level_range is not None and level_range != "заговор":
-            conditions.append(level_range)
+        castable = "уровня, на который есть ячейки"
+        conditions.append(f"заговор или {castable}" if cantrips_allowed else castable)
     elif level_range is not None:
         conditions.append(level_range)
 
@@ -211,18 +250,18 @@ def _render_spell_short(effects) -> list[str]:
             continue
 
         conditions = [escape(condition) for condition in describe_spell_filter(effect)]
-        parts.append(f"любое на выбор ({'; '.join(conditions)})" if conditions else "любое на выбор")
+        parts.append(f"любое ({'; '.join(conditions)})" if conditions else "любое")
     return parts
 
 
 # Per choice_type: (label of the <li>, effect attribute, short renderer) — shared by the fixed-effects list and
 # the choice groups, which are both rendered in this order.
 _EFFECT_RENDERERS = {
-    ChoiceType.ABILITY_SCORE: ("Изменение характеристик", "ability_effects", _render_ability_short),
+    ChoiceType.ABILITY_SCORE: ("Характеристики", "ability_effects", _render_ability_short),
     ChoiceType.SAVING_THROW: ("Спасброски", "saving_throw_effects", _render_saving_throw_short),
-    ChoiceType.SKILL: ("Владения навыками", "skill_effects", _render_skill_short),
-    ChoiceType.ARMOR: ("Владения доспехами", "armor_effects", _render_armor_short),
-    ChoiceType.WEAPON: ("Владения оружием", "weapon_effects", _render_weapon_short),
+    ChoiceType.SKILL: ("Навыки", "skill_effects", _render_skill_short),
+    ChoiceType.ARMOR: ("Доспехи", "armor_effects", _render_armor_short),
+    ChoiceType.WEAPON: ("Оружие", "weapon_effects", _render_weapon_short),
     ChoiceType.SPELL: ("Заклинания", "spell_effects", _render_spell_short),
 }
 
@@ -243,10 +282,10 @@ def _render_static_effects_html(feature: "Feature") -> str:
 def _render_choice_groups_html(feature: "Feature") -> str:
     """
     Render every choice group as "У вас есть выбор:" followed by a ``<ul>``
-    with one ``<li>`` per group: ``"{Label}: {option} или {option}"``, with the count
-    in parentheses before the colon when ``pick_count > 1``
-    (e.g. ``"Владения доспехами (2): лёгкие доспехи или тяжёлые доспехи"``), the
-    label following the group's ``choice_type`` as in the fixed-effects list. The groups come in that
+    with one ``<li>`` per group: ``"{Label} (выберите N): {option} / {option}"``
+    (e.g. ``"Доспехи (выберите 1): лёгкие доспехи / тяжёлые доспехи"``) — options split by ``" / "``,
+    an option's own effects by ``", "``; the label follows the group's ``choice_type`` as in the
+    fixed-effects list. The groups come in that
     list's order (characteristics, saving throws, skills, armor, weapons, spells), then by ``sort_order``.
     The group's ``label`` field is not used. Returns ``""`` when the feature has no choice groups.
     """
@@ -256,10 +295,8 @@ def _render_choice_groups_html(feature: "Feature") -> str:
     for group in sorted(feature.choice_groups, key=lambda g: (type_order.index(g.choice_type), g.sort_order)):
         label, attr, short = _EFFECT_RENDERERS[group.choice_type]
         options = sorted(group.options, key=lambda o: o.sort_order)
-        body = " или ".join(", ".join(short(getattr(option, attr))) or "—" for option in options)
-
-        count = f" ({group.pick_count})" if group.pick_count > 1 else ""
-        items.append(f"<li>{label}{count}: {body}</li>")
+        body = " / ".join(", ".join(short(getattr(option, attr))) or "—" for option in options)
+        items.append(f"<li>{label} (выберите {group.pick_count}): {body}</li>")
 
     return f"<p>У вас есть выбор:</p><ul>{''.join(items)}</ul>" if items else ""
 

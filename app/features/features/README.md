@@ -71,13 +71,13 @@ A feature's mechanical payload lives in `app/models/features/feature_engine_mode
 - Responses also carry `has_static_effects` / `has_choices`
   (denormalized `Feature` columns, maintained by every effect/choice-group
   write — see `FeatureEffectsRepository.refresh_effect_flags`) and a rendered
-  `effects_summary` HTML string (a `Feature` `@property`; every interpolated catalog name is HTML-escaped; amounts are signed `+1`/`-1`; option saving throws are in the genitive).
+  `effects_summary` HTML string (a `Feature` `@property`; every interpolated catalog name is HTML-escaped; amounts are signed `+1`/`-1`). Format, `effects/rendering.py`: "Вы получаете:" + one `<li>` per type (`Характеристики: Сила +2, Мудрость +1` in STR→CHA order, six equal bonuses → `+1 ко всем`; categories merged `простое и воинское оружие`, then items «…»), then "У вас есть выбор:" with `<li>{Тип} (выберите N): вариант / вариант</li>` (an option's effects joined by `, `).
 - **`FeatureEffectsResponse`** aggregates `choice_groups` + `static_groups` and
   is what `GET /features/{feature_id}/effects` returns (`GET /features/{feature_id}`
   embeds the same shape inline via `FeatureResponse`).
 
 Payload rules (schema-enforced, 422 — the schemas reject unknown keys):
-- `AbilityEffectItem`: `ability` + `amount` (-30..30), optional `new_cap` (**20-30**).
+- `AbilityEffectItem`: `ability` (unset = open, options only) + `amount` (-30..30), optional `new_cap` (**20-30**).
 - `SkillEffectItem`: `skill_id` + `mode` (`SkillEffectMode`: `PROFICIENCY` default,
   `PROFICIENCY_AND_EXPERTISE`, `EXPERTISE` — expertise only, needs the proficiency from another
   source, `UPGRADE` — proficiency, or expertise on top of another source). `SavingThrowEffectItem`:
@@ -88,12 +88,13 @@ Payload rules (schema-enforced, 422 — the schemas reject unknown keys):
   `castable_only` (a cantrip or a level the character has slots of — Magical Secrets),
   `schools`, `ritual_only`. Defaults don't restrict; a concrete spell may not carry a filter,
   `min_level` may not be above `max_level`, unknown `class_ids` are a 422.
-- A **fixed** skill/spell effect needs its `skill_id`/`spell_id`. A skill/spell effect inside a
-  **choice option** may be open (no `skill_id`/`spell_id` — "any skill/spell"; at most one per
-  option): the player names the skill/spell when picking (`CharacterFeatureChoice.picked_skill_id`
-  / `picked_spell_id`) — an open spell is an extra spell on top of the class slots. Option effect
-  writes use `OptionEffectsUpdate` for that. A skill/spell-effect write that turns an option open
-  or concrete clears the characters' stored picks of it (they revert to pending).
+- A **fixed** skill/spell/ability/saving-throw effect needs its `skill_id`/`spell_id`/`ability`. Such
+  an effect inside a **choice option** may be open (target unset — "any skill/spell/ability/saving
+  throw", `OPEN_TARGETS`; at most one per option): the player names it when picking
+  (`CharacterFeatureChoice.picked_skill_id` / `picked_spell_id` / `picked_ability`) — an open spell is an
+  extra spell on top of the class slots. Option effect writes use `OptionEffectsUpdate` for that. An
+  effect write that turns an option open or concrete clears the characters' stored picks of it (they
+  revert to pending). The summary renders an open one as `+2 к любой` / `любой` / `экспертиза в любом` / `любое (фильтр)`.
 - No repeated row `id`, and no repeated effect (same ability / skill / armor type / item /
   category / spell) inside one group's `items` — fixed effects and every option alike.
 - Bounds: ids 1..2^31-1, `pick_count` 1..50, `sort_order` 0..10 000, <= 50 effects per list,

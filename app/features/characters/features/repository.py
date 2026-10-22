@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import FeatureSourceType, GrantSource
 from app.core.base.repository import BaseRepository
-from app.features.characters.grants.effects import GRANT_CHOICES_LOADS
+from app.features.characters.grants.effects import GRANT_CHOICES_LOADS, Pick
 from app.features.features.crud.repository import feature_summary_loads
 from app.models.character.character_feature_choice_model import CharacterFeatureChoice
 from app.models.character.character_feature_model import CharacterFeature
@@ -175,11 +175,11 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
         return list(result.scalars().unique().all())
 
     async def replace_choices(
-        self, grant_id: int, picks_by_group: dict[int, list[tuple[int, int | None, int | None]]]
+        self, grant_id: int, picks_by_group: dict[int, list[Pick]]
     ) -> list[CharacterFeatureChoice]:
         """
         Replace the grant's stored picks of every group in ``picks_by_group``
-        (``(option_id, picked_skill_id, picked_spell_id)`` triples; flush only); return the new pick rows.
+        (``(option_id, picked_skill_id, picked_spell_id, picked_ability)``; flush only); return the new pick rows.
         """
 
         await self.db.execute(
@@ -197,9 +197,10 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
                 choice_option_id=option_id,
                 picked_skill_id=picked_skill_id,
                 picked_spell_id=picked_spell_id,
+                picked_ability=picked_ability,
             )
             for group_id, picks in picks_by_group.items()
-            for option_id, picked_skill_id, picked_spell_id in picks
+            for option_id, picked_skill_id, picked_spell_id, picked_ability in picks
         ]
         self.db.add_all(new_choices)
         await self.db.flush()

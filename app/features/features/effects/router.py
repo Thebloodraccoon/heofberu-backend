@@ -323,8 +323,8 @@ async def add_feature_option_effects(
     """
     Add new effect rows (same ``static_groups`` body as the fixed ones) to an option. **GM only.**
 
-    Unlike a fixed effect, a skill effect here may be open (no ``skill_id`` — "any skill"); the
-    player names the skill when picking. Making an option open or concrete clears its stored picks.
+    Unlike a fixed effect, a skill/spell/ability/saving-throw effect here may be open (no ``skill_id`` /
+    ``spell_id`` / ``ability`` — "any …"); the player names it when picking. Making an option open or concrete clears its stored picks.
     """
 
     return await service.add_option_effects(feature_id, group_id, option_id, data)

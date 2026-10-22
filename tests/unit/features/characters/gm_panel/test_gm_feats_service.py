@@ -48,6 +48,7 @@ def make_choice(ability_score_increase_id: int) -> SimpleNamespace:
         choice_option_id=1,
         picked_skill_id=None,
         picked_spell_id=None,
+        picked_ability=None,
         choice_option=SimpleNamespace(
             ability_effects=[SimpleNamespace(id=ability_score_increase_id, ability=AbilityScore.STR, amount=1)],
             skill_effects=[],

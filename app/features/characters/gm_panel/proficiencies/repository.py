@@ -47,6 +47,12 @@ _EFFECT_MODEL: dict[ProficiencyType, Any] = {
     ProficiencyType.WEAPON: FeatureWeaponProficiencyEffect,
 }
 
+# Per proficiency kind with open ("any …") effects: (effect target column, the pick's named column).
+_OPEN_PICK: dict[ProficiencyType, tuple[str, Any]] = {
+    ProficiencyType.SKILL: ("skill_id", CharacterFeatureChoice.picked_skill_id),
+    ProficiencyType.SAVING_THROW: ("ability", CharacterFeatureChoice.picked_ability),
+}
+
 
 class CharacterProficiencyGmRepository:
     """Owns the GM layer of ``character_proficiencies`` (all proficiency kinds)."""
@@ -77,8 +83,8 @@ class CharacterProficiencyGmRepository:
         """
         One entry per feature/feat grant of the character whose effects give
         this proficiency — a fixed effect of the feature or an effect of an
-        option the player picked (an open "any skill" effect matches through
-        the skill named for the pick) — fetched with a single targeted query
+        option the player picked (an open "any skill/saving throw" effect matches
+        through the skill/ability named for the pick) — fetched with a single targeted query
         instead of loading every grant's whole effect tree. A skill entry
         carries the grant's folded claim (see ``SkillClaim``).
         """
@@ -90,9 +96,10 @@ class CharacterProficiencyGmRepository:
         columns = (Feature.id, Feature.name, Feature.source_type, mode.label("mode"))
 
         picked_conditions = key_conditions
-        if is_skill:
-            # an open effect (skill_id NULL) gives the skill the player named for the pick
-            named = and_(effect.skill_id.is_(None), CharacterFeatureChoice.picked_skill_id == discriminator["skill_id"])
+        if proficiency_type in _OPEN_PICK:
+            # an open effect (target NULL) gives what the player named for the pick
+            target, picked_column = _OPEN_PICK[proficiency_type]
+            named = and_(getattr(effect, target).is_(None), picked_column == discriminator[target])
             picked_conditions = [or_(*key_conditions, named)]
 
         fixed = (

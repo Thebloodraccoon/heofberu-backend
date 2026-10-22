@@ -126,6 +126,11 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   options carry `allowed_spells` (id/name/level/school/is_ritual, by level
   then name) / `available`. Their `summary` (the filter as phrases, class
   names included) comes from the backend — the one place that text is built.
+  An open ("any ability" / "any saving throw") option is answered with
+  `ability` (stored as `picked_ability`, `needs_ability` on the pending
+  option; the option's own concrete ability is refused, 422
+  `AbilityPickNotAllowedError`); the ability-score cache reads it in
+  `get_feature_increases_many` (`PickedAbilityEffect`).
   `GET /grants/pending/count` → `{count}` is the light read for a badge.
   Queries live in `grants/repository.py` (`GrantRulesRepository`); the rule
   modules are pure, and a per-request `_RulesContext` loads every grant's

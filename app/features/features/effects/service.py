@@ -19,6 +19,7 @@ from app.features.features.effects.schemas import (
     DUPLICATE_KEY_BY_EFFECT_FIELD,
     ITEM_BY_EFFECT_TYPE,
     MAX_CHOICE_GROUPS,
+    OPEN_TARGETS,
     ChoiceGroupPatch,
     ChoiceGroupPayload,
     ChoiceGroupResponse,
@@ -72,10 +73,6 @@ _ITEM_TYPES_BY_EFFECT_FIELD = {
 # Item fields that aren't columns: the row id and the read-only ``summary`` of a spell effect.
 _NOT_ROW_FIELDS = {"id", "summary"}
 
-# The effect fields whose target may be left open ("any skill/spell") in a choice option, with the target
-# attribute that is ``None`` on an open effect.
-_OPEN_TARGETS = {"skill_effects": "skill_id", "spell_effects": "spell_id"}
-
 
 class FeatureEffectsService(TransactionMixin):
     """
@@ -92,9 +89,9 @@ class FeatureEffectsService(TransactionMixin):
     read) and the post-commit cache purge. ``CharacterFeatureChoice.choice_option_id``
     is ``ondelete RESTRICT``, so deleting an option/group first deletes the
     stored picks of it (the pick reverts to pending). The same happens when a
-    skill/spell-effect write turns an option open ("any skill/spell") or
+    skill/spell/ability/saving-throw effect write turns an option open ("any …") or
     concrete: the stored picks no longer match its shape (an open pick names a
-    skill/spell, a concrete one doesn't).
+    skill/spell/ability, a concrete one doesn't).
     """
 
     repository: FeatureEffectsRepository
@@ -200,7 +197,7 @@ class FeatureEffectsService(TransactionMixin):
     @staticmethod
     def _validated(groups: list, payload: type[FeatureEffectsUpdate] = FeatureEffectsUpdate) -> FeatureEffectsUpdate:
         """
-        Run the effect validators (no duplicates; concrete skill/spell unless ``payload`` is
+        Run the effect validators (no duplicates; concrete targets unless ``payload`` is
         ``OptionEffectsUpdate``) over ``groups``; 422 on failure.
         """
 
@@ -211,15 +208,15 @@ class FeatureEffectsService(TransactionMixin):
 
     @staticmethod
     def _payload_for(owner_field: str) -> type[FeatureEffectsUpdate]:
-        """An option's bundle may hold an open skill/spell effect; a feature's fixed effects may not."""
+        """An option's bundle may hold an open effect (``OPEN_TARGETS``); a feature's fixed effects may not."""
 
         return OptionEffectsUpdate if owner_field == "choice_option_id" else FeatureEffectsUpdate
 
     @staticmethod
     def _has_open(field_name: str, effects: Iterable[Any]) -> bool:
-        """Whether any of the effects (rows or payload items) of ``field_name`` is open ("any skill/spell")."""
+        """Whether any of the effects (rows or payload items) of ``field_name`` is open (``OPEN_TARGETS``)."""
 
-        target = _OPEN_TARGETS.get(field_name)
+        target = OPEN_TARGETS.get(field_name)
         return target is not None and any(getattr(effect, target) is None for effect in effects)
 
     async def _clear_picks_if_reshaped(self, owner_field: str, owner_id: int, reshaped: bool) -> None:
