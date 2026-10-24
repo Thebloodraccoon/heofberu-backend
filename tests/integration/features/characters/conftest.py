@@ -25,7 +25,7 @@ async def create_caster_class(client, gm_token, create_class):
 
 
 @pytest_asyncio.fixture
-async def create_api_character(client, login_as, create_user, create_background, gm_token):
+async def create_api_character(client, login_as, create_user, create_background, gm_token, enroll_in_gm_campaign):
     """
     Create a character via the API and return the created payload + owner token.
 
@@ -33,7 +33,8 @@ async def create_api_character(client, login_as, create_user, create_background,
     GM-set level-up cap seeded at 1; by default this fixture raises it to
     ``CHARACTER_MAX_LEVEL`` (20) via the GM panel so tests that level up
     freely keep working. Pass ``raise_max_level=False`` to keep the raw
-    level-1 cap (used by the max-level system's own tests).
+    level-1 cap (used by the max-level system's own tests). The character is put into
+    the default GM's campaign (``enroll_in_gm_campaign``) unless ``in_gm_campaign=False``.
     """
 
     default_background = None
@@ -45,6 +46,7 @@ async def create_api_character(client, login_as, create_user, create_background,
         race_id=None,
         background_id=None,
         raise_max_level=True,
+        in_gm_campaign=True,
         **kwargs,
     ):
         nonlocal default_background
@@ -85,6 +87,9 @@ async def create_api_character(client, login_as, create_user, create_background,
         )
         assert response.status_code == 201, response.text
         character = response.json()
+
+        if in_gm_campaign:
+            await enroll_in_gm_campaign(character["id"], owner.id)
 
         if raise_max_level and character["level"] < CHARACTER_MAX_LEVEL:
             raise_response = await client.patch(

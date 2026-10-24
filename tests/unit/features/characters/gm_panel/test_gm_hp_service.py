@@ -56,7 +56,7 @@ class FakeHpRepository:
 def make_service(character):
     db = FakeAsyncSession()
     service = GmPanelHpService(db)
-    service.get_character_for_user = AsyncMock(return_value=character)
+    service.get_character_for_user = service.get_character_for_gm = AsyncMock(return_value=character)
     service.hp_repository = FakeHpRepository()
     service._character_response = AsyncMock(return_value=SENTINEL_RESPONSE)
     return service

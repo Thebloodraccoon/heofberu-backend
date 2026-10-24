@@ -70,6 +70,12 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def aware_utcnow() -> datetime:
+    """Timezone-aware UTC "now", for ``TIMESTAMP WITH TIME ZONE`` columns (campaigns, articles)."""
+
+    return datetime.now(timezone.utc)
+
+
 def as_async_database_url(url: str) -> str:
     """
     Convert a sync ``postgresql://`` URL to the asyncpg driver form.

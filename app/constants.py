@@ -434,10 +434,15 @@ ARTICLE_TYPES = (
     "session",
 )
 
+#: Article types that belong to campaigns, not to the shared knowledge base: they stay creatable through the
+#: regular article endpoints (GM editor), but ``GET /articles`` and ``/articles/search`` never return them;
+#: GMs find them through ``GET /articles/campaign-materials`` (and its ``/search``).
+CAMPAIGN_ARTICLE_TYPES = ("quest", "session")
+
 #: Postgres ARE for a GM-only block in ``body_markdown``: ``:::gm`` ... ``:::``. An unclosed
 #: block hides everything to the end of the text (fail closed). ``(?i)`` = case-insensitive
 #: (``:::GM`` too). Flat pattern: nested containers inside ``:::gm`` are rejected on write
-#: (``has_nested_gm_container``) and handled in ``app/features/articles/secrets.py``
+#: (``has_nested_gm_container``) and handled in ``app/features/shared/secrets.py``
 #: (``strip_gm_blocks``, ``gm_stripped_sql``). Used by generated columns and migrations.
 ARTICLE_GM_BLOCK_SQL_PATTERN = "(?i):::gm.*?(:::|$)"
 RELATION_TYPES = (
@@ -478,3 +483,69 @@ CHARACTER_MAX_LEVEL = 20
 # Word text. Enforced by both the backstory schema (422) and a DB check
 # constraint on ``character_backstories.content``.
 BACKSTORY_MAX_LENGTH = 12000
+
+
+class CampaignStatus(str, Enum):
+    """Lifecycle of a game campaign (one GM's table). ``FINISHED``/``ABANDONED`` free its characters."""
+
+    PLANNING = "planning"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    FINISHED = "finished"
+    ABANDONED = "abandoned"
+
+
+#: Campaign statuses after which the table is over: the characters are released (``RETIRED``).
+CAMPAIGN_CLOSED_STATUSES = frozenset({CampaignStatus.FINISHED, CampaignStatus.ABANDONED})
+
+
+class CampaignCharacterStatus(str, Enum):
+    """
+    A character's participation in a game campaign. Only the campaign's GM (or the founder) changes it.
+
+    ``ACTIVE`` holds the character (it can be in one campaign at a time) and gives that GM access to the
+    sheet; any other status frees it. ``REMOVED`` also takes away the player's read access to the campaign.
+    """
+
+    ACTIVE = "active"
+    DEAD = "dead"
+    RETIRED = "retired"
+    REMOVED = "removed"
+
+
+class CampaignSessionStatus(str, Enum):
+    """A session (one game night) of a campaign."""
+
+    PLANNED = "planned"
+    PLAYED = "played"
+    CANCELLED = "cancelled"
+
+
+class PublicCampaignStatus(str, Enum):
+    """A public campaign (preset/announcement): only ``PUBLISHED`` ones are listed for players and guests."""
+
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class CharacterPublicVisibility(str, Enum):
+    """
+    How much of a character its owner shows publicly (public card, public campaign showcase).
+
+    Only the owner changes it. ``HIDDEN``: nowhere public. ``FULL``: name, level, race/class/background ids,
+    personality, backstory (``:::gm`` blocks stripped), base and total ability scores, skill and saving-throw
+    proficiencies. Inventory, spells and campaign data (chronicle, notes, reviews) are never part of it.
+    """
+
+    HIDDEN = "hidden"
+    FULL = "full"
+
+
+CAMPAIGN_TITLE_MAX_LENGTH = 200
+CAMPAIGN_PITCH_MAX_LENGTH = 500
+#: Markdown fields of campaigns, sessions, notes and public campaigns.
+CAMPAIGN_TEXT_MAX_LENGTH = 50000
+CAMPAIGN_REVIEW_MAX_LENGTH = 5000
+#: Characters a GM can mark as attending one session (a table, not a raid).
+CAMPAIGN_SESSION_MAX_ATTENDEES = 50

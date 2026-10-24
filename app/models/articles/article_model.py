@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 #: A GM block that contains another ``:::`` container: from ``:::gm`` to the end of the text (fail closed, the flat
 #: pattern would close the block at the inner ``:::``). Keep equal to ``NESTED_GM_BLOCK_SQL_PATTERN`` in
-#: ``app/features/articles/secrets.py``.
+#: ``app/features/shared/secrets.py``.
 NESTED_GM_BLOCK_SQL_PATTERN = r"(?i):::gm(?:(?!:::).)*:::[a-z].*"
 
 

@@ -17,6 +17,10 @@ from app.constants import (
     ASILevelChoice,
     AttackType,
     BackgroundSuggestionType,
+    CampaignCharacterStatus,
+    CampaignSessionStatus,
+    CampaignStatus,
+    CharacterPublicVisibility,
     ChoiceType,
     Component,
     ConditionType,
@@ -30,6 +34,7 @@ from app.constants import (
     ProficiencyAction,
     ProficiencySourceType,
     ProficiencyType,
+    PublicCampaignStatus,
     RaceSize,
     SpellCastTime,
     SpellDuration,
@@ -79,3 +84,12 @@ ChoiceTypeType = SAEnum(ChoiceType, name="choice_type", create_type=False)
 ArticleStatusType = SAEnum(ArticleStatus, name="article_status", create_type=False)
 ArticleVisibilityType = SAEnum(ArticleVisibility, name="article_visibility", create_type=False)
 ArticleProposalStatusType = SAEnum(ArticleProposalStatus, name="article_proposal_status", create_type=False)
+
+# Campaigns: VARCHAR (member NAME), product-driven sets that may grow without a migration.
+CampaignStatusType = SAEnum(CampaignStatus, native_enum=False, create_constraint=False, length=20)
+CampaignCharacterStatusType = SAEnum(CampaignCharacterStatus, native_enum=False, create_constraint=False, length=20)
+CampaignSessionStatusType = SAEnum(CampaignSessionStatus, native_enum=False, create_constraint=False, length=20)
+PublicCampaignStatusType = SAEnum(PublicCampaignStatus, native_enum=False, create_constraint=False, length=20)
+CharacterPublicVisibilityType = SAEnum(
+    CharacterPublicVisibility, native_enum=False, create_constraint=False, length=20
+)

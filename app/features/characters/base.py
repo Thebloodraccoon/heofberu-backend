@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base.transaction import TransactionMixin
 from app.features.characters.access import ensure_character_access
+from app.features.characters.access import get_character_for_gm as _get_character_for_gm
 from app.features.characters.access import get_character_for_user as _get_character_for_user
 from app.features.characters.cache import invalidate_character_cache
 from app.features.characters.crud.repository import CharacterRepository
@@ -43,6 +44,16 @@ class CharacterSubDomainService(TransactionMixin):
         """Fetch the character enforcing GM/owner access; raises 403/404 otherwise."""
 
         return await _get_character_for_user(
+            self.repository,
+            character_id,
+            current_user,
+            light=self._light_character_fetch,
+        )
+
+    async def get_character_for_gm(self, character_id: int, current_user: UserResponse) -> Character:
+        """Fetch the character for a GM-panel write: campaign GM or founder only, the owner gets no pass (403/404)."""
+
+        return await _get_character_for_gm(
             self.repository,
             character_id,
             current_user,

@@ -100,7 +100,7 @@ def stub_cache_and_lock(monkeypatch):
 def make_service(character, *, stats=None, asi_repository=None):
     db = FakeAsyncSession()
     service = GmPanelAsiService(db)
-    service.get_character_for_user = AsyncMock(return_value=character)
+    service.get_character_for_user = service.get_character_for_gm = AsyncMock(return_value=character)
     service.stats_service = stats or FakeStatsService()
     service.asi_repository = asi_repository or FakeASIChoiceRepository()
     return service

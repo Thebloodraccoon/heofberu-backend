@@ -14,8 +14,12 @@ own capability segment.
   Per-row operations additionally take the row's own id as a query parameter
   (`feat_id`, `feature_id`, `item_id`, `adjustment_id`, `skill_id`) — the id of
   the character-scoped grant/stack/choice row, never the reference-catalog id.
-- **Access model**: every route is a GM-only write via `GmUserDep`, except three
-  read-only endpoints that are GM **or** owner via `CurrentUserDep`:
+- **Access model**: every route is a GM-only write via `GmUserDep` (the role) AND
+  `get_character_for_gm` (the character): only the GM of the campaign the
+  character is `ACTIVE` in, or the founder. Owning the sheet gives no pass here,
+  so a GM playing in another GM's campaign can't raise their own cap or grant
+  themselves feats/items. The exceptions are three read-only endpoints that are
+  campaign GM **or** owner via `CurrentUserDep`:
   `GET /max-level`, `GET /asi`, `GET /items`. The matching player-facing reads
   live in plain character CRUD (`GET /characters/feats`,
   `GET /characters/features`, `GET /characters/stats`).

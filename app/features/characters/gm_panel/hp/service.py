@@ -26,7 +26,7 @@ class GmPanelHpService(CharacterSubDomainService):
     async def set_max_hp(self, character_id: int, data: MaxHpUpdate, current_user: UserResponse) -> CharacterResponse:
         """Set a character's ``max_hp``, clamping ``current_hp`` down when it exceeds the new maximum."""
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         async with self._atomic():
             await self.hp_repository.set_max_hp(character, data.max_hp)

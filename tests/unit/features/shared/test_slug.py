@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.features.articles.slug import FALLBACK_SLUG, SLUG_MAX_LENGTH, slugify
+from app.features.shared.slug import FALLBACK_SLUG, SLUG_MAX_LENGTH, slugify
 
 
 class TestSlugify:

@@ -113,7 +113,9 @@ The "fetch → validate → persist → serialize" orchestrator:
 - Pagination lives in `pagination.py`. Public convention: `page`/`size` query
   params and the `Page` `{items, total, page, size}` envelope; `skip`/`limit`
   are internal (repositories) and come from `paginate()` (clamped to
-  `1 <= size <= MAX_PAGE_SIZE`). Large listings (articles, characters, spells)
+  `1 <= size <= MAX_PAGE_SIZE`). `fetch_page(db, stmt, skip=, limit=)` runs an
+  ordered statement for one `Page`: it appends `count() OVER()` as `total` (one
+  round trip) and issues a bare count only for a page past the end. Large listings (articles, characters, spells)
   add opt-in keyset pagination: `pagination=cursor` (or a `cursor` token) returns
   `CursorPage` `{items, next_cursor, size}` ordered by `(sort key, id)`; the cursor
   is opaque url-safe base64 (`encode_cursor`/`decode_cursor`, max

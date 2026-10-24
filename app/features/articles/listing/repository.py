@@ -6,12 +6,12 @@ from sqlalchemy import exists, func, literal_column, null, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnClause
 
-from app.constants import ArticleProposalStatus
+from app.constants import CAMPAIGN_ARTICLE_TYPES, ArticleProposalStatus
 from app.core.pagination import Cursor, keyset_condition
 from app.features.articles.base import ArticleScopedRepository
 from app.features.articles.listing.filters import ArticleFilters
-from app.features.articles.secrets import gm_stripped_sql
 from app.features.articles.visibility import visibility_conditions
+from app.features.shared.secrets import gm_stripped_sql
 from app.models.articles.article_association_models import article_tags
 from app.models.articles.article_model import Article
 from app.models.articles.article_proposal_model import ArticleProposal
@@ -63,12 +63,14 @@ class ArticleListingRepository(ArticleScopedRepository):
         columns = [*self._row_columns(filters.include_hidden), key.label("sort_value")]
         if after is None:
             columns.append(func.count().over().label("total"))
+        # Keyset mode seeks past ``after``; an offset on top of that would silently skip rows.
+        offset = 0 if after is not None else skip
 
         result = await self.db.execute(
             self._with_joins(select(*columns))
             .where(*conditions)
             .order_by(*((key.desc(), Article.id.desc()) if descending else (key, Article.id)))
-            .offset(skip)
+            .offset(offset)
             .limit(limit)
         )
         rows = list(result.all())
@@ -132,9 +134,13 @@ class ArticleListingRepository(ArticleScopedRepository):
         return rows, await self._total(rows, conditions, skip)
 
     async def _filter_conditions(self, filters: ArticleFilters) -> list:
-        """Visibility plus every requested filter, ANDed (see ``ArticleFilters``)."""
+        """Visibility, the knowledge/campaign type scope and every requested filter, ANDed (see ``ArticleFilters``)."""
 
         conditions = visibility_conditions(filters.include_hidden)
+        if filters.scope == "campaign":
+            conditions.append(Article.article_type.in_(CAMPAIGN_ARTICLE_TYPES))
+        else:
+            conditions.append(Article.article_type.notin_(CAMPAIGN_ARTICLE_TYPES))
         if filters.author_id is not None:
             conditions.append(Article.author_id == filters.author_id)
         if filters.statuses:

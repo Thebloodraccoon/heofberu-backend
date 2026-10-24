@@ -32,7 +32,7 @@ async def get_character_backstory(
     Return a character's backstory, served from the DB uncached (separate
     from the cached character sheet).
 
-    GM can view any character's backstory; players only their own.
+    Readable by the owner, the character's campaign GM and the founder.
     """
 
     return await character_backstory_service.get_backstory(character_id, current_user)

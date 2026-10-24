@@ -14,6 +14,7 @@ from app.features.characters.items.router import router as items_router
 from app.features.characters.proficiencies.router import router as proficiencies_router
 from app.features.characters.progression.router import router as progression_router
 from app.features.characters.spells.router import router as spells_router
+from app.features.characters.visibility.router import router as visibility_router
 
 router = APIRouter()
 
@@ -29,3 +30,4 @@ router.include_router(backstory_router, prefix="/characters", tags=["Characters 
 router.include_router(progression_router, prefix="/characters", tags=["Characters Progression"])
 router.include_router(gm_panel_router, prefix="/characters", tags=["Characters GM Panel"])
 router.include_router(grants_router, prefix="/characters", tags=["Characters Feature Grants"])
+router.include_router(visibility_router, prefix="/characters", tags=["Characters Public"])

@@ -17,6 +17,7 @@ import pytest
 from app.constants import (
     AbilityScore,
     ArmorProficiency,
+    CharacterPublicVisibility,
     DiceType,
     FeatureSourceType,
     ProficiencySourceType,
@@ -160,6 +161,8 @@ def make_owned_character(owner_id=7, character_id=5, **overrides):
         "intelligence": 10,
         "wisdom": 10,
         "charisma": 10,
+        # Column defaults apply only on INSERT; a bare ORM instance would carry None.
+        "public_visibility": CharacterPublicVisibility.HIDDEN,
     }
     fields.update(overrides)
     return Character(**fields)
@@ -191,6 +194,8 @@ class FakeCharacterRepository(FakeRepository):
         self.last_create_payload = None
         self.last_update_fields = None
         self.hp_updates = []
+        # GM ids that run a campaign this character is active in (``is_managed_by``).
+        self.managed_by = set()
 
     async def create(self, payload):
         if self.events is not None:
@@ -203,6 +208,9 @@ class FakeCharacterRepository(FakeRepository):
     async def update(self, db_obj, update_data, *, refresh=False):
         self.last_update_fields = dict(update_data)
         return await super().update(db_obj, update_data, refresh=refresh)
+
+    async def is_managed_by(self, character_id, gm_id):
+        return gm_id in self.managed_by
 
     async def get_for_update(self, character_id):
         self.events.append("lock_row")
@@ -863,11 +871,29 @@ class TestUpdateAndDelete:
 
         assert character.inspiration == 2
 
-    async def test_gm_can_raise_inspiration_on_any_character(self, monkeypatch):
+    async def test_campaign_gm_can_raise_inspiration(self, monkeypatch):
+        character = make_owned_character(inspiration=0)
+        service, _ = make_service(monkeypatch, [], existing_characters={5: character})
+        service.repository.managed_by = {99}
+
+        result = await service.update_character(5, CharacterUpdate(inspiration=4), make_user(99, UserRole.GM))
+
+        assert result.inspiration == 4
+
+    async def test_gm_outside_the_characters_campaign_is_denied(self, monkeypatch):
         character = make_owned_character(inspiration=0)
         service, _ = make_service(monkeypatch, [], existing_characters={5: character})
 
-        result = await service.update_character(5, CharacterUpdate(inspiration=4), make_user(99, UserRole.GM))
+        with pytest.raises(CharacterAccessDeniedException):
+            await service.update_character(5, CharacterUpdate(inspiration=4), make_user(99, UserRole.GM))
+
+    async def test_founder_can_raise_inspiration_on_any_character(self, monkeypatch):
+        character = make_owned_character(inspiration=0)
+        service, _ = make_service(monkeypatch, [], existing_characters={5: character})
+
+        result = await service.update_character(
+            5, CharacterUpdate(inspiration=4), make_user(99, UserRole.FOUND_FATHER)
+        )
 
         assert result.inspiration == 4
 

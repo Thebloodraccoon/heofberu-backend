@@ -4,6 +4,8 @@ from typing import Annotated, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
+from app.constants import CharacterPublicVisibility
+
 # Range of a base ability score entered directly by a player (before
 # racial/feat bonuses): the typical point-buy/standard-array range.
 ABILITY_SCORE_MIN = 3
@@ -272,3 +274,7 @@ class CharacterResponse(CharacterBase):
     speed: int = 30
 
     ability_scores: AbilityScoresResponse | None = None
+
+    # Owner-controlled public showing (``PATCH /characters/{id}/public-visibility``); the default keeps
+    # payloads cached before the column existed valid.
+    public_visibility: CharacterPublicVisibility = CharacterPublicVisibility.HIDDEN

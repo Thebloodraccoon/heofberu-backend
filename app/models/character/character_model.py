@@ -15,6 +15,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants import CharacterPublicVisibility
+from app.models.enums import CharacterPublicVisibilityType
 from app.settings._common import utcnow
 from app.settings.base import Base
 
@@ -81,6 +83,11 @@ class Character(Base):
     money_gold: Mapped[int] = mapped_column(default=0)
     money_silver: Mapped[int] = mapped_column(default=0)
     money_copper: Mapped[int] = mapped_column(default=0)
+
+    # How much the owner shows publicly (public card, public campaign showcase). Only the owner changes it.
+    public_visibility: Mapped[CharacterPublicVisibility] = mapped_column(
+        CharacterPublicVisibilityType, default=CharacterPublicVisibility.HIDDEN, server_default="HIDDEN"
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

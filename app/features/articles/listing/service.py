@@ -48,11 +48,9 @@ class ArticleListingService:
         whose ``cursor`` must have been issued for the same ``sort`` (422 otherwise).
         """
 
-        skip, limit = paginate(page, size)
+        skip, limit = (0, size + 1) if use_cursor else paginate(page, size)
         after = decode_cursor(cursor, sort, as_datetime=sort != "title") if cursor is not None else None
-        rows, total = await self.repository.list_articles(
-            filters, skip=skip, limit=size + 1 if use_cursor else limit, sort=sort, after=after
-        )
+        rows, total = await self.repository.list_articles(filters, skip=skip, limit=limit, sort=sort, after=after)
         if use_cursor:
             rows, next_cursor = cursor_page(rows, size, sort, lambda row: (row.sort_value, row.id))
             items = [ArticleGetAllResponse.model_validate(_nest_row(row)) for row in rows]

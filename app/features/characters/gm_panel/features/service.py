@@ -43,7 +43,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
     ) -> CharacterFeatureResponse:
         """Record a reference feature on a character."""
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         feature = await self.feature_repository.get_by_id(data.feature_id)
         if feature is None:
@@ -71,7 +71,7 @@ class GmPanelFeatureService(CharacterSubDomainService):
     async def remove_feature(self, character_id: int, character_feature_id: int, current_user: UserResponse) -> bool:
         """Remove a feature grant from a character."""
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         async with self._atomic():
             await lock_character(self.repository.db, character_id)

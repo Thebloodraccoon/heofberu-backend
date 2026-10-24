@@ -35,7 +35,7 @@ class GmPanelLevelService(CharacterSubDomainService):
         new value, and only once validation passed.
         """
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         async with self._atomic():
             await lock_character(self.repository.db, character_id)

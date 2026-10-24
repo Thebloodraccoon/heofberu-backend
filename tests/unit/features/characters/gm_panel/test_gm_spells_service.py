@@ -41,7 +41,7 @@ class FakeGrantedRepository:
 def make_service(**repository_kwargs):
     db = FakeAsyncSession()
     service = GmPanelSpellService(db)
-    service.get_character_for_user = AsyncMock(return_value=SimpleNamespace(id=1))
+    service.get_character_for_user = service.get_character_for_gm = AsyncMock(return_value=SimpleNamespace(id=1))
     service.granted_spell_repository = FakeGrantedRepository(**repository_kwargs)
     return service, db
 

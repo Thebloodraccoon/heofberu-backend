@@ -1,5 +1,9 @@
-"""Article listing endpoints: ``GET /articles`` and ``GET /articles/search``, sharing one filter dependency."""
+"""
+Article listing endpoints sharing one filter dependency: ``GET /articles`` and ``GET /articles/search`` (the
+knowledge base, without quests/sessions) and their GM-only twins under ``/articles/campaign-materials``.
+"""
 
+from dataclasses import replace
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -10,7 +14,7 @@ from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, 
 from app.features.articles.dependencies import ArticleListingDep
 from app.features.articles.listing.filters import ArticleFilters
 from app.features.articles.listing.schemas import ArticleGetAllResponse, ArticleSearchResult
-from app.features.auth.dependencies import OptionalUserDep, can_see_hidden
+from app.features.auth.dependencies import GmUserDep, OptionalUserDep, can_see_hidden
 
 router = APIRouter()
 
@@ -34,7 +38,8 @@ ArticleTypesQuery = Annotated[
         alias="article_type",
         max_length=MAX_FILTER_VALUES,
         description="Restrict to one or more article_type values (repeat the key: "
-        "`?article_type=lore&article_type=npc`). See ARTICLE_TYPES. Omit for any type.",
+        "`?article_type=lore&article_type=npc`). See ARTICLE_TYPES. Omit for any type. `quest`/`session` are "
+        "only returned by `/articles/campaign-materials`.",
     ),
 ]
 StatusQuery = Annotated[
@@ -156,3 +161,59 @@ async def search_articles(
     """
 
     return await listing.search_articles(q, filters, page=page, size=size)
+
+
+@router.get(
+    "/campaign-materials",
+    response_model=Page[ArticleGetAllResponse] | CursorPage[ArticleGetAllResponse],
+    summary="List campaign materials (quests, sessions)",
+    responses={
+        403: {"description": "The caller is not a GM."},
+        422: {"description": "Invalid `cursor`, or one issued for a different `sort`."},
+    },
+)
+async def get_campaign_materials(
+    listing: ArticleListingDep,
+    filters: ArticleFiltersDep,
+    _: GmUserDep,
+    sort: Literal["title", "newest", "oldest", "updated"] = Query("title"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=100, description="Page size"),
+    pagination: PaginationQuery = "page",
+    cursor: CursorQuery = None,
+):
+    """
+    The campaign article types (`quest`, `session`), which `GET /articles` and `/articles/search` leave out.
+    Same filters, sorting and pagination as `GET /articles`; `article_type` can narrow it to one of the two.
+    They are created and edited through the regular article endpoints (GM editor). **GM only.**
+    """
+
+    return await listing.list_articles(
+        replace(filters, scope="campaign"),
+        page=page,
+        size=size,
+        sort=sort,
+        cursor=cursor,
+        use_cursor=use_cursor(pagination, cursor),
+    )
+
+
+@router.get(
+    "/campaign-materials/search",
+    response_model=Page[ArticleSearchResult],
+    summary="Full-text search campaign materials (quests, sessions)",
+    responses={403: {"description": "The caller is not a GM."}},
+)
+async def search_campaign_materials(
+    listing: ArticleListingDep,
+    filters: ArticleFiltersDep,
+    _: GmUserDep,
+    q: str = Query(
+        ..., min_length=2, max_length=200, description='Search text; supports `"phrases"`, `-exclude` and `or`.'
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    size: int = Query(10, ge=1, le=50, description="Page size"),
+):
+    """`GET /articles/search` over the campaign article types only (`quest`, `session`). **GM only.**"""
+
+    return await listing.search_articles(q, replace(filters, scope="campaign"), page=page, size=size)

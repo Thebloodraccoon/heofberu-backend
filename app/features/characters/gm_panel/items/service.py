@@ -43,7 +43,7 @@ class GmPanelItemService(CharacterSubDomainService):
         a new stack is created.
         """
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
 
         if not await self.item_repository.exists_by_id(data.item_id):
             raise ItemNotFoundException(item_id=data.item_id)
@@ -78,7 +78,7 @@ class GmPanelItemService(CharacterSubDomainService):
     ) -> CharacterItemResponse:
         """Change a stack's quantity. GM-only. PATCH semantics."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
 
         fields = data.model_dump(exclude_unset=True)
         async with self._atomic():
@@ -92,7 +92,7 @@ class GmPanelItemService(CharacterSubDomainService):
     async def remove_item(self, character_id: int, character_item_id: int, current_user: UserResponse) -> bool:
         """Remove one item stack from a character's inventory. GM-only."""
 
-        await self.get_character_for_user(character_id, current_user)
+        await self.get_character_for_gm(character_id, current_user)
 
         async with self._atomic():
             await lock_character(self.repository.db, character_id)

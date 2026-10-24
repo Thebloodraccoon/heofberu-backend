@@ -98,7 +98,8 @@ def no_cache_invalidate(monkeypatch):
 def make_service(character=None, *, grants_by_id=None, feature_exists=True):
     db = FakeAsyncSession()
     service = GmPanelFeatureService(db)
-    service.get_character_for_user = AsyncMock(return_value=character or SimpleNamespace(id=1))
+    fetch = AsyncMock(return_value=character or SimpleNamespace(id=1))
+    service.get_character_for_user = service.get_character_for_gm = fetch
     service.feature_repository = FakeRepository(
         db, existing_by_id={4: SimpleNamespace(source_type=FeatureSourceType.CLASS)} if feature_exists else {}
     )

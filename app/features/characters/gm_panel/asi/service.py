@@ -47,7 +47,7 @@ class GmPanelAsiService(CharacterSubDomainService):
         exceed it and the cache table never lags the log.
         """
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         async with self._atomic():
             await lock_character(self.repository.db, character.id)
@@ -77,7 +77,7 @@ class GmPanelAsiService(CharacterSubDomainService):
     async def remove_asi_adjustment(self, character_id: int, adjustment_id: int, current_user: UserResponse) -> None:
         """Revert one GM ASI adjustment; level-tied choices cannot be removed here."""
 
-        character = await self.get_character_for_user(character_id, current_user)
+        character = await self.get_character_for_gm(character_id, current_user)
 
         choice = await self.asi_repository.get_choice_by_id(character_id, adjustment_id)
         if not choice:

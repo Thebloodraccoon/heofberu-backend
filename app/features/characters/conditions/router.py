@@ -31,8 +31,8 @@ async def get_character_conditions(
     current_user: CurrentUserDep,
 ):
     """
-    List every condition a character is currently under. GM can view any
-    character's conditions; players only their own.
+    List every condition a character is currently under. Readable by the
+    owner, the character's campaign GM and the founder.
     """
 
     return await character_condition_service.get_conditions(character_id, current_user)

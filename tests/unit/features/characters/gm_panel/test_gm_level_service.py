@@ -61,7 +61,7 @@ def stub_lock(monkeypatch):
 def make_service(character, *, row=None):
     db = FakeAsyncSession()
     service = GmPanelLevelService(db)
-    service.get_character_for_user = AsyncMock(return_value=character)
+    service.get_character_for_user = service.get_character_for_gm = AsyncMock(return_value=character)
     service.max_level_repository = FakeMaxLevelRepository(db, row=row)
     return service
 

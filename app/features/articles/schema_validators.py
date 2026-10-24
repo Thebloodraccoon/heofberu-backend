@@ -2,7 +2,7 @@
 
 from collections.abc import Collection
 
-from app.features.articles.secrets import has_nested_gm_container
+from app.features.shared.secrets import has_nested_gm_container
 
 
 def validate_in_list(value: str, allowed: Collection[str], field_name: str) -> str:

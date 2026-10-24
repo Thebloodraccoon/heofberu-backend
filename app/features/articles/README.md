@@ -13,8 +13,7 @@ articles/
 ├── cache.py             # namespaces, article_cache_key, invalidate_articles / _all_articles / _article_trees, TREE_PAYLOAD_FIELDS
 ├── visibility.py        # visibility_conditions(include_hidden, model) — the non-GM row filter
 ├── access.py            # ArticleActor: who may edit (author or founder)
-├── secrets.py           # :::gm block stripping (Python) + gm_stripped_sql (SQL twin)
-├── slug.py              # slugify (RU/UK transliteration)
+│                        # (:::gm stripping and slugify live in app/features/shared/{secrets,slug}.py)
 ├── exceptions.py        # article AppErrors (cycle, tree depth, transitions, versions, proposals)
 ├── schema_validators.py # shared pydantic validator bodies
 ├── crud/                # create / PATCH / delete / restore revision / detail by id or slug
@@ -122,7 +121,7 @@ List and search pick it up together.
 
 - **SQL vs Python GM stripping.** SQL can't track nested `:::` containers, so writes reject a `:::gm` block that
   contains another container, and `gm_stripped_sql` cuts any such legacy block to the end of the text. Keep
-  `ARTICLE_GM_BLOCK_SQL_PATTERN` (`constants.py`) equivalent to `secrets._scan` for flat blocks.
+  `ARTICLE_GM_BLOCK_SQL_PATTERN` (`constants.py`) equivalent to `shared/secrets._scan` for flat blocks.
 - **`noload(Article.author)`** on tree/relation briefs leaves `author=None` on those instances for the rest of the
   session. Fine for GET requests; don't build a full `ArticleResponse` from them in the same session.
 - **`article_cache_key`** is built from `BaseService.get_by_id` (same name and signature as the decorated

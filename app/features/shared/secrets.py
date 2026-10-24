@@ -1,5 +1,9 @@
 """
-GM-only blocks inside article text: ``:::gm`` ... ``:::``, stripped for non-GM readers.
+GM-only blocks inside markdown text: ``:::gm`` ... ``:::``, stripped for non-GM readers.
+
+Shared by every domain that hides GM content in one text field instead of a second column: articles
+(body, excerpt, relation notes), campaigns (description, session chronicle), public campaigns
+(description) and character backstories on the public character card.
 
 Markdown containers nest (``:::spoiler`` inside ``:::gm``), and every ``:::`` closes only
 the innermost one, so a flat "up to the first ``:::``" match would close a GM block early and
