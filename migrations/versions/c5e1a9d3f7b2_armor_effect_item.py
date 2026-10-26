@@ -34,9 +34,7 @@ def upgrade() -> None:
         ["id"],
         ondelete="RESTRICT",
     )
-    op.create_index(
-        "ix_feature_armor_proficiency_effects_item_id", "feature_armor_proficiency_effects", ["item_id"]
-    )
+    op.create_index("ix_feature_armor_proficiency_effects_item_id", "feature_armor_proficiency_effects", ["item_id"])
     op.alter_column("feature_armor_proficiency_effects", "armor_type", nullable=True)
     op.create_check_constraint(
         "ck_feature_armor_proficiency_one_target",
@@ -47,9 +45,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DELETE FROM feature_armor_proficiency_effects WHERE item_id IS NOT NULL")
-    op.drop_constraint(
-        "ck_feature_armor_proficiency_one_target", "feature_armor_proficiency_effects", type_="check"
-    )
+    op.drop_constraint("ck_feature_armor_proficiency_one_target", "feature_armor_proficiency_effects", type_="check")
     op.alter_column("feature_armor_proficiency_effects", "armor_type", nullable=False)
     op.drop_index("ix_feature_armor_proficiency_effects_item_id", table_name="feature_armor_proficiency_effects")
     op.drop_constraint(

@@ -12,7 +12,7 @@ same `Spells` tag):
 
 | Capability | Endpoints |
 | --- | --- |
-| `crud/` | `GET ""` (paginated, heavily filterable listing; opt-in `pagination=cursor`), `GET /{spell_id}`, `POST ""` (GM), `PATCH /{spell_id}` (GM), `DELETE /{spell_id}` (Founder) |
+| `crud/` | `GET ""` (paginated, heavily filterable listing incl. any-of `id` and `class_id`/`subclass_id`/`race_id`/`subrace_id` = "learnable by a character with these" — the `characters/spells/eligibility.py` rule, an omitted one fails a restricted dimension; opt-in `pagination=cursor`), `GET /{spell_id}`, `POST ""` (GM), `PATCH /{spell_id}` (GM), `DELETE /{spell_id}` (Founder) |
 | `availability/` | `PUT /spells/{spell_id}/classes`, `PUT /spells/{spell_id}/subclasses`, `PUT /spells/{spell_id}/races`, `PUT /spells/{spell_id}/subraces` — full-replace of each availability dimension (GM) |
 
 The spell is identified via a **path** parameter (`{spell_id}`) on all
@@ -56,7 +56,7 @@ features that grant it), so a **rename** also purges `SPELL_NAME_DEPENDENT_NAMES
 be deleted).
 
 The reverse direction (renaming/deleting a class/subclass/race/subrace purges `spells`, whose list
-embeds `{id, name}` of the available classes/subclasses/races/subraces) is declared once in
+embeds `{id, name}` of the available classes/races, plus `class_id`/`race_id` on subclasses/subraces) is declared once in
 `app/core/cache/namespaces.py` (`CACHE_DEPENDENTS`) and applied by those modules' `cache.py`
 (`*_CRUD_CACHE_NAMESPACES`, `*_DELETE_*`).
 

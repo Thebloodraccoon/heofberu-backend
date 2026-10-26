@@ -1,13 +1,13 @@
-"""Item CRUD endpoints: paginated listing, get, create, update, delete."""
+"""Item core endpoints: listing, detail, ``GEAR`` creation, core PATCH and delete."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.constants import ItemRarity, ItemType
+from app.constants import ArmorProficiency, GearType, ItemKind, ItemRarity, ToolCategory, WeaponProficiency
 from app.core.pagination import Page
 from app.features.auth.dependencies import FounderDep, GmUserDep
-from app.features.items.crud.schemas import ItemCreate, ItemGetAllResponse, ItemResponse, ItemUpdate
+from app.features.items.crud.schemas import GearCreate, ItemCoreUpdate, ItemGetAllResponse, ItemResponse
 from app.features.items.dependencies import ItemCrudDep
 
 router = APIRouter()
@@ -20,11 +20,21 @@ router = APIRouter()
 )
 async def get_items(
     item_service: ItemCrudDep,
-    item_type: list[ItemType] | None = Query(
-        None,
-        description="Any-of match on the item's type (repeat the key: `?item_type=WEAPON&item_type=ARMOR`).",
+    ids: list[int] | None = Query(None, alias="id", description="Any-of match on the item id (repeat the key)."),
+    kind: list[ItemKind] | None = Query(
+        None, description="Any-of match on the item's kind (repeat the key: `?kind=WEAPON&kind=ARMOR`)."
     ),
+    subtype: list[GearType] | None = Query(None, description="Any-of match on what a GEAR item is (potion, ring…)."),
     rarity: list[ItemRarity] | None = Query(None, description="Any-of match on the item's rarity (repeat the key)."),
+    magic: bool | None = Query(None, description="`true`: magic items (any rarity but NONE), `false`: mundane."),
+    weapon_category: list[WeaponProficiency] | None = Query(None, description="Any-of match on a weapon's category."),
+    armor_category: list[ArmorProficiency] | None = Query(
+        None, description="Any-of match on an armor's category (`SHIELD` = shields)."
+    ),
+    tool_category: list[ToolCategory] | None = Query(None, description="Any-of match on a tool's category."),
+    property_id: list[int] | None = Query(
+        None, description="Weapons having ALL these weapon properties (repeat the key)."
+    ),
     search: str | None = Query(
         None, max_length=100, description="Case-insensitive substring match against the item's name."
     ),
@@ -36,7 +46,17 @@ async def get_items(
     Open endpoint.
     """
 
-    filters = {"item_type": item_type, "rarity": rarity}
+    filters = {
+        "id": ids,
+        "kind": kind,
+        "subtype": subtype,
+        "rarity": rarity,
+        "magic": magic,
+        "weapon_category": weapon_category,
+        "armor_category": armor_category,
+        "tool_category": tool_category,
+        "property_id": property_id,
+    }
     return await item_service.get_all(page=page, size=size, filters=filters, search=search)
 
 
@@ -50,7 +70,8 @@ async def get_items(
 )
 async def get_item(item_id: int, item_service: ItemCrudDep):
     """
-    Return a single item by ID, with full detail.
+    Return a single item: the core, the detail record of its kind (`weapon` / `armor` / `tool`),
+    weapon properties and the speed/AC effects it gives while equipped.
     Open endpoint.
     """
 
@@ -61,59 +82,30 @@ async def get_item(item_id: int, item_service: ItemCrudDep):
     "",
     response_model=ItemResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create an item",
+    summary="Create a gear item (not a weapon, armor or tool)",
     responses={
         409: {"description": "An item with this name already exists."},
     },
 )
 async def create_item(
     data: Annotated[
-        ItemCreate,
+        GearCreate,
         Body(
             openapi_examples={
-                "weapon": {
-                    "summary": "Weapon",
-                    "value": {
-                        "name": "Longsword",
-                        "item_type": "WEAPON",
-                        "rarity": "NONE",
-                        "weight": 3,
-                        "cost_gold": 15,
-                        "damage_dice_count": 1,
-                        "damage_dice_type": "D8",
-                        "damage_type": "SLASHING",
-                        "weapon_properties": "VERSATILE",
-                        "description": "A versatile martial melee weapon.",
-                    },
-                },
-                "armor": {
-                    "summary": "Armor",
-                    "value": {
-                        "name": "Chain Mail",
-                        "item_type": "ARMOR",
-                        "rarity": "NONE",
-                        "weight": 55,
-                        "cost_gold": 75,
-                        "armor_class_base": 16,
-                        "armor_class_dex_bonus": False,
-                        "strength_requirement": 13,
-                        "stealth_disadvantage": True,
-                        "description": (
-                            "Made of interlocking metal rings, chain mail includes a layer of quilted "
-                            "fabric worn underneath to prevent chafing."
-                        ),
-                    },
-                },
                 "magic_item": {
-                    "summary": "Magic item requiring attunement",
+                    "summary": "Wondrous item requiring attunement",
                     "value": {
                         "name": "Cloak of Protection",
-                        "item_type": "WONDROUS_ITEM",
+                        "subtype": "WONDROUS_ITEM",
                         "rarity": "UNCOMMON",
                         "requires_attunement": True,
                         "weight": 1,
                         "description": "You gain a +1 bonus to AC and saving throws while wearing this cloak.",
                     },
+                },
+                "gear": {
+                    "summary": "Adventuring gear",
+                    "value": {"name": "Rope, hempen (50 feet)", "subtype": "ADVENTURING_GEAR", "weight": 10},
                 },
             },
         ),
@@ -121,7 +113,10 @@ async def create_item(
     item_service: ItemCrudDep,
     _: GmUserDep,
 ):
-    """Create a new item. **GM only.**"""
+    """
+    Create a `GEAR` item — a potion, ring, wondrous item, gear, treasure… (`subtype`). Weapons, armor and
+    tools have their own endpoints (`POST /items/weapons`, `/items/armor`, `/items/tools`). **GM only.**
+    """
 
     return await item_service.create(data)
 
@@ -129,41 +124,17 @@ async def create_item(
 @router.patch(
     "/{item_id:int}",
     response_model=ItemResponse,
-    summary="Update an item",
+    summary="Update an item's core fields",
     responses={
         409: {"description": "Another item already uses the requested name."},
         404: {"description": "No item exists with the given ID."},
+        422: {"description": "`subtype` sent for an item that isn't GEAR."},
     },
 )
-async def update_item(
-    item_id: int,
-    data: Annotated[
-        ItemUpdate,
-        Body(
-            openapi_examples={
-                "price-and-weight": {
-                    "summary": "Adjust cost and weight",
-                    "value": {
-                        "cost_gold": 20,
-                        "weight": 4,
-                    },
-                },
-                "make-magic": {
-                    "summary": "Turn the item into an attunement-required magic item",
-                    "value": {
-                        "rarity": "RARE",
-                        "requires_attunement": True,
-                        "description": "You gain a +2 bonus to AC and saving throws while wearing this cloak.",
-                    },
-                },
-            }
-        ),
-    ],
-    item_service: ItemCrudDep,
-    _: GmUserDep,
-):
+async def update_item(item_id: int, data: ItemCoreUpdate, item_service: ItemCrudDep, _: GmUserDep):
     """
-    Partially update an item only with the provided fields.
+    Partially update the core (name, rarity, attunement, weight, cost, magic bonus, description; `subtype` of
+    a GEAR item). The kind is fixed; a weapon's/armor's/tool's stats are `PATCH /items/{id}/weapon|armor|tool`.
     **GM only.**
     """
 

@@ -61,9 +61,7 @@ def upgrade() -> None:
         ["id"],
         ondelete="RESTRICT",
     )
-    op.create_index(
-        "ix_character_feature_choices_picked_spell_id", "character_feature_choices", ["picked_spell_id"]
-    )
+    op.create_index("ix_character_feature_choices_picked_spell_id", "character_feature_choices", ["picked_spell_id"])
     op.drop_index("uq_character_feature_choice_option", table_name="character_feature_choices")
     op.create_index(
         "uq_character_feature_choice_option",

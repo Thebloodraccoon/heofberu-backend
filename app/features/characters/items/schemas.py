@@ -5,6 +5,14 @@ from pydantic import BaseModel, ConfigDict
 from app.features.items.crud.schemas import ItemResponse
 
 
+class CharacterItemEquip(BaseModel):
+    """Put a stack on or take it off (the sheet's own toggle; quantity and attunement stay GM-only)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_equipped: bool
+
+
 class CharacterItemResponse(BaseModel):
     """
     Aggregates an owned item stack with its quantity/state flags and the
@@ -17,4 +25,6 @@ class CharacterItemResponse(BaseModel):
     character_id: int
     item_id: int
     quantity: int
+    is_equipped: bool = False
+    is_attuned: bool = False
     item: ItemResponse

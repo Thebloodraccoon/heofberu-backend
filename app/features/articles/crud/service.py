@@ -167,13 +167,13 @@ class ArticleCrudService(BaseService[Article, ArticleCreate, ArticleUpdate, Arti
 
         Raises:
             RecordNotFoundError: no such article.
-            ArticleEditForbiddenException: ``actor`` is neither the author nor the founder (403).
+            ArticleEditForbiddenException: ``actor`` may not edit it — see ``ArticleActor.can_edit`` (403).
         """
 
         fields = data.model_dump(exclude_unset=True)
         change_note = fields.pop("change_note", None)
         state = await self.writer.write_state_or_404(article_id)
-        actor.ensure_can_edit(article_id, state.author_id)
+        actor.ensure_can_edit(article_id, state.author_id, state.article_type)
 
         return await self.writer.apply_changes(
             article_id, fields, state, editor_id=actor.id, reviewer_id=actor.id, change_note=change_note
@@ -206,11 +206,12 @@ class ArticleCrudService(BaseService[Article, ArticleCreate, ArticleUpdate, Arti
         )
         return await self.update_article(article_id, data, actor)
 
-    async def delete(self, item_id: int) -> bool:
+    async def delete(self, item_id: int, actor: ArticleActor) -> bool:
         """
-        Delete an article, then best-effort remove its images from storage.
+        Delete an article as the founder, or as the author of a quest/session; then best-effort remove its images.
 
-        In one transaction under the tree lock: the children are detached (their subtrees re-rooted, since
+        In one transaction: the article row is locked and the permission checked against it, then under the
+        tree lock the children are detached (their subtrees re-rooted, since
         ``ON DELETE SET NULL`` only clears ``parent_id``) and the row is deleted (tags, relations, images cascade).
         After commit the article's and its children's cached payloads are dropped (the whole namespace past
         ``MAX_POINT_INVALIDATIONS`` children). Storage cleanup runs last, outside the transaction: Storage can't
@@ -218,11 +219,15 @@ class ArticleCrudService(BaseService[Article, ArticleCreate, ArticleUpdate, Arti
 
         Raises:
             RecordNotFoundError: no such article.
+            ArticleDeleteForbiddenException: ``actor`` may not delete it — see ``ArticleActor.can_delete`` (403).
         """
 
         image_keys = await self.repository.list_image_keys(item_id)
 
         async with self._atomic():
+            await self.writer.lock_version(item_id)
+            state = await self.writer.write_state_or_404(item_id)
+            actor.ensure_can_delete(item_id, state.author_id, state.article_type)
             await self._tree.lock_tree()
             child_ids = await self._tree.detach_children(item_id)
             if not await self.repository.delete_row(item_id):

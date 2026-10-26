@@ -135,9 +135,7 @@ class TestUpdateFixedEffect:
         )
 
         assert response.status_code == 200, response.text
-        assert static_items(response.json(), "skill") == [
-            {"id": row["id"], "skill_id": skill.id, "mode": "EXPERTISE"}
-        ]
+        assert static_items(response.json(), "skill") == [{"id": row["id"], "skill_id": skill.id, "mode": "EXPERTISE"}]
 
     async def test_patch_ability_amount(self, client, gm_token, create_feature):
         feature = await create_feature(name="Bigger Boost")

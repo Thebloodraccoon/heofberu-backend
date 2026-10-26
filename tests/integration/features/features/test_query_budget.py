@@ -67,7 +67,8 @@ class TestQueryBudget:
             response = await client.get(f"/features/{feature_with_tree}/effects")
 
         assert response.status_code == 200
-        assert len(statements) <= 17
+        # One selectin per effect table; options skip speed/armor-class (no choice type carries them): 21 - 2.
+        assert len(statements) <= 19
 
     async def test_get_choice_groups_does_not_load_fixed_effects(self, client, db_session, feature_with_tree):
         with count_statements(db_session) as statements:
@@ -83,7 +84,8 @@ class TestQueryBudget:
             )
 
         assert response.status_code == 200
-        assert len(statements) <= 25
+        # Options skip the speed/armor-class tables (no choice type carries them): 28 - 2.
+        assert len(statements) <= 26
 
     async def test_create_issues_no_tree_queries(self, client, gm_token, db_session):
         with count_statements(db_session) as statements:

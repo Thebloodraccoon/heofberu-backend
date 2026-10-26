@@ -11,13 +11,18 @@ from app.core.base.repository import BaseRepository
 from app.models.character.character_asi_choice_model import CharacterASIChoice
 from app.models.character.character_feature_model import CharacterFeature
 from app.models.features.feature_engine_models import (
+    CHOICE_OPTION_EFFECT_ATTRS,
+    EFFECT_TYPES,
     FeatureAbilityScoreEffect,
+    FeatureArmorClassEffect,
     FeatureArmorProficiencyEffect,
     FeatureChoiceGroup,
     FeatureChoiceOption,
     FeatureSavingThrowEffect,
     FeatureSkillProficiencyEffect,
+    FeatureSpeedEffect,
     FeatureSpellGrantEffect,
+    FeatureToolProficiencyEffect,
     FeatureWeaponProficiencyEffect,
 )
 from app.models.features.feature_model import Feature
@@ -28,7 +33,10 @@ _STATIC_EFFECT_MODELS = (
     FeatureSavingThrowEffect,
     FeatureArmorProficiencyEffect,
     FeatureWeaponProficiencyEffect,
+    FeatureToolProficiencyEffect,
     FeatureSpellGrantEffect,
+    FeatureSpeedEffect,
+    FeatureArmorClassEffect,
 )
 
 # The catalog relationship each effect type resolves its display name
@@ -38,17 +46,11 @@ _NAME_RELATIONSHIP_BY_EFFECT_ATTR = {
     "skill_effects": FeatureSkillProficiencyEffect.skill,
     "weapon_effects": FeatureWeaponProficiencyEffect.item,
     "armor_effects": FeatureArmorProficiencyEffect.item,
+    "tool_effects": FeatureToolProficiencyEffect.item,
     "spell_effects": FeatureSpellGrantEffect.spell,
 }
 
-EFFECT_ATTRS = (
-    "ability_effects",
-    "skill_effects",
-    "saving_throw_effects",
-    "armor_effects",
-    "weapon_effects",
-    "spell_effects",
-)
+EFFECT_ATTRS = tuple(attr for _, attr in EFFECT_TYPES)
 
 
 def feature_summary_loads(base=None, *, with_names: bool = True) -> list:
@@ -74,17 +76,20 @@ def feature_summary_loads(base=None, *, with_names: bool = True) -> list:
     def with_name(loader, effect_attr):
         name_relationship = _NAME_RELATIONSHIP_BY_EFFECT_ATTR.get(effect_attr)
         if not with_names or name_relationship is None:
-            return loader
+            return [loader]
+        loads = [loader.selectinload(name_relationship)]
         if effect_attr == "spell_effects":
             # an open spell effect's filter names its classes (``summary`` / the HTML summary)
-            loader.selectinload(FeatureSpellGrantEffect.filter_classes)
-        return loader.selectinload(name_relationship)
+            loads.append(loader.selectinload(FeatureSpellGrantEffect.filter_classes))
+        return loads
 
-    loads = [with_name(load(getattr(Feature, attr)), attr) for attr in EFFECT_ATTRS]
+    loads = [option for attr in EFFECT_ATTRS for option in with_name(load(getattr(Feature, attr)), attr)]
 
     options_load = load(Feature.choice_groups).selectinload(FeatureChoiceGroup.options)
     loads.extend(
-        with_name(options_load.selectinload(getattr(FeatureChoiceOption, attr)), attr) for attr in EFFECT_ATTRS
+        option
+        for attr in CHOICE_OPTION_EFFECT_ATTRS
+        for option in with_name(options_load.selectinload(getattr(FeatureChoiceOption, attr)), attr)
     )
 
     return loads

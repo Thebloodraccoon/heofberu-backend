@@ -238,12 +238,23 @@ class AuthService(TransactionMixin):
         refresh_token_str: str | None,
     ) -> LogoutResponse:
         """
-        Revoke the access token and, if present, the refresh cookie so both
-        are immediately unusable. A missing/invalid refresh token is tolerated.
+        Revoke whatever still works: the access token and the refresh cookie, so neither can be used again.
+
+        An expired (or missing) access token is fine as long as the refresh cookie is valid — a logout after the
+        access token ran out must still kill the cookie, or the next refresh would silently log the user back in.
+
+        Raises:
+            InvalidTokenException: neither the access token nor the refresh cookie is valid (401).
         """
 
-        decoded_access_token = verify_token(access_token, "access")
-        await blacklist_token(decoded_access_token.jti, decoded_access_token.remaining_seconds, reason="logout")
+        revoked = False
+        try:
+            decoded_access = verify_token(access_token, "access")
+        except InvalidTokenException:
+            pass
+        else:
+            await blacklist_token(decoded_access.jti, decoded_access.remaining_seconds, reason="logout")
+            revoked = True
 
         if refresh_token_str:
             try:
@@ -252,6 +263,10 @@ class AuthService(TransactionMixin):
                 pass
             else:
                 await blacklist_token(decoded_refresh.jti, decoded_refresh.remaining_seconds, reason="logout")
+                revoked = True
+
+        if not revoked:
+            raise InvalidTokenException()
 
         return LogoutResponse(detail="Successful logout")
 

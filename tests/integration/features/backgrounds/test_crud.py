@@ -80,7 +80,7 @@ class TestBackgroundCrud:
 
     async def test_gm_can_set_background_starting_items(self, client, gm_token, create_background, create_item):
         background = await create_background(name="Acolyte")
-        censer = await create_item(name="Censer", item_type="ADVENTURING_GEAR")
+        censer = await create_item(name="Censer", kind="GEAR", subtype="ADVENTURING_GEAR")
 
         response = await client.put(
             f"/backgrounds/{background.id}/items",

@@ -138,7 +138,7 @@ class TestGetById:
         background = await create_background(name="Sage")
         await create_feature(name="Researcher", source_type="BACKGROUND", background_id=background.id)
         skill = await create_skill(name="Arcana", ability="INT")
-        item = await create_item(name="Ink", item_type="ADVENTURING_GEAR")
+        item = await create_item(name="Ink", kind="GEAR", subtype="ADVENTURING_GEAR")
         await client.put(f"/backgrounds/{background.id}/skills", json={"skill_ids": [skill.id]}, headers=auth(gm_token))
         await client.put(
             f"/backgrounds/{background.id}/items",
@@ -235,8 +235,8 @@ class TestChoiceGroups:
 
     async def test_gm_can_replace_choice_groups(self, client, gm_token, create_background, create_item):
         background = await create_background(name="Sage")
-        quill = await create_item(name="Quill", item_type="ADVENTURING_GEAR")
-        ink = await create_item(name="Ink", item_type="ADVENTURING_GEAR")
+        quill = await create_item(name="Quill", kind="GEAR", subtype="ADVENTURING_GEAR")
+        ink = await create_item(name="Ink", kind="GEAR", subtype="ADVENTURING_GEAR")
 
         response = await client.put(
             f"/backgrounds/{background.id}/choice-groups",

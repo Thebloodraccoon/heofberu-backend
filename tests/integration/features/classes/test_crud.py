@@ -387,8 +387,8 @@ class TestClassCrud:
 
     async def test_gm_can_set_class_starting_items(self, client, gm_token, create_class, create_item):
         character_class = await create_class(name="Fighter")
-        longsword = await create_item(name="Longsword", item_type="WEAPON")
-        shield = await create_item(name="Shield", item_type="ARMOR")
+        longsword = await create_item(name="Longsword", kind="WEAPON")
+        shield = await create_item(name="Shield", kind="ARMOR")
 
         response = await client.put(
             f"/classes/{character_class.id}/items",
@@ -408,8 +408,8 @@ class TestClassCrud:
 
     async def test_set_class_starting_items_is_full_replace(self, client, gm_token, create_class, create_item):
         character_class = await create_class(name="Fighter")
-        longsword = await create_item(name="Longsword", item_type="WEAPON")
-        shortsword = await create_item(name="Shortsword", item_type="WEAPON")
+        longsword = await create_item(name="Longsword", kind="WEAPON")
+        shortsword = await create_item(name="Shortsword", kind="WEAPON")
 
         await client.put(
             f"/classes/{character_class.id}/items",
@@ -441,7 +441,7 @@ class TestClassCrud:
 
     async def test_player_cannot_set_class_starting_items(self, client, player_token, create_class, create_item):
         character_class = await create_class(name="Fighter")
-        longsword = await create_item(name="Longsword", item_type="WEAPON")
+        longsword = await create_item(name="Longsword", kind="WEAPON")
 
         response = await client.put(
             f"/classes/{character_class.id}/items",

@@ -4,10 +4,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.gm_panel.exceptions import (
+    AttunementNotAllowedException,
     CharacterItemNotFoundException,
     CharacterItemQuantityLimitException,
 )
-from app.features.characters.gm_panel.items.schemas import MAX_ITEM_QUANTITY, CharacterItemAdd, CharacterItemUpdate
+from app.features.characters.gm_panel.items.schemas import (
+    MAX_ATTUNED_ITEMS,
+    MAX_ITEM_QUANTITY,
+    CharacterItemAdd,
+    CharacterItemUpdate,
+)
 from app.features.characters.items.repository import CharacterItemRepository
 from app.features.characters.items.schemas import CharacterItemResponse
 from app.features.characters.locking import lock_character
@@ -76,7 +82,10 @@ class GmPanelItemService(CharacterSubDomainService):
     async def update_item(
         self, character_id: int, character_item_id: int, data: CharacterItemUpdate, current_user: UserResponse
     ) -> CharacterItemResponse:
-        """Change a stack's quantity. GM-only. PATCH semantics."""
+        """
+        Change a stack's quantity or equip/attunement state. GM-only. PATCH semantics. Attuning needs an item
+        that requires attunement and a free slot (``MAX_ATTUNED_ITEMS``; checked under the character lock).
+        """
 
         await self.get_character_for_gm(character_id, current_user)
 
@@ -84,6 +93,14 @@ class GmPanelItemService(CharacterSubDomainService):
         async with self._atomic():
             await lock_character(self.repository.db, character_id)
             stack = await self._get_stack_or_404(character_id, character_item_id)
+            if fields.get("is_attuned") and not stack.is_attuned:
+                if not stack.item.requires_attunement:
+                    raise AttunementNotAllowedException(f"Item {stack.item_id} doesn't require attunement.")
+                attuned = await self.character_item_repository.count_attuned(character_id, exclude_stack_id=stack.id)
+                if attuned >= MAX_ATTUNED_ITEMS:
+                    raise AttunementNotAllowedException(
+                        f"A character can be attuned to at most {MAX_ATTUNED_ITEMS} items."
+                    )
             updated_stack = await self.character_item_repository.update_character_item(stack, fields)
             await self._invalidate_character(character_id)
 

@@ -67,12 +67,15 @@ from app.models.classes.subclass_model import Subclass  # noqa: F401
 # those are imported below — mapper configuration tolerates the ordering.
 from app.models.features.feature_engine_models import (  # noqa: F401
     FeatureAbilityScoreEffect,
+    FeatureArmorClassEffect,
     FeatureArmorProficiencyEffect,
     FeatureChoiceGroup,
     FeatureChoiceOption,
     FeatureSavingThrowEffect,
     FeatureSkillProficiencyEffect,
+    FeatureSpeedEffect,
     FeatureSpellGrantEffect,
+    FeatureToolProficiencyEffect,
     FeatureWeaponProficiencyEffect,
 )
 
@@ -81,11 +84,12 @@ from app.models.features.feature_engine_models import (  # noqa: F401
 from app.models.features.feature_model import Feature  # noqa: F401
 
 # Item and character inventory.
-from app.models.items.item_model import Item  # noqa: F401
+from app.models.items.item_model import Item, ItemArmorDetails, ItemToolDetails, ItemWeaponDetails  # noqa: F401
 
 # Source-owned starting equipment (classes/backgrounds).
 from app.models.items.item_source_choice_model import SourceItemChoiceGroup, SourceItemChoiceOption  # noqa: F401
 from app.models.items.item_source_model import SourceItem  # noqa: F401
+from app.models.items.weapon_property_model import WeaponProperty, item_weapon_properties  # noqa: F401
 from app.models.races.race_association_models import RaceAbilityBonus, race_skills, race_tags  # noqa: F401
 
 # Race and its associations.

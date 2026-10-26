@@ -170,9 +170,7 @@ class PublicCampaignCrudService(PublicCampaignScopedService):
 
         public_campaign = await self.repository.get_by_id(public_campaign_id)
         is_gm = is_gm_reader(user)
-        item = self._list_item(
-            public_campaign, await self.repository.campaign_count(public_campaign_id), is_gm=is_gm
-        )
+        item = self._list_item(public_campaign, await self.repository.campaign_count(public_campaign_id), is_gm=is_gm)
         description = public_campaign.description_markdown
         return PublicCampaignResponse(
             **item.model_dump(),

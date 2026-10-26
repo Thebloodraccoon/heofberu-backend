@@ -236,9 +236,7 @@ class TestExpertisePicks:
 
         assert await skills(client, gm_token, character.id) == {}
 
-    async def test_upgrade_turns_an_existing_proficiency_into_expertise(
-        self, client, gm_token, create_feature, setup
-    ):
+    async def test_upgrade_turns_an_existing_proficiency_into_expertise(self, client, gm_token, create_feature, setup):
         character, stealth, arcana, _ = setup
         await proficient_in(client, gm_token, create_feature, character.id, stealth.id)
         feature = await create_feature(name="Keen Senses", source_type="OTHER", level=None)

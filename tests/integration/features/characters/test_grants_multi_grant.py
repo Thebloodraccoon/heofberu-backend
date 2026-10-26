@@ -60,11 +60,7 @@ class TestMultiGrantDedup:
                 client,
                 gm_token,
                 feature.id,
-                {
-                    "static_groups": [
-                        {"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY"}]}
-                    ]
-                },
+                {"static_groups": [{"effect_type": "skill", "items": [{"skill_id": skill.id, "mode": "PROFICIENCY"}]}]},
             )
             assert fx_resp.status_code == 200, fx_resp.text
 

@@ -1,8 +1,18 @@
 """Shared starting-equipment schemas for cross-catalog nested flows."""
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.constants import ItemType
+from app.constants import ArmorProficiency, ItemKind, ToolCategory, WeaponProficiency
+
+# The filter fields of a starting-equipment option ("any simple weapon"); all set ones must match.
+OPTION_FILTER_FIELDS = ("kind", "weapon_category", "armor_category", "tool_category")
+
+# Each category filter implies its item kind.
+_CATEGORY_KINDS = (
+    ("weapon_category", ItemKind.WEAPON),
+    ("armor_category", ItemKind.ARMOR),
+    ("tool_category", ItemKind.TOOL),
+)
 
 
 class SourceItemEntry(BaseModel):
@@ -41,7 +51,7 @@ class ItemBriefResponse(BaseModel):
 
     id: int
     name: str
-    item_type: ItemType
+    kind: ItemKind
 
 
 class SourceItemResponse(BaseModel):
@@ -55,10 +65,34 @@ class SourceItemResponse(BaseModel):
 
 
 class ChoiceOptionEntry(BaseModel):
-    """One option inside a choice group: a reference item plus a quantity."""
+    """
+    One option inside a choice group: a reference item plus a quantity — or, with ``item_id`` unset, a filter
+    ("any simple weapon": ``weapon_category=SIMPLE``; "any musical instrument": ``tool_category``): the player
+    names an item matching every set filter field at character creation.
+    """
 
-    item_id: int
+    item_id: int | None = None
+    kind: ItemKind | None = None
+    weapon_category: WeaponProficiency | None = None
+    armor_category: ArmorProficiency | None = None
+    tool_category: ToolCategory | None = None
     quantity: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def _item_or_filter(self):
+        """Exactly one of: a concrete item, or at least one filter field."""
+
+        has_filter = any(getattr(self, name) is not None for name in OPTION_FILTER_FIELDS)
+        if (self.item_id is not None) == has_filter:
+            raise ValueError("Set either item_id or at least one filter field (kind/…_category), not both.")
+
+        categories = [name for name, _ in _CATEGORY_KINDS if getattr(self, name) is not None]
+        if len(categories) > 1:
+            raise ValueError(f"Set at most one category per option, got {', '.join(categories)}.")
+        for name, kind in _CATEGORY_KINDS:
+            if getattr(self, name) is not None and self.kind is not None and self.kind != kind:
+                raise ValueError(f"{name} applies to {kind.value} items only, not kind={self.kind.value}.")
+        return self
 
 
 class ChoiceGroupEntry(BaseModel):
@@ -72,7 +106,7 @@ class ChoiceGroupEntry(BaseModel):
     def validate_unique_item_ids(cls, options: list[ChoiceOptionEntry], info):
         """Reject duplicate item IDs and pick_count exceeding option count."""
 
-        item_ids = [o.item_id for o in options]
+        item_ids = [o.item_id for o in options if o.item_id is not None]
         if len(item_ids) != len(set(item_ids)):
             raise ValueError("Duplicate item IDs within a choice group are not allowed.")
 
@@ -94,10 +128,14 @@ class ChoiceOptionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    item_id: int
+    item_id: int | None = None
+    kind: ItemKind | None = None
+    weapon_category: WeaponProficiency | None = None
+    armor_category: ArmorProficiency | None = None
+    tool_category: ToolCategory | None = None
     quantity: int
     sort_order: int
-    item: ItemBriefResponse
+    item: ItemBriefResponse | None = None
 
 
 class ChoiceGroupResponse(BaseModel):

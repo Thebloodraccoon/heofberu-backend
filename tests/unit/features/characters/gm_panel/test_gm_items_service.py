@@ -12,6 +12,7 @@ from app.features.characters.gm_panel.exceptions import (
 )
 from app.features.characters.gm_panel.items.schemas import MAX_ITEM_QUANTITY, CharacterItemAdd, CharacterItemUpdate
 from app.features.characters.gm_panel.items.service import GmPanelItemService
+from app.features.characters.items.repository import CharacterItemRepository
 from app.features.items.exceptions import ItemNotFoundException
 from tests.unit.fakes import FakeAsyncSession, FakeRepository
 
@@ -68,7 +69,7 @@ def no_cache_invalidate(monkeypatch):
 
 
 def make_item(item_id=5) -> SimpleNamespace:
-    return SimpleNamespace(id=item_id, name="Longsword", item_type="WEAPON")
+    return SimpleNamespace(id=item_id, name="Longsword", kind="WEAPON")
 
 
 def make_stack(stack_id=3, item_id=5, **overrides) -> SimpleNamespace:
@@ -202,3 +203,31 @@ class TestRemoveItem:
 
         with pytest.raises(CharacterItemNotFoundException):
             await service.remove_item(1, 42, SimpleNamespace())
+
+
+class ScalarRecordingSession(FakeAsyncSession):
+    """Remembers every ``scalar`` statement."""
+
+    def __init__(self):
+        super().__init__(scalar_results=[2])
+        self.scalar_statements = []
+
+    async def scalar(self, stmt):
+        self.scalar_statements.append(stmt)
+        return await super().scalar(stmt)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestCountAttuned:
+    async def test_only_stacks_whose_item_still_requires_attunement_count(self):
+        session = ScalarRecordingSession()
+
+        count = await CharacterItemRepository(session).count_attuned(7, exclude_stack_id=3)
+
+        sql = str(session.scalar_statements[0])
+        assert count == 2
+        assert "JOIN items" in sql
+        assert "items.requires_attunement" in sql
+        assert "character_items.is_attuned" in sql
+        assert "character_items.id !=" in sql

@@ -66,7 +66,8 @@ class ArticleWorkflowService(ArticleScopedService):
         allowed_from, target = ARTICLE_TRANSITIONS[action]
 
         if action == "submit":
-            actor.ensure_can_edit(article_id, (await self._write_state_or_404(article_id)).author_id)
+            state = await self._write_state_or_404(article_id)
+            actor.ensure_can_edit(article_id, state.author_id, state.article_type)
 
         async with self._atomic():
             moved = await self.repository.transition_status(

@@ -146,3 +146,16 @@ class TestLogout:
         response = await client.post("/auth/logout")
 
         assert response.status_code == 401
+
+    async def test_logout_with_a_dead_access_token_still_revokes_the_refresh_cookie(
+        self, client, redis_client, create_user
+    ):
+        await create_user(email="idle@example.com", password="password123")
+        await client.post("/auth/login", json={"email": "idle@example.com", "password": "password123"})
+
+        # an access token that no longer verifies (expired after idling) — the refresh cookie is still in the jar
+        logout_response = await client.post("/auth/logout", headers={"Authorization": "Bearer expired.or.garbage"})
+        refresh_response = await client.post("/auth/refresh")
+
+        assert logout_response.status_code == 200
+        assert refresh_response.status_code == 401

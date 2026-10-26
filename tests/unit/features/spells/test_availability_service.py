@@ -62,7 +62,7 @@ def make_spell(**overrides) -> Spell:
 
 
 def make_child(**overrides) -> SimpleNamespace:
-    base = {"id": 5, "name": "Wizard"}
+    base = {"id": 5, "name": "Wizard", "class_id": 1, "race_id": 1}  # parent ids: subclass/subrace refs carry them
     base.update(overrides)
     return SimpleNamespace(**base)
 

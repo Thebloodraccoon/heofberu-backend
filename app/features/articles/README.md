@@ -12,7 +12,7 @@ articles/
 ├── base.py              # ArticleScopedRepository (id lookups, exists_visible, get_write_state), ArticleScopedService
 ├── cache.py             # namespaces, article_cache_key, invalidate_articles / _all_articles / _article_trees, TREE_PAYLOAD_FIELDS
 ├── visibility.py        # visibility_conditions(include_hidden, model) — the non-GM row filter
-├── access.py            # ArticleActor: who may edit (author or founder)
+├── access.py            # ArticleActor: who may edit (author/founder; any GM on quest/session) and delete
 │                        # (:::gm stripping and slugify live in app/features/shared/{secrets,slug}.py)
 ├── exceptions.py        # article AppErrors (cycle, tree depth, transitions, versions, proposals)
 ├── schema_validators.py # shared pydantic validator bodies
@@ -41,8 +41,8 @@ use `crud/writer.py:ArticleWriter`, and `ArticleCrudService` uses `images.servic
 | GET | `/articles/search?q=` | open | listing — ranked full-text + typo-tolerant title |
 | GET | `/articles/{id}` · `/articles/by-slug/{slug}` | open | crud — full article, masked for non-GMs |
 | POST | `/articles` | GM | crud — create a draft |
-| PATCH | `/articles/{id}` | author / founder | crud — edit (new version on content change) |
-| DELETE | `/articles/{id}` | founder | crud — children detached, images removed |
+| PATCH | `/articles/{id}` | author / founder (quest/session: any GM) | crud — edit (new version on content change) |
+| DELETE | `/articles/{id}` | founder; quest/session: also its author | crud — children detached, images removed |
 | GET | `/articles/{id}/children` · `/descendants` · `/ancestors` | open | tree |
 | POST | `/articles/{id}/submit` | author / founder | workflow — draft → in_review |
 | POST | `/articles/{id}/publish?version=` | founder | workflow — in_review → published |

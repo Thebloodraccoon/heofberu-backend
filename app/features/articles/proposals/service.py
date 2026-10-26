@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ArticleProposalStatus
+from app.constants import CAMPAIGN_ARTICLE_TYPES, ArticleProposalStatus
 from app.core.base.transaction import TransactionMixin
 from app.core.exceptions import RecordNotFoundError
 from app.core.pagination import CursorPage, Page, cursor_page, decode_cursor, paginate
@@ -80,11 +80,11 @@ class ArticleProposalsService(TransactionMixin):
         Store the article's current content with ``data`` applied, based on its current version.
 
         Any GM but the article's author (409: they edit directly), the founder included, so they can leave a
-        change to the author's judgement.
+        change to the author's judgement. Never for a quest/session (409): every GM edits those directly.
         """
 
         state = await self._write_state_or_404(article_id)
-        if actor.id == state.author_id:
+        if actor.id == state.author_id or state.article_type in CAMPAIGN_ARTICLE_TYPES:
             raise ArticleProposalNotNeededException(article_id)
 
         fields = data.model_dump(exclude_unset=True)
@@ -268,7 +268,7 @@ class ArticleProposalsService(TransactionMixin):
             raise RecordNotFoundError(model_name="ArticleProposal", model_id=str(proposal_id))
 
         state = await self._write_state_or_404(article_id)
-        if proposal.proposer_id != actor.id and not actor.can_edit(state.author_id):
+        if proposal.proposer_id != actor.id and not actor.can_edit(state.author_id, state.article_type):
             raise ArticleProposalChangeForbiddenException(proposal_id)
         if proposal.status != ArticleProposalStatus.PENDING:
             raise ArticleProposalClosedException(proposal_id, ArticleProposalStatus(proposal.status).value)
@@ -316,7 +316,7 @@ class ArticleProposalsService(TransactionMixin):
 
         proposal = (await self._get_or_404(article_id, proposal_id))[0]
         state = await self._write_state_or_404(article_id)
-        actor.ensure_can_edit(article_id, state.author_id)
+        actor.ensure_can_edit(article_id, state.author_id, state.article_type)
         return proposal, state
 
     async def _list(

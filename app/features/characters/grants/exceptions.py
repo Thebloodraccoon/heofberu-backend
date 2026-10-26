@@ -186,6 +186,36 @@ class SpellPickNotAllowedError(AppError):
         super().__init__(f"Option {option_id} can't be taken with spell {spell_id}: {reason}.")
 
 
+class ItemPickRequiredError(AppError):
+    """Raised (422) when an "any tool" (open) option is picked without naming the tool."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int):
+        """Initialize with the offending option id."""
+        super().__init__(f"Option {option_id} has an open ('any tool') tool effect — name the tool in 'item_id'.")
+
+
+class UnexpectedItemPickError(AppError):
+    """Raised (422) when an answer names an ``item_id`` for an option that has no open tool effect."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int):
+        """Initialize with the offending option id."""
+        super().__init__(f"Option {option_id} has no open ('any tool') tool effect — 'item_id' must not be set.")
+
+
+class ItemPickNotAllowedError(AppError):
+    """Raised (422) when an open tool option names a wrong or owned tool, or a concrete one grants an owned tool."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def __init__(self, option_id: int, item_id: int, reason: str):
+        """Initialize with the offending option/item and why the pick is refused."""
+        super().__init__(f"Option {option_id} can't be taken with item {item_id}: {reason}.")
+
+
 class AbilityPickRequiredError(AppError):
     """Raised (422) when an "any ability/saving throw" (open) option is picked without naming the ability."""
 

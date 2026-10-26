@@ -1,125 +1,168 @@
-"""Request/response schemas for the item endpoints."""
+"""Item schemas: the core every item has, the per-kind detail views, and the core / gear writes."""
 
 from decimal import Decimal
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
-from app.constants import DamageType, DiceType, ItemRarity, ItemType
+from app.constants import (
+    ArmorProficiency,
+    AttackType,
+    DamageType,
+    DiceType,
+    GearType,
+    ItemKind,
+    ItemRarity,
+    ToolCategory,
+    WeaponProficiency,
+)
+from app.features.features.effects.schemas import EffectGroup
 
-# Input bounds follow the column sizes (``Numeric(6, 2)`` weight, ``Numeric(10, 2)`` cost, ``String(200)`` name,
-# ``String(300)`` properties); responses stay unconstrained so legacy rows always serialize.
+# Input bounds follow the column sizes (``Numeric(6, 2)`` weight, ``Numeric(10, 2)`` cost, ``String(200)`` name);
+# responses stay unconstrained so legacy rows always serialize.
 ItemName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Weight = Annotated[Decimal, Field(ge=0, max_digits=6, decimal_places=2)]
 CostGold = Annotated[Decimal, Field(ge=0, max_digits=10, decimal_places=2)]
-DiceCount = Annotated[int, Field(ge=1, le=100)]
-ArmorClass = Annotated[int, Field(ge=0, le=100)]
-MaxDexBonus = Annotated[int, Field(ge=0, le=20)]
-StrengthRequirement = Annotated[int, Field(ge=0, le=30)]
-WeaponProperties = Annotated[str, StringConstraints(max_length=300)]
+MagicBonus = Annotated[int, Field(ge=-10, le=10)]
 
-_NOT_NULL_FIELDS = (
-    "name",
-    "item_type",
-    "rarity",
-    "requires_attunement",
-    "armor_class_dex_bonus",
-    "stealth_disadvantage",
-    "description",
-)
+# The core columns a kind's create payload shares (``ItemCoreCreate``).
+CORE_FIELDS = ("name", "rarity", "requires_attunement", "weight", "cost_gold", "magic_bonus", "description")
 
 
-class ItemBase(BaseModel):
-    """Base item fields, including weapon- and armor-specific attributes."""
+def reject_explicit_null(names: tuple[str, ...]):
+    """A ``field_validator`` rejecting an explicit ``null`` for NOT NULL columns of a PATCH payload."""
 
+    def check(cls, value):
+        if value is None:
+            raise ValueError("This field cannot be null; omit it to leave it unchanged.")
+        return value
+
+    return field_validator(*names)(check)
+
+
+class WeaponPropertyBrief(BaseModel):
+    """A weapon property as embedded in an item."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
     name: str
-    item_type: ItemType
-    rarity: ItemRarity = ItemRarity.NONE
-    requires_attunement: bool = False
 
-    weight: Decimal | None = None  # in pounds
-    cost_gold: Decimal | None = None
 
-    # Weapon-specific (relevant when item_type == WEAPON)
-    damage_dice_count: int | None = None  # e.g. 2
-    damage_dice_type: DiceType | None = None  # e.g. D6 -> "2d6" combined
+class WeaponDetailsResponse(BaseModel):
+    """The weapon stats of a ``WEAPON`` item."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    weapon_category: WeaponProficiency | None = None
+    attack_type: AttackType | None = None
+    damage_dice_count: int | None = None
+    damage_dice_type: DiceType | None = None
     damage_type: DamageType | None = None
-    weapon_properties: str | None = None  # e.g. "FINESSE,LIGHT,THROWN"
+    range_normal: int | None = None
+    range_long: int | None = None
+    versatile_dice_count: int | None = None
+    versatile_dice_type: DiceType | None = None
 
-    # Armor-specific (relevant when item_type in (ARMOR, SHIELD))
+
+class ArmorDetailsResponse(BaseModel):
+    """The armor stats of an ``ARMOR`` item (``armor_class_base`` of a shield is its bonus)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    armor_category: ArmorProficiency | None = None
     armor_class_base: int | None = None
-    armor_class_dex_bonus: bool = True
     armor_class_max_dex_bonus: int | None = None
     strength_requirement: int | None = None
     stealth_disadvantage: bool = False
 
-    description: str = ""
 
-
-class ItemCreate(ItemBase):
-    """Payload for creating an item (GM only)."""
-
-    name: ItemName
-    weight: Weight | None = None
-    cost_gold: CostGold | None = None
-    damage_dice_count: DiceCount | None = None
-    weapon_properties: WeaponProperties | None = None
-    armor_class_base: ArmorClass | None = None
-    armor_class_max_dex_bonus: MaxDexBonus | None = None
-    strength_requirement: StrengthRequirement | None = None
-
-
-class ItemUpdate(BaseModel):
-    """
-    All fields optional — only provided fields are updated (PATCH semantics).
-
-    An explicit ``null`` is rejected for the NOT NULL columns; the nullable
-    weapon/armor/price fields can be cleared with ``null``.
-    """
-
-    name: ItemName | None = None
-    item_type: ItemType | None = None
-    rarity: ItemRarity | None = None
-    requires_attunement: bool | None = None
-    weight: Weight | None = None
-    cost_gold: CostGold | None = None
-    damage_dice_count: DiceCount | None = None
-    damage_dice_type: DiceType | None = None
-    damage_type: DamageType | None = None
-    weapon_properties: WeaponProperties | None = None
-    armor_class_base: ArmorClass | None = None
-    armor_class_dex_bonus: bool | None = None
-    armor_class_max_dex_bonus: MaxDexBonus | None = None
-    strength_requirement: StrengthRequirement | None = None
-    stealth_disadvantage: bool | None = None
-    description: str | None = None
-
-    @field_validator(*_NOT_NULL_FIELDS)
-    @classmethod
-    def reject_explicit_null(cls, value):
-        """These fields map to NOT NULL columns: omit them to leave them unchanged."""
-
-        if value is None:
-            raise ValueError("This field cannot be null; omit it to leave it unchanged.")
-
-        return value
-
-
-class ItemResponse(ItemBase):
-    """Full item representation returned by the API."""
+class ToolDetailsResponse(BaseModel):
+    """The tool facts of a ``TOOL`` item."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    tool_category: ToolCategory | None = None
 
 
-class ItemGetAllResponse(BaseModel):
-    """Lightweight listing row: no description, weapon/armor detail fields."""
+class ItemResponse(BaseModel):
+    """
+    Full item: the core, the detail record of its ``kind`` (``weapon`` / ``armor`` / ``tool``, the others
+    ``null``; a ``GEAR`` item has none but its ``subtype``), the weapon ``properties`` and the speed/AC
+    ``effects`` it gives while equipped (non-empty effect groups only).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
-    item_type: ItemType
+    kind: ItemKind
+    subtype: GearType | None = None
+    rarity: ItemRarity = ItemRarity.NONE
+    requires_attunement: bool = False
+    weight: Decimal | None = None  # in pounds
+    cost_gold: Decimal | None = None
+    # +N of magic armor/shields (to AC) and weapons (to attack and damage)
+    magic_bonus: int | None = None
+    description: str = ""
+    weapon: WeaponDetailsResponse | None = None
+    armor: ArmorDetailsResponse | None = None
+    tool: ToolDetailsResponse | None = None
+    properties: list[WeaponPropertyBrief] = []
+    effects: list[EffectGroup] = []
+
+
+class ItemGetAllResponse(BaseModel):
+    """Lightweight listing row: no description or stats, but the kind, subtype and category."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    kind: ItemKind
+    subtype: GearType | None = None
     rarity: ItemRarity
     cost_gold: Decimal | None = None
+    weapon_category: WeaponProficiency | None = None
+    armor_category: ArmorProficiency | None = None
+    tool_category: ToolCategory | None = None
+
+
+class ItemCoreCreate(BaseModel):
+    """The core fields of any create payload (the kind comes from the endpoint)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: ItemName
+    rarity: ItemRarity = ItemRarity.NONE
+    requires_attunement: bool = False
+    weight: Weight | None = None
+    cost_gold: CostGold | None = None
+    magic_bonus: MagicBonus | None = None
+    description: str = ""
+
+
+class GearCreate(ItemCoreCreate):
+    """``POST /items``: a ``GEAR`` item — anything that isn't a weapon, armor or tool — and what it is."""
+
+    subtype: GearType = GearType.OTHER
+
+
+class ItemCoreUpdate(BaseModel):
+    """
+    ``PATCH /items/{id}``: core fields only (PATCH semantics). ``kind`` is fixed at creation; ``subtype`` is
+    for a ``GEAR`` item only (422 otherwise); the kind's stats have their own endpoint.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: ItemName | None = None
+    subtype: GearType | None = None
+    rarity: ItemRarity | None = None
+    requires_attunement: bool | None = None
+    weight: Weight | None = None
+    cost_gold: CostGold | None = None
+    magic_bonus: MagicBonus | None = None
+    description: str | None = None
+
+    _no_nulls = reject_explicit_null(("name", "subtype", "rarity", "requires_attunement", "description"))

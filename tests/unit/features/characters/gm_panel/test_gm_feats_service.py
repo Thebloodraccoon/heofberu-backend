@@ -49,13 +49,17 @@ def make_choice(ability_score_increase_id: int) -> SimpleNamespace:
         picked_skill_id=None,
         picked_spell_id=None,
         picked_ability=None,
+        picked_item_id=None,
         choice_option=SimpleNamespace(
             ability_effects=[SimpleNamespace(id=ability_score_increase_id, ability=AbilityScore.STR, amount=1)],
             skill_effects=[],
             saving_throw_effects=[],
             armor_effects=[],
             weapon_effects=[],
+            tool_effects=[],
             spell_effects=[],
+            speed_effects=[],
+            armor_class_effects=[],
         ),
     )
 

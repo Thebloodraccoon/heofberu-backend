@@ -427,16 +427,21 @@ class TestRest:
         )
         assert current_hp == 3
 
-    async def test_short_rest_changes_nothing(self, client, player, player_token, create_class, create_character):
+    async def test_short_rest_restores_half_the_maximum(
+        self, client, player, player_token, create_class, create_character
+    ):
         fighter = await create_class(name="Fighter")
         character = await create_character(owner_id=player.id, class_id=fighter.id, max_hp=20, current_hp=3)
 
-        response = await client.post(
+        first = await client.post(
+            f"/characters/{character.id}/rest", json={"type": "short"}, headers=auth(player_token)
+        )
+        second = await client.post(
             f"/characters/{character.id}/rest", json={"type": "short"}, headers=auth(player_token)
         )
 
-        assert response.status_code == 200
-        assert response.json()["current_hp"] == 3
+        assert (first.status_code, first.json()["current_hp"]) == (200, 13)
+        assert second.json()["current_hp"] == 20
 
 
 @pytest.mark.integration

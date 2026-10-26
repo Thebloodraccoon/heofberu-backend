@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.helpers import set_choice_groups
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -55,3 +57,21 @@ class TestFeatureOpenRead:
 
     async def test_get_feature_404(self, client):
         assert (await client.get("/features/999999")).status_code == 404
+
+    async def test_get_feature_names_the_classes_of_an_open_spell_filter(
+        self, client, gm_token, create_class, create_feature
+    ):
+        bard = await create_class(name="Bard")
+        cleric = await create_class(name="Cleric")
+        feature = await create_feature(name="Any Caster Spell", source_type="OTHER")
+        option = {"effects": [{"effect_type": "spell", "items": [{"class_ids": [cleric.id, bard.id]}]}]}
+        groups = {"choice_groups": [{"pick_count": 1, "choice_type": "SPELL", "options": [option]}]}
+        assert (await set_choice_groups(client, gm_token, feature.id, groups)).status_code == 200
+
+        response = await client.get(f"/features/{feature.id}")
+
+        assert response.status_code == 200
+        body = response.json()
+        (spell_group,) = body["choice_groups"][0]["options"][0]["effects"]
+        assert spell_group["items"][0]["summary"] == ["из списка: Bard, Cleric"]
+        assert "из списка: Bard, Cleric" in body["effects_summary"]

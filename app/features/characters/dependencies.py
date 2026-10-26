@@ -7,6 +7,7 @@ from fastapi import Depends
 from app.core.db import DatabaseDep
 from app.features.characters.attacks.service import CharacterAttackService
 from app.features.characters.backstory.service import CharacterBackstoryService
+from app.features.characters.combat.service import CharacterCombatService
 from app.features.characters.conditions.service import CharacterConditionService
 from app.features.characters.crud.service import CharacterService
 from app.features.characters.feats.service import CharacterFeatService
@@ -89,6 +90,15 @@ def get_character_proficiency_service(db: DatabaseDep) -> CharacterProficiencySe
 
 
 CharacterProficiencyServiceDep = Annotated[CharacterProficiencyService, Depends(get_character_proficiency_service)]
+
+
+def get_character_combat_service(db: DatabaseDep) -> CharacterCombatService:
+    """Get the character combat-stats service instance."""
+
+    return CharacterCombatService(db)
+
+
+CharacterCombatServiceDep = Annotated[CharacterCombatService, Depends(get_character_combat_service)]
 
 
 def get_character_item_service(db: DatabaseDep) -> CharacterItemService:

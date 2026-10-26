@@ -49,9 +49,7 @@ class TestPublicCampaignVisibility:
         assert "lures ships" in gm["description_markdown"]
         assert [link["title"] for link in links] == ["The Keeper"]
 
-    async def test_only_the_author_or_founder_edits(
-        self, client, other_gm_token, founder_token, make_public_campaign
-    ):
+    async def test_only_the_author_or_founder_edits(self, client, other_gm_token, founder_token, make_public_campaign):
         preset = await make_public_campaign()
         url = f"/public-campaigns/{preset['id']}"
 
@@ -91,9 +89,7 @@ class TestPublicCampaignVisibility:
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestCampaignFromPreset:
-    async def test_campaign_copies_the_preset_and_counts_on_it(
-        self, client, make_public_campaign, make_campaign
-    ):
+    async def test_campaign_copies_the_preset_and_counts_on_it(self, client, make_public_campaign, make_campaign):
         preset = await make_public_campaign(description_markdown=DESCRIPTION)
 
         campaign = await make_campaign(title=None, public_campaign_id=preset["id"])
@@ -104,11 +100,9 @@ class TestCampaignFromPreset:
         assert campaign["public_campaign"]["slug"] == preset["slug"]
         assert listed.json()["items"][0]["campaign_count"] == 1
 
-    async def test_counts_are_per_preset_and_zero_without_campaigns(
-        self, client, make_public_campaign, make_campaign
-    ):
+    async def test_counts_are_per_preset_and_zero_without_campaigns(self, client, make_public_campaign, make_campaign):
         busy = await make_public_campaign(title="Busy")
-        idle = await make_public_campaign(title="Idle")
+        await make_public_campaign(title="Idle")
         for _ in range(2):
             await make_campaign(public_campaign_id=busy["id"])
 

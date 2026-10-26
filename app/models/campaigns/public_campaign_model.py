@@ -93,9 +93,7 @@ class PublicCampaignArticle(Base):
     position: Mapped[int] = mapped_column(default=0)
     note: Mapped[str | None] = mapped_column(String(300))
 
-    __table_args__ = (
-        UniqueConstraint("public_campaign_id", "article_id", name="uq_public_campaign_articles_article"),
-    )
+    __table_args__ = (UniqueConstraint("public_campaign_id", "article_id", name="uq_public_campaign_articles_article"),)
 
     public_campaign: Mapped[PublicCampaign] = relationship(back_populates="articles")
     article: Mapped[Article] = relationship()

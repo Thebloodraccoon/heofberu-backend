@@ -27,6 +27,20 @@ def make_holder(option_id=None, *, skills=(), saves=(), armor=(), weapons=(), sp
         armor_effects=[SimpleNamespace(armor_type=armor_type, item_id=item_id) for armor_type, item_id in armor],
         weapon_effects=[SimpleNamespace(weapon_category=category, item_id=item_id) for category, item_id in weapons],
         spell_effects=[SimpleNamespace(spell_id=spell_id) for spell_id in spells],
+        tool_effects=[],
+        speed_effects=[],
+        armor_class_effects=[],
+    )
+
+
+def pick(option_id, *, picked_skill_id=None) -> SimpleNamespace:
+    """A stored pick row (nothing named except an optional skill)."""
+    return SimpleNamespace(
+        choice_option_id=option_id,
+        picked_skill_id=picked_skill_id,
+        picked_spell_id=None,
+        picked_ability=None,
+        picked_item_id=None,
     )
 
 
@@ -73,39 +87,41 @@ class TestGrantEffects:
         assert effects.spells == {3}
 
     def test_picked_option_bundle_is_added(self):
-        effects = grant_effects(make_feature(), [(11, None, None)])
+        effects = grant_effects(make_feature(), [(11, None, None, None, None)])
 
         assert flags(effects) == {1: (True, False), 7: (True, True)}
         assert effects.spells == {3, 99}
 
     def test_reanswer_without_expertise_drops_it(self):
-        assert flags(grant_effects(make_feature(), [(10, None, None)])) == {1: (True, False), 7: (True, False)}
+        effects = grant_effects(make_feature(), [(10, None, None, None, None)])
+
+        assert flags(effects) == {1: (True, False), 7: (True, False)}
 
     def test_open_skill_effect_applies_to_the_named_skill(self):
-        effects = grant_effects(make_feature(), [(12, 4, None)])
+        effects = grant_effects(make_feature(), [(12, 4, None, None, None)])
 
         assert flags(effects) == {1: (True, False), 4: (True, False)}
         assert effects.spells == {3}
 
     def test_open_effect_without_a_named_skill_and_unknown_options_contribute_nothing(self):
-        effects = grant_effects(make_feature(), [(12, None, None), (404, 2, None)])
+        effects = grant_effects(make_feature(), [(12, None, None, None, None), (404, 2, None, None, None)])
 
         assert flags(effects) == {1: (True, False)}
         assert effects.spells == {3}
 
     def test_open_spell_effect_gives_the_named_spell(self):
-        effects = grant_effects(make_feature(), [(12, 4, 42)])
+        effects = grant_effects(make_feature(), [(12, 4, 42, None, None)])
 
         assert effects.spells == {3, 42}
 
     def test_expertise_only_effect_claims_expertise_without_the_proficiency(self):
-        effects = grant_effects(make_feature(), [(13, 5, None)])
+        effects = grant_effects(make_feature(), [(13, 5, None, None, None)])
 
         assert flags(effects)[5] == (False, True)
         assert effects.skills[5].mode == EXPERTISE
 
     def test_expertise_on_the_grants_own_proficiency_folds_into_both(self):
-        effects = grant_effects(make_feature(), [(12, 4, None), (13, 4, None)])
+        effects = grant_effects(make_feature(), [(12, 4, None, None, None), (13, 4, None, None, None)])
 
         assert flags(effects)[4] == (True, True)
         assert effects.skills[4].mode == BOTH
@@ -177,8 +193,8 @@ class TestGrantEffectsMapFromLoadedTrees:
             id=7,
             feature=feature,
             choices=[
-                SimpleNamespace(choice_option_id=11, picked_skill_id=None, picked_spell_id=None, picked_ability=None),
-                SimpleNamespace(choice_option_id=13, picked_skill_id=1, picked_spell_id=None, picked_ability=None),
+                pick(11),
+                pick(13, picked_skill_id=1),
             ],
         )
 

@@ -74,7 +74,6 @@ class TestKeys:
             None,
         )
 
-
     def test_armor_key_is_category_or_item(self):
         assert proficiency_key(ProficiencyType.ARMOR, armor_type="LIGHT", item_id=None) == (
             ProficiencyType.ARMOR,

@@ -66,6 +66,13 @@ class WeaponProficiencyView(BaseModel):
     sources: list[ProficiencySource]
 
 
+class ToolProficiencyView(BaseModel):
+    """A resolved tool proficiency (a ``TOOL`` item) with every source that grants it (feature grants only)."""
+
+    item_id: int
+    sources: list[ProficiencySource]
+
+
 class CharacterProficienciesResponse(BaseModel):
     """Combined read model behind ``GET /characters/{id}/proficiencies``."""
 
@@ -75,3 +82,4 @@ class CharacterProficienciesResponse(BaseModel):
     saving_throws: list[SavingThrowProficiencyView] = []
     armor: list[ArmorProficiencyView] = []
     weapons: list[WeaponProficiencyView] = []
+    tools: list[ToolProficiencyView] = []

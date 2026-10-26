@@ -127,6 +127,7 @@ def feature_entries(feature: Feature, effects: GrantEffects) -> list[Proficiency
     entries += [ProficiencyEntry((ProficiencyType.SAVING_THROW, ability), source) for ability in effects.saving_throws]
     entries += [ProficiencyEntry((ProficiencyType.ARMOR, *armor), source) for armor in effects.armor]
     entries += [ProficiencyEntry((ProficiencyType.WEAPON, *weapon), source) for weapon in effects.weapons]
+    entries += [ProficiencyEntry((ProficiencyType.TOOL, item_id), source) for item_id in effects.tools]
     return entries
 
 

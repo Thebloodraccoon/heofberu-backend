@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.features.characters.attacks.router import router as attacks_router
 from app.features.characters.backstory.router import router as backstory_router
+from app.features.characters.combat.router import router as combat_router
 from app.features.characters.conditions.router import router as conditions_router
 from app.features.characters.crud.router import router as core_router
 from app.features.characters.feats.router import router as feats_router
@@ -24,6 +25,7 @@ router.include_router(feats_router, prefix="/characters", tags=["Characters Feat
 router.include_router(features_router, prefix="/characters", tags=["Characters Features"])
 router.include_router(conditions_router, prefix="/characters", tags=["Characters Conditions"])
 router.include_router(proficiencies_router, prefix="/characters", tags=["Characters Proficiencies"])
+router.include_router(combat_router, prefix="/characters", tags=["Characters Combat"])
 router.include_router(attacks_router, prefix="/characters", tags=["Characters Attacks"])
 router.include_router(spells_router, prefix="/characters", tags=["Characters Spells"])
 router.include_router(backstory_router, prefix="/characters", tags=["Characters Backstory"])

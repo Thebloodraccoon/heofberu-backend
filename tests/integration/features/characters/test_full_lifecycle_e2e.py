@@ -47,8 +47,8 @@ class TestFullCharacterLifecycle:
         race = await create_race(name="Human")
         subrace = await create_subrace(race_id=race.id, name="Illuskan")
         background = await create_background(name="Sage")
-        longsword = await create_item(name="Longsword", item_type="WEAPON")
-        potion = await create_item(name="Healing Potion", item_type="POTION")
+        longsword = await create_item(name="Longsword", kind="WEAPON")
+        potion = await create_item(name="Healing Potion", kind="GEAR", subtype="POTION")
         # Plain ids: a 4xx later in the flow rolls the session back and expires these ORM objects.
         skill_id, race_id, subrace_id, background_id = skill.id, race.id, subrace.id, background.id
         longsword_id, potion_id = longsword.id, potion.id

@@ -13,7 +13,7 @@ logout via the Redis token blacklist in `app/core/security/token.py`.
 |--------|-------------|----------|-------------|
 | POST   | `/auth/register` | Open | Self-register; account is always `PLAYER`; logs the caller in immediately. 409 on duplicate email/username; 400 on weak password or invalid email. |
 | POST   | `/auth/login`    | Open | Email + password login; returns a fresh token pair and sets the refresh cookie. 401 on bad credentials. |
-| POST   | `/auth/logout`   | Valid access token | Blacklists the current access token and the refresh cookie (if present), clears the cookie client-side. |
+| POST   | `/auth/logout`   | Valid access token or refresh cookie | Blacklists whichever of the access token and the refresh cookie is still valid, clears the cookie; works after the access token expired (401 only when neither is valid). |
 | POST   | `/auth/refresh`  | Refresh cookie | Exchanges a valid, non-revoked refresh cookie for a new access token. 401 if missing/invalid/revoked. |
 
 ## Structure

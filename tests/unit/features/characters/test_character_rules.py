@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.constants import BackgroundSuggestionType
+from app.constants import ArmorProficiency, BackgroundSuggestionType, ItemKind
 from app.features.characters.crud.exceptions import (
     BackgroundSuggestionIdsRequiredException,
     InvalidBackgroundSuggestionException,
@@ -16,6 +16,8 @@ from app.features.characters.crud.rules import (
     pick_item_options,
     resolve_background_suggestions,
     resolve_hp_update,
+    short_rest_hp,
+    starts_equipped,
     validate_hp_update,
 )
 from app.features.characters.crud.schemas import HpUpdate
@@ -132,3 +134,27 @@ class TestPickItemOptions:
             pick_item_options([group], [1, 2])
 
         assert exc_info.value.chosen == 2
+
+
+@pytest.mark.unit
+class TestStartsEquipped:
+    @pytest.mark.parametrize("category", [ArmorProficiency.LIGHT, ArmorProficiency.HEAVY, ArmorProficiency.SHIELD])
+    def test_armor_and_shields_start_equipped(self, category):
+        assert starts_equipped(SimpleNamespace(kind=ItemKind.ARMOR, armor_category=category)) is True
+
+    @pytest.mark.parametrize("kind", [ItemKind.WEAPON, ItemKind.TOOL, ItemKind.GEAR])
+    def test_everything_else_starts_unequipped(self, kind):
+        assert starts_equipped(SimpleNamespace(kind=kind)) is False
+
+    def test_a_missing_item_starts_unequipped(self):
+        assert starts_equipped(None) is False
+
+
+@pytest.mark.unit
+class TestShortRestHp:
+    @pytest.mark.parametrize(
+        ("current", "maximum", "expected"),
+        [(7, 40, 27), (30, 40, 40), (0, 9, 4), (40, 40, 40)],
+    )
+    def test_restores_half_the_maximum_capped(self, current, maximum, expected):
+        assert short_rest_hp(current, maximum) == expected

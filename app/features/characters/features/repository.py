@@ -179,7 +179,8 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
     ) -> list[CharacterFeatureChoice]:
         """
         Replace the grant's stored picks of every group in ``picks_by_group``
-        (``(option_id, picked_skill_id, picked_spell_id, picked_ability)``; flush only); return the new pick rows.
+        (``(option_id, picked_skill_id, picked_spell_id, picked_ability, picked_item_id)``; flush only); return
+        the new pick rows.
         """
 
         await self.db.execute(
@@ -198,9 +199,10 @@ class CharacterFeatureRepository(BaseRepository[CharacterFeature]):
                 picked_skill_id=picked_skill_id,
                 picked_spell_id=picked_spell_id,
                 picked_ability=picked_ability,
+                picked_item_id=picked_item_id,
             )
             for group_id, picks in picks_by_group.items()
-            for option_id, picked_skill_id, picked_spell_id, picked_ability in picks
+            for option_id, picked_skill_id, picked_spell_id, picked_ability, picked_item_id in picks
         ]
         self.db.add_all(new_choices)
         await self.db.flush()

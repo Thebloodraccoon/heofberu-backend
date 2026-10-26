@@ -15,6 +15,7 @@ from app.constants import (
     SpellSchool,
 )
 from app.core.pagination import CursorPage, CursorQuery, Page, PaginationQuery, use_cursor
+from app.core.types import INT32_MAX
 from app.features.auth.dependencies import FounderDep, GmUserDep
 from app.features.spells.crud.schemas import (
     SpellCreate,
@@ -35,6 +36,7 @@ router = APIRouter()
 )
 async def get_spells(
     spell_service: SpellCrudDep,
+    ids: list[int] | None = Query(None, alias="id", description="Any-of match on the spell id (repeat the key)."),
     school: list[SpellSchool] | None = Query(
         None,
         description="Any-of match on the spell's school (repeat the key: `?school=EVOCATION&school=ILLUSION`).",
@@ -57,6 +59,10 @@ async def get_spells(
     is_concentration: list[bool] | None = Query(
         None, description="Any-of match: `[true]` concentration spells, `[false]` non-concentration."
     ),
+    class_id: int | None = Query(None, gt=0, le=INT32_MAX, description="Learnable by this class (see below)."),
+    subclass_id: int | None = Query(None, gt=0, le=INT32_MAX, description="…and this subclass."),
+    race_id: int | None = Query(None, gt=0, le=INT32_MAX, description="…and this race."),
+    subrace_id: int | None = Query(None, gt=0, le=INT32_MAX, description="…and this subrace."),
     search: str | None = Query(
         None,
         description="Case-insensitive substring match against the spell's name.",
@@ -70,10 +76,14 @@ async def get_spells(
     Return lightweight spells ordered by name (then id), with filters and search.
     Default response is `{items, total, page, size}`; with `pagination=cursor` (or a
     `cursor`) it is the keyset envelope `{items, next_cursor, size}` (no `total`).
+    Any of `class_id`/`subclass_id`/`race_id`/`subrace_id` keeps only the spells a character with exactly
+    those values may learn: on each of the four dimensions the spell is unrestricted or lists the value,
+    and an omitted value fails a restricted dimension (no subclass → no subclass-only spells).
     Open endpoint.
     """
 
     filters = {
+        "id": ids,
         "school": school,
         "level": level,
         "cast_time": cast_time,
@@ -85,6 +95,9 @@ async def get_spells(
         "is_ritual": is_ritual,
         "is_concentration": is_concentration,
     }
+    available_to = {"class_id": class_id, "subclass_id": subclass_id, "race_id": race_id, "subrace_id": subrace_id}
+    if any(value is not None for value in available_to.values()):
+        filters["available_to"] = available_to
     if use_cursor(pagination, cursor):
         return await spell_service.get_cursor_page(size=size, cursor=cursor, filters=filters, search=search)
 

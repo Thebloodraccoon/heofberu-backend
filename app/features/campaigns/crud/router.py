@@ -97,7 +97,9 @@ async def archive_campaign(campaign_id: int, service: CampaignCrudDep, current_u
 
 
 @router.post(
-    "/{campaign_id:int}/restore", response_model=CampaignResponse, summary="Restore an archived campaign",
+    "/{campaign_id:int}/restore",
+    response_model=CampaignResponse,
+    summary="Restore an archived campaign",
     responses=_GM_ONLY,
 )
 async def restore_campaign(campaign_id: int, service: CampaignCrudDep, current_user: CurrentUserDep):

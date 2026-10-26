@@ -705,9 +705,7 @@ class TestOpenSpellResolution:
         ans = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
             json={
-                "answers": [
-                    {"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": magic_missile.id}
-                ]
+                "answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": magic_missile.id}]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -725,6 +723,37 @@ class TestOpenSpellResolution:
             headers={"Authorization": f"Bearer {gm_token}"},
         )
         assert answered.json()["choices"][0]["picked_spell_id"] == magic_missile.id
+
+    async def test_include_answered_returns_an_answered_group_judged_without_its_own_pick(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_spell
+    ):
+        magic_missile = await create_spell(name="Magic Missile", school="EVOCATION", level="LEVEL_1")
+        burning_hands = await create_spell(name="Burning Hands", school="EVOCATION", level="LEVEL_1")
+        character, cf_id, group_id, option_id = await self._grant_open_spell_feature(
+            client, gm, gm_token, create_class, create_character, create_feature
+        )
+        headers = {"Authorization": f"Bearer {gm_token}"}
+        url = f"/characters/{character.id}/features/{cf_id}/choices"
+        answer = {"choice_group_id": group_id, "choice_option_id": option_id}
+
+        first = await client.patch(url, json={"answers": [{**answer, "spell_id": magic_missile.id}]}, headers=headers)
+        assert first.status_code == 200, first.text
+
+        assert (await client.get(url, headers=headers)).json()["groups"] == []
+        response = await client.get(url, params={"include_answered": True}, headers=headers)
+
+        assert response.status_code == 200
+        (group,) = response.json()["groups"]
+        assert group["id"] == group_id
+        (option,) = group["options"]
+        assert option["available"] is True
+        # the grant's own pick in the group doesn't count as a spell the character already has
+        assert {spell["id"] for spell in option["allowed_spells"]} == {magic_missile.id, burning_hands.id}
+
+        again = await client.patch(url, json={"answers": [{**answer, "spell_id": burning_hands.id}]}, headers=headers)
+        assert again.status_code == 200, again.text
+        spells = (await client.get(f"/characters/{character.id}/spells", headers=headers)).json()
+        assert [spell["id"] for spell in spells["feature_spells"]] == [burning_hands.id]
 
     async def test_deleting_a_spell_picked_through_an_open_option_is_409(
         self, client, gm, gm_token, founder_token, create_class, create_character, create_feature, create_spell
@@ -833,9 +862,7 @@ class TestOpenSpellResolution:
         ans = await client.patch(
             f"/characters/{character.id}/features/{cf_id}/choices",
             json={
-                "answers": [
-                    {"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": magic_missile.id}
-                ]
+                "answers": [{"choice_group_id": group_id, "choice_option_id": option_id, "spell_id": magic_missile.id}]
             },
             headers={"Authorization": f"Bearer {gm_token}"},
         )
@@ -881,3 +908,77 @@ class TestOpenSpellResolution:
         assert len(granted) == 1
         assert granted[0]["id"] == cantrip.id
         assert granted[0]["name"] == "Prestidigitation"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestConcreteToolOptions:
+    async def _setup(self, client, gm, gm_token, create_class, create_character, create_feature, create_item):
+        """A character proficient with the lute through one grant, and a second grant choosing lute or flute."""
+
+        auth = {"Authorization": f"Bearer {gm_token}"}
+        lute = await create_item(name="Lute", kind="TOOL", tool_category="MUSICAL_INSTRUMENT")
+        flute = await create_item(name="Flute", kind="TOOL", tool_category="MUSICAL_INSTRUMENT")
+        character = await create_character(owner_id=gm.id, class_id=(await create_class(name="Bard")).id)
+
+        fixed = await create_feature(name="Minstrel", source_type="CLASS", level=None)
+        resp = await set_effects(
+            client, gm_token, fixed.id, {"static_groups": [{"effect_type": "tool", "items": [{"item_id": lute.id}]}]}
+        )
+        assert resp.status_code in (200, 201), resp.text
+        grant = await client.post(
+            f"/characters/{character.id}/gm-panel/features", json={"feature_id": fixed.id}, headers=auth
+        )
+        assert grant.status_code == 201, grant.text
+
+        choice = await create_feature(name="Instrument Training", source_type="CLASS", level=None)
+        groups = await set_choice_groups(
+            client,
+            gm_token,
+            choice.id,
+            {
+                "choice_groups": [
+                    {
+                        "pick_count": 1,
+                        "choice_type": "TOOL",
+                        "options": [
+                            {"effects": [{"effect_type": "tool", "items": [{"item_id": lute.id}]}]},
+                            {"effects": [{"effect_type": "tool", "items": [{"item_id": flute.id}]}]},
+                        ],
+                    }
+                ]
+            },
+        )
+        assert groups.status_code == 200, groups.text
+        group = groups.json()[0]
+        grant = await client.post(
+            f"/characters/{character.id}/gm-panel/features", json={"feature_id": choice.id}, headers=auth
+        )
+        assert grant.status_code == 201, grant.text
+        return character.id, grant.json()["id"], group["id"], [option["id"] for option in group["options"]], auth
+
+    async def test_an_owned_concrete_tool_is_unavailable_and_refused(
+        self, client, gm, gm_token, create_class, create_character, create_feature, create_item
+    ):
+        character_id, cf_id, group_id, (lute_option, flute_option), auth = await self._setup(
+            client, gm, gm_token, create_class, create_character, create_feature, create_item
+        )
+
+        pending = await client.get(f"/characters/{character_id}/features/{cf_id}/choices", headers=auth)
+        assert pending.status_code == 200
+        available = {option["id"]: option["available"] for option in pending.json()["groups"][0]["options"]}
+        assert available == {lute_option: False, flute_option: True}
+
+        refused = await client.patch(
+            f"/characters/{character_id}/features/{cf_id}/choices",
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": lute_option}]},
+            headers=auth,
+        )
+        assert refused.status_code == 422, refused.text
+
+        taken = await client.patch(
+            f"/characters/{character_id}/features/{cf_id}/choices",
+            json={"answers": [{"choice_group_id": group_id, "choice_option_id": flute_option}]},
+            headers=auth,
+        )
+        assert taken.status_code == 200, taken.text

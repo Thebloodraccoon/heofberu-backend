@@ -89,8 +89,20 @@ class ArticleSubtypeTypeMismatchException(AppError):
         )
 
 
+class ArticleDeleteForbiddenException(AppError):
+    """Raised (403) when a GM deletes an article that isn't their own quest/session (the founder deletes the rest)."""
+
+    status_code = 403
+
+    def __init__(self, article_id: int):
+        """Initialize with the article the caller may not delete."""
+
+        self.article_id = article_id
+        super().__init__(f"Only the founder, or the author of a quest/session, can delete article {article_id}.")
+
+
 class ArticleProposalNotNeededException(AppError):
-    """Raised (409) when the article's author proposes a change: they edit the article directly."""
+    """Raised (409) when someone who edits the article directly (its author; any GM on a quest/session) proposes."""
 
     status_code = 409
 

@@ -12,7 +12,10 @@ carry ``feature_skill_proficiency_effects`` rows), enforced on write by
 
 All effect tables share one invariant — exactly one of ``feature_id``
 (fixed effect) or ``choice_option_id`` (effect inside a choice option) is
-set — enforced by a ``CheckConstraint`` on each table.
+set — enforced by a ``CheckConstraint`` on each table. The speed and AC
+tables have a third possible parent, ``item_id``: an effect of a catalog
+item, applied while a character has the item equipped (and attuned, when
+the item requires attunement).
 """
 
 from __future__ import annotations
@@ -27,25 +30,37 @@ from sqlalchemy import (
     false,
     inspect,
     text,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants import (
+    EFFECT_TYPE_BY_CHOICE_TYPE,
     AbilityScore,
+    ArmorClassEffectMode,
     ArmorProficiency,
     ChoiceType,
+    EffectCondition,
     SkillEffectMode,
+    SpeedEffectMode,
+    SpeedType,
     SpellLevel,
     SpellSchool,
+    ToolCategory,
     WeaponProficiency,
 )
 from app.models.enums import (
     AbilityScoreType,
+    ArmorClassEffectModeType,
     ArmorProficiencyType,
     ChoiceTypeType,
+    EffectConditionType,
     SkillEffectModeType,
+    SpeedEffectModeType,
+    SpeedTypeType,
     SpellLevelType,
     SpellSchoolType,
+    ToolCategoryType,
     WeaponProficiencyType,
 )
 from app.settings.base import Base
@@ -66,7 +81,21 @@ EFFECT_TYPES: tuple[tuple[str, str], ...] = (
     ("saving_throw", "saving_throw_effects"),
     ("armor", "armor_effects"),
     ("weapon", "weapon_effects"),
+    ("tool", "tool_effects"),
     ("spell", "spell_effects"),
+    ("speed", "speed_effects"),
+    ("armor_class", "armor_class_effects"),
+)
+
+# The effect relationships a ``FeatureChoiceOption`` has: those a ``ChoiceType`` carries (no speed / AC).
+CHOICE_OPTION_EFFECT_ATTRS: tuple[str, ...] = tuple(
+    attr for effect_type, attr in EFFECT_TYPES if effect_type in EFFECT_TYPE_BY_CHOICE_TYPE.values()
+)
+
+# The effect types a catalog item may own (``item_id`` parent), applied while the item is equipped.
+ITEM_EFFECT_TYPES: tuple[tuple[str, str], ...] = (
+    ("speed", "speed_effects"),
+    ("armor_class", "armor_class_effects"),
 )
 
 
@@ -89,6 +118,9 @@ _EFFECT_PARENT_CONSTRAINT = """
     (feature_id IS NOT NULL AND choice_option_id IS NULL)
     OR (feature_id IS NULL AND choice_option_id IS NOT NULL)
 """
+
+# The parent of a fixed-only effect an item may also own: a feature or an item, never a choice option.
+_ITEM_EFFECT_PARENT_CONSTRAINT = "num_nonnulls(feature_id, item_id) = 1 AND choice_option_id IS NULL"
 
 
 class FeatureChoiceGroup(Base):
@@ -172,11 +204,28 @@ class FeatureChoiceOption(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    tool_effects: Mapped[list[FeatureToolProficiencyEffect]] = relationship(
+        primaryjoin="FeatureChoiceOption.id == FeatureToolProficiencyEffect.choice_option_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     spell_effects: Mapped[list[FeatureSpellGrantEffect]] = relationship(
         primaryjoin="FeatureChoiceOption.id == FeatureSpellGrantEffect.choice_option_id",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    @property
+    def speed_effects(self) -> list[FeatureSpeedEffect]:
+        """Always empty: no choice type carries speed effects (a plain property, so nothing loads it)."""
+
+        return []
+
+    @property
+    def armor_class_effects(self) -> list[FeatureArmorClassEffect]:
+        """Always empty: no choice type carries AC effects (a plain property, so nothing loads it)."""
+
+        return []
 
     @property
     def effects(self) -> list[dict]:
@@ -386,6 +435,49 @@ class FeatureWeaponProficiencyEffect(Base):
         )
 
 
+class FeatureToolProficiencyEffect(Base):
+    """
+    Grants proficiency with one tool (``item_id`` pointing at a ``TOOL`` item).
+
+    ``item_id`` NULL means "any tool" (an open effect, choice options only):
+    the player names the tool when picking the option, stored as
+    ``CharacterFeatureChoice.picked_item_id``. ``tool_category`` narrows an
+    open pick ("any musical instrument"); a concrete effect carries none.
+    An option carries at most one open tool effect.
+    """
+
+    __tablename__ = "feature_tool_proficiency_effects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feature_id: Mapped[int | None] = mapped_column(ForeignKey("features.id", ondelete="CASCADE"), index=True)
+    choice_option_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feature_choice_options.id", ondelete="CASCADE"), index=True
+    )
+
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="RESTRICT"), index=True)
+    tool_category: Mapped[ToolCategory | None] = mapped_column(ToolCategoryType)
+
+    __table_args__ = (
+        CheckConstraint(_EFFECT_PARENT_CONSTRAINT, name="ck_feature_tool_proficiency_effect_parent"),
+        CheckConstraint(
+            "feature_id IS NULL OR item_id IS NOT NULL", name="ck_feature_tool_proficiency_fixed_requires_item"
+        ),
+        CheckConstraint(
+            "item_id IS NULL OR tool_category IS NULL", name="ck_feature_tool_proficiency_filter_open_only"
+        ),
+    )
+
+    feature: Mapped[Feature | None] = relationship(back_populates="tool_effects")
+    choice_option: Mapped[FeatureChoiceOption | None] = relationship(back_populates="tool_effects")
+    item: Mapped[Item | None] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<FeatureToolProficiencyEffect(feature_id={self.feature_id}, "
+            f"choice_option_id={self.choice_option_id}, item_id={self.item_id}, tool_category={self.tool_category})>"
+        )
+
+
 class FeatureSpellGrantEffect(Base):
     """
     Grants a spell to the character.
@@ -447,10 +539,91 @@ class FeatureSpellGrantEffect(Base):
         if "filter_classes" in inspect(self).unloaded:
             return None
         return [cls.name.strip() for cls in self.filter_classes]
+
     spell: Mapped[Spell | None] = relationship()
 
     def __repr__(self) -> str:
         return (
             f"<FeatureSpellGrantEffect(feature_id={self.feature_id}, "
             f"choice_option_id={self.choice_option_id}, spell_id={self.spell_id})>"
+        )
+
+
+class FeatureSpeedEffect(Base):
+    """
+    Changes one of the character's speeds, as ``mode`` says (see ``SpeedEffectMode``), while ``condition``
+    holds and the character is at least ``min_level``. Owned by a feature or by an item (``item_id``).
+    """
+
+    __tablename__ = "feature_speed_effects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feature_id: Mapped[int | None] = mapped_column(ForeignKey("features.id", ondelete="CASCADE"), index=True)
+    choice_option_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feature_choice_options.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
+
+    speed_type: Mapped[SpeedType] = mapped_column(SpeedTypeType, default=SpeedType.WALK)
+    mode: Mapped[SpeedEffectMode] = mapped_column(SpeedEffectModeType, default=SpeedEffectMode.BONUS)
+    value: Mapped[int] = mapped_column(default=0)
+    condition: Mapped[EffectCondition] = mapped_column(EffectConditionType, default=EffectCondition.NONE)
+    min_level: Mapped[int | None] = mapped_column()
+
+    __table_args__ = (
+        CheckConstraint(_ITEM_EFFECT_PARENT_CONSTRAINT, name="ck_feature_speed_effect_parent"),
+        CheckConstraint("value BETWEEN -200 AND 200", name="ck_feature_speed_effect_value"),
+        CheckConstraint("min_level IS NULL OR min_level BETWEEN 1 AND 20", name="ck_feature_speed_effect_min_level"),
+    )
+
+    feature: Mapped[Feature | None] = relationship(back_populates="speed_effects")
+    item: Mapped[Item | None] = relationship(back_populates="speed_effects")
+
+    def __repr__(self) -> str:
+        return (
+            f"<FeatureSpeedEffect(feature_id={self.feature_id}, item_id={self.item_id}, "
+            f"speed_type={self.speed_type}, mode={self.mode}, value={self.value})>"
+        )
+
+
+class FeatureArmorClassEffect(Base):
+    """
+    Changes the character's armor class, as ``mode`` says (see ``ArmorClassEffectMode``), while ``condition``
+    holds and the character is at least ``min_level``. ``abilities`` / ``allows_shield`` matter for a
+    ``FORMULA`` only. Owned by a feature or by an item (``item_id``).
+    """
+
+    __tablename__ = "feature_armor_class_effects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feature_id: Mapped[int | None] = mapped_column(ForeignKey("features.id", ondelete="CASCADE"), index=True)
+    choice_option_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feature_choice_options.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
+
+    mode: Mapped[ArmorClassEffectMode] = mapped_column(ArmorClassEffectModeType, default=ArmorClassEffectMode.BONUS)
+    value: Mapped[int] = mapped_column(default=0)
+    abilities: Mapped[list[AbilityScore]] = mapped_column(
+        ARRAY(AbilityScoreType), default=list, server_default=text("'{}'")
+    )
+    allows_shield: Mapped[bool] = mapped_column(default=True, server_default=true())
+    condition: Mapped[EffectCondition] = mapped_column(EffectConditionType, default=EffectCondition.NONE)
+    min_level: Mapped[int | None] = mapped_column()
+
+    __table_args__ = (
+        CheckConstraint(_ITEM_EFFECT_PARENT_CONSTRAINT, name="ck_feature_armor_class_effect_parent"),
+        CheckConstraint("value BETWEEN -30 AND 30", name="ck_feature_armor_class_effect_value"),
+        CheckConstraint(
+            "min_level IS NULL OR min_level BETWEEN 1 AND 20", name="ck_feature_armor_class_effect_min_level"
+        ),
+    )
+
+    feature: Mapped[Feature | None] = relationship(back_populates="armor_class_effects")
+    item: Mapped[Item | None] = relationship(back_populates="armor_class_effects")
+
+    def __repr__(self) -> str:
+        return (
+            f"<FeatureArmorClassEffect(feature_id={self.feature_id}, item_id={self.item_id}, "
+            f"mode={self.mode}, value={self.value})>"
         )

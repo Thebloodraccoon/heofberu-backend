@@ -20,11 +20,16 @@ from typing import TYPE_CHECKING
 
 from app.constants import (
     AbilityScore,
+    ArmorClassEffectMode,
     ArmorProficiency,
     ChoiceType,
+    EffectCondition,
     SkillEffectMode,
+    SpeedEffectMode,
+    SpeedType,
     SpellLevel,
     SpellSchool,
+    ToolCategory,
     WeaponProficiency,
 )
 
@@ -56,6 +61,39 @@ _WEAPON_ADJECTIVES_RU = {
 
 _ABILITY_ORDER = tuple(AbilityScore)
 
+# Genitive plural, for "любой из ..." on an open tool pick.
+_TOOL_CATEGORY_NAMES_RU = {
+    ToolCategory.ARTISAN: "инструментов ремесленника",
+    ToolCategory.MUSICAL_INSTRUMENT: "музыкальных инструментов",
+    ToolCategory.GAMING_SET: "игровых наборов",
+    ToolCategory.VEHICLE: "транспорта",
+    ToolCategory.KIT: "наборов",
+}
+
+_SPEED_NAMES_RU = {
+    SpeedType.WALK: "ходьба",
+    SpeedType.FLY: "полёт",
+    SpeedType.SWIM: "плавание",
+    SpeedType.CLIMB: "лазание",
+    SpeedType.BURROW: "копание",
+}
+
+_CONDITION_NAMES_RU = {
+    EffectCondition.WEARING_ARMOR: "в доспехе",
+    EffectCondition.NO_ARMOR: "без доспеха",
+    EffectCondition.NO_HEAVY_ARMOR: "без тяжёлого доспеха",
+    EffectCondition.NO_ARMOR_NO_SHIELD: "без доспеха и щита",
+}
+
+_ABILITY_SHORT_RU = {
+    AbilityScore.STR: "СИЛ",
+    AbilityScore.DEX: "ЛВК",
+    AbilityScore.CON: "ТЕЛ",
+    AbilityScore.INT: "ИНТ",
+    AbilityScore.WIS: "МДР",
+    AbilityScore.CHA: "ХАР",
+}
+
 _SPELL_SCHOOL_NAMES_RU = {
     SpellSchool.ABJURATION: "Ограждение",
     SpellSchool.CONJURATION: "Вызов",
@@ -80,6 +118,12 @@ def _item_name(effect) -> str:
     """HTML-escaped catalog name of a weapon effect's item (id fallback)."""
 
     return escape(effect.item.name if effect.item is not None else f"предмет #{effect.item_id}")
+
+
+def _item_link(effect) -> str:
+    """A concrete item of an armor/weapon/tool effect, quoted and linked to ``/catalog/items/{id}`` (like spells)."""
+
+    return f'«<a href="/catalog/items/{effect.item_id}">{_item_name(effect)}</a>»'
 
 
 def _spell_name(effect) -> str:
@@ -170,7 +214,7 @@ def _render_categories(effects, attr: str, adjectives: dict, noun: str) -> list[
     parts = [f"{_join_and(words)} {noun}"] if words else []
     if ArmorProficiency.SHIELD in categories:
         parts.append("щиты")
-    parts.extend(f"«{_item_name(effect)}»" for effect in effects if effect.item_id is not None)
+    parts.extend(_item_link(effect) for effect in effects if effect.item_id is not None)
     return parts
 
 
@@ -184,6 +228,64 @@ def _render_weapon_short(effects) -> list[str]:
     """Weapon categories (``"простое и воинское оружие"``), then concrete weapon names."""
 
     return _render_categories(effects, "weapon_category", _WEAPON_ADJECTIVES_RU, "оружие")
+
+
+def _render_tool_short(effects) -> list[str]:
+    """Concrete tool names, an open pick as ``"любой из музыкальных инструментов"`` / ``"любой инструмент"``."""
+
+    parts: list[str] = []
+    for effect in effects:
+        if effect.item_id is not None:
+            parts.append(_item_link(effect))
+        elif effect.tool_category is not None:
+            parts.append(f"любой из {_TOOL_CATEGORY_NAMES_RU.get(effect.tool_category, effect.tool_category.value)}")
+        else:
+            parts.append("любой инструмент")
+    return parts
+
+
+def _when(effect) -> str:
+    """`` (без доспеха, с 6-го уровня)`` — the effect's condition and level threshold, or ``""``."""
+
+    words = []
+    if effect.condition in _CONDITION_NAMES_RU:
+        words.append(_CONDITION_NAMES_RU[effect.condition])
+    if effect.min_level is not None:
+        words.append(f"с {effect.min_level}-го уровня")
+    return f" ({', '.join(words)})" if words else ""
+
+
+def _render_speed_short(effects) -> list[str]:
+    """``"ходьба +10 фт."``, ``"полёт 50 фт."``, ``"лазание = ходьба"``, ``"тяжёлый доспех не снижает скорость"``."""
+
+    parts: list[str] = []
+    for effect in effects:
+        name = _SPEED_NAMES_RU.get(effect.speed_type, effect.speed_type.value)
+        if effect.mode == SpeedEffectMode.IGNORE_ARMOR_PENALTY:
+            text = "тяжёлый доспех не снижает скорость"
+        elif effect.mode == SpeedEffectMode.EQUAL_TO_WALK:
+            text = f"{name} = ходьба"
+        elif effect.mode == SpeedEffectMode.SET:
+            text = f"{name} {effect.value} фт."
+        else:
+            text = f"{name} {effect.value:+d} фт."
+        parts.append(text + _when(effect))
+    return parts
+
+
+def _render_armor_class_short(effects) -> list[str]:
+    """``"+1"`` for a bonus, ``"10 + ЛВК + ТЕЛ"`` (``", без щита"``) for a formula."""
+
+    parts: list[str] = []
+    for effect in effects:
+        if effect.mode == ArmorClassEffectMode.FORMULA:
+            text = " + ".join([str(effect.value), *(_ABILITY_SHORT_RU[a] for a in effect.abilities)])
+            if not effect.allows_shield:
+                text += ", без щита"
+        else:
+            text = f"{effect.value:+d}"
+        parts.append(text + _when(effect))
+    return parts
 
 
 def _spell_level_range(min_level, max_level) -> str | None:
@@ -260,21 +362,29 @@ _EFFECT_RENDERERS = {
     ChoiceType.ABILITY_SCORE: ("Характеристики", "ability_effects", _render_ability_short),
     ChoiceType.SAVING_THROW: ("Спасброски", "saving_throw_effects", _render_saving_throw_short),
     ChoiceType.SKILL: ("Навыки", "skill_effects", _render_skill_short),
-    ChoiceType.ARMOR: ("Доспехи", "armor_effects", _render_armor_short),
-    ChoiceType.WEAPON: ("Оружие", "weapon_effects", _render_weapon_short),
+    ChoiceType.ARMOR: ("Владение доспехами", "armor_effects", _render_armor_short),
+    ChoiceType.WEAPON: ("Владение оружием", "weapon_effects", _render_weapon_short),
+    ChoiceType.TOOL: ("Владение инструментами", "tool_effects", _render_tool_short),
     ChoiceType.SPELL: ("Заклинания", "spell_effects", _render_spell_short),
 }
+
+# Effect types no choice group carries: rendered in the fixed-effects list only, after the others.
+_FIXED_ONLY_RENDERERS = (
+    ("Скорость", "speed_effects", _render_speed_short),
+    ("КД", "armor_class_effects", _render_armor_class_short),
+)
 
 
 def _render_static_effects_html(feature: "Feature") -> str:
     """
     Render a feature's fixed effects as "Вы получаете:" followed by a
     ``<ul>`` with one ``<li>`` per non-empty effect type, in ``_EFFECT_RENDERERS`` order
-    (characteristics -> saving throws -> skills -> armor -> weapons -> spells).
+    (characteristics -> saving throws -> skills -> armor -> weapons -> tools -> spells), then speed and AC.
     Returns ``""`` when the feature has no fixed effects.
     """
 
-    groups = [(label, short(getattr(feature, attr))) for label, attr, short in _EFFECT_RENDERERS.values()]
+    renderers = [*_EFFECT_RENDERERS.values(), *_FIXED_ONLY_RENDERERS]
+    groups = [(label, short(getattr(feature, attr))) for label, attr, short in renderers]
     items = "".join(f"<li>{label}: {', '.join(parts)}</li>" for label, parts in groups if parts)
     return f"<p>Вы получаете:</p><ul>{items}</ul>" if items else ""
 
@@ -282,9 +392,9 @@ def _render_static_effects_html(feature: "Feature") -> str:
 def _render_choice_groups_html(feature: "Feature") -> str:
     """
     Render every choice group as "У вас есть выбор:" followed by a ``<ul>``
-    with one ``<li>`` per group: ``"{Label} (выберите N): {option} / {option}"``
-    (e.g. ``"Доспехи (выберите 1): лёгкие доспехи / тяжёлые доспехи"``) — options split by ``" / "``,
-    an option's own effects by ``", "``; the label follows the group's ``choice_type`` as in the
+    with one ``<li>`` per group: ``"{Label} (выберите N): {option} / {option}"``, the count only when
+    more than one is picked (e.g. ``"Владение доспехами: лёгкие доспехи / тяжёлые доспехи"``) — options split by
+    ``" / "``, an option's own effects by ``", "``; the label follows the group's ``choice_type`` as in the
     fixed-effects list. The groups come in that
     list's order (characteristics, saving throws, skills, armor, weapons, spells), then by ``sort_order``.
     The group's ``label`` field is not used. Returns ``""`` when the feature has no choice groups.
@@ -296,7 +406,8 @@ def _render_choice_groups_html(feature: "Feature") -> str:
         label, attr, short = _EFFECT_RENDERERS[group.choice_type]
         options = sorted(group.options, key=lambda o: o.sort_order)
         body = " / ".join(", ".join(short(getattr(option, attr))) or "—" for option in options)
-        items.append(f"<li>{label} (выберите {group.pick_count}): {body}</li>")
+        count = f" (выберите {group.pick_count})" if group.pick_count > 1 else ""
+        items.append(f"<li>{label}{count}: {body}</li>")
 
     return f"<p>У вас есть выбор:</p><ul>{''.join(items)}</ul>" if items else ""
 

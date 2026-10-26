@@ -72,9 +72,9 @@ class SubraceRepository(BaseRepository[Subrace]):
 
         return await self.exists_referencing(Character, "subrace_id", subrace_id)
 
-    async def list_for_race(self, race_id: int) -> list[Any]:
+    async def list_for_race(self, race_id: int | None = None) -> list[Any]:
         """
-        Return brief ``(id, race_id, name, image_url)`` rows for ``race_id``, ordered by name.
+        Return brief ``(id, race_id, name, image_url)`` rows ordered by name, optionally for one race.
 
         Column-select on purpose: ``default_load_options`` eager-loads
         ``ability_bonuses`` plus the full feature effect tree
@@ -88,7 +88,7 @@ class SubraceRepository(BaseRepository[Subrace]):
             Subrace.race_id,
             Subrace.name,
             Subrace.image_url,
-            filters={"race_id": race_id},
+            filters={"race_id": race_id} if race_id is not None else None,
             order_by=Subrace.name,
             limit=None,
         )

@@ -159,12 +159,23 @@ class HealingTarget(str, Enum):
     TEMP_HP = "TEMP_HP"
 
 
-class ItemType(str, Enum):
-    """Categories of items: weapons, armor, consumables, magic items, etc."""
+class ItemKind(str, Enum):
+    """
+    The structural kind of an item (``items.kind``, fixed at creation): which detail record it carries —
+    ``WEAPON`` (``item_weapon_details``), ``ARMOR`` (``item_armor_details``; a shield is armor with
+    ``armor_category=SHIELD``), ``TOOL`` (``item_tool_details``) — or none (``GEAR``: everything else, told
+    apart by ``GearType``). Magic is not a kind: any item can be magical (rarity, attunement, bonus, effects).
+    """
 
     WEAPON = "WEAPON"
     ARMOR = "ARMOR"
-    SHIELD = "SHIELD"
+    TOOL = "TOOL"
+    GEAR = "GEAR"
+
+
+class GearType(str, Enum):
+    """What a ``GEAR`` item is (``items.subtype``) — display and filtering only, no detail record."""
+
     POTION = "POTION"
     SCROLL = "SCROLL"
     WONDROUS_ITEM = "WONDROUS_ITEM"
@@ -173,10 +184,22 @@ class ItemType(str, Enum):
     STAFF = "STAFF"
     WAND = "WAND"
     ADVENTURING_GEAR = "ADVENTURING_GEAR"
-    TOOL = "TOOL"
     AMMUNITION = "AMMUNITION"
     TREASURE = "TREASURE"
     OTHER = "OTHER"
+
+
+class ToolCategory(str, Enum):
+    """
+    Kind of a ``TOOL`` item (``items.tool_category``): artisan's tools, musical instruments, gaming sets,
+    vehicles, and every other kit (thieves' tools, herbalism kit, ...). An open tool pick may be narrowed to one.
+    """
+
+    ARTISAN = "ARTISAN"
+    MUSICAL_INSTRUMENT = "MUSICAL_INSTRUMENT"
+    GAMING_SET = "GAMING_SET"
+    VEHICLE = "VEHICLE"
+    KIT = "KIT"
 
 
 class ItemRarity(str, Enum):
@@ -249,12 +272,13 @@ class WeaponProficiency(str, Enum):
 
 
 class ProficiencyType(str, Enum):
-    """Which of a character's four proficiency kinds a row concerns — the discriminator on ``character_proficiencies``."""
+    """Which proficiency kind a row concerns — the discriminator on ``character_proficiencies``."""
 
     SKILL = "SKILL"
     SAVING_THROW = "SAVING_THROW"
     ARMOR = "ARMOR"
     WEAPON = "WEAPON"
+    TOOL = "TOOL"
 
 
 class ChoiceType(str, Enum):
@@ -272,6 +296,7 @@ class ChoiceType(str, Enum):
     SAVING_THROW = "SAVING_THROW"
     ARMOR = "ARMOR"
     WEAPON = "WEAPON"
+    TOOL = "TOOL"
 
 
 class SkillEffectMode(str, Enum):
@@ -300,7 +325,61 @@ EFFECT_TYPE_BY_CHOICE_TYPE: dict[ChoiceType, str] = {
     ChoiceType.SAVING_THROW: "saving_throw",
     ChoiceType.ARMOR: "armor",
     ChoiceType.WEAPON: "weapon",
+    ChoiceType.TOOL: "tool",
 }
+
+
+class SpeedType(str, Enum):
+    """A kind of movement speed (feet per round)."""
+
+    WALK = "WALK"
+    FLY = "FLY"
+    SWIM = "SWIM"
+    CLIMB = "CLIMB"
+    BURROW = "BURROW"
+
+
+class SpeedEffectMode(str, Enum):
+    """
+    What a speed effect (``feature_speed_effects.mode``) does to its ``speed_type``:
+
+    - ``BONUS`` — adds ``value`` (Fast Movement +10); only to a speed the character already has.
+    - ``SET`` — the speed is at least ``value`` (an aarakocra's 50 ft fly, Boots of Striding and Springing).
+    - ``EQUAL_TO_WALK`` — the speed equals the walking speed (a climb speed "equal to your walking speed").
+    - ``IGNORE_ARMOR_PENALTY`` — heavy armor below its Strength requirement doesn't slow the character (dwarf);
+      ``speed_type``/``value`` are ignored.
+    """
+
+    BONUS = "BONUS"
+    SET = "SET"
+    EQUAL_TO_WALK = "EQUAL_TO_WALK"
+    IGNORE_ARMOR_PENALTY = "IGNORE_ARMOR_PENALTY"
+
+
+class ArmorClassEffectMode(str, Enum):
+    """
+    What an AC effect (``feature_armor_class_effects.mode``) does:
+
+    - ``BONUS`` — adds ``value`` to the final AC (Defense fighting style, Ring of Protection).
+    - ``FORMULA`` — an alternative base AC: ``value`` + the modifiers of ``abilities`` (Unarmored Defense
+      10 + DEX + CON); the best applicable base wins, ``allows_shield`` says whether a shield still adds.
+    """
+
+    BONUS = "BONUS"
+    FORMULA = "FORMULA"
+
+
+class EffectCondition(str, Enum):
+    """
+    When a speed/AC effect applies, judged by the character's equipped items. "Armor" is body armor
+    (light/medium/heavy) — a shield is not armor here.
+    """
+
+    NONE = "NONE"
+    WEARING_ARMOR = "WEARING_ARMOR"
+    NO_ARMOR = "NO_ARMOR"
+    NO_HEAVY_ARMOR = "NO_HEAVY_ARMOR"
+    NO_ARMOR_NO_SHIELD = "NO_ARMOR_NO_SHIELD"
 
 
 class ProficiencySourceType(str, Enum):

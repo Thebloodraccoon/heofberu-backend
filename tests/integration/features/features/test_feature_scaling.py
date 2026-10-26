@@ -26,7 +26,13 @@ def _auth(token):
 async def _create_song_of_rest(client, gm_token, class_id):
     response = await client.post(
         "/features",
-        json={"name": "Песнь отдыха", "source_type": "CLASS", "class_id": class_id, "level": 2, "scaling": SONG_OF_REST},
+        json={
+            "name": "Песнь отдыха",
+            "source_type": "CLASS",
+            "class_id": class_id,
+            "level": 2,
+            "scaling": SONG_OF_REST,
+        },
         headers=_auth(gm_token),
     )
     assert response.status_code == 201, response.text
@@ -79,7 +85,10 @@ class TestFeatureScaling:
                 "source_type": "CLASS",
                 "class_id": bard.id,
                 "level": 2,
-                "scaling": {"label": "Доп. хиты", "steps": [{"level": 2, "value": "1к6"}, {"level": 2, "value": "1к8"}]},
+                "scaling": {
+                    "label": "Доп. хиты",
+                    "steps": [{"level": 2, "value": "1к6"}, {"level": 2, "value": "1к8"}],
+                },
             },
             headers=_auth(gm_token),
         )

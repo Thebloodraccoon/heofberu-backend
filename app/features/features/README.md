@@ -3,7 +3,7 @@
 The **single central feature manager**: every feature in the system — standalone
 (FEAT/OTHER) or owned by a class/subclass/race/subrace/background — is created,
 read, updated and deleted through this one catalog. It owns the **effect
-engine** (choice groups + six typed fixed-effect tables) that replaced the old
+engine** (choice groups + nine typed fixed-effect tables) that replaced the old
 `ability_increases` subpackage, and it is the only place the source catalogs
 write features from (per-catalog feature writes route here — see the "Feature
 writes are centralized" rule).
@@ -43,7 +43,9 @@ features/
 ## The effect engine
 
 A feature's mechanical payload lives in `app/models/features/feature_engine_models.py`
-(six typed effect tables, each row owned by a feature OR a choice option).
+(nine typed effect tables: ability, skill, saving_throw, armor, weapon, tool, spell — each row owned by a
+feature OR a choice option — plus the fixed-only speed and armor_class tables, each row owned by a feature OR
+an item).
 
 **One API shape for an effect bundle, read and write alike: `list[EffectGroup]`.**
 `EffectGroup` (`features/effects/schemas.py`) is a discriminated union keyed by

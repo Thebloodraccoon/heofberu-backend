@@ -103,7 +103,7 @@ class TestFeatureEffectsAllTypes:
     ):
         feature = await create_feature(name="Epic Feature", source_type="CLASS", level=None)
         skill = await create_skill(name="Stealth", ability="DEX")
-        await create_item(name="Longsword", item_type="WEAPON")
+        await create_item(name="Longsword", kind="WEAPON")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
         response = await set_effects(
@@ -135,7 +135,7 @@ class TestFeatureEffectsAllTypes:
 
     async def test_weapon_effect_with_item_id(self, client, gm_token, create_feature, create_item):
         feature = await create_feature(name="Elf Weapon Training")
-        item = await create_item(name="Longsword", item_type="WEAPON")
+        item = await create_item(name="Longsword", kind="WEAPON")
 
         response = await set_effects(
             client,
@@ -160,7 +160,7 @@ class TestFeatureEffectsAllTypes:
 
     async def test_weapon_effect_both_set_returns_422(self, client, gm_token, create_feature, create_item):
         feature = await create_feature(name="Bad Weapon Both")
-        item = await create_item(name="Longsword", item_type="WEAPON")
+        item = await create_item(name="Longsword", kind="WEAPON")
 
         response = await set_effects(
             client,
@@ -177,7 +177,7 @@ class TestFeatureEffectsAllTypes:
 
     async def test_armor_effect_with_item_id(self, client, gm_token, create_feature, create_item):
         feature = await create_feature(name="Chain Training")
-        item = await create_item(name="Chain Mail", item_type="ARMOR")
+        item = await create_item(name="Chain Mail", kind="ARMOR")
 
         response = await set_effects(
             client,
@@ -217,17 +217,13 @@ class TestFeatureEffectsAllTypes:
 
     async def test_armor_effect_both_set_returns_422(self, client, gm_token, create_feature, create_item):
         feature = await create_feature(name="Bad Armor Both")
-        item = await create_item(name="Chain Mail", item_type="ARMOR")
+        item = await create_item(name="Chain Mail", kind="ARMOR")
 
         response = await set_effects(
             client,
             gm_token,
             feature.id,
-            {
-                "static_groups": [
-                    {"effect_type": "armor", "items": [{"armor_type": "HEAVY", "item_id": item.id}]}
-                ]
-            },
+            {"static_groups": [{"effect_type": "armor", "items": [{"armor_type": "HEAVY", "item_id": item.id}]}]},
         )
 
         assert response.status_code == 422
@@ -382,7 +378,7 @@ class TestFeatureResponsesEmbedEffectTree:
     ):
         feature = await create_feature(name="Primal Champion")
         skill = await create_skill(name="Stealth", ability="DEX")
-        item = await create_item(name="Longsword", item_type="WEAPON")
+        item = await create_item(name="Longsword", kind="WEAPON")
         spell = await create_spell(name="Fireball", school="EVOCATION", level="LEVEL_3")
 
         await set_effects(

@@ -25,9 +25,7 @@ class CampaignReviewsRepository(CampaignAccessMixin, SessionRepository):
             .execution_options(populate_existing=True)
         )
 
-    async def upsert_campaign_review(
-        self, campaign_id: int, author_id: int, body: str, now: datetime
-    ) -> int | None:
+    async def upsert_campaign_review(self, campaign_id: int, author_id: int, body: str, now: datetime) -> int | None:
         """
         Create the author's review or replace its body in one ``INSERT ... ON CONFLICT DO UPDATE`` (flush only), so
         two concurrent first writes can't collide. A founder-hidden review is left untouched: ``None`` then.

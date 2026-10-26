@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
 from app.features.auth.dependencies import CurrentUserDep
 from app.features.characters.dependencies import FeatureGrantServiceDep
@@ -77,14 +77,21 @@ async def get_pending_choice_groups(
     character_feature_id: int,
     grant_service: FeatureGrantServiceDep,
     current_user: CurrentUserDep,
+    include_answered: Annotated[
+        bool, Query(description="Also return the answered groups (to change an answer via PATCH).")
+    ] = False,
 ):
     """
     Return the choice groups of a character's feature grant that still need
     the player's picks ("pick N of M"). Grants with no pending groups are
-    fully resolved and return an empty ``groups`` list.
+    fully resolved and return an empty ``groups`` list. ``include_answered``
+    returns every group, judged as if being re-answered (the grant's own picks
+    in them don't count); the stored picks are at ``.../choices/answered``.
     """
 
-    return await grant_service.get_pending_choice_groups(character_id, character_feature_id, current_user)
+    return await grant_service.get_pending_choice_groups(
+        character_id, character_feature_id, current_user, include_answered=include_answered
+    )
 
 
 @router.get(

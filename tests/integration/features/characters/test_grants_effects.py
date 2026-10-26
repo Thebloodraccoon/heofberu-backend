@@ -107,7 +107,7 @@ class TestFixedEffectTypes:
         feature_class = await create_class(name="Fighter")
         character = await create_character(owner_id=gm.id, class_id=feature_class.id)
         feature = await create_feature(name="Signature Armor", source_type="CLASS", level=None)
-        chain_mail = await create_item(name="Chain Mail", item_type="ARMOR")
+        chain_mail = await create_item(name="Chain Mail", kind="ARMOR")
 
         fx_resp = await set_effects(
             client,

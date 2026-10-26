@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from app.constants import AbilityScore
-from app.features.features.crud.schemas import FeatPrerequisiteFields, FeatPrerequisiteFieldsUpdate
+from app.features.features.crud.schemas import FeatPrerequisiteFields, FeatPrerequisiteFieldsUpdate, FeatureScaling
 from app.features.features.effects.schemas import ChoiceGroupResponse, EffectGroup
 
 # Input bounds follow the column sizes; responses stay unconstrained so legacy rows always serialize.
@@ -128,6 +128,7 @@ class FeatResponse(FeatBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    scaling: FeatureScaling | None = None
     choice_groups: list[ChoiceGroupResponse] = []
     static_groups: list[EffectGroup] = []
     has_static_effects: bool = False
@@ -143,5 +144,7 @@ class FeatGetAllResponse(BaseModel):
     id: int
     name: str
     min_level: int | None = None
+    prerequisite_ability: AbilityScore | None = None
+    prerequisite_minimum_score: int | None = None
     has_static_effects: bool = False
     has_choices: bool = False

@@ -167,9 +167,7 @@ async def unpublish_session(
     return await service.set_published(campaign_id, session_id, False, current_user)
 
 
-@router.delete(
-    _SESSION, status_code=status.HTTP_204_NO_CONTENT, summary="Delete a session", responses=_GM_ONLY
-)
+@router.delete(_SESSION, status_code=status.HTTP_204_NO_CONTENT, summary="Delete a session", responses=_GM_ONLY)
 async def delete_session(campaign_id: int, session_id: int, service: CampaignSessionsDep, current_user: CurrentUserDep):
     """Delete the session with its attendance and reviews. **Campaign GM only.**"""
 

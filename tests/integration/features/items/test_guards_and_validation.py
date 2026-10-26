@@ -16,43 +16,59 @@ def auth(token):
 class TestValidation:
     @pytest.mark.parametrize("name", ["", "   ", "x" * 201])
     async def test_create_rejects_bad_names(self, client, gm_token, name):
-        response = await client.post("/items", json={"name": name, "item_type": "WEAPON"}, headers=auth(gm_token))
+        response = await client.post("/items/weapons", json={"name": name}, headers=auth(gm_token))
 
         assert response.status_code == 422
 
     @pytest.mark.parametrize(
-        "extra",
+        ("path", "extra"),
         [
-            {"weight": -1},
-            {"weight": "10000.00"},
-            {"weight": "1.234"},
-            {"cost_gold": -5},
-            {"cost_gold": "100000000000"},
-            {"damage_dice_count": 0},
-            {"damage_dice_count": 2**40},
-            {"armor_class_base": -1},
-            {"armor_class_max_dex_bonus": -1},
-            {"strength_requirement": 99},
-            {"weapon_properties": "x" * 301},
+            ("/items", {"weight": -1}),
+            ("/items", {"weight": "10000.00"}),
+            ("/items", {"weight": "1.234"}),
+            ("/items", {"cost_gold": -5}),
+            ("/items", {"cost_gold": "100000000000"}),
+            ("/items", {"magic_bonus": 11}),
+            ("/items", {"subtype": "WEAPON"}),
+            ("/items/weapons", {"weapon": {"damage_dice_count": 0}}),
+            ("/items/weapons", {"weapon": {"damage_dice_count": 2**40}}),
+            ("/items/weapons", {"weapon": {"range_normal": 0}}),
+            ("/items/weapons", {"property_ids": [0]}),
+            ("/items/weapons", {"weapon": {"armor_class_base": 12}}),
+            ("/items/armor", {"armor": {"armor_class_base": -1}}),
+            ("/items/armor", {"armor": {"armor_class_max_dex_bonus": -1}}),
+            ("/items/armor", {"armor": {"strength_requirement": 99}}),
+            ("/items/tools", {"tool": {"tool_category": "SWORD"}}),
         ],
     )
-    async def test_create_rejects_out_of_range_values(self, client, gm_token, extra):
-        response = await client.post(
-            "/items", json={"name": "Odd", "item_type": "WEAPON", **extra}, headers=auth(gm_token)
-        )
+    async def test_create_rejects_out_of_range_values(self, client, gm_token, path, extra):
+        response = await client.post(path, json={"name": "Odd", **extra}, headers=auth(gm_token))
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        "weapon",
+        [
+            {"range_long": 60},
+            {"range_normal": 60, "range_long": 20},
+            {"versatile_dice_count": 1},
+        ],
+    )
+    async def test_weapon_stats_that_dont_fit_together_are_422(self, client, gm_token, weapon):
+        response = await client.post("/items/weapons", json={"name": "Odd", "weapon": weapon}, headers=auth(gm_token))
 
         assert response.status_code == 422
 
     async def test_create_accepts_the_documented_boundaries(self, client, gm_token):
         response = await client.post(
             "/items",
-            json={"name": "Heavy Thing", "item_type": "ARMOR", "weight": "9999.99", "cost_gold": "99999999.99"},
+            json={"name": "Heavy Thing", "weight": "9999.99", "cost_gold": "99999999.99"},
             headers=auth(gm_token),
         )
 
         assert response.status_code == 201
 
-    @pytest.mark.parametrize("field", ["name", "item_type", "rarity", "requires_attunement", "description"])
+    @pytest.mark.parametrize("field", ["name", "rarity", "requires_attunement", "description"])
     async def test_patch_rejects_explicit_null_for_required_fields(self, client, gm_token, create_item, field):
         item = await create_item(name="Longsword")
 
@@ -80,50 +96,79 @@ class TestValidation:
 
     async def test_documented_create_examples_are_valid(self, client, gm_token):
         weapon = await client.post(
-            "/items",
+            "/items/weapons",
             json={
                 "name": "Longsword",
-                "item_type": "WEAPON",
-                "rarity": "NONE",
                 "weight": 3,
                 "cost_gold": 15,
-                "damage_dice_count": 1,
-                "damage_dice_type": "D8",
-                "damage_type": "SLASHING",
-                "weapon_properties": "VERSATILE",
+                "weapon": {
+                    "weapon_category": "MARTIAL",
+                    "attack_type": "MELEE_ATTACK",
+                    "damage_dice_count": 1,
+                    "damage_dice_type": "D8",
+                    "damage_type": "SLASHING",
+                    "versatile_dice_count": 1,
+                    "versatile_dice_type": "D10",
+                },
             },
             headers=auth(gm_token),
         )
         armor = await client.post(
-            "/items",
+            "/items/armor",
             json={
                 "name": "Chain Mail",
-                "item_type": "ARMOR",
                 "weight": 55,
                 "cost_gold": 75,
-                "armor_class_base": 16,
-                "armor_class_dex_bonus": False,
-                "strength_requirement": 13,
-                "stealth_disadvantage": True,
+                "armor": {
+                    "armor_category": "HEAVY",
+                    "armor_class_base": 16,
+                    "strength_requirement": 13,
+                    "stealth_disadvantage": True,
+                },
             },
             headers=auth(gm_token),
         )
 
         assert (weapon.status_code, armor.status_code) == (201, 201)
 
+    async def test_a_property_needing_a_range_is_checked_when_the_range_is_touched(self, client, gm_token):
+        thrown = await client.post(
+            "/items/properties", json={"name": "Thrown-test", "requires_range": True}, headers=auth(gm_token)
+        )
+        prop_id = thrown.json()["id"]
+
+        without_range = await client.post(
+            "/items/weapons", json={"name": "Javelin", "property_ids": [prop_id]}, headers=auth(gm_token)
+        )
+        created = await client.post(
+            "/items/weapons",
+            json={"name": "Javelin", "weapon": {"range_normal": 30, "range_long": 120}, "property_ids": [prop_id]},
+            headers=auth(gm_token),
+        )
+        item_id = created.json()["id"]
+        cleared = await client.patch(
+            f"/items/{item_id}/weapon", json={"range_normal": None, "range_long": None}, headers=auth(gm_token)
+        )
+        renamed = await client.patch(f"/items/{item_id}", json={"name": "Javelin II"}, headers=auth(gm_token))
+
+        assert without_range.status_code == 422
+        assert (created.status_code, [p["name"] for p in created.json()["properties"]]) == (201, ["Thrown-test"])
+        assert cleared.status_code == 422
+        assert renamed.status_code == 200
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 class TestListing:
     async def test_filters_by_type_rarity_and_search(self, client, create_item):
-        await create_item(name="Longsword", item_type="WEAPON", rarity="NONE")
-        await create_item(name="Longbow", item_type="WEAPON", rarity="RARE")
-        await create_item(name="Chain Mail", item_type="ARMOR", rarity="NONE")
+        await create_item(name="Longsword", kind="WEAPON", rarity="NONE")
+        await create_item(name="Longbow", kind="WEAPON", rarity="RARE")
+        await create_item(name="Chain Mail", kind="ARMOR", rarity="NONE")
 
-        weapons = await client.get("/items", params={"item_type": ["WEAPON"]})
-        rare_weapons = await client.get("/items", params={"item_type": ["WEAPON"], "rarity": ["RARE"]})
+        weapons = await client.get("/items", params={"kind": ["WEAPON"]})
+        rare_weapons = await client.get("/items", params={"kind": ["WEAPON"], "rarity": ["RARE"]})
         searched = await client.get("/items", params={"search": "long"})
-        both_types = await client.get("/items", params={"item_type": ["WEAPON", "ARMOR"]})
+        both_types = await client.get("/items", params={"kind": ["WEAPON", "ARMOR"]})
 
         assert {item["name"] for item in weapons.json()["items"]} == {"Longsword", "Longbow"}
         assert [item["name"] for item in rare_weapons.json()["items"]] == ["Longbow"]
@@ -182,7 +227,7 @@ class TestDeleteGuards:
     async def test_delete_blocked_when_an_armor_effect_references_it(
         self, client, founder_token, gm_token, create_item, create_feat
     ):
-        item = await create_item(name="Chain Mail", item_type="ARMOR")
+        item = await create_item(name="Chain Mail", kind="ARMOR")
         feat = await create_feat(name="Heavy Training")
         item_id = item.id
         put = await set_effects(
@@ -316,7 +361,7 @@ class TestCacheInvalidation:
         await client.get("/items")
         prefix = settings.CACHE_PREFIX
 
-        created = await client.post("/items", json={"name": "Brand New", "item_type": "WEAPON"}, headers=auth(gm_token))
+        created = await client.post("/items/weapons", json={"name": "Brand New"}, headers=auth(gm_token))
 
         assert created.status_code == 201
         assert await redis_client.keys(f"{prefix}:items:*") == []

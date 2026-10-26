@@ -310,7 +310,7 @@ async def rest_character(
                     "value": {"type": "long"},
                 },
                 "short-rest": {
-                    "summary": "Take a short rest (currently a no-op placeholder)",
+                    "summary": "Take a short rest (half the maximum HP back)",
                     "value": {"type": "short"},
                 },
             }
@@ -322,7 +322,7 @@ async def rest_character(
     """
     Take a short or long rest (`{"type": "long"}` or `{"type": "short"}`).
     Long rest restores `current_hp` to `max_hp` and clears `temp_hp`;
-    short rest is currently a no-op placeholder until hit dice are tracked.
+    short rest restores half of `max_hp` (rounded down, capped at the maximum), `temp_hp` untouched.
     """
 
     return await character_service.rest(character_id, data, current_user)

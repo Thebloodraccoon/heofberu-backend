@@ -18,13 +18,17 @@ from app.features.characters.grants.exceptions import (
     UnexpectedSpellPickError,
 )
 from app.features.characters.grants.schemas import ChoiceAnswerItem, GrantChoicesUpdate
-from app.features.characters.grants.service import _ensure_picks_within_cap, _validate_answers
+from app.features.characters.grants.service import _ensure_picks_within_cap, _to_pending_response, _validate_answers
+from app.models.features.feature_engine_models import EFFECT_TYPES
 
 
 def option(option_id, group_id, *, open_skill=False, open_spell=False):
     return SimpleNamespace(
         id=option_id,
         group_id=group_id,
+        ability_effects=[],
+        saving_throw_effects=[],
+        tool_effects=[],
         skill_effects=[SimpleNamespace(skill_id=None)] if open_skill else [],
         spell_effects=[SimpleNamespace(spell_id=None)] if open_spell else [],
     )
@@ -41,9 +45,7 @@ def make_feature():
 
 
 def answer(group_id, option_id, skill_id=None, spell_id=None):
-    return ChoiceAnswerItem(
-        choice_group_id=group_id, choice_option_id=option_id, skill_id=skill_id, spell_id=spell_id
-    )
+    return ChoiceAnswerItem(choice_group_id=group_id, choice_option_id=option_id, skill_id=skill_id, spell_id=spell_id)
 
 
 def picked_ids(picked):
@@ -182,3 +184,27 @@ class TestEnsurePicksWithinCap:
 
     def test_negative_amounts_are_never_rejected(self):
         _ensure_picks_within_cap(ability_feature(amount=-1), [answer(5, 50)], {"strength_total": 25})
+
+
+def tool_option(option_id, *, item_id):
+    holder = SimpleNamespace(id=option_id, **{attr: [] for _, attr in EFFECT_TYPES})
+    holder.tool_effects = [SimpleNamespace(id=option_id * 10, item_id=item_id, tool_category=None)]
+    return holder
+
+
+def pending_tool_options(owned_tools):
+    options = [tool_option(10, item_id=5), tool_option(11, item_id=6)]
+    group = SimpleNamespace(id=1, pick_count=1, choice_type=ChoiceType.TOOL, options=options)
+    grant = SimpleNamespace(id=1)
+    feature = SimpleNamespace(id=1, name="Инструменты")
+    response = _to_pending_response(grant, feature, [group], owned_tools=owned_tools)
+    return {option.id: option.available for option in response.groups[0].options}
+
+
+@pytest.mark.unit
+class TestPendingToolAvailability:
+    def test_a_concrete_tool_already_owned_is_unavailable(self):
+        assert pending_tool_options({5}) == {10: False, 11: True}
+
+    def test_without_ownership_facts_every_concrete_option_is_available(self):
+        assert pending_tool_options(None) == {10: True, 11: True}

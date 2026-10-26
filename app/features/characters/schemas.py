@@ -90,6 +90,15 @@ class CharacterBase(BaseModel):
     money_copper: int = 0
 
 
+class ItemChoicePick(BaseModel):
+    """The item a player names for a chosen filter option of the starting equipment ("any simple weapon")."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    option_id: int = Field(gt=0)
+    item_id: int = Field(gt=0)
+
+
 class CharacterCreate(CharacterBase):
     """
     One-shot creation payload for a level-1 character. ``level`` and HP
@@ -122,6 +131,8 @@ class CharacterCreate(CharacterBase):
 
     skill_ids: list[int] = Field(default_factory=list, max_length=50)
     item_choice_ids: list[int] = Field(default_factory=list, max_length=50)
+    # The item named for each chosen filter option ("any simple weapon"), by option id.
+    item_choice_picks: list[ItemChoicePick] = Field(default_factory=list, max_length=50)
     suggestion_ids: list[int] = Field(default_factory=list, max_length=10)
 
     @field_validator("skill_ids")
@@ -141,6 +152,15 @@ class CharacterCreate(CharacterBase):
             raise ValueError("Duplicate suggestion IDs are not allowed.")
 
         return suggestion_ids
+
+    @field_validator("item_choice_picks")
+    def validate_unique_item_choice_picks(cls, picks):
+        """One pick per option."""
+
+        if len({pick.option_id for pick in picks}) != len(picks):
+            raise ValueError("Duplicate option ids in item_choice_picks are not allowed.")
+
+        return picks
 
     @field_validator("item_choice_ids")
     def validate_unique_item_choice_ids(cls, item_choice_ids):

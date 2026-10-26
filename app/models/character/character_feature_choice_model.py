@@ -23,14 +23,15 @@ class CharacterFeatureChoice(Base):
     ``picked_skill_id`` is the skill the player named for an option with an
     open ("any skill") skill effect, ``picked_spell_id`` the spell named for
     an option with an open ("any spell") spell effect, ``picked_ability`` the
-    ability named for an open ("any ability" / "any saving throw") effect;
+    ability named for an open ("any ability" / "any saving throw") effect,
+    ``picked_item_id`` the tool named for an open ("any tool") tool effect;
     all NULL for every other option (an option is open in one way at most —
     a group carries one effect type). Such an option may be picked several
     times in one group with different skills/spells/abilities ("any two
     skills" = one open option, ``pick_count=2``).
 
-    Four partial unique indexes prevent double-picking: the same option
-    twice (nothing named), or the same option with the same skill / spell / ability.
+    Five partial unique indexes prevent double-picking: the same option
+    twice (nothing named), or the same option with the same skill / spell / ability / tool.
     Whether the group is fully resolved (the chosen count == ``pick_count``)
     is validated by the grant service.
     """
@@ -51,6 +52,7 @@ class CharacterFeatureChoice(Base):
     picked_skill_id: Mapped[int | None] = mapped_column(ForeignKey("skills.id", ondelete="RESTRICT"), index=True)
     picked_spell_id: Mapped[int | None] = mapped_column(ForeignKey("spells.id", ondelete="RESTRICT"), index=True)
     picked_ability: Mapped[AbilityScore | None] = mapped_column(AbilityScoreType)
+    picked_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="RESTRICT"), index=True)
 
     __table_args__ = (
         Index(
@@ -59,7 +61,10 @@ class CharacterFeatureChoice(Base):
             "choice_group_id",
             "choice_option_id",
             unique=True,
-            postgresql_where=text("picked_skill_id IS NULL AND picked_spell_id IS NULL AND picked_ability IS NULL"),
+            postgresql_where=text(
+                "picked_skill_id IS NULL AND picked_spell_id IS NULL AND picked_ability IS NULL "
+                "AND picked_item_id IS NULL"
+            ),
         ),
         Index(
             "uq_character_feature_choice_option_ability",
@@ -88,6 +93,15 @@ class CharacterFeatureChoice(Base):
             unique=True,
             postgresql_where=text("picked_spell_id IS NOT NULL"),
         ),
+        Index(
+            "uq_character_feature_choice_option_item",
+            "character_feature_id",
+            "choice_group_id",
+            "choice_option_id",
+            "picked_item_id",
+            unique=True,
+            postgresql_where=text("picked_item_id IS NOT NULL"),
+        ),
     )
 
     character_feature: Mapped[CharacterFeature] = relationship(back_populates="choices")
@@ -98,5 +112,6 @@ class CharacterFeatureChoice(Base):
         return (
             f"<CharacterFeatureChoice(character_feature_id={self.character_feature_id}, "
             f"group_id={self.choice_group_id}, option_id={self.choice_option_id}, "
-            f"skill_id={self.picked_skill_id}, spell_id={self.picked_spell_id}, ability={self.picked_ability})>"
+            f"skill_id={self.picked_skill_id}, spell_id={self.picked_spell_id}, ability={self.picked_ability}, "
+            f"item_id={self.picked_item_id})>"
         )

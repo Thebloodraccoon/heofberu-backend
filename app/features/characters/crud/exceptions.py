@@ -64,6 +64,17 @@ class ItemChoiceNotAvailableException(AppError):
         super().__init__(f"Item choice option {option_id} is not available for this character's sources.")
 
 
+class ItemChoicePickException(AppError):
+    """Raised (400) when a filter option's picked item is missing, unknown, off-filter or stray."""
+
+    status_code = 400
+
+    def __init__(self, message: str):
+        """Keep the reason."""
+
+        super().__init__(message)
+
+
 class BackgroundSuggestionIdsRequiredException(AppError):
     """Raised when a background is chosen but suggestion_ids doesn't cover all 4 suggestion types exactly once."""
 

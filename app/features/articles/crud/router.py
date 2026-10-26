@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, status
 from app.features.articles.access import ArticleActor
 from app.features.articles.crud.schemas import ArticleCreate, ArticleResponse, ArticleUpdate
 from app.features.articles.dependencies import ArticleCrudDep
-from app.features.auth.dependencies import FounderDep, GmUserDep, OptionalUserDep, can_see_hidden
+from app.features.auth.dependencies import GmUserDep, OptionalUserDep, can_see_hidden
 
 router = APIRouter()
 
@@ -147,17 +147,18 @@ async def update_article(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an article",
     responses={
+        403: {"description": "Not the founder, nor the author of this quest/session."},
         404: {"description": "No article exists with the given ID."},
     },
 )
-async def delete_article(article_id: int, article_service: ArticleCrudDep, _: FounderDep):
+async def delete_article(article_id: int, article_service: ArticleCrudDep, gm_user: GmUserDep):
     """
-    Delete an article. **Founder only.**
+    Delete an article. **Founder**, or the **author of a quest/session** (403 otherwise; any GM edits those).
 
     Child articles (`parent_id` pointing at this one) are detached, not
     deleted (`ondelete="SET NULL"`); its tag links and relations are
     removed (cascade).
     """
 
-    await article_service.delete(article_id)
+    await article_service.delete(article_id, ArticleActor.of(gm_user))
     return None

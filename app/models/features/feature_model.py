@@ -20,11 +20,14 @@ if TYPE_CHECKING:
     from app.models.classes.subclass_model import Subclass
     from app.models.features.feature_engine_models import (
         FeatureAbilityScoreEffect,
+        FeatureArmorClassEffect,
         FeatureArmorProficiencyEffect,
         FeatureChoiceGroup,
         FeatureSavingThrowEffect,
         FeatureSkillProficiencyEffect,
+        FeatureSpeedEffect,
         FeatureSpellGrantEffect,
+        FeatureToolProficiencyEffect,
         FeatureWeaponProficiencyEffect,
     )
     from app.models.races.race_model import Race
@@ -143,8 +146,23 @@ class Feature(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    tool_effects: Mapped[list[FeatureToolProficiencyEffect]] = relationship(
+        primaryjoin="Feature.id == FeatureToolProficiencyEffect.feature_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     spell_effects: Mapped[list[FeatureSpellGrantEffect]] = relationship(
         primaryjoin="Feature.id == FeatureSpellGrantEffect.feature_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    speed_effects: Mapped[list[FeatureSpeedEffect]] = relationship(
+        primaryjoin="Feature.id == FeatureSpeedEffect.feature_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    armor_class_effects: Mapped[list[FeatureArmorClassEffect]] = relationship(
+        primaryjoin="Feature.id == FeatureArmorClassEffect.feature_id",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )

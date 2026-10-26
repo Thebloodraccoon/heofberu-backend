@@ -11,11 +11,16 @@ import pytest
 
 from app.constants import (
     AbilityScore,
+    ArmorClassEffectMode,
     ArmorProficiency,
     ChoiceType,
+    EffectCondition,
     SkillEffectMode,
+    SpeedEffectMode,
+    SpeedType,
     SpellLevel,
     SpellSchool,
+    ToolCategory,
     WeaponProficiency,
 )
 from app.features.features.effects.rendering import describe_spell_filter, render_effects_summary
@@ -62,6 +67,9 @@ def _feature(
     weapon_effects=(),
     spell_effects=(),
     choice_groups=(),
+    tool_effects=(),
+    speed_effects=(),
+    armor_class_effects=(),
 ):
     return SimpleNamespace(
         ability_effects=list(ability_effects),
@@ -71,6 +79,9 @@ def _feature(
         weapon_effects=list(weapon_effects),
         spell_effects=list(spell_effects),
         choice_groups=list(choice_groups),
+        tool_effects=list(tool_effects),
+        speed_effects=list(speed_effects),
+        armor_class_effects=list(armor_class_effects),
     )
 
 
@@ -146,25 +157,25 @@ class TestStaticEffectsSummary:
 
     def test_armor_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(armor_effects=[_armor(ArmorProficiency.HEAVY)]))
-        assert "Доспехи: тяжёлые доспехи" in text
+        assert "Владение доспехами: тяжёлые доспехи" in text
 
     def test_armor_item_effect_uses_catalog_name(self):
         item = SimpleNamespace(name="Кольчуга")
         text = render_effects_summary(_feature(armor_effects=[_armor(item_id=40, item=item)]))
-        assert "Доспехи: «Кольчуга»" in text
+        assert 'Владение доспехами: «<a href="/catalog/items/40">Кольчуга</a>»' in text
 
     def test_armor_item_effect_falls_back_to_id(self):
         text = render_effects_summary(_feature(armor_effects=[_armor(item_id=40)]))
-        assert "«предмет #40»" in text
+        assert '«<a href="/catalog/items/40">предмет #40</a>»' in text
 
     def test_weapon_category_effect_uses_nominative_form(self):
         text = render_effects_summary(_feature(weapon_effects=[_weapon(weapon_category=WeaponProficiency.MARTIAL)]))
-        assert "Оружие: воинское оружие" in text
+        assert "Владение оружием: воинское оружие" in text
 
     def test_weapon_item_effect_uses_catalog_name(self):
         item = SimpleNamespace(name="Длинный меч")
         text = render_effects_summary(_feature(weapon_effects=[_weapon(item_id=3, item=item)]))
-        assert "«Длинный меч»" in text
+        assert '«<a href="/catalog/items/3">Длинный меч</a>»' in text
 
     def test_closed_spell_effect_links_to_spell_id(self):
         spell = SimpleNamespace(name="Огненный шар")
@@ -228,7 +239,7 @@ class TestStaticEffectsSummary:
                 armor_effects=[_armor(ArmorProficiency.LIGHT)],
             )
         )
-        assert text.index("Характеристики") < text.index("Доспехи") < text.index("Заклинания")
+        assert text.index("Характеристики") < text.index("Владение доспехами") < text.index("Заклинания")
 
 
 @pytest.mark.unit
@@ -237,7 +248,7 @@ class TestChoiceGroupsSummary:
         feature = _feature(choice_groups=[_group(pick_count=1, options=[_option(skill_effects=[_skill(None)])])])
         text = render_effects_summary(feature)
         assert text.startswith("<p>У вас есть выбор:</p><ul>")
-        assert "<li>Навыки (выберите 1): любой</li>" in text
+        assert "<li>Навыки: любой</li>" in text
 
     def test_multiple_options_joined_by_slash(self):
         feature = _feature(
@@ -253,7 +264,7 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        assert "<li>Характеристики (выберите 1): Сила +1 / Ловкость +1</li>" in text
+        assert "<li>Характеристики: Сила +1 / Ловкость +1</li>" in text
 
     def test_ability_group_with_pick_count_above_one_shows_count(self):
         feature = _feature(
@@ -288,7 +299,7 @@ class TestChoiceGroupsSummary:
     def test_option_with_no_effects_renders_placeholder(self):
         feature = _feature(choice_groups=[_group(pick_count=1, options=[_option()])])
         text = render_effects_summary(feature)
-        assert "<li>Навыки (выберите 1): —</li>" in text
+        assert "<li>Навыки: —</li>" in text
 
     def test_groups_ordered_by_sort_order(self):
         feature = _feature(
@@ -325,7 +336,7 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        assert "<li>Навыки (выберите 1): «Атлетика», «Акробатика»</li>" in text
+        assert "<li>Навыки: «Атлетика», «Акробатика»</li>" in text
 
     @pytest.mark.parametrize(
         ("choice_type", "options", "expected"),
@@ -336,7 +347,7 @@ class TestChoiceGroupsSummary:
                     _option(armor_effects=[_armor(ArmorProficiency.LIGHT)]),
                     _option(armor_effects=[_armor(ArmorProficiency.HEAVY)]),
                 ],
-                "<li>Доспехи (выберите 1): лёгкие доспехи / тяжёлые доспехи</li>",
+                "<li>Владение доспехами: лёгкие доспехи / тяжёлые доспехи</li>",
             ),
             (
                 ChoiceType.WEAPON,
@@ -344,7 +355,7 @@ class TestChoiceGroupsSummary:
                     _option(weapon_effects=[_weapon(WeaponProficiency.SIMPLE)]),
                     _option(weapon_effects=[_weapon(WeaponProficiency.MARTIAL), _weapon(WeaponProficiency.SIMPLE)]),
                 ],
-                "<li>Оружие (выберите 1): простое оружие / простое и воинское оружие</li>",
+                "<li>Владение оружием: простое оружие / простое и воинское оружие</li>",
             ),
             (
                 ChoiceType.SAVING_THROW,
@@ -352,7 +363,7 @@ class TestChoiceGroupsSummary:
                     _option(saving_throw_effects=[_save(AbilityScore.DEX)]),
                     _option(saving_throw_effects=[_save(AbilityScore.WIS), _save(AbilityScore.INT)]),
                 ],
-                "<li>Спасброски (выберите 1): Ловкость / Интеллект, Мудрость</li>",
+                "<li>Спасброски: Ловкость / Интеллект, Мудрость</li>",
             ),
         ],
     )
@@ -373,7 +384,7 @@ class TestChoiceGroupsSummary:
             ]
         )
         text = render_effects_summary(feature)
-        labels = ["Характеристики", "Навыки", "Доспехи", "Заклинания"]
+        labels = ["Характеристики", "Навыки", "Владение доспехами", "Заклинания"]
         assert [text.index(label) for label in labels] == sorted(text.index(label) for label in labels)
 
     def test_static_and_choices_separated_by_blank_line(self):
@@ -429,7 +440,7 @@ class TestSavingThrowNamesInOptions:
                 _group(choice_type=ChoiceType.SAVING_THROW, options=[_option(saving_throw_effects=[_save(ability)])])
             ]
         )
-        assert f"<li>Спасброски (выберите 1): {expected}</li>" in render_effects_summary(feature)
+        assert f"<li>Спасброски: {expected}</li>" in render_effects_summary(feature)
 
 
 @pytest.mark.unit
@@ -503,7 +514,7 @@ class TestReadability:
         )
         text = render_effects_summary(feature)
         assert "<li>Характеристики (выберите 2): +2 к любой / Мудрость +1, +5 к любой (макс. 24)</li>" in text
-        assert "<li>Спасброски (выберите 1): любой</li>" in text
+        assert "<li>Спасброски: любой</li>" in text
 
     def test_open_expertise_skill(self):
         feature = _feature(skill_effects=[_skill(None, SkillEffectMode.EXPERTISE)])
@@ -517,7 +528,33 @@ class TestReadability:
             _armor(ArmorProficiency.LIGHT),
         ]
         text = render_effects_summary(_feature(armor_effects=effects))
-        assert "Доспехи: лёгкие и средние доспехи, щиты, «Кольчуга»</li>" in text
+        expected = 'Владение доспехами: лёгкие и средние доспехи, щиты, «<a href="/catalog/items/4">Кольчуга</a>»</li>'
+        assert expected in text
+
+    def test_tool_effects_link_concrete_tools_and_name_open_ones(self):
+        tools = [
+            SimpleNamespace(item_id=144, tool_category=None, item=SimpleNamespace(name="Барабан")),
+            SimpleNamespace(item_id=None, tool_category=ToolCategory.GAMING_SET, item=None),
+        ]
+        text = render_effects_summary(_feature(tool_effects=tools))
+        expected = 'Владение инструментами: «<a href="/catalog/items/144">Барабан</a>», любой из игровых наборов</li>'
+        assert expected in text
+
+    def test_speed_and_armor_class_effects_with_conditions(self):
+        speed = SimpleNamespace(
+            speed_type=SpeedType.FLY, mode=SpeedEffectMode.BONUS, value=10, condition=EffectCondition.NONE, min_level=3
+        )
+        formula = SimpleNamespace(
+            mode=ArmorClassEffectMode.FORMULA,
+            value=10,
+            abilities=[AbilityScore.DEX, AbilityScore.CON],
+            allows_shield=True,
+            condition=EffectCondition.NO_ARMOR,
+            min_level=None,
+        )
+        text = render_effects_summary(_feature(speed_effects=[speed], armor_class_effects=[formula]))
+        assert "Скорость: полёт +10 фт. (с 3-го уровня)" in text
+        assert "КД: 10 + ЛВК + ТЕЛ (без доспеха)" in text
 
     def test_castable_spell_with_a_level_range(self):
         effect = _spell(castable_only=True, max_level=SpellLevel.LEVEL_1)

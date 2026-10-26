@@ -8,11 +8,16 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 from app.constants import (
     EFFECT_TYPE_BY_CHOICE_TYPE,
     AbilityScore,
+    ArmorClassEffectMode,
     ArmorProficiency,
     ChoiceType,
+    EffectCondition,
     SkillEffectMode,
+    SpeedEffectMode,
+    SpeedType,
     SpellLevel,
     SpellSchool,
+    ToolCategory,
     WeaponProficiency,
 )
 from app.core.types import EntityId
@@ -28,6 +33,9 @@ MAX_PICK_COUNT = 50
 MAX_SORT_ORDER = 10_000
 MAX_ABILITY_AMOUNT = 30
 MAX_SPELL_FILTER_CLASSES = 20
+MAX_SPEED_VALUE = 200
+MAX_ARMOR_CLASS_VALUE = 30
+MAX_LEVEL = 20
 
 # Spell levels from cantrip up — the order a spell effect's level range is checked in.
 SPELL_LEVEL_ORDER: tuple[SpellLevel, ...] = tuple(SpellLevel)
@@ -40,17 +48,34 @@ DUPLICATE_KEY_BY_EFFECT_FIELD: dict[str, Callable[[Any], Any]] = {
     "saving_throw_effects": lambda effect: effect.ability,
     "armor_effects": lambda effect: (effect.armor_type, effect.item_id),
     "weapon_effects": lambda effect: (effect.weapon_category, effect.item_id),
+    "tool_effects": lambda effect: (effect.item_id, effect.tool_category),
     "spell_effects": lambda effect: effect.spell_id,
+    "speed_effects": lambda effect: (
+        effect.speed_type,
+        effect.mode,
+        effect.value,
+        effect.condition,
+        effect.min_level,
+    ),
+    "armor_class_effects": lambda effect: (
+        effect.mode,
+        effect.value,
+        tuple(effect.abilities),
+        effect.allows_shield,
+        effect.condition,
+        effect.min_level,
+    ),
 }
 _ALL_OPTION_EFFECT_FIELDS = tuple(DUPLICATE_KEY_BY_EFFECT_FIELD)
 
 # The effect fields whose target may be left open in a choice option ("any skill/spell/ability/saving
-# throw"), with the target attribute that is ``None`` on an open effect. At most one open effect per
+# throw/tool"), with the target attribute that is ``None`` on an open effect. At most one open effect per
 # option and field (two would repeat the same ``None`` entry).
 OPEN_TARGETS = {
     "ability_effects": "ability",
     "skill_effects": "skill_id",
     "saving_throw_effects": "ability",
+    "tool_effects": "item_id",
     "spell_effects": "spell_id",
 }
 
@@ -66,7 +91,11 @@ def _reject_duplicates(values: list, label: str) -> None:
 
 
 def _validate_effect_lists(model: BaseModel, field_names: tuple[str, ...]) -> None:
-    """Reject repeated row ids and repeated effects within each of ``model``'s effect lists."""
+    """
+    Reject repeated row ids and repeated effects within each of ``model``'s effect lists, and a second open
+    effect of one field (a pick names one skill/spell/ability/tool — two open tool effects with different
+    categories would both get the same named tool).
+    """
 
     for field_name in field_names:
         items = getattr(model, field_name)
@@ -76,6 +105,9 @@ def _validate_effect_lists(model: BaseModel, field_names: tuple[str, ...]) -> No
         _reject_duplicates([item.id for item in items if item.id is not None], f"id in {field_name}")
         key = DUPLICATE_KEY_BY_EFFECT_FIELD[field_name]
         _reject_duplicates([key(item) for item in items], f"entry in {field_name}")
+        target = OPEN_TARGETS.get(field_name)
+        if target is not None and sum(getattr(item, target) is None for item in items) > 1:
+            raise ValueError(f"At most one open ('any …') entry per option in {field_name}.")
 
 
 class AbilityEffectItem(BaseModel):
@@ -175,6 +207,89 @@ class WeaponEffectItem(BaseModel):
         return self
 
 
+class ToolEffectItem(BaseModel):
+    """
+    A fixed/option tool-proficiency effect: a concrete tool (``item_id`` of a ``TOOL`` item), or an open
+    ("any tool") effect — ``item_id`` unset, choice options only — optionally narrowed to one
+    ``tool_category`` ("any musical instrument"). A concrete effect carries no category (422). ``id``: see
+    ``SkillEffectItem``.
+    """
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    id: EntityId | None = None
+    item_id: EntityId | None = None
+    tool_category: ToolCategory | None = None
+
+    @model_validator(mode="after")
+    def _category_on_open_only(self):
+        """``tool_category`` narrows an open pick; a concrete tool already is one."""
+
+        if self.item_id is not None and self.tool_category is not None:
+            raise ValueError("tool_category applies only to an open ('any tool') effect — leave item_id unset.")
+        return self
+
+
+class _ConditionalEffectItem(BaseModel):
+    """Shared fields of the speed / AC effects: when they apply (``condition``, ``min_level`` — character level)."""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    id: EntityId | None = None
+    condition: EffectCondition = EffectCondition.NONE
+    min_level: int | None = Field(None, ge=1, le=MAX_LEVEL)
+
+
+class SpeedEffectItem(_ConditionalEffectItem):
+    """
+    A speed effect (fixed only — no choice type carries it): ``mode`` applied to ``speed_type`` with
+    ``value`` feet (see ``SpeedEffectMode``). ``SET`` needs a positive value; ``IGNORE_ARMOR_PENALTY`` and
+    ``EQUAL_TO_WALK`` ignore it. ``id``: see ``SkillEffectItem``.
+    """
+
+    speed_type: SpeedType = SpeedType.WALK
+    mode: SpeedEffectMode = SpeedEffectMode.BONUS
+    value: int = Field(0, ge=-MAX_SPEED_VALUE, le=MAX_SPEED_VALUE)
+
+    @model_validator(mode="after")
+    def _check_value(self):
+        """A set speed is a positive number of feet; ``EQUAL_TO_WALK`` can't target the walking speed itself."""
+
+        if self.mode == SpeedEffectMode.SET and self.value <= 0:
+            raise ValueError("A SET speed effect needs a positive value.")
+        if self.mode == SpeedEffectMode.EQUAL_TO_WALK and self.speed_type == SpeedType.WALK:
+            raise ValueError("EQUAL_TO_WALK needs a speed_type other than WALK.")
+        return self
+
+
+class ArmorClassEffectItem(_ConditionalEffectItem):
+    """
+    An AC effect (fixed only): a ``BONUS`` of ``value``, or a ``FORMULA`` base AC of ``value`` + the
+    modifiers of ``abilities`` (``allows_shield``: a shield still adds). ``abilities`` belongs to a formula
+    only (422). ``id``: see ``SkillEffectItem``.
+    """
+
+    mode: ArmorClassEffectMode = ArmorClassEffectMode.BONUS
+    value: int = Field(0, ge=-MAX_ARMOR_CLASS_VALUE, le=MAX_ARMOR_CLASS_VALUE)
+    abilities: list[AbilityScore] = Field([], max_length=len(AbilityScore))
+    allows_shield: bool = True
+
+    @field_validator("abilities")
+    @classmethod
+    def _dedupe(cls, values: list) -> list:
+        """The abilities are a set: repeats are dropped, order kept."""
+
+        return list(dict.fromkeys(values))
+
+    @model_validator(mode="after")
+    def _abilities_on_formula_only(self):
+        """Only a formula adds ability modifiers."""
+
+        if self.mode != ArmorClassEffectMode.FORMULA and self.abilities:
+            raise ValueError("abilities apply only to a FORMULA armor_class effect.")
+        return self
+
+
 class SpellEffectItem(BaseModel):
     """
     A fixed/option spell-grant effect: a concrete ``spell_id``, or an open
@@ -231,12 +346,7 @@ class SpellEffectItem(BaseModel):
         """Whether any filter restricts the pick."""
 
         return bool(
-            self.class_ids
-            or self.min_level
-            or self.max_level
-            or self.castable_only
-            or self.schools
-            or self.ritual_only
+            self.class_ids or self.min_level or self.max_level or self.castable_only or self.schools or self.ritual_only
         )
 
     @model_validator(mode="after")
@@ -300,6 +410,15 @@ class WeaponEffectGroup(BaseModel):
     items: list[WeaponEffectItem] = Field([], max_length=MAX_EFFECTS_PER_LIST)
 
 
+class ToolEffectGroup(BaseModel):
+    """Tool-proficiency effects of a bundle, grouped under ``effect_type='tool'``."""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    effect_type: Literal["tool"]
+    items: list[ToolEffectItem] = Field([], max_length=MAX_EFFECTS_PER_LIST)
+
+
 class SpellEffectGroup(BaseModel):
     """Spell-grant effects of a bundle, grouped under ``effect_type='spell'``."""
 
@@ -307,6 +426,24 @@ class SpellEffectGroup(BaseModel):
 
     effect_type: Literal["spell"]
     items: list[SpellEffectItem] = Field([], max_length=MAX_EFFECTS_PER_LIST)
+
+
+class SpeedEffectGroup(BaseModel):
+    """Speed effects, grouped under ``effect_type='speed'``."""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    effect_type: Literal["speed"]
+    items: list[SpeedEffectItem] = Field([], max_length=MAX_EFFECTS_PER_LIST)
+
+
+class ArmorClassEffectGroup(BaseModel):
+    """Armor-class effects, grouped under ``effect_type='armor_class'``."""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    effect_type: Literal["armor_class"]
+    items: list[ArmorClassEffectItem] = Field([], max_length=MAX_EFFECTS_PER_LIST)
 
 
 # The one API shape of an effect bundle, read and write alike: a list of these, one entry per
@@ -319,12 +456,18 @@ EffectGroup = Annotated[
     | SavingThrowEffectGroup
     | ArmorEffectGroup
     | WeaponEffectGroup
-    | SpellEffectGroup,
+    | ToolEffectGroup
+    | SpellEffectGroup
+    | SpeedEffectGroup
+    | ArmorClassEffectGroup,
     Field(discriminator="effect_type"),
 ]
 
 
-EffectType = Literal["ability", "skill", "saving_throw", "armor", "weapon", "spell"]
+EffectType = Literal["ability", "skill", "saving_throw", "armor", "weapon", "tool", "spell", "speed", "armor_class"]
+
+# The effect types an item may own (``ITEM_EFFECT_TYPES`` of the models).
+ItemEffectType = Literal["speed", "armor_class"]
 
 ITEM_BY_EFFECT_TYPE: dict[str, type[BaseModel]] = {
     "ability": AbilityEffectItem,
@@ -332,7 +475,10 @@ ITEM_BY_EFFECT_TYPE: dict[str, type[BaseModel]] = {
     "saving_throw": SavingThrowEffectItem,
     "armor": ArmorEffectItem,
     "weapon": WeaponEffectItem,
+    "tool": ToolEffectItem,
     "spell": SpellEffectItem,
+    "speed": SpeedEffectItem,
+    "armor_class": ArmorClassEffectItem,
 }
 
 
@@ -374,8 +520,20 @@ class _EffectGroupsPayload(BaseModel):
         return self._items("weapon")
 
     @property
+    def tool_effects(self) -> list | None:
+        return self._items("tool")
+
+    @property
     def spell_effects(self) -> list | None:
         return self._items("spell")
+
+    @property
+    def speed_effects(self) -> list | None:
+        return self._items("speed")
+
+    @property
+    def armor_class_effects(self) -> list | None:
+        return self._items("armor_class")
 
 
 def _reject_repeated_types(groups: list) -> list:
@@ -539,6 +697,19 @@ class OptionEffectsUpdate(FeatureEffectsUpdate):
     """
 
     _OPEN_ALLOWED: ClassVar[bool] = True
+
+
+class ItemEffectsUpdate(FeatureEffectsUpdate):
+    """Body of ``POST /items/{id}/effects``: the same ``static_groups`` list, speed and armor_class types only."""
+
+    @model_validator(mode="after")
+    def validate_item_types(self):
+        """An item owns only the effects applied while it's equipped (``ItemEffectType``)."""
+
+        allowed = {"speed", "armor_class"}
+        if any(group.effect_type not in allowed for group in self.static_groups):
+            raise ValueError("An item may only carry 'speed' and 'armor_class' effects.")
+        return self
 
 
 class ChoiceGroupPatch(BaseModel):

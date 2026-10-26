@@ -38,10 +38,11 @@ class SubraceCrudService(
         )
         self._storage = storage
 
-    async def list_for_race(self, race_id: int) -> list[SubraceGetAllResponse]:
-        """Return every subrace belonging to ``race_id``, without their ability bonuses."""
+    async def list_for_race(self, race_id: int | None = None) -> list[SubraceGetAllResponse]:
+        """Return brief subrace rows, for one race or, without ``race_id``, for all; 404 for an unknown race."""
 
-        await self._ensure_race_exists(race_id)
+        if race_id is not None:
+            await self._ensure_race_exists(race_id)
         return [
             SubraceGetAllResponse.model_validate(subrace) for subrace in await self.repository.list_for_race(race_id)
         ]

@@ -131,7 +131,7 @@ class TestCharacterStatsRepository:
     async def test_get_feature_increases_many_merges_fixed_and_option_rows_per_character(self):
         fixed_row = SimpleNamespace(id=10, ability=AbilityScore.STR, amount=2)
         option_row = SimpleNamespace(id=20, ability=AbilityScore.DEX, amount=1)
-        session = FakeAsyncSession(execute_results=[FakeResult([(fixed_row, 1)]), FakeResult([(option_row, 2)])])
+        session = FakeAsyncSession(execute_results=[FakeResult([(fixed_row, 1)]), FakeResult([(option_row, 2, None)])])
         repository = CharacterStatsRepository(session)
 
         result = await repository.get_feature_increases_many([1, 2])

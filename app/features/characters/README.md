@@ -44,8 +44,19 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   `/characters/{id}/conditions[/{condition}]` (PATCH/DELETE take the condition
   in the URL; not part of the cached response, so they never purge it). The add is an atomic
   `INSERT ... ON CONFLICT DO NOTHING`; a duplicate is a 409.
-- `items/` — read-only inventory listing (`GET /characters/{id}/items`); the
-  stack repository is shared with the GM panel, which owns all writes.
+- `items/` — inventory listing (`GET /characters/{id}/items`); the
+  stack repository is shared with the GM panel, which owns all writes
+  (incl. `is_equipped` / `is_attuned`, at most 3 attuned — only stacks whose item
+  still requires attunement count) — except the sheet's own equip toggle
+  `PATCH /characters/{id}/items/{stack_id}` `{is_equipped}` (owner / campaign
+  GM / founder; purges no cache — the cached character response embeds no items). Starting armor and shields are created
+  equipped; GM-added items start unequipped.
+- `combat/` — `GET /characters/{id}/combat-stats`: the sheet's manual
+  `armor_class`/`shield`/`speed` next to the computed AC and speeds (pure
+  `combat/calculator.py`: race speed, equipped armor/shield, DEX, the speed/AC
+  effects of feature grants and of active equipped items, gathered by the pure
+  `collect_effects`), each with a breakdown and an `inactive` list (`reason`
+  text + stable `reason_code`). Uncached; the manual columns are never recomputed.
 - `level/` — only `CharacterMaxLevelRepository` (the GM-set level-up cap row),
   used by creation, the GM panel and progression.
 - `backstory/` — the character's backstory, isolated in its own table
@@ -100,7 +111,11 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   `hit_points_gained` <= 50, rebuild `max_hp` <= 1000, `skill_ids` <= 30.
 - `grants/` — answering a feature's choice groups. Authorization lives in
   `FeatureGrantService` (its methods take `current_user`); `PATCH .../choices`
-  is one service transaction with the cache purge after COMMIT;
+  is one service transaction with the cache purge after COMMIT and replaces
+  each answered group's picks (an answer can be changed);
+  `GET .../choices?include_answered=true` returns every group of the grant, judged
+  as if being re-answered (its own picks in them don't count) — the stored picks
+  are at `.../choices/answered`;
   `resolve_grants_choices` applies answers a GM-panel grant carries (trees
   loaded in one query, features without `has_choices` skipped;
   `enforce=False`: groups left unanswered stay pending). A player's
@@ -136,7 +151,8 @@ bare `APIRouter()`; the root `router.py` applies the `/characters` prefix).
   modules are pure, and a per-request `_RulesContext` loads every grant's
   effects once for the skill checks, the spell checks and the response.
   Concrete-item proficiency effects must point at the right item type
-  (weapon → WEAPON, armor → ARMOR/SHIELD; 422 otherwise).
+  (weapon → a `WEAPON` item, armor → an `ARMOR` item (a shield = `armor_category=SHIELD`),
+  tool → a `TOOL` item; 422 otherwise).
 - `gm_panel/` — GM-only panel under `/characters/gm-panel`: feat grants
   (with mandatory ASI choice when offered), feature grants, inventory
   (items), free-form ±ASI adjustments, max-HP edit, the per-character

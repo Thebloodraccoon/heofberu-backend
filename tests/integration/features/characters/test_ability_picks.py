@@ -152,9 +152,7 @@ class TestOpenAbilityPicks:
 
         assert response.status_code == 422
 
-    async def test_open_pick_may_not_repeat_the_options_own_ability(
-        self, client, gm_token, create_feature, character
-    ):
+    async def test_open_pick_may_not_repeat_the_options_own_ability(self, client, gm_token, create_feature, character):
         feature = await create_feature(name="Half Feat", source_type="OTHER", level=None)
         group_id, option_id = await choice_group(
             client,
@@ -209,7 +207,7 @@ class TestOpenAbilityAuthoring:
         response = await client.get(f"/features/{feature.id}")
 
         assert response.status_code == 200, response.text
-        assert "Характеристики (выберите 1): +2 к любой" in response.json()["effects_summary"]
+        assert "Характеристики: +2 к любой" in response.json()["effects_summary"]
 
     async def test_making_a_picked_option_open_clears_its_picks(self, client, gm_token, create_feature, character):
         character_id = character.id

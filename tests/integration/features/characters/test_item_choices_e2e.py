@@ -279,3 +279,56 @@ class TestBackgroundItemChoices:
         )
         assert detail.status_code == 200
         assert detail.json()["background_id"] is None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+class TestFilterOptionPicks:
+    """A filter option ("any simple weapon") is answered with ``item_choice_picks`` naming a matching item."""
+
+    async def _setup(self, client, gm_token, create_class, create_item):
+        character_class = await create_class(name="Fighter")
+        club = await create_item(name="Club", weapon_category="SIMPLE")
+        sword = await create_item(name="Longsword", weapon_category="MARTIAL")
+        groups = await set_class_choice_groups(
+            client,
+            gm_token,
+            character_class.id,
+            [{"pick_count": 1, "options": [{"weapon_category": "SIMPLE"}, {"item_id": sword.id}]}],
+        )
+        options = groups[0]["options"]
+        filter_id = next(option["id"] for option in options if option["item_id"] is None)
+        concrete_id = next(option["id"] for option in options if option["item_id"] == sword.id)
+        return character_class, club, sword, filter_id, concrete_id
+
+    async def _create(self, client, player_token, class_id, choice_ids, picks):
+        return await client.post(
+            "/characters",
+            json={"name": "Raistlin", "class_id": class_id, "item_choice_ids": choice_ids, "item_choice_picks": picks},
+            headers={"Authorization": f"Bearer {player_token}"},
+        )
+
+    async def test_bad_picks_are_400(self, client, player_token, gm_token, create_class, create_item):
+        character_class, club, sword, filter_id, concrete_id = await self._setup(
+            client, gm_token, create_class, create_item
+        )
+
+        stray = await self._create(
+            client, player_token, character_class.id, [concrete_id], [{"option_id": concrete_id, "item_id": club.id}]
+        )
+        missing = await self._create(client, player_token, character_class.id, [filter_id], [])
+        off_filter = await self._create(
+            client, player_token, character_class.id, [filter_id], [{"option_id": filter_id, "item_id": sword.id}]
+        )
+
+        assert (stray.status_code, missing.status_code, off_filter.status_code) == (400, 400, 400)
+
+    async def test_a_matching_pick_creates_the_stack(self, client, player_token, gm_token, create_class, create_item):
+        character_class, club, _, filter_id, _ = await self._setup(client, gm_token, create_class, create_item)
+
+        response = await self._create(
+            client, player_token, character_class.id, [filter_id], [{"option_id": filter_id, "item_id": club.id}]
+        )
+
+        assert response.status_code == 201, response.text
+        assert await get_character_items(client, player_token, response.json()["id"]) == {club.id: 1}

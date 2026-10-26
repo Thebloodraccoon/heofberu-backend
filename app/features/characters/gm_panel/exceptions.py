@@ -280,3 +280,14 @@ class MaxLevelBelowCharacterLevelException(AppError):
             f"Cannot set maximum level {max_level} for character {character_id}: "
             f"the character is already level {character_level}."
         )
+
+
+class AttunementNotAllowedException(AppError):
+    """Raised (409) when a stack can't be attuned: the item needs no attunement, or every slot is taken."""
+
+    status_code = 409
+
+    def __init__(self, message: str):
+        """Keep the reason."""
+
+        super().__init__(message)

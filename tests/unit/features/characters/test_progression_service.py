@@ -962,9 +962,7 @@ class TestRebuildCharacter:
         )
         data = self.make_data(
             max_hp=14,
-            asi_choices=[
-                {"class_level": 4, "choice": {"type": "FEAT", "feat_id": 13}}
-            ],
+            asi_choices=[{"class_level": 4, "choice": {"type": "FEAT", "feat_id": 13}}],
         )
 
         with pytest.raises(FeatMinLevelNotMetException):
@@ -995,9 +993,7 @@ class TestRebuildCharacter:
         )
         data = self.make_data(
             max_hp=14,
-            asi_choices=[
-                {"class_level": 4, "choice": {"type": "FEAT", "feat_id": 13}}
-            ],
+            asi_choices=[{"class_level": 4, "choice": {"type": "FEAT", "feat_id": 13}}],
         )
 
         await service.rebuild_character(1, data, make_user())

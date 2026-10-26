@@ -14,7 +14,7 @@ from app.features.characters.base import CharacterSubDomainService
 from app.features.characters.cache import CHARACTER_CACHE_TTL, character_cache_key
 from app.features.characters.crud.creation import CharacterCreationService
 from app.features.characters.crud.repository import CharacterRepository
-from app.features.characters.crud.rules import resolve_hp_update, validate_hp_update
+from app.features.characters.crud.rules import resolve_hp_update, short_rest_hp, validate_hp_update
 from app.features.characters.crud.schemas import HpUpdate, RestRequest
 from app.features.characters.exceptions import (
     CharacterAccessDeniedException,
@@ -241,11 +241,16 @@ class CharacterService(CharacterSubDomainService):
         """
         Apply a short or long rest. A long rest restores HP to max, clears
         temp HP and resets spell-slot usage in one transaction; a short rest
-        is a no-op placeholder until hit dice are tracked.
+        restores half the maximum HP (``short_rest_hp``), temp HP and slots
+        untouched. The row is locked for the read-modify-write.
         """
 
-        if data.type != "long":
-            character = await self.get_character_for_user(character_id, current_user)
+        if data.type == "short":
+            async with self._atomic():
+                character = await self._get_locked_for_user(character_id, current_user)
+                current_hp = short_rest_hp(character.current_hp, character.max_hp)
+                await self.repository.update_hp(character, current_hp, character.temp_hp)
+                await self._invalidate_character(character_id)
             return await self._response_for(character)
 
         async with self._atomic():

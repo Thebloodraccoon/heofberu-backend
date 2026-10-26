@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ABILITY_SCORE_CAP, AbilityScore, ChoiceType
+from app.constants import ABILITY_SCORE_CAP, AbilityScore, ChoiceType, ItemKind
 from app.features.characters.ability_score.calculator import TOTAL_FIELD_BY_ABILITY
 from app.features.characters.ability_score.service import CharacterStatsService
 from app.features.characters.base import CharacterSubDomainService
@@ -29,27 +29,31 @@ from app.features.characters.grants.exceptions import (
     ChoiceOptionNotFoundError,
     GrantChoiceRequiredException,
     GrantNotFoundError,
+    ItemPickNotAllowedError,
+    ItemPickRequiredError,
     SkillPickNotAllowedError,
     SkillPickRequiredError,
     SpellPickNotAllowedError,
     SpellPickRequiredError,
     UnexpectedAbilityPickError,
+    UnexpectedItemPickError,
     UnexpectedSkillPickError,
     UnexpectedSpellPickError,
     UnknownSkillPickError,
     UnknownSpellPickError,
 )
+from app.features.characters.grants.repository import GrantRulesRepository
 from app.features.characters.grants.schemas import (
     AnsweredChoicesResponse,
     ChoiceAnswerItem,
     GrantChoicesUpdate,
+    ItemPickCandidate,
     PendingChoiceGroup,
     PendingChoiceGroupsResponse,
     PendingChoiceOption,
     PendingChoicesCountResponse,
     SpellPickCandidate,
 )
-from app.features.characters.grants.repository import GrantRulesRepository
 from app.features.characters.grants.skill_rules import (
     SkillBaseline,
     SkillSources,
@@ -87,6 +91,32 @@ def _option_has_open_spell(option: FeatureChoiceOption) -> bool:
     return any(effect.spell_id is None for effect in option.spell_effects)
 
 
+def _open_tool_effect(option: FeatureChoiceOption):
+    """The option's open ("any tool") tool effect, or ``None``."""
+
+    return next((effect for effect in option.tool_effects if effect.item_id is None), None)
+
+
+def _tool_refusal(effect, item, owned_tools: set[int]) -> str | None:
+    """Why ``item`` can't be named for the open tool ``effect`` (``None`` = it can)."""
+
+    if item.kind != ItemKind.TOOL:
+        return "it isn't a tool"
+    if effect.tool_category is not None and item.tool_category != effect.tool_category:
+        return f"it isn't a {effect.tool_category.value} tool"
+    if item.id in owned_tools:
+        return "the character already has proficiency with it"
+    return None
+
+
+def _concrete_tool_refusal(option: FeatureChoiceOption, owned_tools: set[int]) -> str | None:
+    """Why a TOOL option's concrete (non-open) tool can't be granted (``None`` = it can): already proficient."""
+
+    if any(effect.item_id is not None and effect.item_id in owned_tools for effect in option.tool_effects):
+        return "the character already has proficiency with it"
+    return None
+
+
 def _ability_rows(option: FeatureChoiceOption) -> list:
     """The option's ability-score and saving-throw rows (a group carries one of the two types)."""
 
@@ -100,12 +130,13 @@ def _option_has_open_ability(option: FeatureChoiceOption) -> bool:
 
 
 class OptionPick(NamedTuple):
-    """One validated pick: the option and, for an open option, the skill/spell/ability named for it."""
+    """One validated pick: the option and, for an open option, the skill/spell/ability/tool named for it."""
 
     option: FeatureChoiceOption
     skill_id: int | None = None
     spell_id: int | None = None
     ability: AbilityScore | None = None
+    item_id: int | None = None
 
 
 def _skill_availability(
@@ -146,15 +177,32 @@ def _to_pending_response(
     all_skill_ids: list[int] | None = None,
     spell_candidates: list[SpellFacts] | None = None,
     spell_ownership: SpellOwnership | None = None,
+    tool_candidates: list | None = None,
+    owned_tools: set[int] | None = None,
 ) -> PendingChoiceGroupsResponse:
     """
     Serialise the still-pending groups of a grant. With a ``baseline`` the options of its SKILL groups carry
     ``allowed_skill_ids``/``available``; with spell candidates + ownership its open spell options carry
-    ``allowed_spells``/``available`` (see :meth:`FeatureGrantService._pending_response`).
+    ``allowed_spells``/``available``; with tool candidates its open tool options ``allowed_items``/``available``;
+    with ``owned_tools`` a TOOL option whose concrete tool is already owned is ``available=False``
+    (see :meth:`FeatureGrantService._pending_response`).
     """
 
     def option_response(group: FeatureChoiceGroup, option: FeatureChoiceOption) -> PendingChoiceOption:
-        if group.choice_type == ChoiceType.SPELL:
+        tool_effect = _open_tool_effect(option)
+        items = None
+        if tool_effect is not None and tool_candidates is not None:
+            items = [
+                ItemPickCandidate.model_validate(item)
+                for item in tool_candidates
+                if _tool_refusal(tool_effect, item, owned_tools or set()) is None
+            ]
+        if group.choice_type == ChoiceType.TOOL:
+            allowed_skill_ids, spells = None, None
+            available = (items is None or bool(items)) and (
+                owned_tools is None or _concrete_tool_refusal(option, owned_tools) is None
+            )
+        elif group.choice_type == ChoiceType.SPELL:
             allowed_skill_ids = None
             spells, available = _spell_availability(option, spell_candidates, spell_ownership)
         else:
@@ -168,8 +216,10 @@ def _to_pending_response(
                 "needs_skill": _option_has_open_skill(option),
                 "needs_spell": _option_has_open_spell(option),
                 "needs_ability": _option_has_open_ability(option),
+                "needs_item": tool_effect is not None,
                 "allowed_skill_ids": allowed_skill_ids,
                 "allowed_spells": spells,
+                "allowed_items": items,
                 "available": available,
                 "effects": effect_groups(option),
             },
@@ -200,9 +250,11 @@ def _has_open_spell_option(groups: list[FeatureChoiceGroup]) -> bool:
     return any(_option_has_open_spell(option) for group in groups for option in group.options)
 
 
-def _own_effects(
-    feature: Feature, stored: list[CharacterFeatureChoice], excluded_group_ids: set[int]
-) -> GrantEffects:
+def _has_open_tool_option(groups: list[FeatureChoiceGroup]) -> bool:
+    return any(_open_tool_effect(option) is not None for group in groups for option in group.options)
+
+
+def _own_effects(feature: Feature, stored: list[CharacterFeatureChoice], excluded_group_ids: set[int]) -> GrantEffects:
     """The grant's effects from its fixed rows and its stored picks outside ``excluded_group_ids``."""
 
     kept = (choice for choice in stored if choice.choice_group_id not in excluded_group_ids)
@@ -266,7 +318,13 @@ def _validate_answers(
         elif item.ability is not None:
             raise UnexpectedAbilityPickError(option_id=option.id)
 
-        pick = OptionPick(option, item.skill_id, item.spell_id, item.ability)
+        if _open_tool_effect(option) is not None:
+            if item.item_id is None:
+                raise ItemPickRequiredError(option_id=option.id)
+        elif item.item_id is not None:
+            raise UnexpectedItemPickError(option_id=option.id)
+
+        pick = OptionPick(option, item.skill_id, item.spell_id, item.ability, item.item_id)
         picked = answered.setdefault(group.id, [])
         if any(other.option.id == option.id and other[1:] == pick[1:] for other in picked):
             raise ChoiceOptionAlreadyPickedError(group_id=group.id, option_id=option.id)
@@ -350,9 +408,13 @@ class FeatureGrantService(CharacterSubDomainService):
         return stored
 
     async def get_pending_choice_groups(
-        self, character_id: int, grant_id: int, current_user: UserResponse
+        self, character_id: int, grant_id: int, current_user: UserResponse, *, include_answered: bool = False
     ) -> PendingChoiceGroupsResponse:
-        """Return the grant's choice groups that still need the player's picks."""
+        """
+        Return the grant's choice groups that still need the player's picks; with ``include_answered`` every
+        group of the feature, answered ones too (to change an answer — the stored picks are at
+        ``GET .../choices/answered``).
+        """
 
         await self.ensure_character_access(character_id, current_user)
 
@@ -362,7 +424,7 @@ class FeatureGrantService(CharacterSubDomainService):
             raise GrantNotFoundError(character_id=character_id, grant_id=grant_id)
 
         stored = (await self._load_stored_choices([grant.id]))[grant.id]
-        return await self._pending_response(grant, feature, stored)
+        return await self._pending_response(grant, feature, stored, include_answered=include_answered)
 
     async def _pending_response(
         self,
@@ -370,16 +432,21 @@ class FeatureGrantService(CharacterSubDomainService):
         feature: Feature,
         stored: list[CharacterFeatureChoice],
         context: "_RulesContext | None" = None,
+        *,
+        include_answered: bool = False,
     ) -> PendingChoiceGroupsResponse:
         """
-        The grant's pending groups; SKILL groups are judged against the grant's baseline and open spell
-        options against the spells the character has, both without the grant's picks in the pending groups.
+        The grant's pending groups (every group with ``include_answered``); SKILL groups are judged against
+        the grant's baseline and open spell options against the spells the character has, both without the
+        grant's picks in the returned groups — so an answered group is judged as if it were being re-answered.
         ``context`` shares the character's sources across several grants (and the checks of a write).
         """
 
-        pending = pending_groups(feature, stored)
+        pending = list(feature.choice_groups) if include_answered else pending_groups(feature, stored)
         has_skills, has_open_spells = _has_skill_group(pending), _has_open_spell_option(pending)
-        if not (has_skills or has_open_spells):
+        has_open_tools = _has_open_tool_option(pending)
+        has_tool_group = any(group.choice_type == ChoiceType.TOOL for group in pending)
+        if not (has_skills or has_open_spells or has_tool_group):
             return _to_pending_response(grant, feature, pending)
 
         context = context or self._context(grant.character_id)
@@ -395,7 +462,15 @@ class FeatureGrantService(CharacterSubDomainService):
             candidates = await context.spell_candidates()
             ownership = (await context.spell_sources()).ownership(grant.id, own.spells)
 
-        return _to_pending_response(grant, feature, pending, baseline, all_skill_ids, candidates, ownership)
+        tools, owned_tools = None, None
+        if has_open_tools:
+            tools = await self.rules_repository.tool_items()
+        if has_tool_group:
+            owned_tools = await context.owned_tools(grant.id, own.tools)
+
+        return _to_pending_response(
+            grant, feature, pending, baseline, all_skill_ids, candidates, ownership, tools, owned_tools
+        )
 
     async def get_all_pending_choices(
         self, character_id: int, current_user: UserResponse
@@ -514,11 +589,12 @@ class FeatureGrantService(CharacterSubDomainService):
         context = context or self._context(grant.character_id, flush_first=True)
         await self._check_skill_picks(grant, feature, stored, answered, context)
         await self._check_spell_picks(grant, feature, stored, answered, context)
+        await self._check_tool_picks(grant, feature, stored, answered, context)
 
         new_choices = await self.grant_repository.replace_choices(
             grant.id,
             {
-                group_id: [(pick.option.id, pick.skill_id, pick.spell_id, pick.ability) for pick in picks]
+                group_id: [(pick.option.id, pick.skill_id, pick.spell_id, pick.ability, pick.item_id) for pick in picks]
                 for group_id, picks in answered.items()
             },
         )
@@ -586,6 +662,49 @@ class FeatureGrantService(CharacterSubDomainService):
                 if reason is not None:
                     raise SpellPickNotAllowedError(option_id=pick.option.id, spell_id=pick.spell_id, reason=reason)
                 ownership.owned.add(pick.spell_id)
+
+    async def _check_tool_picks(
+        self,
+        grant: CharacterFeature,
+        feature: Feature,
+        stored: list[CharacterFeatureChoice],
+        answered: dict[int, list[OptionPick]],
+        context: "_RulesContext",
+    ) -> None:
+        """
+        Raise when a named tool doesn't exist, isn't a tool of the option's category, or is already owned — and
+        when a chosen concrete tool option grants a tool the character is already proficient with.
+        """
+
+        named = {pick.item_id for picks in answered.values() for pick in picks if pick.item_id is not None}
+        concrete = [
+            pick
+            for picks in answered.values()
+            for pick in picks
+            if _open_tool_effect(pick.option) is None and any(e.item_id is not None for e in pick.option.tool_effects)
+        ]
+        if not named and not concrete:
+            return
+
+        tools = {item.id: item for item in await self.rules_repository.tool_items(named)} if named else {}
+        owned = await context.owned_tools(grant.id, _own_effects(feature, stored, set(answered)).tools)
+        for pick in concrete:
+            granted = [effect.item_id for effect in pick.option.tool_effects if effect.item_id is not None]
+            reason = _concrete_tool_refusal(pick.option, owned)
+            if reason is not None:
+                clash = next(item_id for item_id in granted if item_id in owned)
+                raise ItemPickNotAllowedError(option_id=pick.option.id, item_id=clash, reason=reason)
+            owned.update(granted)
+        for picks in answered.values():
+            for pick in picks:
+                effect = _open_tool_effect(pick.option)
+                if effect is None or pick.item_id is None:
+                    continue
+                item = tools.get(pick.item_id)
+                reason = "it isn't a tool" if item is None else _tool_refusal(effect, item, owned)
+                if reason is not None:
+                    raise ItemPickNotAllowedError(option_id=pick.option.id, item_id=pick.item_id, reason=reason)
+                owned.add(pick.item_id)
 
     async def resolve_grants_choices(
         self,
@@ -766,6 +885,13 @@ class _RulesContext:
                 grants,
             )
         return self._spell_sources
+
+    async def owned_tools(self, grant_id: int, own: set[int]) -> set[int]:
+        """The tools the character is proficient with through its other grants, plus ``own`` (a fresh set)."""
+
+        grants = await self._grant_effects()
+        others = {tool for other_id, (_, effects) in grants.items() if other_id != grant_id for tool in effects.tools}
+        return others | own
 
     async def spell_candidates(self) -> list[SpellFacts]:
         if self._spell_candidates is None:

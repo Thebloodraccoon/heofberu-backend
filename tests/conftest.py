@@ -40,6 +40,9 @@ from app.models import (  # noqa: E402
     Class,
     Feature,
     Item,
+    ItemArmorDetails,
+    ItemToolDetails,
+    ItemWeaponDetails,
     Race,
     Skill,
     Spell,
@@ -308,21 +311,31 @@ async def create_feature(db_session):
 
 @pytest_asyncio.fixture
 async def create_item(db_session):
+    detail_models = {"WEAPON": ItemWeaponDetails, "ARMOR": ItemArmorDetails, "TOOL": ItemToolDetails}
+
     async def _create_item(
         name="Longsword",
-        item_type="WEAPON",
+        kind="WEAPON",
+        subtype=None,
         rarity="NONE",
         requires_attunement=False,
         description="",
+        **details,
     ):
+        """An item of ``kind`` with its detail record (``details``: its columns, e.g. ``armor_category``)."""
+
         item = Item(
             name=name,
-            item_type=item_type,
+            kind=kind,
+            subtype=subtype,
             rarity=rarity,
             requires_attunement=requires_attunement,
             description=description,
         )
         db_session.add(item)
+        await db_session.flush()
+        if kind in detail_models:
+            db_session.add(detail_models[kind](item_id=item.id, **details))
         await db_session.commit()
         await db_session.refresh(item)
         return item

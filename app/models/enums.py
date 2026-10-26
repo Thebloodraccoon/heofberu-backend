@@ -10,6 +10,7 @@ from sqlalchemy import Enum as SAEnum
 
 from app.constants import (
     AbilityScore,
+    ArmorClassEffectMode,
     ArmorProficiency,
     ArticleProposalStatus,
     ArticleStatus,
@@ -26,22 +27,27 @@ from app.constants import (
     ConditionType,
     DamageType,
     DiceType,
+    EffectCondition,
     FeatureSourceType,
+    GearType,
     GrantSource,
     HealingTarget,
+    ItemKind,
     ItemRarity,
-    ItemType,
     ProficiencyAction,
     ProficiencySourceType,
     ProficiencyType,
     PublicCampaignStatus,
     RaceSize,
     SkillEffectMode,
+    SpeedEffectMode,
+    SpeedType,
     SpellCastTime,
     SpellDuration,
     SpellLevel,
     SpellRangeType,
     SpellSchool,
+    ToolCategory,
     UserRole,
     WeaponProficiency,
 )
@@ -68,7 +74,8 @@ SpellCastTimeType = SAEnum(SpellCastTime, native_enum=False, create_constraint=F
 SpellDurationType = SAEnum(SpellDuration, native_enum=False, create_constraint=False, length=30)
 DamageTypeType = SAEnum(DamageType, name="damage_type", create_type=False)
 HealingTargetType = SAEnum(HealingTarget, name="healing_target", create_type=False)
-ItemTypeType = SAEnum(ItemType, native_enum=False, create_constraint=False, length=30)
+ItemKindType = SAEnum(ItemKind, native_enum=False, create_constraint=False, length=20)
+GearTypeType = SAEnum(GearType, native_enum=False, create_constraint=False, length=30)
 ItemRarityType = SAEnum(ItemRarity, name="item_rarity", create_type=False)
 FeatureSourceTypeType = SAEnum(FeatureSourceType, name="feature_source_type", create_type=False)
 ArmorProficiencyType = SAEnum(ArmorProficiency, name="armor_proficiency", create_type=False)
@@ -84,6 +91,11 @@ BackgroundSuggestionTypeType = SAEnum(BackgroundSuggestionType, name="background
 ChoiceTypeType = SAEnum(ChoiceType, name="choice_type", create_type=False)
 # VARCHAR (member NAME): new skill-effect modes need no migration.
 SkillEffectModeType = SAEnum(SkillEffectMode, native_enum=False, create_constraint=False, length=30)
+ToolCategoryType = SAEnum(ToolCategory, native_enum=False, create_constraint=False, length=30)
+SpeedTypeType = SAEnum(SpeedType, native_enum=False, create_constraint=False, length=20)
+SpeedEffectModeType = SAEnum(SpeedEffectMode, native_enum=False, create_constraint=False, length=30)
+ArmorClassEffectModeType = SAEnum(ArmorClassEffectMode, native_enum=False, create_constraint=False, length=20)
+EffectConditionType = SAEnum(EffectCondition, native_enum=False, create_constraint=False, length=30)
 ArticleStatusType = SAEnum(ArticleStatus, name="article_status", create_type=False)
 ArticleVisibilityType = SAEnum(ArticleVisibility, name="article_visibility", create_type=False)
 ArticleProposalStatusType = SAEnum(ArticleProposalStatus, name="article_proposal_status", create_type=False)
@@ -93,6 +105,4 @@ CampaignStatusType = SAEnum(CampaignStatus, native_enum=False, create_constraint
 CampaignCharacterStatusType = SAEnum(CampaignCharacterStatus, native_enum=False, create_constraint=False, length=20)
 CampaignSessionStatusType = SAEnum(CampaignSessionStatus, native_enum=False, create_constraint=False, length=20)
 PublicCampaignStatusType = SAEnum(PublicCampaignStatus, native_enum=False, create_constraint=False, length=20)
-CharacterPublicVisibilityType = SAEnum(
-    CharacterPublicVisibility, native_enum=False, create_constraint=False, length=20
-)
+CharacterPublicVisibilityType = SAEnum(CharacterPublicVisibility, native_enum=False, create_constraint=False, length=20)

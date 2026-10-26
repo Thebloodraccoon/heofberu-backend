@@ -2,12 +2,14 @@
 
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.base.repository import BaseRepository
+from app.features.items.crud.repository import item_detail_loads
 from app.models.character.character_item_model import CharacterItem
+from app.models.items.item_model import Item
 
 
 class CharacterItemRepository(BaseRepository[CharacterItem]):
@@ -26,9 +28,42 @@ class CharacterItemRepository(BaseRepository[CharacterItem]):
 
     @staticmethod
     def _stack_with_item(statement):
-        """Return the query with the ``Item`` eager-loaded."""
+        """Return the query with the ``Item`` (and what ``ItemResponse`` embeds) eager-loaded."""
 
-        return statement.options(selectinload(CharacterItem.item))
+        item_load = selectinload(CharacterItem.item)
+        return statement.options(item_load, *item_detail_loads(item_load))
+
+    async def count_attuned(self, character_id: int, *, exclude_stack_id: int | None = None) -> int:
+        """
+        How many of the character's stacks are attuned (bar ``exclude_stack_id``) — only those whose item still
+        requires attunement count (a stale ``is_attuned`` on an item the GM made non-attunable doesn't).
+        """
+
+        statement = (
+            select(func.count())
+            .select_from(CharacterItem)
+            .join(Item, Item.id == CharacterItem.item_id)
+            .where(CharacterItem.character_id == character_id, CharacterItem.is_attuned, Item.requires_attunement)
+        )
+        if exclude_stack_id is not None:
+            statement = statement.where(CharacterItem.id != exclude_stack_id)
+        return await self.db.scalar(statement) or 0
+
+    @staticmethod
+    def _equipped_loads() -> list:
+        item_load = selectinload(CharacterItem.item)
+        return [item_load, item_load.selectinload(Item.speed_effects), item_load.selectinload(Item.armor_class_effects)]
+
+    async def get_equipped_stacks(self, character_id: int) -> list[CharacterItem]:
+        """The character's equipped stacks with their item and its speed/AC effects loaded."""
+
+        result = await self.db.execute(
+            select(CharacterItem)
+            .where(CharacterItem.character_id == character_id, CharacterItem.is_equipped)
+            .options(*self._equipped_loads())
+            .order_by(CharacterItem.id)
+        )
+        return list(result.scalars().unique().all())
 
     async def get_character_items(self, character_id: int) -> list[CharacterItem]:
         """Get every item stack owned by a character."""

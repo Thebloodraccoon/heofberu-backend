@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import EFFECT_TYPE_BY_CHOICE_TYPE, ChoiceType, ItemType
+from app.constants import EFFECT_TYPE_BY_CHOICE_TYPE, ChoiceType, ItemKind
 from app.core.base.transaction import TransactionMixin
 from app.core.exceptions import RecordInUseError, RecordNotFoundError
 from app.features.characters.progression.feature_sync import refresh_feature_effect_caches
@@ -33,12 +33,15 @@ from app.models import Class, Item, Skill, Spell
 from app.models.features.feature_engine_models import (
     EFFECT_TYPES,
     FeatureAbilityScoreEffect,
+    FeatureArmorClassEffect,
     FeatureArmorProficiencyEffect,
     FeatureChoiceGroup,
     FeatureChoiceOption,
     FeatureSavingThrowEffect,
     FeatureSkillProficiencyEffect,
+    FeatureSpeedEffect,
     FeatureSpellGrantEffect,
+    FeatureToolProficiencyEffect,
     FeatureWeaponProficiencyEffect,
 )
 from app.models.features.feature_model import Feature
@@ -49,7 +52,10 @@ _MODEL_BY_EFFECT_TYPE = {
     "saving_throw": FeatureSavingThrowEffect,
     "armor": FeatureArmorProficiencyEffect,
     "weapon": FeatureWeaponProficiencyEffect,
+    "tool": FeatureToolProficiencyEffect,
     "spell": FeatureSpellGrantEffect,
+    "speed": FeatureSpeedEffect,
+    "armor_class": FeatureArmorClassEffect,
 }
 
 # (effect row model, attribute name on the payload/response schemas) per effect type, in ``EFFECT_TYPES`` order;
@@ -61,13 +67,15 @@ _CATALOG_REFERENCES = (
     ("skill_effects", "skill_id", "skill_id", Skill),
     ("weapon_effects", "item_id", "item_id", Item),
     ("armor_effects", "item_id", "item_id", Item),
+    ("tool_effects", "item_id", "item_id", Item),
     ("spell_effects", "spell_id", "spell_id", Spell),
 )
 
-# The item types a concrete-item proficiency effect may point at.
-_ITEM_TYPES_BY_EFFECT_FIELD = {
-    "weapon_effects": {ItemType.WEAPON},
-    "armor_effects": {ItemType.ARMOR, ItemType.SHIELD},
+# The item kinds a concrete-item proficiency effect may point at.
+_ITEM_KINDS_BY_EFFECT_FIELD = {
+    "weapon_effects": {ItemKind.WEAPON},
+    "armor_effects": {ItemKind.ARMOR},
+    "tool_effects": {ItemKind.TOOL},
 }
 
 # Item fields that aren't columns: the row id and the read-only ``summary`` of a spell effect.
@@ -78,7 +86,7 @@ class FeatureEffectsService(TransactionMixin):
     """
     Everything about a feature's effects: its choice groups ("pick N of M",
     each option a bundle of effects) and its fixed automatic effects across
-    the six typed tables.
+    the typed tables (``EFFECT_TYPES``).
 
     Every write touches **one** row (or one new group/option with its
     bundle): fixed effects, choice groups, options and an option's effects
@@ -157,7 +165,7 @@ class FeatureEffectsService(TransactionMixin):
     async def _ensure_targets_exist(self, owners: Iterable[Any]) -> None:
         """
         422 for any skill/item/spell/class id the payloads reference but the catalog lacks, and for an item of
-        the wrong kind (a weapon effect needs a weapon, an armor effect an armor or a shield).
+        the wrong kind (a weapon effect needs a weapon, an armor effect an armor or a shield, a tool effect a tool).
         """
 
         owners = list(owners)
@@ -173,25 +181,21 @@ class FeatureEffectsService(TransactionMixin):
                 raise InvalidFeatureEffectDataError(f"Unknown {label}(s): {missing}.")
 
         class_ids = {
-            class_id
-            for owner in owners
-            for effect in owner.spell_effects or []
-            for class_id in effect.class_ids
+            class_id for owner in owners for effect in owner.spell_effects or [] for class_id in effect.class_ids
         }
         missing = await self.repository.missing_ids(Class, class_ids)
         if missing:
             raise InvalidFeatureEffectDataError(f"Unknown class_id(s) in a spell filter: {missing}.")
 
-        for field_name, allowed in _ITEM_TYPES_BY_EFFECT_FIELD.items():
+        for field_name, allowed in _ITEM_KINDS_BY_EFFECT_FIELD.items():
             item_ids = {
                 effect.item_id for owner in owners for effect in getattr(owner, field_name) or [] if effect.item_id
             }
             wrong = sorted(
-                item_id for item_id, item_type in (await self.repository.item_types(item_ids)).items()
-                if item_type not in allowed
+                item_id for item_id, kind in (await self.repository.item_kinds(item_ids)).items() if kind not in allowed
             )
             if wrong:
-                kinds = "/".join(sorted(item_type.value for item_type in allowed))
+                kinds = "/".join(sorted(kind.value for kind in allowed))
                 raise InvalidFeatureEffectDataError(f"item_id(s) {wrong} in {field_name} must be of type {kinds}.")
 
     @staticmethod
@@ -260,6 +264,10 @@ class FeatureEffectsService(TransactionMixin):
         taken = {key(row) for row_id, row in rows.items() if row_id != skip_id}
         if any(key(item) in taken for item in items):
             raise InvalidFeatureEffectDataError(f"An equal {field_name} entry already exists.")
+
+        others = [row for row_id, row in rows.items() if row_id != skip_id]
+        if FeatureEffectsService._has_open(field_name, others) and FeatureEffectsService._has_open(field_name, items):
+            raise InvalidFeatureEffectDataError(f"The option already has an open ('any …') {field_name} entry.")
 
     async def _add_effects(self, feature: Feature, owner_field: str, owner_id: int, data: FeatureEffectsUpdate) -> None:
         rows = self._new_rows(owner_field, owner_id, data)

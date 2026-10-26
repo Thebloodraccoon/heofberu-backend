@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.constants import AbilityScore, ArmorProficiency, ChoiceType, FeatureSourceType, ItemType, SkillEffectMode
+from app.constants import AbilityScore, ArmorProficiency, ChoiceType, FeatureSourceType, ItemKind, SkillEffectMode
 from app.core.exceptions import RecordInUseError, RecordNotFoundError
 from app.features.features.effects.exceptions import InvalidFeatureEffectDataError
 from app.features.features.effects.schemas import (
@@ -79,7 +79,7 @@ class FakeEffectsRepository:
         self.rows = rows or {}
         self.groups = groups or []
         self.known_ids = known_ids or {}
-        self.item_kinds = item_kinds or {}
+        self.kinds_by_item = item_kinds or {}
         self.added = []
         self.removed = []
         self.flushes = 0
@@ -119,8 +119,8 @@ class FakeEffectsRepository:
         known = self.known_ids.get(model.__name__, set())
         return sorted(set(ids) - known)
 
-    async def item_types(self, item_ids):
-        return {item_id: self.item_kinds[item_id] for item_id in item_ids if item_id in self.item_kinds}
+    async def item_kinds(self, item_ids):
+        return {item_id: self.kinds_by_item[item_id] for item_id in item_ids if item_id in self.kinds_by_item}
 
     async def refresh_effect_flags(self, feature):
         self.flag_refreshes += 1
@@ -221,7 +221,7 @@ class TestAddFixedEffects:
         assert db.commits == 1
 
     async def test_armor_effect_pointing_at_a_weapon_is_rejected(self, spies):
-        service, db = make_service(known_ids={"Item": {40}}, item_kinds={40: ItemType.WEAPON})
+        service, db = make_service(known_ids={"Item": {40}}, item_kinds={40: ItemKind.WEAPON})
         data = FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"item_id": 40}]}])
 
         with pytest.raises(InvalidFeatureEffectDataError, match=r"item_id\(s\) \[40\] in armor_effects must be"):
@@ -231,7 +231,7 @@ class TestAddFixedEffects:
         assert db.commits == 0
 
     async def test_weapon_effect_pointing_at_armor_is_rejected(self, spies):
-        service, db = make_service(known_ids={"Item": {41}}, item_kinds={41: ItemType.ARMOR})
+        service, db = make_service(known_ids={"Item": {41}}, item_kinds={41: ItemKind.ARMOR})
         data = FeatureEffectsUpdate(static_groups=[{"effect_type": "weapon", "items": [{"item_id": 41}]}])
 
         with pytest.raises(InvalidFeatureEffectDataError, match=r"item_id\(s\) \[41\] in weapon_effects must be"):
@@ -241,7 +241,7 @@ class TestAddFixedEffects:
         assert db.commits == 0
 
     async def test_armor_effect_accepts_a_shield(self, spies):
-        service, db = make_service(known_ids={"Item": {42}}, item_kinds={42: ItemType.SHIELD})
+        service, db = make_service(known_ids={"Item": {42}}, item_kinds={42: ItemKind.ARMOR})
 
         await service.add_fixed_effects(
             1, FeatureEffectsUpdate(static_groups=[{"effect_type": "armor", "items": [{"item_id": 42}]}])

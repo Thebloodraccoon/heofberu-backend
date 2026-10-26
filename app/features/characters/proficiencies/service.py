@@ -17,6 +17,7 @@ from app.features.characters.proficiencies.schemas import (
     CharacterProficienciesResponse,
     SavingThrowProficiencyView,
     SkillProficiencyView,
+    ToolProficiencyView,
     WeaponProficiencyView,
 )
 from app.features.users.schemas import UserResponse
@@ -40,7 +41,7 @@ async def resolve_character_proficiencies(db: AsyncSession, character_id: int) -
 class CharacterProficiencyService(CharacterSubDomainService):
     """
     Read-only proficiency surface for a character: skills, saving throws,
-    armor, and weapons — each resolved across every contributing source
+    armor, weapons and tools — each resolved across every contributing source
     (class/race/background choice and GM override rows from
     ``character_proficiencies``, plus feature/feat grants computed from
     their effect tree and the player's picks) into one entry with the full
@@ -73,6 +74,8 @@ class CharacterProficiencyService(CharacterSubDomainService):
                 response.armor.append(
                     ArmorProficiencyView(armor_type=armor_type, item_id=item_id, sources=proficiency.sources)
                 )
+            elif proficiency_type == ProficiencyType.TOOL:
+                response.tools.append(ToolProficiencyView(item_id=discriminator[0], sources=proficiency.sources))
             else:
                 weapon_category, item_id = discriminator
                 response.weapons.append(

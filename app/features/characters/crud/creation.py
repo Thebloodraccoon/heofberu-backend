@@ -22,8 +22,10 @@ from app.features.characters.crud.exceptions import (
 from app.features.characters.crud.repository import CharacterRepository
 from app.features.characters.crud.rules import (
     pick_item_options,
+    picked_items,
     resolve_background_suggestions,
     starting_max_hp,
+    starts_equipped,
     validate_chosen_skills,
 )
 from app.features.characters.exceptions import BackgroundNotFoundException
@@ -42,7 +44,6 @@ from app.models.character.character_backstory_model import CharacterBackstory
 from app.models.character.character_item_model import CharacterItem
 from app.models.character.character_model import Character
 from app.models.character.character_proficiency_model import CharacterProficiency
-from app.models.items.item_source_choice_model import SourceItemChoiceOption
 
 _EMPTY_PERSONALITY = {"personality_traits": "", "ideals": "", "bonds": "", "flaws": ""}
 
@@ -56,7 +57,10 @@ class CreationPlan:
     chosen_skill_ids: list[int]
     background_skill_ids: list[int] = field(default_factory=list)
     race_skill_ids: list[int] = field(default_factory=list)
-    item_options: list[SourceItemChoiceOption] = field(default_factory=list)
+    # (item_id, quantity) of every chosen starting-equipment option, filter options resolved to the picked item
+    item_options: list[tuple[int, int]] = field(default_factory=list)
+    # the items named for filter options, by id, already loaded (``_add_starting_equipment`` doesn't refetch them)
+    picked_items: dict[int, Any] = field(default_factory=dict)
     backstory: str = ""
 
 
@@ -102,12 +106,14 @@ class CharacterCreationService:
         background = await self._load_background(data)
 
         chosen_skill_ids = validate_chosen_skills(data.skill_ids, character_class)
-        item_options = await self._resolve_item_choices(data.class_id, data.background_id, data.item_choice_ids)
+        item_options, picked = await self._resolve_item_choices(
+            data.class_id, data.background_id, data.item_choice_ids, data.item_choice_picks
+        )
 
         if data.background_id is None and data.suggestion_ids:
             raise SuggestionIdsWithoutBackgroundException()
 
-        payload = data.model_dump(exclude={"skill_ids", "item_choice_ids", "suggestion_ids"})
+        payload = data.model_dump(exclude={"skill_ids", "item_choice_ids", "item_choice_picks", "suggestion_ids"})
         payload.update(
             owner_id=owner_id,
             level=1,
@@ -121,6 +127,7 @@ class CharacterCreationService:
             chosen_skill_ids=chosen_skill_ids,
             race_skill_ids=[skill.id for skill in race.granted_skills] if race is not None else [],
             item_options=item_options,
+            picked_items=picked,
         )
 
         if background is not None:
@@ -160,7 +167,7 @@ class CharacterCreationService:
         character.max_hp = starting_max_hp(plan.character_class.hit_dice, ability_scores.constitution_total)
         character.current_hp = character.max_hp
 
-        await self._add_starting_equipment(character, plan.item_options)
+        await self._add_starting_equipment(character, plan.item_options, plan.picked_items)
         await self.db.flush()
         return character, ability_scores
 
@@ -219,19 +226,26 @@ class CharacterCreationService:
         return sources
 
     async def _resolve_item_choices(
-        self, class_id: int | None, background_id: int | None, item_choice_ids: list[int]
-    ) -> list[SourceItemChoiceOption]:
-        """Resolve the "pick N of M" starting-equipment answers against the class/background choice groups."""
+        self, class_id: int | None, background_id: int | None, item_choice_ids: list[int], picks: list
+    ) -> tuple[list[tuple[int, int]], dict[int, Any]]:
+        """
+        Resolve the "pick N of M" starting-equipment answers against the class/background choice groups, as
+        ``(item_id, quantity)`` per chosen option (a filter option's item named in ``picks``), plus the
+        loaded named items by id.
+        """
 
         sources = self._sources(class_id, background_id)
         groups = await self.item_repository.get_choice_groups_for_sources(sources) if sources else []
 
         if not groups:
-            if item_choice_ids:
+            if item_choice_ids or picks:
                 raise ItemChoicesWithoutGroupsException()
-            return []
+            return [], {}
 
-        return pick_item_options(groups, item_choice_ids)
+        options = pick_item_options(groups, item_choice_ids)
+        picks_by_option = {pick.option_id: pick.item_id for pick in picks}
+        items = {item.id: item for item in await self.item_repository.get_items_by_ids(list(picks_by_option.values()))}
+        return picked_items(options, picks_by_option, items), items
 
     def _add_proficiencies(self, character: Character, plan: CreationPlan) -> None:
         """
@@ -268,8 +282,14 @@ class CharacterCreationService:
                 )
             )
 
-    async def _add_starting_equipment(self, character: Character, chosen_options: list[SourceItemChoiceOption]) -> None:
-        """One ``CharacterItem`` stack per item, quantities summed across the sources and the chosen options."""
+    async def _add_starting_equipment(
+        self, character: Character, chosen_options: list[tuple[int, int]], known_items: dict[int, Any]
+    ) -> None:
+        """
+        One ``CharacterItem`` stack per item, quantities summed across the sources and the chosen options; armor and
+        shields start equipped (``starts_equipped``) — items a GM hands out later don't. ``known_items`` (the
+        items named for filter options) are not fetched again.
+        """
 
         sources = self._sources(character.class_id, character.background_id)
         if not sources:
@@ -278,8 +298,18 @@ class CharacterCreationService:
         quantities: dict[int, int] = {}
         for entry in await self.item_repository.get_source_items_for_sources(sources):
             quantities[entry.item_id] = quantities.get(entry.item_id, 0) + entry.quantity
-        for option in chosen_options:
-            quantities[option.item_id] = quantities.get(option.item_id, 0) + option.quantity
+        for item_id, quantity in chosen_options:
+            quantities[item_id] = quantities.get(item_id, 0) + quantity
 
+        items = dict(known_items)
+        if missing := [item_id for item_id in quantities if item_id not in items]:
+            items.update((item.id, item) for item in await self.item_repository.get_items_by_ids(missing))
         for item_id, quantity in quantities.items():
-            self.db.add(CharacterItem(character_id=character.id, item_id=item_id, quantity=quantity))
+            self.db.add(
+                CharacterItem(
+                    character_id=character.id,
+                    item_id=item_id,
+                    quantity=quantity,
+                    is_equipped=starts_equipped(items.get(item_id)),
+                )
+            )

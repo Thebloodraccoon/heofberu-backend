@@ -88,8 +88,12 @@ class AsiChoiceService:
         ensure_feat_min_level(feat, class_level)
         ensure_prerequisite_met(feat, totals)
 
-        grant = existing if reused else await self.feat_grant_repository.add_character_feat(
-            character, choice.feat_id, None, source_type=GrantSource.ASI
+        grant = (
+            existing
+            if reused
+            else await self.feat_grant_repository.add_character_feat(
+                character, choice.feat_id, None, source_type=GrantSource.ASI
+            )
         )
         await self.asi_repository.add(character.id, class_level, ASILevelChoice.FEAT, feat_id=choice.feat_id)
 

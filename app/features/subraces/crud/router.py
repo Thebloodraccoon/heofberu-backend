@@ -20,11 +20,14 @@ router = APIRouter()
 @router.get(
     "",
     response_model=list[SubraceGetAllResponse],
-    summary="List a race's subraces",
+    summary="List subraces",
     responses={404: {"description": "No race exists with the given ID."}},
 )
-async def list_subraces(race_id: Annotated[int, Query(gt=0, le=INT32_MAX)], subrace_service: SubraceCrudDep):
-    """Return every subrace belonging to the race. Open endpoint."""
+async def list_subraces(
+    subrace_service: SubraceCrudDep,
+    race_id: Annotated[int | None, Query(gt=0, le=INT32_MAX, description="Filter by race ID.")] = None,
+):
+    """Return all subraces, optionally filtered by ``race_id`` (404 when that race does not exist). Open endpoint."""
 
     return await subrace_service.list_for_race(race_id)
 

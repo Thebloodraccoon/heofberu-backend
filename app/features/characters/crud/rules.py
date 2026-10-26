@@ -3,12 +3,13 @@
 from collections.abc import Iterable
 from typing import Any
 
-from app.constants import BackgroundSuggestionType, DiceType
+from app.constants import BackgroundSuggestionType, DiceType, ItemKind
 from app.features.characters.crud.exceptions import (
     BackgroundSuggestionIdsRequiredException,
     InvalidBackgroundSuggestionException,
     InvalidHpUpdateException,
     ItemChoiceNotAvailableException,
+    ItemChoicePickException,
     SkillNotAvailableForClassException,
     TooFewItemChoicesException,
     TooManySkillChoicesException,
@@ -70,11 +71,56 @@ def resolve_background_suggestions(background: Any, suggestion_ids: list[int]) -
     }
 
 
+def starts_equipped(item: Any) -> bool:
+    """Whether a starting-equipment item is worn from the start: armor and shields are, everything else isn't."""
+
+    return item is not None and item.kind == ItemKind.ARMOR
+
+
+def option_accepts(option: Any, item: Any) -> bool:
+    """Whether ``item`` matches every filter field a filter option (``item_id`` unset) sets."""
+
+    return all(
+        getattr(option, name) is None or getattr(option, name) == getattr(item, name)
+        for name in ("kind", "weapon_category", "armor_category", "tool_category")
+    )
+
+
+def picked_items(options: Iterable[Any], picks: dict[int, int], items_by_id: dict[int, Any]) -> list[tuple[int, int]]:
+    """
+    ``(item_id, quantity)`` per chosen option: a concrete option's item, a filter option's picked item
+    (``picks``: option id → item id) — which must exist and match the filter. A pick for an option that
+    wasn't chosen or isn't a filter, and a chosen filter option without a pick, are 400s.
+    """
+
+    options = list(options)
+    filter_ids = {option.id for option in options if option.item_id is None}
+    stray = sorted(set(picks) - filter_ids)
+    if stray:
+        raise ItemChoicePickException(f"item_choice_picks name option(s) {stray} that aren't chosen filter options.")
+
+    result = []
+    for option in options:
+        if option.item_id is not None:
+            result.append((option.item_id, option.quantity))
+            continue
+
+        item = items_by_id.get(picks.get(option.id, 0))
+        if item is None:
+            raise ItemChoicePickException(f"Option {option.id} needs an existing item in item_choice_picks.")
+        if not option_accepts(option, item):
+            raise ItemChoicePickException(f"Item {item.id} doesn't match option {option.id}'s filter.")
+        result.append((item.id, option.quantity))
+
+    return result
+
+
 def pick_item_options(groups: Iterable[Any], item_choice_ids: list[int]) -> list[Any]:
     """
     Resolve the starting-equipment "pick N of M" answers against the choice
     ``groups``: every id must be an option of some group and every group
-    must be answered with exactly ``pick_count`` options.
+    must be answered with exactly ``pick_count`` options (a filter option's
+    item is resolved afterwards by :func:`picked_items`).
     """
 
     groups = list(groups)
@@ -97,6 +143,12 @@ def pick_item_options(groups: Iterable[Any], item_choice_ids: list[int]) -> list
             raise TooFewItemChoicesException(group_id=group.id, pick_count=group.pick_count, chosen=chosen)
 
     return chosen_options
+
+
+def short_rest_hp(current_hp: int, max_hp: int) -> int:
+    """HP after a short rest: half the maximum (rounded down) back, never above the maximum."""
+
+    return min(max_hp, current_hp + max_hp // 2)
 
 
 def starting_max_hp(hit_dice: DiceType, constitution_total: int) -> int:

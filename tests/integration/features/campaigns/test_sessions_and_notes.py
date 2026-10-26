@@ -10,6 +10,7 @@ import pytest_asyncio
 def auth(token):
     return {"Authorization": f"Bearer {token}"}
 
+
 CHRONICLE = "The party reached the lighthouse.\n:::gm\nThe keeper is already dead.\n:::\nThey camped outside."
 
 

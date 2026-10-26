@@ -208,6 +208,18 @@ class NamedRef(BaseModel):
     name: str
 
 
+class SubclassRef(NamedRef):
+    """A spell's subclass availability entry, with its class so a client needs no subclass lookup."""
+
+    class_id: int
+
+
+class SubraceRef(NamedRef):
+    """A spell's subrace availability entry, with its race so a client needs no subrace lookup."""
+
+    race_id: int
+
+
 class SpellResponse(SpellBase):
     """Full spell representation returned by the API."""
 
@@ -215,9 +227,9 @@ class SpellResponse(SpellBase):
 
     id: int
     available_classes: list[NamedRef] = []
-    available_subclasses: list[NamedRef] = []
+    available_subclasses: list[SubclassRef] = []
     available_races: list[NamedRef] = []
-    available_subraces: list[NamedRef] = []
+    available_subraces: list[SubraceRef] = []
 
 
 class SpellGetAllResponse(BaseModel):
@@ -230,6 +242,6 @@ class SpellGetAllResponse(BaseModel):
     school: SpellSchool
     level: SpellLevel
     available_classes: list[NamedRef] = []
-    available_subclasses: list[NamedRef] = []
+    available_subclasses: list[SubclassRef] = []
     available_races: list[NamedRef] = []
-    available_subraces: list[NamedRef] = []
+    available_subraces: list[SubraceRef] = []

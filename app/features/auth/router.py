@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 
-from app.features.auth.dependencies import AuthServiceDep, CurrentUserDep, TokenDep
+from app.features.auth.dependencies import AuthServiceDep, TokenDep
 from app.features.auth.schemas import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -110,7 +110,7 @@ async def login(
     response_model=LogoutResponse,
     summary="Log out the current user",
     responses={
-        401: {"description": "Access token missing, malformed, expired, blacklisted, or of the wrong type."},
+        401: {"description": "Neither the access token nor the refresh cookie is valid."},
     },
 )
 async def logout(
@@ -118,9 +118,11 @@ async def logout(
     response: Response,
     auth_service: AuthServiceDep,
     token: TokenDep,
-    _: CurrentUserDep,
 ):
-    """Log out, revoking the access token and refresh cookie. **Authenticated.**"""
+    """
+    Log out, revoking the access token and the refresh cookie and clearing the cookie. Works with an expired
+    access token as long as the refresh cookie is still valid (an idle logout).
+    """
 
     refresh_token_str = read_refresh_cookie(request)
 

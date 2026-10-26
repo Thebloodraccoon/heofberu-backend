@@ -6,8 +6,8 @@ from typing import Any
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base.repository import BaseRepository
 from app.constants import CampaignCharacterStatus
+from app.core.base.repository import BaseRepository
 from app.models.campaigns.campaign_character_model import CampaignCharacter
 from app.models.campaigns.campaign_model import Campaign
 from app.models.character.character_model import Character

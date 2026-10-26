@@ -20,6 +20,7 @@ from app.constants import (
     CharacterPublicVisibility,
     DiceType,
     FeatureSourceType,
+    ItemKind,
     ProficiencySourceType,
     ProficiencyType,
     UserRole,
@@ -310,6 +311,9 @@ class FakeItemRepository:
         self.choice_group_calls.append(sources)
         return self.choice_groups
 
+    async def get_items_by_ids(self, item_ids):
+        return [SimpleNamespace(id=item_id, kind=ItemKind.GEAR) for item_id in item_ids]
+
 
 class FakeStatsService:
     """Records stats calls in the shared event log (starting-HP marker)."""
@@ -477,26 +481,26 @@ class TestResolveItemChoices:
     async def test_no_sources_and_empty_choice_returns_empty(self):
         service, _ = make_service(None, [])
 
-        assert await service.creation._resolve_item_choices(None, None, []) == []
+        assert await service.creation._resolve_item_choices(None, None, [], []) == ([], {})
 
     async def test_choice_without_sources_raises(self):
         service, _ = make_service(None, [])
 
         with pytest.raises(ItemChoicesWithoutGroupsException):
-            await service.creation._resolve_item_choices(None, None, [100])
+            await service.creation._resolve_item_choices(None, None, [100], [])
 
     async def test_choice_when_sources_define_no_groups_raises(self):
         service, _ = make_service(None, [], choice_groups=[])
 
         with pytest.raises(ItemChoicesWithoutGroupsException):
-            await service.creation._resolve_item_choices(1, 3, [100])
+            await service.creation._resolve_item_choices(1, 3, [100], [])
 
     async def test_foreign_option_raises(self):
         group = make_choice_group(options=[make_choice_option(option_id=100), make_choice_option(option_id=101)])
         service, _ = make_service(None, [], choice_groups=[group])
 
         with pytest.raises(ItemChoiceNotAvailableException) as exc_info:
-            await service.creation._resolve_item_choices(1, 3, [999])
+            await service.creation._resolve_item_choices(1, 3, [999], [])
 
         assert exc_info.value.option_id == 999
 
@@ -506,9 +510,9 @@ class TestResolveItemChoices:
         group = make_choice_group(pick_count=1, options=[option_a, option_b])
         service, _ = make_service(None, [], choice_groups=[group])
 
-        resolved = await service.creation._resolve_item_choices(1, None, [100])
+        resolved = await service.creation._resolve_item_choices(1, None, [100], [])
 
-        assert resolved == [option_a]
+        assert resolved == ([(20, 1)], {})
         assert service.creation.item_repository.choice_group_calls == [[(FeatureSourceType.CLASS, 1)]]
 
     async def test_fewer_than_pick_count_raises(self):
@@ -523,7 +527,7 @@ class TestResolveItemChoices:
         service, _ = make_service(None, [], choice_groups=[group])
 
         with pytest.raises(TooFewItemChoicesException) as exc_info:
-            await service.creation._resolve_item_choices(1, None, [100])
+            await service.creation._resolve_item_choices(1, None, [100], [])
 
         assert exc_info.value.group_id == 1
         assert exc_info.value.pick_count == 2
@@ -549,7 +553,7 @@ class TestResolveItemChoices:
         service, _ = make_service(None, [], choice_groups=[group_a, group_b])
 
         with pytest.raises(TooFewItemChoicesException) as exc_info:
-            await service.creation._resolve_item_choices(1, None, [100])
+            await service.creation._resolve_item_choices(1, None, [100], [])
 
         assert exc_info.value.group_id == 2
 
@@ -562,9 +566,9 @@ class TestResolveItemChoices:
         ]
         service, _ = make_service(None, [], choice_groups=groups)
 
-        resolved = await service.creation._resolve_item_choices(1, 3, [100, 200])
+        resolved = await service.creation._resolve_item_choices(1, 3, [100, 200], [])
 
-        assert resolved == [class_option, background_option]
+        assert resolved == ([(20, 1), (22, 1)], {})
         assert service.creation.item_repository.choice_group_calls == [
             [(FeatureSourceType.CLASS, 1), (FeatureSourceType.BACKGROUND, 3)]
         ]
@@ -891,9 +895,7 @@ class TestUpdateAndDelete:
         character = make_owned_character(inspiration=0)
         service, _ = make_service(monkeypatch, [], existing_characters={5: character})
 
-        result = await service.update_character(
-            5, CharacterUpdate(inspiration=4), make_user(99, UserRole.FOUND_FATHER)
-        )
+        result = await service.update_character(5, CharacterUpdate(inspiration=4), make_user(99, UserRole.FOUND_FATHER))
 
         assert result.inspiration == 4
 
@@ -1007,17 +1009,18 @@ class TestRest:
         assert db.rollbacks >= 1
         assert "invalidate:5" not in events
 
-    async def test_short_rest_writes_nothing(self, monkeypatch):
+    async def test_short_rest_restores_half_the_max_hp_in_one_transaction(self, monkeypatch):
         events = []
-        character = make_owned_character(current_hp=2, max_hp=10)
+        character = make_owned_character(current_hp=2, max_hp=10, temp_hp=4)
         service, db = make_service(monkeypatch, events, existing_characters={5: character})
 
         result = await service.rest(5, RestRequest(type="short"), make_user())
 
-        assert result.current_hp == 2
-        assert service.repository.hp_updates == []
-        assert db.commits == 0
-        assert events == []
+        assert (result.current_hp, result.temp_hp) == (7, 4)
+        assert service.repository.hp_updates == [(7, 4)]
+        assert service.character_spell_slot_repository.resets == []
+        assert events == ["lock_row", "commit", "invalidate:5"]
+        assert db.commits == 1
 
     async def test_rest_on_other_players_character_is_denied(self, monkeypatch):
         service, _ = make_service(monkeypatch, [], existing_characters={5: make_owned_character(owner_id=7)})

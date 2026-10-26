@@ -173,3 +173,33 @@ class TestChoiceGroupEntryValidation:
         group = ChoiceGroupEntry(pick_count=2, options=[ChoiceOptionEntry(item_id=1), ChoiceOptionEntry(item_id=2)])
 
         assert group.pick_count == 2
+
+
+@pytest.mark.unit
+class TestChoiceOptionFilters:
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"kind": "ARMOR", "weapon_category": "SIMPLE"},
+            {"kind": "WEAPON", "armor_category": "LIGHT"},
+            {"kind": "GEAR", "tool_category": "MUSICAL_INSTRUMENT"},
+            {"weapon_category": "SIMPLE", "armor_category": "LIGHT"},
+            {"kind": "TOOL", "weapon_category": "SIMPLE", "tool_category": "MUSICAL_INSTRUMENT"},
+        ],
+    )
+    def test_contradictory_filters_are_rejected(self, fields):
+        with pytest.raises(ValidationError):
+            ChoiceOptionEntry(**fields)
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"weapon_category": "SIMPLE"},
+            {"kind": "WEAPON", "weapon_category": "MARTIAL"},
+            {"kind": "ARMOR", "armor_category": "SHIELD"},
+            {"kind": "TOOL", "tool_category": "MUSICAL_INSTRUMENT"},
+            {"kind": "GEAR"},
+        ],
+    )
+    def test_consistent_filters_are_accepted(self, fields):
+        assert ChoiceOptionEntry(**fields).item_id is None

@@ -3,11 +3,13 @@
 from collections import defaultdict
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import Row, select
 
+from app.constants import ItemKind
 from app.core.base.repository import SessionRepository
 from app.features.characters.grants.spell_rules import SpellFacts
 from app.models.character.character_spell_model import CharacterGrantedSpell, CharacterSpell, CharacterSpellSlot
+from app.models.items.item_model import Item, ItemToolDetails
 from app.models.skill_model import Skill
 from app.models.spells.spell_association_models import spell_classes
 from app.models.spells.spell_model import Spell
@@ -29,6 +31,22 @@ class GrantRulesRepository(SessionRepository):
 
         found = set((await self.db.execute(select(Skill.id).where(Skill.id.in_(skill_ids)))).scalars().all())
         return sorted(skill_ids - found)
+
+    async def tool_items(self, item_ids: Iterable[int] | None = None) -> list[Row]:
+        """
+        The ``TOOL`` items (only the given ids when set), by name — the candidates of an open tool option.
+        Plain ``(id, name, kind, tool_category)`` rows, not ORM items.
+        """
+
+        statement = (
+            select(Item.id, Item.name, Item.kind, ItemToolDetails.tool_category)
+            .outerjoin(ItemToolDetails, ItemToolDetails.item_id == Item.id)
+            .where(Item.kind == ItemKind.TOOL)
+            .order_by(Item.name)
+        )
+        if item_ids is not None:
+            statement = statement.where(Item.id.in_(set(item_ids)))
+        return list((await self.db.execute(statement)).all())
 
     async def spell_facts(self, spell_ids: Iterable[int] | None = None) -> dict[int, SpellFacts]:
         """``{spell_id: SpellFacts}`` for the given spells (every catalog spell when ``None``) — two plain queries."""

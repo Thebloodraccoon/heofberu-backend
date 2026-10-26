@@ -15,7 +15,7 @@ from app.constants import (
 )
 from app.core.types import EntityId
 from app.features.characters.spells.schemas import CharacterSpellResponse
-from app.features.features.effects.schemas import EffectGroup
+from app.features.features.effects.schemas import ArmorClassEffectItem, EffectGroup, SpeedEffectItem
 
 # Upper bound on the answers of one request (a feature has a handful of groups).
 MAX_ANSWERS = 50
@@ -28,9 +28,10 @@ class ChoiceAnswerItem(BaseModel):
     ``skill_id`` names the skill for an option with an open ("any skill")
     skill effect, ``spell_id`` the spell for an option with an open ("any
     spell") spell effect, ``ability`` the ability for an option with an open
-    ("any ability" / "any saving throw") effect — required there, rejected on
+    ("any ability" / "any saving throw") effect, ``item_id`` the tool for an
+    option with an open ("any tool") tool effect — required there, rejected on
     any other option (422). The same open option may be picked several times
-    in one group, each time with a different skill/spell/ability.
+    in one group, each time with a different skill/spell/ability/tool.
     """
 
     choice_group_id: EntityId
@@ -38,6 +39,7 @@ class ChoiceAnswerItem(BaseModel):
     skill_id: EntityId | None = None
     spell_id: EntityId | None = None
     ability: AbilityScore | None = None
+    item_id: EntityId | None = None
 
 
 class GrantChoicesUpdate(BaseModel):
@@ -66,6 +68,15 @@ class SpellPickCandidate(BaseModel):
     is_ritual: bool = False
 
 
+class ItemPickCandidate(BaseModel):
+    """A tool an open ("any tool") option may be picked with."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
 class PendingChoiceOption(BaseModel):
     """
     A pending option inside a pending choice group, with its open-effect
@@ -86,6 +97,9 @@ class PendingChoiceOption(BaseModel):
 
     ``needs_ability``: an open ability-score / saving-throw option — answer it with ``ability``
     (any ability the option doesn't already name).
+
+    ``needs_item``: an open tool option — answer it with ``item_id``, one of ``allowed_items`` (the tools
+    of the option's category the character isn't proficient with through another grant).
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -94,8 +108,10 @@ class PendingChoiceOption(BaseModel):
     needs_skill: bool = False
     needs_spell: bool = False
     needs_ability: bool = False
+    needs_item: bool = False
     allowed_skill_ids: list[int] | None = None
     allowed_spells: list[SpellPickCandidate] | None = None
+    allowed_items: list[ItemPickCandidate] | None = None
     available: bool = True
     effects: list[EffectGroup] = Field(default_factory=list)
 
@@ -150,6 +166,14 @@ class CharacterWeaponProficiencyResponse(BaseModel):
 
     weapon_category: WeaponProficiency | None = None
     item_id: int | None = None
+
+
+class CharacterToolProficiencyResponse(BaseModel):
+    """A tool proficiency on the character (a ``TOOL`` item)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    item_id: int
 
 
 class GrantedSkillEffectResponse(BaseModel):
@@ -211,6 +235,27 @@ class GrantedWeaponGroup(BaseModel):
     items: list[CharacterWeaponProficiencyResponse]
 
 
+class GrantedToolGroup(BaseModel):
+    """Tool proficiencies of a grant."""
+
+    effect_type: Literal["tool"]
+    items: list[CharacterToolProficiencyResponse]
+
+
+class GrantedSpeedGroup(BaseModel):
+    """Speed effects of a grant, as defined (applied by the character's combat stats)."""
+
+    effect_type: Literal["speed"]
+    items: list[SpeedEffectItem]
+
+
+class GrantedArmorClassGroup(BaseModel):
+    """AC effects of a grant, as defined (applied by the character's combat stats)."""
+
+    effect_type: Literal["armor_class"]
+    items: list[ArmorClassEffectItem]
+
+
 class GrantedSpellGroup(BaseModel):
     """Spells a grant gives, as full spell records."""
 
@@ -227,7 +272,10 @@ GrantEffectGroup = Annotated[
     | GrantedSavingThrowGroup
     | GrantedArmorGroup
     | GrantedWeaponGroup
-    | GrantedSpellGroup,
+    | GrantedToolGroup
+    | GrantedSpellGroup
+    | GrantedSpeedGroup
+    | GrantedArmorClassGroup,
     Field(discriminator="effect_type"),
 ]
 
@@ -243,6 +291,7 @@ class ChosenOptionResponse(BaseModel):
     picked_skill_id: int | None = None
     picked_spell_id: int | None = None
     picked_ability: AbilityScore | None = None
+    picked_item_id: int | None = None
     effects: list[EffectGroup] = Field(default_factory=list)
 
 

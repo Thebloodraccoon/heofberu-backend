@@ -79,9 +79,7 @@ def downgrade() -> None:
     op.drop_column("character_feature_choices", "picked_ability")
 
     op.execute("DELETE FROM feature_saving_throw_effects WHERE ability IS NULL")
-    op.drop_constraint(
-        "ck_feature_saving_throw_fixed_requires_ability", "feature_saving_throw_effects", type_="check"
-    )
+    op.drop_constraint("ck_feature_saving_throw_fixed_requires_ability", "feature_saving_throw_effects", type_="check")
     op.alter_column("feature_saving_throw_effects", "ability", nullable=False)
     op.execute("DELETE FROM feature_ability_score_effects WHERE ability IS NULL")
     op.drop_constraint(

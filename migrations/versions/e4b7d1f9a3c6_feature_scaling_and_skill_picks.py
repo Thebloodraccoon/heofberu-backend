@@ -41,9 +41,7 @@ def upgrade() -> None:
         "feature_skill_proficiency_effects",
         sa.Column("mode", sa.String(length=30), nullable=False, server_default="PROFICIENCY"),
     )
-    op.execute(
-        "UPDATE feature_skill_proficiency_effects SET mode = 'PROFICIENCY_AND_EXPERTISE' WHERE grants_expertise"
-    )
+    op.execute("UPDATE feature_skill_proficiency_effects SET mode = 'PROFICIENCY_AND_EXPERTISE' WHERE grants_expertise")
     op.drop_column("feature_skill_proficiency_effects", "grants_expertise")
 
     op.add_column("character_feature_choices", sa.Column("picked_skill_id", sa.Integer(), nullable=True))
@@ -55,9 +53,7 @@ def upgrade() -> None:
         ["id"],
         ondelete="RESTRICT",
     )
-    op.create_index(
-        "ix_character_feature_choices_picked_skill_id", "character_feature_choices", ["picked_skill_id"]
-    )
+    op.create_index("ix_character_feature_choices_picked_skill_id", "character_feature_choices", ["picked_skill_id"])
     op.create_index(
         "ix_character_feature_choices_character_feature_id", "character_feature_choices", ["character_feature_id"]
     )

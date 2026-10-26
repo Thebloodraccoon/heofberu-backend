@@ -78,7 +78,7 @@ class NestedSourceItemService(TransactionMixin, NestedCollectionService[SourceIt
     async def _validate_choice_option_item_ids(self, groups: list[ChoiceGroupEntry]) -> None:
         """Raise ``RecordIdsInvalidError`` if any option references a nonexistent item."""
 
-        item_ids = [opt.item_id for group in groups for opt in group.options]
+        item_ids = [opt.item_id for group in groups for opt in group.options if opt.item_id is not None]
         if item_ids:
             await BaseService.resolve_ids(self._items.get_items_by_ids, item_ids, "Item")
 
@@ -137,8 +137,7 @@ class NestedSourceItemService(TransactionMixin, NestedCollectionService[SourceIt
                 for opt_idx, opt_entry in enumerate(group_entry.options):
                     option = SourceItemChoiceOption(
                         group_id=group.id,
-                        item_id=opt_entry.item_id,
-                        quantity=opt_entry.quantity,
+                        **opt_entry.model_dump(),
                         sort_order=opt_idx,
                     )
                     self.db.add(option)

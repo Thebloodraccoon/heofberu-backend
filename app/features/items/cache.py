@@ -4,11 +4,12 @@ from app.core.cache.namespaces import dependents
 
 # Class/race/background details embed item briefs and cache per-source equipment
 # under ``nested_items``; every cached feature payload renders weapon-proficiency
-# item names in ``effects_summary``. An item edit must purge all of them.
+# item names in ``effects_summary``. A core edit (it may rename the item) must purge all of them.
 ITEM_DEPENDENT_CACHE_NAMESPACES = dependents("items")
 
 # A brand-new item is not referenced anywhere yet, and an item can only be
-# deleted once nothing references it: both only change the item listings.
+# deleted once nothing references it: both only change the item listings. Dependents embed only an item's
+# id/name/kind, so a kind's detail PATCH, a weapon-property write and an item-effect write purge just these too.
 ITEM_OWN_CACHE_NAMESPACES = ("items",)
 
 ITEM_CACHE_NAMESPACES = ITEM_OWN_CACHE_NAMESPACES + ITEM_DEPENDENT_CACHE_NAMESPACES

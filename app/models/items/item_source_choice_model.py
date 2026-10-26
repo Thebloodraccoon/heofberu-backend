@@ -7,8 +7,14 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.constants import FeatureSourceType
-from app.models.enums import FeatureSourceTypeType
+from app.constants import ArmorProficiency, FeatureSourceType, ItemKind, ToolCategory, WeaponProficiency
+from app.models.enums import (
+    ArmorProficiencyType,
+    FeatureSourceTypeType,
+    ItemKindType,
+    ToolCategoryType,
+    WeaponProficiencyType,
+)
 from app.settings.base import Base
 
 if TYPE_CHECKING:
@@ -60,20 +66,41 @@ class SourceItemChoiceOption(Base):
     Each option points to an ``Item`` and optionally carries a ``quantity``
     (default 1). The player picks ``group.pick_count`` options from the
     group's options at character creation.
+
+    Instead of a concrete ``item_id`` an option may be a filter — "any simple
+    weapon", "any musical instrument": ``item_id`` NULL and at least one of
+    ``kind`` / ``weapon_category`` / ``armor_category`` / ``tool_category``
+    set (all of them must match). The player names the item when picking it.
     """
 
     __tablename__ = "source_item_choice_options"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("source_item_choice_groups.id", ondelete="CASCADE"), index=True)
-    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="RESTRICT"), index=True)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="RESTRICT"), index=True)
+    kind: Mapped[ItemKind | None] = mapped_column(ItemKindType)
+    weapon_category: Mapped[WeaponProficiency | None] = mapped_column(WeaponProficiencyType)
+    armor_category: Mapped[ArmorProficiency | None] = mapped_column(ArmorProficiencyType)
+    tool_category: Mapped[ToolCategory | None] = mapped_column(ToolCategoryType)
     quantity: Mapped[int] = mapped_column(default=1)
     sort_order: Mapped[int] = mapped_column(default=0)
 
     group: Mapped[SourceItemChoiceGroup] = relationship(back_populates="options")
-    item: Mapped[Item] = relationship()
+    item: Mapped[Item | None] = relationship()
 
-    __table_args__ = (CheckConstraint("quantity >= 1", name="check_choice_option_quantity_positive"),)
+    __table_args__ = (
+        CheckConstraint("quantity >= 1", name="check_choice_option_quantity_positive"),
+        CheckConstraint(
+            "(item_id IS NOT NULL) <> (num_nonnulls(kind, weapon_category, armor_category, tool_category) > 0)",
+            name="ck_choice_option_item_or_filter",
+        ),
+    )
+
+    @property
+    def is_filter(self) -> bool:
+        """Whether this option is "any item of a kind" (the player names the item) rather than one item."""
+
+        return self.item_id is None
 
     def __repr__(self) -> str:
         return f"<SourceItemChoiceOption(id={self.id}, group_id={self.group_id}, item_id={self.item_id})>"

@@ -53,7 +53,9 @@ async def list_public_campaigns(
 
 
 @router.get(
-    "/{public_campaign_id:int}", response_model=PublicCampaignResponse, summary="Get a public campaign",
+    "/{public_campaign_id:int}",
+    response_model=PublicCampaignResponse,
+    summary="Get a public campaign",
     responses=_NOT_FOUND,
 )
 async def get_public_campaign(public_campaign_id: int, service: PublicCampaignCrudDep, user: OptionalUserDep):
@@ -66,7 +68,9 @@ async def get_public_campaign(public_campaign_id: int, service: PublicCampaignCr
 
 
 @router.get(
-    "/by-slug/{slug}", response_model=PublicCampaignResponse, summary="Get a public campaign by slug",
+    "/by-slug/{slug}",
+    response_model=PublicCampaignResponse,
+    summary="Get a public campaign by slug",
     responses=_NOT_FOUND,
 )
 async def get_public_campaign_by_slug(slug: str, service: PublicCampaignCrudDep, user: OptionalUserDep):
